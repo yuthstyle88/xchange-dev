@@ -17,6 +17,8 @@ Excluded because they are already handled: #4811 (book amount), #4826 (cooldown 
 | RC-3 | **Hand-written server refusals that skip `v3::input`** (B-3): English text and `field: None` (`pricing_approve.rs`, `pricing_configure.rs`, `cash.rs`, `branch_save.rs:139-141`, `customer_phone_start.rs:85-93`). | The web cannot put them at a field even with RC-1 fixed. | Raw English with no field; "Server error" for a mistyped phone. |
 | RC-4 | **Native validation bypassed.** `noValidate` forms, `type="button"` submits and missing `required` (`TierEditor.tsx:189`, `PricingPolicy.tsx:130`, `PermissionMatrix.tsx:453-458`, `Book.tsx:431,547`). | `required` and `maxLength` are written but never enforced. | Blank values are sent. |
 
+RC-3 for the compat RPC (`/api/rpc`, `/api/staff/rpc`), customer create first: [`rpc-refusal-field.md`](rpc-refusal-field.md) (G2 on #5055).
+
 ## 2. T0: the field-error contract (#4897)
 
 ```ts

@@ -661,6 +661,334 @@ type BranchRefDto         = { branchCode: string; name: string };
 
 **Data migration: none.** The view adds no table, column, index or constraint, and writes no row. It reads `coupons`, `benefit_rules`, `campaign_versions`, `campaigns`, `campaign_branches`, `branches`, `segment_snapshot_members`, `segment_snapshots`, `customer_tier_mirror`, `customer_identities`, `consents` and `referral_attributions`.
 
+### 6.4 The indicative benefit on a booking: the customer's estimate and the desk's booking quote (O-3)
+
+> drafted-by: claude/bc8fd29a (subagent, for the xchange BE lane controller) · 2026-10-27 · design only: no code, no `ready`.
+> Measured on `108-Plaza/xchange` `origin/main` at `8fc3507b` and `origin/feat/binding-quote` at `47229c9f`
+> (2026-10-27 22:44 ICT). A `file:line` marked **(fbq)** is at `feat/binding-quote`; every other one is at `main`.
+> Meant to become a new § in `marketing-campaigns.md`, after §6.3.
+
+**The rule this section implements.** O-3, answer A (`marketing-campaigns.md:745`, decided 2026-10-19 on
+#564 issuecomment-6262478258): *the INDICATIVE quote calls `BenefitEngine::evaluate` to show an estimated benefit,
+labelled indicative, with **no reservation** (no budget, no coupon lock); the eligibility channel is APP for
+`CustomerSelf` and DESK for `BookingsDesk`; the completion's DESK quote alone reserves and applies (D-8).*
+
+#### 6.4.1 What exists (measured)
+
+| Fact | Evidence |
+|---|---|
+| The server half is built: a `BOOKING` quote is judged on `DESK` and reserves nothing | `benefit_channel` and `reserves_benefits`, `api/src/application/workflows/exchange/quote.rs:98-113` (fbq); the reserve loop runs only when `reserves_benefits(req.channel)` (`quote.rs:612` (fbq)); up-front tests m1–m6, `api/tests/booking_quote_benefit_test.rs:195-318` (fbq) |
+| The customer half has no caller: *"`CustomerSelf` ⇒ `APP` has no caller yet: the customer-side estimate needs a design of its own"* | comment at `quote.rs:98-101` (fbq) |
+| No customer can make a quote. `quoteCreate` inherits `saveTransaction`, which needs `ExchangeTransact` | `api/src/presentation/http/v3/commands/quotes.rs:77`; `api/crates/xc-auth/src/domain/policy/entities/policy.rs:84-86`; `customer-app.md:254` |
+| The app's estimate is `planner_preview`, a public compute that writes nothing. It answers the published rate only: `{thb, rate, unitSize, stale, sourceDate}` | `api/src/presentation/http/v3/actions/planner_preview.rs:48-54`; `api/src/presentation/dto/v3/planner.rs:213-223`; `Need::Public`, `api/crates/xc-auth/src/domain/policy/areas/customer_app.rs:23-27`; `PlannerEstimate`, `api/crates/xc-app/src/application/planner/planner_preview.rs:14-25` |
+| C02 (book) shows `planner_preview` as an estimate and sends no `quoteId` | `customer-app.md:239`, `:253-256` |
+| `xc-app` does not depend on `xc-marketing`, so `PlannerPreview` cannot call the engine itself | `api/crates/xc-app/Cargo.toml` `[dependencies]` (pos-error, xc-kernel, xc-rate, xc-auth only) |
+| The whole engine context is built inline in `price_in`'s Step 7: published buy/sell, margin guard, segment memberships, the three sources, the exhausted-budget filter, the coupon filter, then `evaluate` | `quote.rs:357-522` (fbq); budget filter `quote.rs:131-177` (fbq); coupon filter `quote.rs:498-510` (fbq) |
+| `my_bookings` (C03) answers a fixed text as the quote summary and no intent (currency, side, quantity) | `api/src/presentation/http/v3/views/my_bookings.rs:238`; `api/src/presentation/dto/v3/my_bookings.rs:11-29` |
+| `my_bookings` ignores `since`: every answer is `version: 0, changed: true` | `my_bookings.rs:295-299` (its own handler, not `ViewEndpoint`'s check at `api/src/presentation/http/v3/view.rs:650-660`) |
+| `desk_bookings` (B02) carries no quote or benefit field | `api/src/presentation/http/v3/views/desk_bookings.rs:167-178`; `dto/v3/desk_bookings.rs:11-22` |
+| The quote answer's `benefits` is untyped (`Array<any>`), so the desk screen hand-types it | `api/src/presentation/dto/v3/quote.rs:45-46`, `:85-90`; `web/src/screens/desk/benefits/BenefitLines.tsx:8-23` |
+| An applied benefit in a `BOOKING` quote differs from a `DESK` one only by the absent `reservationId` (`skip_serializing_if`) | `api/crates/xc-marketing/src/domain/engine/snapshot.rs:15-18` |
+| The engine skips a `requires_coupon` rule without a code | `api/crates/xc-marketing/src/domain/engine/engine.rs:158-159` |
+| A rule's `channels` must contain the context's channel; absent = any | `api/crates/xc-marketing/src/domain/benefit/eligibility.rs:121-125` |
+| The quote's tier source answers `None` for everyone, so no quote applies a tier rule | `api/src/infrastructure/marketing/tier_source.rs:21-25`; `marketing-campaigns.md:657-660` |
+| The public rates route has an `ETag` of the publication and its staleness and answers 304 | `api/src/presentation/http/public/branch_rates.rs:51-68` |
+| A compute answer is `Cache-Control: no-store` | `api/src/presentation/http/v3/action.rs:213` |
+| `CustomerSide` maps only customer → shop (`to_shop`); there is no reverse | `api/crates/xc-kernel/src/money/customer_side.rs:20-40` |
+
+#### 6.4.2 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| E-1 | **The customer's estimate is computed in `planner_preview`**, not in a booking view and not by a customer-made quote. Its answer gains one field, `benefit`. The published `thb` and `rate` keep their meaning. | It is already the app's one estimate (C01, C02), it is public and writes nothing (P5), and no customer may make a quote (`policy.rs:84-86`). Keeping `thb` as the published amount keeps the desk-parity test meaningful (`api/tests/app_planner_quote_parity_test.rs`, `customer-app.md:492`) |
+| E-2 | **The desk's estimate is the `BOOKING` quote's own answer**, as O-3 says. The quote DTO gets a typed `benefits` list and a `benefitBasis` label. `desk_bookings` stays as it is. | O-3 names the BOOKING quote for the desk. A stored BOOKING quote's snapshot is evidence of what was shown, not a current price: its quote expires with the indicative TTL (`quote.rs:346-350` (fbq)), so it is never shown later as a number |
+| E-3 | **One shared core.** The engine context of `price_in` Step 7 moves into `BenefitPricing::evaluate_in` (new file). `QuoteService` and the app estimate both call it. No second copy of the margin guard, segment, consent, referral, budget or coupon reads. | ♻️; D-7 *"one engine for quote and simulation"* (`marketing-campaigns.md:78`) |
+| E-4 | **The estimate never reserves.** `BenefitEstimator` has no `BudgetLedger`. It runs in the preview's read transaction, which is rolled back (`actions/planner_preview.rs:43-46`). | O-3 (`marketing-campaigns.md:745`): *"no reservation (no budget, no coupon lock)"*; D-8 reserves only at the DESK quote |
+| E-5 | **Judged on APP** (`EvalContext.channel = "APP"`). The customer is the signed-in caller's `customer_id` when that customer belongs to the branch's organisation; anyone else (anonymous, staff, another organisation's customer) is evaluated customer-less, so only rules with no customer condition can apply (`marketing-campaigns.md:260-261`). | O-3's channel for `CustomerSelf`. Treating a foreign customer as anonymous reveals nothing about either organisation, and needs no refusal on a public route |
+| E-6 | **Evaluated at `now`, with the current publication.** The estimate does not guess a future rate or a future campaign. Each item says when its campaign version ends (`endsAt`), and the answer says until when the estimate holds (`validUntil` = the earliest `endsAt`). The screen warns when the booking's slot starts at or after `validUntil`. | The engine's `ActiveRules` and the rate are both "now" facts; a slot-time estimate would mix a future campaign window with today's rate |
+| E-7 | **What the estimate shows, and when it is absent.** `state: "ESTIMATED"` when at least one benefit applies. `state: "NONE"` with `reason`: `noActiveRule` (no ACTIVE rule survives the filters) or `notEligible` (rules exist, none applies to this caller and line). A refused stale line refuses the whole preview with `rateUnavailable`, exactly as today; an admitted stale line gives an estimate and the answer's `stale: true`. Skip reasons (`notInSegment`, `tierMismatch`, …) are never sent to the customer. | Skip reasons describe marketing targeting and consent (D-13); the customer needs only "nothing applies" |
+| E-8 | **Coupons, fees and tiers follow the quote's rules unchanged.** No coupon code is evaluated (Owner decides OD-2), so `requires_coupon` rules never appear (`engine.rs:158-159`). The plan has no fee, so a `FEE_WAIVER` evaluates on a fee of 0 and its `amountThb` is `"0.00"`; the screen words it by type, never as an amount. Tier rules do not apply while the quote's tier source answers `None` (`tier_source.rs:21-25`); the root cause is that source, not this estimate. | One core (E-3): the estimate must not promise what the desk would refuse |
+| E-9 | **Not polled.** `planner_preview` is a compute. The screen calls it (1) when the plan's inputs change, debounced, (2) when the branch's public rates route answers 200 with a new `ETag` (it polls that route with `If-None-Match`; 304 otherwise, `branch_rates.rs:51-68`), and (3) once at `validUntil`. Never on a timer. No estimate is put into `my_bookings` or `desk_bookings`. | Fleet rule 🔁. `my_bookings` already answers in full on every poll (`my_bookings.rs:295-299`); an estimate per booking there would add the whole engine to every poll |
+| E-10 | **C03 gets the booking's intent, not an estimate.** `my_bookings` items gain `currency`, `customerSide` and `quantity`, so C03 calls `planner_preview` for one booking when the customer opens it. `customerSide` comes from the stored `shop_side` through a new `CustomerSide::from_shop`, in the same core file as `to_shop`. | P4 (`customer-app.md` P4: the side is converted only in `customer_side.rs`) |
+
+#### 6.4.3 The wire
+
+`PlannerPreviewAnswer` (`dto/v3/planner.rs`, generated `web/src/shared/api/generated/planner_preview.ts`).
+Decimals are strings, times RFC 3339, camelCase:
+
+```ts
+type PlannerPreviewAnswer = {
+  thb: string; rate: string; unitSize: string; stale: boolean; sourceDate: string | null; // unchanged: the published rate
+  benefit: PlannerBenefitDto;                                                              // new (E-1)
+};
+type PlannerBenefitDto =
+  | { state: "ESTIMATED"; basis: "INDICATIVE"; channel: "APP"; evaluatedAt: string; validUntil: string;
+      publicationId: string; finalRate: string; thbAfter: string; benefitThb: string;
+      items: PlannerBenefitItemDto[] }
+  | { state: "NONE"; basis: "INDICATIVE"; channel: "APP"; evaluatedAt: string;
+      reason: "noActiveRule" | "notEligible" };
+type PlannerBenefitItemDto = {
+  ruleId: string; label: string;                       // label = the campaign's name, as my_benefits (§6.3)
+  benefitType: string; benefitClass: "PRICE" | "REWARD";
+  amountThb: string; rateBefore: string; rateAfter: string; floorCapped: boolean;
+  endsAt: string;                                      // the campaign version's ends_at (E-6)
+};
+```
+
+- Serde: `#[serde(tag = "state", rename_all_fields = "camelCase")]` on the enum; `basis` and `channel` are
+  constant strings, sent so the screen never infers the label.
+- `thbAfter` = `ExchangeArithmetic::try_thb(quantity, finalRate, unitSize)`, as the quote (`quote.rs:528-529` (fbq)).
+  `benefitThb` = Σ `amountThb` of `items`.
+- No field carries a coupon id, a reservation id, a segment id or a skip reason.
+
+`QuoteDto` (`dto/v3/quote.rs`, generated `web/src/shared/api/generated/quote.ts`):
+
+```ts
+type QuoteDto = { /* existing fields */ benefits: QuoteBenefitDto[]; benefitBasis: "INDICATIVE" | "RESERVED" };
+type QuoteBenefitDto = {
+  ruleId: string; versionId: string; benefitType: string; benefitClass: "PRICE" | "REWARD";
+  couponId: string | null; reservationId: string | null;
+  amountThb: string; rateBefore: string; rateAfter: string; feeBefore: string; feeAfter: string; floorCapped: boolean;
+};
+```
+
+- `benefitBasis` = `"INDICATIVE"` when `!reserves_benefits(channel)` (`quote.rs:111-113` (fbq)), else `"RESERVED"`.
+  It is a property of the channel, so an empty `benefits` still carries it.
+- `QuoteBenefitDto` is built from `AppliedBenefit` (`snapshot.rs:10-24`) field for field; a snapshot entry that does not
+  decode is a 500 `serverError` naming the quote, never a silently dropped row.
+
+`MyBookingItemDto` (`dto/v3/my_bookings.rs`) gains `currency: string`, `customerSide: "CUSTOMER_BUY" | "CUSTOMER_SELL"`,
+`quantity: string` (the booking's `requested_*` columns, `api/migrations/20261205131000_booking_slots.sql:91-92`).
+`quoteSummary` stays as it is.
+
+#### 6.4.4 Class diagram
+
+```mermaid
+classDiagram
+  class BenefitPricing { <<api application/workflows/exchange/benefit_pricing.rs (BE-1)>> +evaluate_in(tx, BenefitPricingInput) AppResult~PricedBenefits~ }
+  class BenefitPricingInput { organization_id; branch; eligibility_channel: QuoteChannel; also_admitted_on: Option~QuoteChannel~; customer_id: Option; coupon: Option~CouponMatch~; coupon_code: Option~str~; line: PricingLine; now }
+  class PricingLine { currency; shop_side; quantity; fee_thb; published: PublishedSide }
+  class CouponMatch { coupon_id: Uuid; rule_id: Uuid }
+  class PricedBenefits { evaluation: Evaluation; line_input: QuoteLineInput; active_rules: Vec~ActiveRule~; sources: BenefitSources }
+  class BenefitSources { tier: MarketingTierSource; consent: MarketingConsentGate; referral: MarketingReferralSource }
+  class QuoteService { <<api workflows/exchange/quote.rs>> +price_in() reserve loop stays here }
+  class BenefitEstimator { <<api application/workflows/exchange/benefit_estimate.rs (BE-3)>> +estimate_in(tx, org, branch, customer: Option, planner: &PlannerEstimate, plan, now) AppResult~EstimateOutcome~ }
+  class EstimateOutcome { <<enum>> Estimated(BenefitEstimate); None(NoBenefitReason) }
+  class BenefitEstimate { evaluated_at; valid_until; publication_id; final_rate; thb_after; benefit_thb; items: Vec~EstimateItem~ }
+  class NoBenefitReason { <<enum>> NoActiveRule; NotEligible }
+  class EstimateItem { rule_id; label; benefit_type; benefit_class; amount_thb; rate_before; rate_after; floor_capped; ends_at }
+  class PgVersionLabels { <<xc-marketing infrastructure/pg_version_labels.rs (BE-3)>> +labels_in(tx, org, version_ids) HashMap~Uuid, VersionLabel~ }
+  class VersionLabel { name; ends_at }
+  class PlannerPreview { <<xc-app application/planner/planner_preview.rs>> +estimate() PlannerEstimate }
+  class PlannerEstimate { thb; rate; unit_size; stale; source_date; +published: PublishedSide (BE-4) }
+  class PlannerPreviewAction { <<api presentation/http/v3/actions/planner_preview.rs (BE-4)>> compute_as(caller) }
+  class PlannerBenefitDto { <<api dto/v3/planner.rs → planner_preview.ts (BE-4)>> }
+  class PlannerBenefitItemDto { <<api dto/v3/planner.rs (BE-4)>> ruleId; label; benefitType; benefitClass; amountThb; rateBefore; rateAfter; floorCapped; endsAt }
+  class QuoteDto { <<api dto/v3/quote.rs → quote.ts (BE-5)>> benefits: QuoteBenefitDto[]; benefitBasis }
+  class QuoteBenefitDto { <<api dto/v3/quote.rs (BE-5)>> ruleId; versionId; benefitType; benefitClass; couponId; reservationId; amountThb; rateBefore; rateAfter; feeBefore; feeAfter; floorCapped }
+  class MyBookingItemDto { <<api dto/v3/my_bookings.rs → my_bookings.ts (BE-2)>> +currency +customerSide +quantity }
+  class CustomerSide { <<xc-kernel money/customer_side.rs>> +to_shop() +from_shop(Side) (BE-2) }
+  class BenefitEngine { <<xc-marketing domain/engine/engine.rs>> +evaluate(tx, ctx, lines) }
+  class BudgetLedger { <<xc-marketing infrastructure/pg_budget_ledger.rs>> +reserve_in() }
+
+  QuoteService --> BenefitPricing : evaluate_in (channel = benefit_channel(req.channel))
+  QuoteService --> BudgetLedger : reserve_in, only if reserves_benefits(channel)
+  BenefitEstimator --> BenefitPricing : evaluate_in (APP, also_admitted_on per OD-1, no coupon, fee 0)
+  BenefitEstimator --> PgVersionLabels : label, endsAt
+  BenefitEstimator ..> BudgetLedger : never (E-4)
+  BenefitPricing --> BenefitEngine : evaluate
+  BenefitPricing --> BenefitSources
+  BenefitPricingInput --> PricingLine
+  BenefitPricingInput --> CouponMatch
+  BenefitEstimate --> EstimateItem
+  PlannerBenefitDto --> PlannerBenefitItemDto
+  QuoteDto --> QuoteBenefitDto
+  PlannerPreviewAction --> PlannerPreview : estimate (rate line)
+  PlannerPreviewAction --> BenefitEstimator : estimate_in (same read tx, rolled back)
+  PlannerPreviewAction --> PlannerBenefitDto : answers
+  BenefitEstimator --> EstimateOutcome
+  EstimateOutcome --> BenefitEstimate
+  EstimateOutcome --> NoBenefitReason
+  PlannerPreview --> PlannerEstimate
+  MyBookingItemDto ..> CustomerSide : from_shop
+```
+
+**`BenefitPricing` signature** (BE-1; `[required]`):
+
+```rust
+pub struct CouponMatch { pub coupon_id: Uuid, pub rule_id: Uuid }   // validated by the caller (price_in keeps quote.rs:429-470)
+
+pub struct BenefitPricingInput<'a> {
+    pub organization_id: Uuid,
+    pub branch: &'a BranchId,
+    pub eligibility_channel: QuoteChannel,          // already mapped: benefit_channel(..) or App
+    pub also_admitted_on: Option<QuoteChannel>,     // keep only rules whose channels also admit this one (OD-1)
+    pub customer_id: Option<&'a str>,
+    pub coupon: Option<CouponMatch>,
+    pub coupon_code: Option<&'a str>,
+    pub line: PricingLine,
+    pub now: DateTime<Utc>,
+}
+
+impl BenefitPricing {
+    pub fn new(campaign_repo: Arc<PgCampaignRepository>) -> Self;
+    /// Step 7 of price_in up to and including the first `evaluate`: published buy/sell (quote.rs:358-373),
+    /// margin guard (:375-392), segment memberships (:394-417), the three sources (:419-427),
+    /// AvailableActiveRules (:131-177, :494-496), the coupon filter (:498-510), then `also_admitted_on`,
+    /// then BenefitEngine::evaluate. Reads only; writes nothing.
+    pub async fn evaluate_in(&self, tx: &mut Transaction<'_, Postgres>, input: BenefitPricingInput<'_>)
+        -> AppResult<PricedBenefits>;
+}
+```
+
+`price_in` keeps its own steps 1–6, the coupon lookup, the quote insert, the reserve loop and the re-evaluation
+(`quote.rs:612-755` (fbq)), using `PricedBenefits.active_rules`, `.sources` and `.line_input` for the re-evaluation.
+
+**Data migration: none.** No table, column, index or constraint. The estimate reads `campaign_versions`, `campaigns`,
+`benefit_rules`, `campaign_branches`, `campaign_budgets`, `margin_guards`, `segment_snapshot_members`, `consents`,
+`referral_attributions` and `published_rate_lines`, and writes nothing.
+
+#### 6.4.5 Behaviour table (one test per row; up-front tests are written by the ticket author)
+
+| # | Given | Then | Test (ticket · file) |
+|---|---|---|---|
+| 1 | anonymous `planner_preview`; one ACTIVE `RATE_IMPROVEMENT` rule with no customer condition and no `channels` | `benefit.state = "ESTIMATED"`, `basis = "INDICATIVE"`, `channel = "APP"`, one item; `finalRate ≠ rate`; `thb` equals today's answer for the same plan | BE-4 · `api/tests/planner_preview_benefit_test.rs` |
+| 2 | the same call | row counts of `quotes`, `quote_lines`, `benefit_reservations` and `campaign_budgets.consumed_thb` are unchanged before/after | BE-4 · same file (O-3: never reserves) |
+| 3 | a rule with `channels: ["DESK"]` only | `state = "NONE"`, `reason = "notEligible"` (judged on APP, E-5) | BE-3 · `api/tests/benefit_estimate_test.rs` |
+| 4 | a rule with `channels: ["APP"]` only | per OD-1's answer; under the default (B) `state = "NONE"`, `notEligible` | BE-3 · same file |
+| 5 | no ACTIVE rule for the organisation | `state = "NONE"`, `reason = "noActiveRule"` | BE-3 · same file |
+| 6 | a `requires_coupon` rule only | `state = "NONE"`; no coupon row is read or locked | BE-3 · same file |
+| 7 | a segment rule; signed-in customer in the snapshot with MARKETING consent granted | `ESTIMATED`; the same customer after withdrawing consent ⇒ `NONE` (D-13) | BE-3 · same file |
+| 8 | a signed-in customer of another organisation; a rule needing a customer condition | evaluated customer-less ⇒ `NONE`; a rule with no customer condition still `ESTIMATED` | BE-4 · `planner_preview_benefit_test.rs` |
+| 9 | a version whose `consumed_thb ≥ budget_thb` | its rule is not estimated (the quote's filter, `quote.rs:157-174` (fbq)) | BE-3 · `benefit_estimate_test.rs` |
+| 10 | a stale line its policy refuses / admits | refuses: `rateUnavailable` as today, no `benefit`; admits: `ESTIMATED` and `stale: true` | BE-4 · `planner_preview_benefit_test.rs` |
+| 11 | a rule admitting APP and DESK; the same line quoted on DESK | the estimate's item `amountThb`, `rateAfter` and the answer's `finalRate` are byte-equal to the DESK quote's applied entry and line (D-7) | BE-3 · `benefit_estimate_test.rs` |
+| 12 | two applied rules from versions ending at T1 < T2 | each item's `endsAt` is its version's; `validUntil = T1` | BE-3 · same file |
+| 13 | an applied item | `label` is the campaign's `name` | BE-3 · same file |
+| 14 | a `FEE_WAIVER` rule | evaluated on fee 0; item `amountThb = "0.00"` | BE-3 · same file |
+| 15 | `price_in` before and after BE-1, every channel, with and without a coupon | identical `quote_lines` and `benefit_snapshot`; m1–m6 (`booking_quote_benefit_test.rs`), `v3_quotes_route_test.rs` and `app_planner_quote_parity_test.rs` stay green unedited | BE-1 · `api/tests/benefit_pricing_test.rs` |
+| 16 | `BenefitPricing::evaluate_in` with `also_admitted_on = Some(Desk)` and an APP-only rule | the rule is not in `evaluation.snapshot.applied`; a lower-priority rule admitting DESK in the same stack group applies instead | BE-1 · same file |
+| 17 | a `BOOKING` quote with an applied benefit | `benefitBasis = "INDICATIVE"`, `benefits[0].reservationId = null`; a DESK quote: `"RESERVED"`, `reservationId` set | BE-5 · `api/tests/quote_benefit_dto_test.rs` |
+| 18 | a DESK quote with no benefit | `benefits = []`, `benefitBasis = "RESERVED"` | BE-5 · same file |
+| 19 | a stored snapshot whose `applied` entry lacks `amountThb` | 500 `serverError`; no answer drops the entry silently | BE-5 · same file |
+| 20 | `CustomerSide::from_shop(s.to_shop()) == s` for both sides | holds | BE-2 · unit test in `customer_side.rs` |
+| 21 | a booking with `shop_side = SELL`, `USD`, `100` | the `my_bookings` item has `customerSide = "CUSTOMER_BUY"`, `currency = "USD"`, `quantity = "100"` (scale as stored) | BE-2 · `api/tests/c03_my_bookings_intent_test.rs` |
+| 22 | FE C02: answer with `ESTIMATED` / `NONE` | shows the estimate with the indicative wording (*"เรทสุดท้ายยืนยันเมื่อทำรายการ"*); `NONE` shows no amount, never `0` | FE-1 · vitest |
+| 23 | FE C02/C03: the slot starts at or after `validUntil` | shows "the promotion ends before your slot" | FE-1, FE-2 · vitest |
+| 24 | FE C03: a booking opened | one `planner_preview` call; no further call on a timer; one more after the rates route returns a new `ETag` | FE-2 · vitest |
+| 25 | FE desk: new-booking dialog with a quote | requests `channel: "BOOKING"`; renders `BenefitLines` with an "indicative" badge from `benefitBasis` | FE-3, FE-4 · vitest |
+
+#### 6.4.6 Tickets
+
+Every BE ticket's `## File scope` is below, one path per line. Paths are disjoint across tickets except the one
+registration line in `api/src/application/workflows/exchange/mod.rs` (BE-1 and BE-3 each add one `pub mod` line; BE-3
+starts after BE-1, so they never run together).
+
+| # | Ticket | Class / model | Starts after |
+|---|---|---|---|
+| BE-1 | Extract `BenefitPricing::evaluate_in` from `price_in` Step 7; `QuoteService` calls it; add `also_admitted_on` | `class:guarded` (every quote's benefit path) · Gemini 4 Argon | `feat/binding-quote` merged to `main` (it rewrites `quote.rs`) |
+| BE-2 | `CustomerSide::from_shop`; `my_bookings` items carry `currency`, `customerSide`, `quantity` | `class:mechanical` · Gemini 3.8 Flash | — |
+| BE-3 | `BenefitEstimator` + `PgVersionLabels`: the APP estimate, the two `NONE` reasons, labels, `endsAt`, `validUntil` | `class:logic` · Gemini 4 Argon | BE-1; OD-1 answered (row 4 and the `also_admitted_on` argument) |
+| BE-4 | `planner_preview` answers `benefit`: `PlannerEstimate.published`, the action calls `BenefitEstimator` in its read transaction, the DTO and its generated type | `class:logic` · Gemini 4 Argon | BE-3 |
+| BE-5 | `QuoteDto.benefits` typed as `QuoteBenefitDto`, plus `benefitBasis` | `class:mechanical` · Gemini 3.8 Flash | `feat/binding-quote` merged (it edits `dto/v3/quote.rs`) |
+
+```
+BE-1
+api/src/application/workflows/exchange/benefit_pricing.rs
+api/src/application/workflows/exchange/quote.rs
+api/src/application/workflows/exchange/mod.rs
+api/tests/benefit_pricing_test.rs
+```
+```
+BE-2
+api/crates/xc-kernel/src/money/customer_side.rs
+api/src/presentation/dto/v3/my_bookings.rs
+api/src/presentation/http/v3/views/my_bookings.rs
+web/src/shared/api/generated/my_bookings.ts
+web/src/shared/testing/fixtures/my_bookings.ts
+api/tests/c03_my_bookings_intent_test.rs
+```
+```
+BE-3
+api/src/application/workflows/exchange/benefit_estimate.rs
+api/src/application/workflows/exchange/mod.rs
+api/crates/xc-marketing/src/infrastructure/pg_version_labels.rs
+api/crates/xc-marketing/src/lib.rs
+api/tests/benefit_estimate_test.rs
+```
+```
+BE-4
+api/crates/xc-app/src/application/planner/planner_preview.rs
+api/src/presentation/http/v3/actions/planner_preview.rs
+api/src/presentation/dto/v3/planner.rs
+web/src/shared/api/generated/planner_preview.ts
+web/src/shared/testing/fixtures/planner_preview.ts
+api/tests/planner_preview_benefit_test.rs
+```
+```
+BE-5
+api/src/presentation/dto/v3/quote.rs
+web/src/shared/api/generated/quote.ts
+web/src/shared/testing/fixtures/quote.ts
+api/tests/quote_benefit_dto_test.rs
+```
+
+BE-2 and BE-5 can run beside BE-1 (three workers at once); BE-3 and BE-4 follow BE-1 in a chain because each
+consumes the one before. The chain is the shared core (E-3), not a shared file.
+
+**FE half (names only; the FE lane controller writes and scopes them):**
+
+| # | Ticket | Reads | Starts after |
+|---|---|---|---|
+| FE-1 | C02 `/app/book`: the indicative benefit block from `planner_preview.benefit`, the slot-after-`validUntil` warning, the rates-`ETag` refresh (`web/src/screens/customer/book/`) | `planner_preview.ts` | BE-4 |
+| FE-2 | C03 `/app/bookings`: open a booking ⇒ one `planner_preview` from the item's intent; same block and warning (`web/src/screens/customer/bookings/`) | `my_bookings.ts`, `planner_preview.ts` | BE-2, BE-4 |
+| FE-3 | B02 desk new-booking dialog: request a `BOOKING` quote, pass its `quoteId` to `bookingCreate`, show `BenefitLines` with the indicative badge (`web/src/screens/desk/bookings/`) | `quote.ts` | BE-5, FE-4 |
+| FE-4 | `BenefitLines` reads the generated `QuoteBenefitDto` (drops the hand-typed `AppliedBenefitView`) and shows `benefitBasis` (`web/src/screens/desk/benefits/`) | `quote.ts` | BE-5 |
+
+#### 6.4.7 Owner decides
+
+**Decided (owner, 2026-10-27 ~23:1x ICT, typed in claude/bc8fd29a's session):** *"Take the recommended default on every owner question in the three designs (RPC refusal field Q1-3, booking estimate OD-1 to OD-3, ledger adjustment OA-1 to OA-7)."* Every recommended default below is the decision.
+
+**OD-1. An APP-only rule cannot be given at the counter.** Root cause: O-3 judges the customer's estimate on `APP`
+(`marketing-campaigns.md:745`) but the completion's quote, the only one that reserves and applies, is judged on `DESK`
+(`quote.rs:102-113` (fbq), D-8). A rule with `channels: ["APP"]` (`eligibility.rs:121-125`) therefore shows in the app's
+estimate (and in `my_benefits`, §6.3) and is skipped `channelMismatch` at the counter. Nothing today issues an `APP`
+quote (`quote.rs:98-101` (fbq)).
+
+| Option | Cost |
+|---|---|
+| A. Judge on APP only (O-3 as written) | none; an APP-only campaign is promised in the app and refused at the counter |
+| B. Estimate only rules that admit APP **and** DESK (`also_admitted_on = Some(Desk)`) | one filter in the shared core (BE-1, row 16); an APP-only campaign is never shown and never given; reversible by passing `None` |
+| C. Judge a booking's completion quote on the booking's source channel (an APP booking ⇒ APP) | app-exclusive campaigns work end to end; amends O-3's *"the completion's DESK quote"*; the counter's quote must learn the booking before pricing, a new seam in `QuoteService` and the desk screen |
+
+**Recommended: B**, because an estimate must not promise what the counter refuses, and it is one argument to change.
+Choose C if the owner wants "book in the app for a better rate" campaigns; B then becomes the bridge until C lands.
+*If no answer:* BE-1, BE-2 and BE-5 proceed (BE-1 builds the argument either way); BE-3 waits.
+
+**OD-2. May the customer type a coupon code into the estimate?**
+A. No: `requires_coupon` rules never appear; personal coupons are listed in `my_benefits` (§6.3) and used at the counter ·
+B. Yes, signed-in only, the code checked as the quote does (`quote.rs:429-470` (fbq)) but never locked.
+**Recommended: A**, because `planner_preview` is public (`customer_app.rs:23-27`) and an answer that differs by code
+turns it into a coupon-guessing oracle, against D-9 (*"one code, so a guesser learns nothing"*); B would also need a
+rate limit nobody has designed.
+
+**OD-3. Do anonymous visitors see an estimate?**
+A. Yes, customer-less: only rules with no customer condition (E-5) · B. No: `benefit` is `NONE` until sign-in.
+**Recommended: A**, because the published rates are already public (`branch_rates.rs`) and an open campaign is the
+shop's own promotion; segment, tier and referral rules still need a signed-in customer.
+
+#### 6.4.8 Found while measuring, not designed here
+
+- `quoteCreate` takes `channel` from the request body (`quotes.rs:99-103`) under `ExchangeTransact`
+  (`policy.rs:84-86`), so a staff caller may send `APP` or `KIOSK` and get that channel's eligibility and a
+  reservation. O-3's *"DESK for `BookingsDesk`"* is held only by the caller choosing `BOOKING`. Who may claim which
+  channel has no rule yet.
+- `my_bookings` answers in full on every call, `version: 0, changed: true` (`my_bookings.rs:295-299`), against P15
+  (`customer-app.md:75`) and the fleet rule 🔁. E-9 keeps the estimate out of it; the view's own `since` handling has
+  no fix yet.
+- The quote's tier source answers `None` (`tier_source.rs:21-25`), so neither the desk nor this estimate applies a tier
+  rule, while `my_benefits` lists one (`marketing-campaigns.md:657-660`). The fix belongs in that source.
+
 ## 7. Edge cases (§09) and the answer
 
 | Case | Answer |

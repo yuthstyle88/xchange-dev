@@ -745,3 +745,353 @@ database with rows.
 | §11 realized margin, separate valuation, in-transit separate, variance | §4.3, §4.4, §6 | kept |
 | §12 negative stock policy, certifier | N-1, V-1 | owner-decided |
 | — | AccountZing summary | proposal, owner-gated (§7) |
+
+## 13. FINANCE ledger adjustment (`ADJUSTMENT` postings)
+
+> Draft for a new § of `ledger-inventory.md`. Design only: no code, no migration, no `ready`. Every fact is measured
+> on `108-Plaza/xchange` `origin/main` **`8fc3507bd`** (2026-10-27 22:31 ICT). Places marked **"Owner decides:"**
+> are business rules no merged design or Blueprint line settles; each carries a recommended default and is collected
+> in §13.10.
+
+### 13.0 The gap
+
+| Fact | Where |
+|---|---|
+| §6 promises the fix for a reconcile failure: *"an `ADJUSTMENT` posting is the only fix, by FINANCE"* | `ledger-inventory.md:484-485` |
+| The source type exists in code and schema | `xc-cash/src/domain/ledger/posting.rs:24`, `:36`; `api/migrations/20261110120000_ledger.sql:20` |
+| **Nothing writes one.** Every use of `SourceType::Adjustment` / `'ADJUSTMENT'` outside the enum is a test seed | `git grep -n -i adjustment origin/main -- api` at `8fc3507bd`: `xc-cash/tests/{ledger_tables,reconcile_balanced,reconcile_places,reconcile_positions,reconcile_valuation}_test.rs`, `api/tests/executive_ledger_cash_facts_test.rs:528`, `api/tests/ledger_drop_old_tables_test.rs:370`; nothing under `src/` |
+| No command, service, approval type or permission names an adjustment | the same sweep; `api/src/bootstrap/approval_subjects/` holds 9 subjects, none for it |
+
+The Blueprint names the act but not its shape: §06 Transaction *"แก้ผ่าน reversal/adjustment เอกสารใหม่เท่านั้น"*;
+§02 FINANCE *"กระทบยอด ต้นทุน ค่าคอม และจ่าย แยกผู้จัดทำ/อนุมัติ/จ่าย"*; §10 *"ทุก mutation ใช้ authenticated actor
+และ audit"* (`docs/blueprint/XC-Desk-Blueprint-Data-Model-v2.html`). Its only `ADJUST` entity is the loyalty points
+ledger, which is not this one.
+
+### 13.1 What §6's sentence can and cannot mean (amends `ledger-inventory.md:484-485`)
+
+Read against the five checks as built, an adjustment posting can repair **none** of them:
+
+| Check | Its query groups by | Why a new posting cannot clear it |
+|---|---|---|
+| 1 balanced | `posting_id, currency` (`reconcile/checks/balanced.rs` `QUERY`) | an unbalanced posting stays unbalanced; a new posting is a different `posting_id`. The deferred trigger already refuses one at commit (`20261110120000_ledger.sql:42-76`) |
+| 2 positions = movements | `inventory_positions` row vs Σ its movements (`checks/positions.rs`) | every movement the port writes also moves the position by the same amount (`ledger_postings.rs:1120-1154`), so the gap stays. `inventory_positions` is the one mutable cache (L-6); its repair is a recompute, not a posting |
+| 3 places = positions | `branch_id, currency` over DRAWER/SAFE/IN_TRANSIT vs position (`checks/places.rs`) | a posting through the port moves the place and the position together (VARIANCE legs: `ledger_postings.rs:694-711`), so it cannot close a gap between them |
+| 4 margin | `transaction_lines` per branch-day (`checks/margin.rs`) | it reads lines; no posting writes a line's margin except an exchange's |
+| 5 valuation | `posting_id` (`checks/valuation.rs`) | per posting, as check 1 |
+
+**Decision AD-0 (amendment).** §6's last paragraph becomes: *"A failure is a defect, never corrected by an update or by
+a posting: it is reported, the writer that made it is fixed, and any repair of stored rows is a Data Risk ticket for
+the owner. An `ADJUSTMENT` posting (§13) corrects a difference between the books and the real cash or its real cost;
+it never repairs a broken invariant."* This is the 🌱 reading: a posting that hid a broken invariant would make the
+check green while the writer keeps writing.
+
+### 13.2 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| AD-1 | **Two kinds.** `QUANTITY`: a place in the branch holds more or less than the books say, and no flow of its own records it. `COST`: a position's cost is wrong and its quantity is right. | QUANTITY is the shape of every existing difference (`posting.rs:74-86`). COST is the only way to correct a cost basis, because L-6 forbids updating a movement or lot (`ledger-inventory.md:66`). COST is **Owner decides OA-2** |
+| AD-2 | **QUANTITY posts `place ↔ VARIANCE(branch)` through the existing port, unchanged.** A shortfall moves `place → VARIANCE`, an overage `VARIANCE → place`, built by `differences()` (`posting.rs:74-86`). Foreign legs are an `ADJUST` at the position's average, out through `dispose(.., MovementType::Adjust)` and in through `adjust_in` (no lot) (`ledger_postings.rs:694-711`, `:357-399`); THB moves at face (`:691-693`). This is exactly how a count difference posts (§4.4 row 7). | no port change; one valuation rule for every difference |
+| AD-3 | **The place is `SAFE` only.** | **Owner decides OA-1** |
+| AD-4 | **Always approved by a second FINANCE person; the creator never decides.** AP-1 already refuses the proposer (`approval_service.rs:288-293`); the policy also returns `allows_self_decision = false`. No THB limit lets one person post. | Blueprint §02 *"แยกผู้จัดทำ/อนุมัติ"*; **Owner decides OA-3, OA-4** |
+| AD-5 | **Three steps: create (REQUESTED) → decide (APPROVED/REJECTED) → post (POSTED).** The decide is AP-1's generic `approvalDecide`; the post is a separate command. | `approvalDecide` takes no branch (`approval_decide.rs:29-33`) and runs under the seam's lock on the *caller's* branch (`command.rs:89-93`, `:342-412`), not the adjustment's. L-5 says a one-branch posting runs inside that branch's `BranchTx` (`ledger-inventory.md:65`), so `on_decided` must not post. The NEGATIVE_STOCK retry (§5.1) and the reversal's counter step (`reversal.md` V-3) take the same way out |
+| AD-6 | **No new table: the adjustment is its AP-1 request.** `approval_requests.type = 'LEDGER_ADJUSTMENT'` (free text, `20261010110000_approvals.sql:3`), `object_id = 'ADJ-<uuid>'`, and `proposed_payload` (jsonb, `:8`) holds the whole adjustment (§13.4). Its posting is `ledger_postings(source_type 'ADJUSTMENT', source_id = object_id, source_key 'post')`, so the two join on `object_id = source_id`. Status POSTED is derived: an APPROVED request whose posting exists. | the payload is never updated after insert (AP-1 writes only `status`, `approval_service.rs:322`, `:402`, `:484`); every column the posting needs already exists (`20261110120000_ledger.sql:9`, `:20`, `:109`) |
+| AD-7 | **An adjustment never goes below zero.** The post always passes `allow_negative = None`, so a SAFE or position taken below zero is refused `stockInsufficient` (`ledger_postings.rs:891-911`), and **no `NEGATIVE_STOCK` request is opened** for it. | nobody can find less than nothing in a safe; N-1 covers a sale beyond stock, not a book entry |
+| AD-8 | **Reservations are not checked** on a down-adjustment: `dispose` checks them only for `MovementType::Dispose` (`ledger_postings.rs:297-304`), and an adjustment is an `ADJUST`. | the same as a count difference; the money is gone whether or not a quote reserved it |
+| AD-9 | **Dated when posted, never back-dated.** The posting's `posted_at` is the port's `now` (`ledger_postings.rs:1062`); its business date is that instant in the branch timezone. | **Owner decides OA-5** |
+| AD-10 | **Every step writes one `audit_events` row** in its transaction: `LEDGER_ADJUSTMENT_CREATE`, `LEDGER_ADJUSTMENT_POST`, `object_ref = 'ledger_adjustment:<id>'`, as `reconciliation_certify.rs:116-140` does. AP-1 audits the decision itself. | Blueprint §10; `ledger_postings.posted_by` is the constant `"system"` (`ledger_postings.rs:36-37`), so the audit row is where the poster's identity lives |
+
+### 13.3 Who
+
+| Step | Permission | Holders today (seed) | Change |
+|---|---|---|---|
+| create, post, read | **`FinanceReconcile`** (exists) | Finance module FULL (`permission_module.rs:106-109`): FINANCE (`role_grants.rs:190-197`) and EXECUTIVE (`:162-173`) | none. Same choice as `transferReconcile` (`areas/cash.rs:67-71`) and F01 (`areas/finance_reconciliation.rs`) |
+| decide | **`Permission::ApproveLedgerAdjustment`** (new): a no-module approval kind (`permission_module.rs:75-88`, `:147-156`) | FINANCE only, in its no-module list (`role_grants.rs:273-284`) | `APPROVAL_KINDS` 9 → 10; `(7, ApproveLedgerAdjustment)` in `RoleGrants::SEED_ADDITIONS` (`role_grants.rs:114-126`); `SEED_VERSION` 5 → **7** (`role_grants.rs:111`; 6 is `feat/binding-quote`'s, `role_grants.rs:111`, `:126` on that branch) |
+
+- **Why a new approval kind, not `ApproveCountDifference`.** RBAC §11.9 is *"one permission per decision"*
+  (`user-management-rbac.md:831`), and the kinds are edited one by one on the matrix screen. Reusing count difference
+  would make "may approve a count over the limit" silently mean "may approve any book entry".
+- **The policy reads the branch from the payload, not from `request.branch_id`.** AP-1 stores the *requester's* role
+  branch there (`requester_branch`, `approval_service.rs:9-49`): an organisation-wide FINANCE's request is stored as
+  `MAIN`. `CountDifferencePolicy` uses `request.branch_id` (`count_difference.rs:115-129`), which is right only because
+  its requester is at the branch. So `LedgerAdjustmentPolicy::may_decide` ⇔
+  `ApprovalDecider::holds_on(who, ApproveLedgerAdjustment, Some(payload.branch))` (`approval_decider.rs:35-39`).
+- **Matrix guardrail rule 6** keeps it off any ADMIN-based group (`matrix_guardrails.rs:87-88`), with no change there.
+- **Rollback**, as `binding-quote.md` D-18: an older binary refuses an unknown stored permission, so a rollback first
+  deletes the `ApproveLedgerAdjustment` grant rows and puts FINANCE's `seed_version` back.
+
+### 13.4 What it records (the payload)
+
+```json
+{
+  "branch": "B01",
+  "kind": "QUANTITY",
+  "place": "SAFE",
+  "lines": [ { "currency": "USD", "quantity": "-100" }, { "currency": "THB", "quantity": "250.00" } ],
+  "reason": "Bank deposit of 2026-10-26 keyed as 1,100 USD; the bank slip says 1,000",
+  "evidence": { "files": ["<files.key>"], "reference": "slip 004512" },
+  "exceptionId": "EX-…"
+}
+```
+
+| Field | Rule | Refusal |
+|---|---|---|
+| `branch` | the command's branch (the seam's grant) | `outOfScope` |
+| `kind` | `QUANTITY` or `COST` | `validationFailed` |
+| `place` | QUANTITY only; `SAFE` (AD-3) | `validationFailed` |
+| `lines` | 1–20, one per currency, no repeat; QUANTITY: `quantity` a signed decimal string, ≠ 0, at most the currency's minor unit (`rates.md` D-2) and 4 places (`ledger_entries.quantity_signed numeric(20,4)`); THB allowed. COST: `costDeltaThb` signed, 2 places, ≠ 0; THB refused (THB is not inventory, `ledger-inventory.md:159-160`) | `validationFailed` naming the line |
+| `reason` | 1–500 characters, trimmed (as `reversals.reason`, `reversal.md` §3.1) | `validationFailed` |
+| `evidence.files` | 0–10 keys, each a `files` row of **this branch** (`20261007160000_files.sql`; uploaded at `/api/staff/upload`, `presentation/http/files.rs:37`) | `validationFailed` |
+| `evidence.reference` | 0–200 characters | `validationFailed` |
+| evidence as a whole | at least one file or a non-blank reference | `validationFailed` — **Owner decides OA-6** |
+| `exceptionId` | optional; an existing `cash_exceptions` id of this branch (S1, `section-b-gaps.md:93-116`). The post does **not** review it: review stays S1's own act with its own note | `validationFailed` |
+
+Amounts are decimal strings, as every amount on the wire (`ledger-inventory.md:440-441`). The Redactor masks none of
+these keys (`xc-approval/src/domain/redactor.rs`), so the approver sees the payload as written in the approvals view,
+which already returns `proposed_payload` (`views/approval_requests.rs:60-61`).
+
+### 13.5 The three steps
+
+**Create** — `POST /api/v3/commands/ledger_adjustment_create`, `ledgerAdjustmentCreate`, `Locks::One(branch)`.
+1. Validate the payload (§13.4). Read nothing of the ledger: the request binds what FINANCE asks for, not a balance.
+2. `id = 'ADJ-' || uuid v4`. `ApprovalService::request(tx, "LEDGER_ADJUSTMENT", id, payload, who, "ledger-adjustment:" || id)`
+   (`approval_service.rs:185-255`; the key shape is `count_difference.rs:235`'s).
+3. Audit `LEDGER_ADJUSTMENT_CREATE`. Answer `{id, approvalRequestId, status: "REQUESTED"}`.
+
+**Decide** — the existing `approvalDecide` (`approval_decide.rs:52-127`). `LedgerAdjustmentSubject`:
+- `version_hash(id)` = `sha256("ledger-adjustment:" || id || "|posted:" || <a ledger_postings row with ('ADJUSTMENT', id) exists>)`.
+  It reads no balance, so a busy branch's other postings never make the approval stale; the content cannot change (AD-6).
+- `on_decided` does nothing (AD-5).
+- `LedgerAdjustmentPolicy`: §13.3; `policy_version` `"1"`.
+
+**Post** — `POST /api/v3/commands/ledger_adjustment_post` `{branch, id}`, `ledgerAdjustmentPost`, `Locks::One(branch)`,
+in one transaction:
+1. Read the request `FOR UPDATE` (`ApprovalRepository::find_by_id_for_update`, as `approval_service.rs:274-279`) by
+   `type = 'LEDGER_ADJUSTMENT' AND object_id = id` in the caller's organisation. Missing or another branch's payload ⇒
+   `notFound`. `PENDING` ⇒ `409 approvalRequired`; `REJECTED` ⇒ `409 staleVersion`.
+2. QUANTITY: `differences(&Safe(branch), &Variance(branch), lines, &SourceRef{Adjustment, id, "post"})` →
+   `CashPostings::post_in(tx, &reqs, None)`. COST: one `revalue_in` per line (§13.6).
+3. A repeat finds the posting by its source and writes nothing (`ledger_postings.rs:642-655`; `UNIQUE (organization_id,
+   source_type, source_id, source_key)`, `20261110120000_ledger.sql:26`), so a second post answers the same `postingId`.
+4. Audit `LEDGER_ADJUSTMENT_POST` with the posted figures. Answer `{id, postingId, lines: [{currency, quantity,
+   valuationThb}]}`, the valuations read back from the posting's entries on the place's account.
+5. The branch's `branch_versions` row moves with the seam's lock (L-5), so every view answering `changed: false` from it
+   sees the post.
+
+**Who posts:** any `FinanceReconcile` holder covering the branch, the creator included. An APPROVED adjustment does not
+expire, and it is valued when posted (the same as a count difference, valued at the average at its post). **Owner
+decides OA-7.**
+
+**Read** — `GET` view `ledgerAdjustments` `{branch, status?}`: the branch's `LEDGER_ADJUSTMENT` requests whose
+`payload.branch` is the branch (not `approval_requests.branch_id`, §13.3), each with its decision and, when posted,
+`postingId`, `postedAt` and the valuations. One read joining `approval_requests`, `approval_decisions` and
+`ledger_postings` on `object_id = source_id`.
+
+### 13.6 COST: the one port change (only if OA-2 keeps it)
+
+A cost-only change has no ledger entry: `ledger_entries.quantity_signed <> 0` (`20261110120000_ledger.sql:34`), and
+`PostingRequest.quantity` must be positive (`ledger_postings.rs:571-573`). The movement table already allows it: a
+cost-only `ADJUST` carries quantity 0 (`20261110120000_ledger.sql:109`), as §4.5's Q-4 correction does
+(`ledger_postings.rs:250-275`).
+
+```rust
+// api/crates/xc-cash/src/domain/posting.rs, on `CashPostings` (LA-8)
+pub struct RevalueRequest { pub branch: BranchId, pub currency: CurrencyCode, pub cost_delta_thb: MoneyDelta, pub source: SourceRef }
+fn revalue_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, req: &'a RevalueRequest)
+    -> BoxFuture<'a, AppResult<PostingId>>;   // default body: AppError::Internal, as `activity_in` (`posting.rs:136-146`)
+```
+
+`LedgerCashPostings` overrides it, reusing `Plan` and `write`:
+- `source.source_type` must be `Adjustment`, `currency` not THB, else `validationFailed`;
+- a posting with the same source ⇒ its id, nothing written;
+- lock the position `FOR UPDATE` (`Plan::position`, `ledger_postings.rs:150-207`); `quantity ≤ 0` ⇒ `validationFailed`
+  (no average to revalue; a negative position is corrected by §4.5's rule at its next acquisition); `cost_thb + delta < 0`
+  ⇒ `validationFailed`;
+- write one `ledger_postings` row with **no entries**, one `ADJUST` movement `(quantity 0, cost_thb_signed = delta,
+  average_after = round8((cost_thb + delta) ÷ quantity), line NULL)` and its position update (`write`, `:1057-1173`).
+
+The five checks hold: 1 and 5 see no entries; 2 sums the movement; 3 sees no quantity change; 4 reads no line. The next
+SELL disposes at the new average (`WeightedAverage::dispose`).
+
+### 13.7 Interactions
+
+| With | What happens |
+|---|---|
+| **Negative stock (N-1, §5.1)** | never: AD-7 |
+| **Count differences (V-1, §5.2)** | separate flows. A SAFE count (`CountKind::Safe`, `xc-cash/src/domain/count/cash_count.rs:13`) still records its own difference through `COUNT_DIFFERENCE`; an adjustment is for a difference no count records (a mis-keyed EXTERNAL move, the cutover's opening backfill, §9 migration 2). Both land on the same `VARIANCE(branch)` account |
+| **Period close** | v3 has no ledger period lock. F01 certifications are per branch-day, append-only (`20261031130000_executive_finance.sql:28-53`) and do not lock anything; a certification turns stale only when its hashed parts change (`application/finance/reconciliation.rs:123-156`). An adjustment posts into the business day it is posted (AD-9), so an already-certified earlier day keeps its counts and transfers. Its integrity part is branch-wide reconcile (`reconciliation.rs:99`, FN-2), which an adjustment keeps clean (§13.6, §13.1), so the hash does not move either |
+| **Branch day phase** | allowed in every phase: it moves the safe, not a shift |
+| **Reconciliation (§6)** | all five checks stay clean after every adjustment (tests LA-T10, LA-T17); §13.1 amends what §6 promises |
+| **Reservations (SR)** | AD-8 |
+| **AccountZing summary (§7, proposal)** | QUANTITY lands in `VARIANCE`, so it is in the day's "cash variance" line. COST needs a line of its own ("inventory revaluation"), which joins Q-1's question to the owner |
+
+### 13.8 Class diagram
+
+```mermaid
+classDiagram
+  class LedgerAdjustment { <<xc-cash domain/adjustment.rs (LA-2)>> +id +branch +kind AdjustmentKind +reason +evidence Evidence +exception_id Option +from_payload(Value)$ Result +to_payload() Value +validate() Result +quantity_requests(source) PostingRequest[] +revalue_requests(source) RevalueRequest[] }
+  class AdjustmentKind { <<enum>> Quantity(place, QuantityLine[]) · Cost(CostLine[]) }
+  class Evidence { +files String[] +reference String }
+  class QuantityLine { +currency CurrencyCode +quantity QuantityDelta (signed, ≠ 0) }
+  class CostLine { +currency CurrencyCode +cost_delta_thb MoneyDelta (signed, ≠ 0) }
+  class RevalueRequest { <<xc-cash domain/posting.rs (LA-0 shape, LA-8 body)>> +branch BranchId +currency CurrencyCode +cost_delta_thb MoneyDelta +source SourceRef }
+  class Created { <<LA-4>> +id +approval_request_id +status "REQUESTED" }
+  class Posted { <<LA-4>> +id +posting_id +lines (currency, quantity or cost_delta_thb, valuation) }
+  class LedgerAdjustmentSubject { <<xc-cash application/ledger_approval/ledger_adjustment.rs (LA-3)>> +type_name() "LEDGER_ADJUSTMENT" +version_hash(id) +on_decided() noop }
+  class LedgerAdjustmentPolicy { <<same file>> +may_decide(who, request) holds_on(ApproveLedgerAdjustment, payload.branch) +allows_self_decision() false }
+  class LedgerAdjustmentService { <<xc-cash application/adjustment/adjustment_service.rs (LA-4)>> +create_in(tx, branch, payload, who) Created +post_in(tx, branch, id, who) Posted }
+  class CashPostings { <<trait xc-cash domain/posting.rs>> +post_in() +revalue_in(tx, RevalueRequest) PostingId (LA-8, default Internal) }
+  class LedgerCashPostings { <<xc-cash infrastructure/ledger_postings.rs>> +revalue_in() override (LA-8) }
+  class ApprovalService { <<xc-approval>> +request() +decide() }
+  class ApprovalSubjectRegistration { <<api bootstrap/approval_subjects/ledger_adjustment.rs (LA-3)>> TYPE +register() }
+  class LedgerAdjustmentCreateCommand { <<api http/v3/commands/ledger_adjustment_create.rs (LA-5)>> }
+  class LedgerAdjustmentCreateDto { <<api dto/v3/ledger_adjustment_create.rs (LA-5)>> input: branch, kind, place?, lines, reason, evidence, exceptionId? · output: id, approvalRequestId, status }
+  class LedgerAdjustmentPostCommand { <<api http/v3/commands/ledger_adjustment_post.rs (LA-6)>> }
+  class LedgerAdjustmentPostDto { <<api dto/v3/ledger_adjustment_post.rs (LA-6)>> input: branch, id · output: id, postingId, lines[] }
+  class LedgerAdjustmentsView { <<api http/v3/views/ledger_adjustments.rs (LA-7)>> }
+  class LedgerAdjustmentsDto { <<api dto/v3/ledger_adjustments.rs (LA-7)>> rows: id, kind, lines, reason, status, decision, postingId?, postedAt?, valuations? }
+  class ApproveLedgerAdjustment { <<xc-auth access/permission.rs + permission_module.rs + role_grants.rs (LA-1)>> no module · FINANCE · seed 7 }
+  class LedgerAdjustmentArea { <<xc-auth policy/areas/ledger_adjustment.rs (LA-0)>> create · post · view need FinanceReconcile }
+  class AuditLog { <<xc-approval PgAuditLog>> }
+
+  LedgerAdjustment *-- AdjustmentKind
+  LedgerAdjustment *-- Evidence
+  LedgerAdjustmentSubject ..|> ApprovalSubject
+  LedgerAdjustmentPolicy ..|> ApprovalPolicy
+  LedgerAdjustmentPolicy --> ApproveLedgerAdjustment : holds_on
+  LedgerAdjustmentPolicy --> LedgerAdjustment : from_payload(branch)
+  ApprovalSubjectRegistration --> LedgerAdjustmentSubject
+  LedgerAdjustmentService --> LedgerAdjustment
+  LedgerAdjustmentService --> ApprovalService : request
+  LedgerAdjustmentService --> CashPostings : post_in(differences, None) / revalue_in
+  LedgerCashPostings ..|> CashPostings
+  LedgerAdjustmentCreateCommand ..|> CommandAction
+  LedgerAdjustmentPostCommand ..|> CommandAction
+  LedgerAdjustmentCreateCommand --> LedgerAdjustmentService : create_in
+  LedgerAdjustmentPostCommand --> LedgerAdjustmentService : post_in
+  LedgerAdjustmentCreateCommand --> AuditLog
+  LedgerAdjustmentPostCommand --> AuditLog
+  LedgerAdjustmentCreateCommand --> LedgerAdjustmentArea : INHERITS
+  LedgerAdjustmentPostCommand --> LedgerAdjustmentArea : INHERITS
+  LedgerAdjustmentsView --> LedgerAdjustmentArea : INHERITS
+  AdjustmentKind --> QuantityLine
+  AdjustmentKind --> CostLine
+  LedgerAdjustment ..> RevalueRequest : revalue_requests
+  LedgerAdjustmentService --> Created
+  LedgerAdjustmentService --> Posted
+  LedgerAdjustmentCreateCommand --> LedgerAdjustmentCreateDto
+  LedgerAdjustmentPostCommand --> LedgerAdjustmentPostDto
+  LedgerAdjustmentsView --> LedgerAdjustmentsDto
+```
+
+`xc-cash` already depends on `xc-approval` and `xc-auth` (`count_difference.rs:9-14`), so no manifest changes. The new
+module lines (`domain/mod.rs`, `application/mod.rs`, `application/ledger_approval/mod.rs`) are registrations and are not
+reserved (lane rule, #564 issuecomment-6076309062). Commands and views are found by `api/build.rs` (`:167-203`,
+`:247-…`), approval subjects by `build_support/approval_subjects.rs` (`api/build.rs:78-79`), area rows by
+`xc-auth/build.rs` (`areas/mod.rs:3-5`).
+
+**Data migration: none.** Every table, column and CHECK it writes exists (AD-6). The grant reaches FINANCE through the
+boot step `seed_additions` (§13.3), not SQL. After deploy, count it:
+`SELECT role_code FROM role_permission_grants WHERE permission = 'ApproveLedgerAdjustment';` lists FINANCE.
+
+### 13.9 Behaviour table (one test per row)
+
+Fixture unless a row says otherwise: branch `B01`; position USD `1000 / 32,500.00` (average 32.50); SAFE USD 1000,
+SAFE THB 10,000; users `fin-a` (FINANCE of B01), `fin-b` (FINANCE of B01), `fin-org` (FINANCE organisation-wide),
+`fin-c` (FINANCE of B02), `mgr` (BRANCH_MANAGER of B01), `exec` (EXECUTIVE).
+
+| # | Ticket | Given / when | Then |
+|---|---|---|---|
+| LA-T1 | LA-1 | `Permission::ApproveLedgerAdjustment` | in `Permission::ALL`; `PermissionModule::module` = `None`; in `APPROVAL_KINDS` (10 kinds) |
+| LA-T2 | LA-1 | `RoleGrants::seed` of each built-in role | only FINANCE holds it; FINANCE still holds `ApprovalsDecide` |
+| LA-T3 | LA-1 | built-in FINANCE at `seed_version` 6, a custom group, then boot | FINANCE gains exactly it, ends at 7; the custom group gains nothing; a fresh DB's FINANCE holds it at 7 |
+| LA-T4 | LA-1 | an ADMIN-based group saved holding it | `AdminBaseHoldsApproval` (`matrix_guardrails.rs:87-88`) |
+| LA-T5 | LA-2 | `from_payload(to_payload(a)) == a` for a QUANTITY and a COST adjustment; `quantity_requests` of USD −100, THB +250 | round trip equal; USD `SAFE → VARIANCE` 100, THB `VARIANCE → SAFE` 250, all under `(ADJUSTMENT, id, "post")` |
+| LA-T6 | LA-2 | `validate`: empty lines; 21 lines; a repeated currency; quantity 0; USD `0.00001`; JPY with a fraction beyond its minor unit; COST on THB; COST delta 0; place `DRAWER`; blank reason; 501-char reason; no file and blank reference | each `validationFailed` naming its field |
+| LA-T7 | LA-3 | `fin-a`'s request; `fin-a` decides | `outOfScope` (proposer) |
+| LA-T8 | LA-3 | `fin-a`'s request; `fin-b` approves / `fin-org` approves / `fin-c` / `mgr` / `exec` decide | APPROVED / APPROVED / `outOfScope` / `outOfScope` / `outOfScope` |
+| LA-T9 | LA-3 | `fin-org` creates for B01 (stored `branch_id` = `MAIN`); `fin-b` approves | APPROVED: the policy read `payload.branch` |
+| LA-T10 | LA-3 | request; then an exchange posts on B01; then `fin-b` approves | APPROVED, not `staleVersion` (the hash reads no balance) |
+| LA-T11 | LA-5 | `fin-a` creates QUANTITY SAFE USD −100 with a file of B01 | 200 `{id: ADJ-…, status: REQUESTED}`; one PENDING `LEDGER_ADJUSTMENT` request; no `ledger_postings` row with `source_id = id`; one `LEDGER_ADJUSTMENT_CREATE` audit row |
+| LA-T12 | LA-5 | `mgr` or a TELLER creates | 403 by the policy row |
+| LA-T13 | LA-5 | evidence file key of B02 / unknown | `validationFailed` on `evidence.files` |
+| LA-T14 | LA-5 | the same `Idempotency-Key` and body twice; then the same key with another body | one request, same answer; then `idempotencyConflict` |
+| LA-T15 | LA-6 | approved USD −100; `fin-a` posts | one posting `(ADJUSTMENT, id, post)`: SAFE USD −100 / −3,250.00, VARIANCE +100 / +3,250.00; one `ADJUST` movement −100 / −3,250.00; position `900 / 29,250.00`, average 32.50; answer `valuationThb "3250.00"`; one `LEDGER_ADJUSTMENT_POST` audit row; B01's `branch_versions` moved |
+| LA-T16 | LA-6 | approved USD +50 and THB +250 | VARIANCE → SAFE at average: USD +50 / +1,625.00, **no `inventory_lots` row**; THB +250 / +250.00, no position row for THB |
+| LA-T17 | LA-6 | after LA-T15 and LA-T16 | `Reconcile::standard().run` for B01: all five checks `ok` |
+| LA-T18 | LA-6 | post the same id twice (same key, and a new key) | one posting; both answers carry the same `postingId` |
+| LA-T19 | LA-6 | post a PENDING / a REJECTED adjustment | `409 approvalRequired` / `409 staleVersion`; nothing written |
+| LA-T20 | LA-6 | approved USD −1,200 with SAFE 1,000 | `409 stockInsufficient` with the shortfall; nothing written; **no `NEGATIVE_STOCK` request exists** afterwards |
+| LA-T21 | LA-6 | post with `branch: B02` an adjustment of B01 | `notFound`; nothing written |
+| LA-T22 | LA-6 | an active reservation of 950 USD; approved USD −100 | posted (AD-8); position 900 |
+| LA-T23 | LA-6 | position USD empty with no movement and no published BUY rate; approved USD +10 | `validationFailed` (`ledger_postings.rs:404-422`); nothing written |
+| LA-T24 | LA-7 | `ledgerAdjustments` for B01 after one of each status | four rows, statuses PENDING / APPROVED / REJECTED / POSTED, reason, evidence, `postingId` on POSTED only; B02's not listed; a TELLER is refused |
+| LA-T25 | LA-8 | `revalue_in` USD +450.00 on `900 / 29,250.00` | a posting with no entries; one `ADJUST` movement (0, +450.00, average_after 33.00000000); position `900 / 29,700.00`; a following SELL of 100 costs 3,300.00 |
+| LA-T26 | LA-8 | `revalue_in` with delta −30,000.00; on a position at 0; on a negative position; on THB; with `source_type` EXCHANGE | each `validationFailed`; nothing written |
+| LA-T27 | LA-8 | `revalue_in` twice with the same source | one posting, one movement |
+| LA-T28 | LA-8 | after LA-T25 | `Reconcile::standard().run`: all five checks `ok` |
+| LA-T29 | LA-4 | `post_in` of a COST adjustment against a `CashPostings` test double | one `revalue_in` per line, in line order, each with `(ADJUSTMENT, id, "post")`; `post_in` not called |
+
+### 13.10 Owner decides
+
+**Decided (owner, 2026-10-27 ~23:1x ICT, typed in claude/bc8fd29a's session):** *"Take the recommended default on every owner question in the three designs (RPC refusal field Q1-3, booking estimate OD-1 to OD-3, ledger adjustment OA-1 to OA-7)."* Every recommended default below is the decision.
+
+| # | Question | Recommended default | Why |
+|---|---|---|---|
+| OA-1 | Which places may be adjusted: none (counts only), **SAFE**, or SAFE and an open shift's DRAWER? | **SAFE only** | a drawer has its own count and V-1 path, and changing it mid-shift would move the teller's `expected` under them (`ShiftBalance.expected` is derived from the ledger, §4.2.1). The safe has errors no count explains (a mis-keyed EXTERNAL move, the cutover backfill); a SAFE count would book them as a cash loss. IN_TRANSIT stays the transfer reconcile's (`transferReconcile`) |
+| OA-2 | Is a COST (revaluation) adjustment in scope? | **Yes, positive positions only, as its own ticket LA-8** | §9's opening cost is `[proposed]` at the published BUY rate (Q-3), and a position with no history is costed the same way (`ledger_postings.rs:401-422`). L-6 forbids updating either, so without COST a wrong cost stays in every later margin. Dropping LA-8 leaves QUANTITY whole |
+| OA-3 | Who approves? | **FINANCE of the branch or organisation-wide, never the creator; not EXECUTIVE** | Blueprint §02 *"แยกผู้จัดทำ/อนุมัติ"*; the same deciders as `COUNT_DIFFERENCE` and `TRANSACTION_REVERSAL` (`role_grants.rs:273-277`). The kind is editable per group on the matrix screen later |
+| OA-4 | Is there a THB limit under which one person posts without approval? | **No: always approved** | V-1's limit works because a count already has a verifier; an adjustment has no second person unless approval is one |
+| OA-5 | May an adjustment be back-dated? | **No** | a back-dated posting would change a certified day's figures after FINANCE signed them |
+| OA-6 | Is evidence mandatory? | **Reason always; and at least one file or a reference** | an approver should see what the number rests on; a reference covers evidence that is not a file (a bank's slip number) |
+| OA-7 | Who posts, and does an approval expire? | **Any FinanceReconcile holder of the branch, creator included; no expiry** | the post is the mechanical consequence of an immutable, approved payload; its valuation follows the ADJUST-at-average rule every difference follows |
+
+**Open for the controller (technical, not the owner's):**
+- **The approvals queue cannot see an organisation-wide FINANCE's request at its branch.** AP-1 stores the requester's
+  row branch (`approval_service.rs:9-49`), and `views/approval_requests.rs:66` filters on it. The policy here reads the
+  payload (§13.3), so deciding works; listing does not. The root cause is shared by every kind:
+  `ApprovalService::request` gains an explicit `branch` (an `xc-approval` ticket). Until then `ledgerAdjustments`
+  (LA-7) is the list FINANCE uses.
+- **File collisions.** `feat/binding-quote` edits `permission.rs`, `permission_module.rs`, `role_grants.rs` and
+  `xc-auth/tests/approval_kinds_test.rs` and takes `SEED_VERSION` 6 (`git diff --name-only origin/main...origin/feat/binding-quote`
+  at `8fc3507bd`), so LA-1 rebases after it. `feat/v3-cash-branch-day` edits `xc-cash/src/domain/posting.rs` (+43
+  lines), which LA-8 also edits.
+- **`approval_kinds_test.rs` asserts nine kinds and `Permission::ALL.len()` = 61** (`:20`, `:35`, `:41`). LA-1 changes
+  those three assertions by decision (10 kinds; 63 with BQ-7's permission). The ticket author edits them up front; the
+  implementer does not.
+
+### 13.11 Tickets
+
+Every ticket's File scope is disjoint. LA-0 is the sub-controller's skeleton on the feature branch (signatures,
+`todo!()` bodies and the up-front tests of §13.9), after which LA-1 … LA-8 run at once.
+
+| # | Ticket | File scope | Class | Starts after |
+|---|---|---|---|---|
+| LA-0 | skeleton: `LedgerAdjustment` types and signatures, `RevalueRequest` + `revalue_in` signature, subject/policy/service signatures, the area rows file in full (three rows, `FinanceReconcile`), every up-front test of §13.9 | the files below with `todo!()` bodies; `api/crates/xc-auth/src/domain/policy/areas/ledger_adjustment.rs` (complete); `api/crates/xc-auth/tests/approval_kinds_test.rs` (the three assertions restated up front, §13.10) | — (controller) | this design `Verdict: PASS` |
+| LA-1 | `Permission::ApproveLedgerAdjustment` (§13.3): no module, FINANCE's seed, `APPROVAL_KINDS` 10, `(7, …)` in `SEED_ADDITIONS`, `SEED_VERSION` 7; LA-T1–T4. Must stay green: `rbac_seed_version_test.rs`, `approval_decider_test.rs` | `api/crates/xc-auth/src/domain/access/permission.rs`, `api/crates/xc-auth/src/domain/access/permission_module.rs`, `api/crates/xc-auth/src/domain/access/role_grants.rs`, `api/crates/xc-auth/tests/ledger_adjustment_permission_test.rs` | guarded | LA-0; BQ-7 merged (rebase over `SEED_VERSION` 6) |
+| LA-2 | the domain: payload codec, `validate`, `quantity_requests` (via `differences`), `revalue_requests`; LA-T5, T6 | `api/crates/xc-cash/src/domain/adjustment.rs` | logic | LA-0 |
+| LA-3 | `LEDGER_ADJUSTMENT` subject and policy (§13.5 Decide) and its bootstrap registration; LA-T7–T10 | `api/crates/xc-cash/src/application/ledger_approval/ledger_adjustment.rs`, `api/src/bootstrap/approval_subjects/ledger_adjustment.rs` | logic | LA-0, LA-1 |
+| LA-4 | `LedgerAdjustmentService::{create_in, post_in}` (§13.5 steps 1–4, AD-7): reads and locks the request, posts QUANTITY through `post_in(.., None)`, COST through `revalue_in`, reads back the valuations; LA-T29 | `api/crates/xc-cash/src/application/adjustment/adjustment_service.rs`, `api/crates/xc-cash/src/application/adjustment/mod.rs` (new; the `pub mod adjustment;` line in `application/mod.rs` is an unreserved registration, §13.8) | guarded | LA-0, LA-2 |
+| LA-5 | the create command and its DTO, with the audit row; LA-T11–T14 | `api/src/presentation/http/v3/commands/ledger_adjustment_create.rs`, `api/src/presentation/dto/v3/ledger_adjustment_create.rs` | logic | LA-0, LA-4 |
+| LA-6 | the post command and its DTO, with the audit row; LA-T15–T23. It maps a `StockShortfall` refusal to `409 stockInsufficient` itself and never calls `stock_refusal_answer` (`presentation/http/v3/negative_stock.rs`), which would open a `NEGATIVE_STOCK` request (AD-7) | `api/src/presentation/http/v3/commands/ledger_adjustment_post.rs`, `api/src/presentation/dto/v3/ledger_adjustment_post.rs` | guarded | LA-0, LA-3, LA-4 |
+| LA-7 | the `ledgerAdjustments` view and its DTO; LA-T24 | `api/src/presentation/http/v3/views/ledger_adjustments.rs`, `api/src/presentation/dto/v3/ledger_adjustments.rs` | mechanical | LA-0 |
+| LA-8 | COST: `revalue_in` with its default on the port and `LedgerCashPostings`'s override (§13.6); LA-T25–T28. Only if OA-2 keeps COST | `api/crates/xc-cash/src/domain/posting.rs`, `api/crates/xc-cash/src/infrastructure/ledger_postings.rs` | guarded | LA-0; re-measure `feat/v3-cash-branch-day`'s `posting.rs` change at release |
+| LA-9 | docs: fold §13 into `ledger-inventory.md`, apply AD-0 to §6, add the `ADJUSTMENT` rows to §8/§10/§12, and "nine" → "ten" kinds in `user-management-rbac.md` §11.9 | `docs/design/blueprint/ledger-inventory.md`, `docs/design/blueprint/user-management-rbac.md` | — (doc, controller) | this design `Verdict: PASS` |
+
+Tests live in one new file per ticket beside the crate's other tests (`api/crates/xc-cash/tests/ledger_adjustment_*_test.rs`,
+`api/tests/ledger_adjustment_*_test.rs`), each listed in its ticket's File scope at release. Generated TypeScript under
+`web/src/shared/api/generated/` follows each DTO and is not locked.
+
+**Not in this design (FE, its own tickets):** the F01 entry form and list on `/finance/reconciliation`; the tenth
+"Approvals" row and its Thai label on the matrix screen (`user-management-rbac.md:906`).
+
+### 13.12 Blueprint conformance
+
+| Blueprint | Here | Status |
+|---|---|---|
+| §06 *"แก้ผ่าน reversal/adjustment เอกสารใหม่เท่านั้น"* | a new posting; nothing updated (AD-2, L-6) | kept |
+| §02 FINANCE *"แยกผู้จัดทำ/อนุมัติ/จ่าย"* | creator ≠ approver (AD-4) | kept |
+| §10 *"ทุก mutation ใช้ authenticated actor และ audit"* | AD-10 | kept |
+| §07 *"posting สมดุลต่อ currency … valuation balanced"* | QUANTITY balances through `VARIANCE`; COST has no entries (§13.6) | kept |
+| §07 weighted average, *"อย่ารวม FIFO กับ weighted average"* | ADJUST at average; COST revalues the position, never a lot | kept |
+| §12 *"negative stock policy"* | an adjustment never goes negative (AD-7) | design decision, inside N-1 |
+| — | places, COST, approver, limit, back-dating, evidence, posting and expiry | owner (§13.10) |

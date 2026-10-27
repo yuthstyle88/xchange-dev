@@ -1,5 +1,9 @@
 //! Retention background job (design `customer-identity-consent.md` §4.1, §4.3).
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+
 use chrono::{DateTime, Duration, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
@@ -8,14 +12,41 @@ use uuid::Uuid;
 use crate::domain::consent::ConsentError;
 use crate::domain::retention::DataType;
 
+/// The port for a data type whose rows another crate owns (`PLANNER_DRAFT` in `xc-app`, `RATE_ALERT` in
+/// `xc-alert`). That crate implements it; `RetentionJob::purge` calls it, per organisation, only when that
+/// organisation's `retention_policies` row gives the type a period. Design `customer-identity-consent.md` §4.1.
+pub trait RetentionPurger: Send + Sync {
+    /// The one data type this purger deletes.
+    fn data_type(&self) -> DataType;
+
+    /// Deletes the organisation's rows of this type that ended before `cutoff` (`now` − the period), plus, for a type
+    /// with its own expiry, the rows expired at or before `now`. Answers how many top-level rows went.
+    fn purge<'a>(
+        &'a self,
+        org: Uuid,
+        cutoff: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> Pin<Box<dyn Future<Output = AppResult<u64>> + Send + 'a>>;
+}
+
 #[derive(Clone)]
 pub struct RetentionJob {
     pool: PgPool,
+    purgers: Vec<Arc<dyn RetentionPurger>>,
 }
 
 impl RetentionJob {
     pub fn pg(pool: PgPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            purgers: Vec::new(),
+        }
+    }
+
+    /// Adds the purger of another crate's data type; `purge` calls it for that type.
+    pub fn with_purger(mut self, purger: Arc<dyn RetentionPurger>) -> Self {
+        self.purgers.push(purger);
+        self
     }
 
     pub async fn set_period(
@@ -148,7 +179,11 @@ impl RetentionJob {
                     total_deleted += result.rows_affected();
                 }
                 _ => {
-                    // CLOSED_CUSTOMER is ruled out of CI-6
+                    for purger in &self.purgers {
+                        if purger.data_type().as_str() == data_type.as_str() {
+                            total_deleted += purger.purge(org_id, cutoff, now).await?;
+                        }
+                    }
                 }
             }
         }
