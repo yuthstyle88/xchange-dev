@@ -3,9 +3,10 @@
 //! SKELETON (XC-V9-PRICING): every body is PV-f2b's. Signatures stay.
 
 use chrono::{DateTime, Utc};
-use sqlx::PgConnection;
+use sqlx::{PgConnection, Row};
 use xc_kernel::money::CurrencyCode;
 
+use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::pricing::pricing_mode::{PricingMode, PricingModeRow, PricingModeStore};
 use crate::domain::pricing::tier_set::StoreFuture;
 
@@ -20,8 +21,27 @@ impl PricingModeStore for PgPricingModeStore {
         by: &'a str,
         at: DateTime<Utc>,
     ) -> StoreFuture<'a, i64> {
-        let _ = (conn, currency, mode, by, at);
-        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::save_in") })
+        Box::pin(async move {
+            let row = sqlx::query(
+                "INSERT INTO pricing_modes (currency_code, mode, revision, updated_by, updated_at) \
+                 VALUES ($1, $2, 1, $3, $4) \
+                 ON CONFLICT (currency_code) DO UPDATE \
+                 SET mode = EXCLUDED.mode, \
+                     revision = pricing_modes.revision + 1, \
+                     updated_by = EXCLUDED.updated_by, \
+                     updated_at = EXCLUDED.updated_at \
+                 RETURNING revision",
+            )
+            .bind(currency.as_str())
+            .bind(mode.as_str())
+            .bind(by)
+            .bind(at)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            Ok(row.get("revision"))
+        })
     }
 
     fn get_in<'a>(
@@ -29,23 +49,71 @@ impl PricingModeStore for PgPricingModeStore {
         conn: &'a mut PgConnection,
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingModeRow>> {
-        let _ = (conn, currency);
-        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::get_in") })
+        Box::pin(async move {
+            let row = sqlx::query(
+                "SELECT mode, revision, updated_by, updated_at \
+                 FROM pricing_modes \
+                 WHERE currency_code = $1",
+            )
+            .bind(currency.as_str())
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            let Some(row) = row else {
+                return Ok(None);
+            };
+            let mode_str: String = row.get("mode");
+            let mode = PricingMode::parse(&mode_str).ok_or_else(|| {
+                RateEngineError::Internal(format!("unknown pricing_modes.mode {mode_str}"))
+            })?;
+            Ok(Some(PricingModeRow {
+                currency,
+                mode,
+                revision: row.get("revision"),
+                updated_by: row.get("updated_by"),
+                updated_at: row.get("updated_at"),
+            }))
+        })
     }
 
     fn following_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Vec<CurrencyCode>> {
-        let _ = (conn,);
-        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::following_in") })
+        Box::pin(async move {
+            let rows = sqlx::query(
+                "SELECT currency_code FROM pricing_modes WHERE mode = 'FOLLOW' ORDER BY currency_code",
+            )
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            let mut codes = Vec::with_capacity(rows.len());
+            for row in rows {
+                let code_str: String = row.get("currency_code");
+                let code = CurrencyCode::parse(code_str.trim()).map_err(|e| {
+                    RateEngineError::Internal(format!(
+                        "invalid pricing_modes.currency_code {code_str}: {e}"
+                    ))
+                })?;
+                codes.push(code);
+            }
+            Ok(codes)
+        })
     }
 
     fn newest_revision_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
     ) -> StoreFuture<'a, Option<i64>> {
-        let _ = (conn,);
-        Box::pin(async move { todo!("PV-f2b: PgPricingModeStore::newest_revision_in") })
+        Box::pin(async move {
+            let row = sqlx::query("SELECT MAX(revision) AS newest FROM pricing_modes")
+                .fetch_one(&mut *conn)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            Ok(row.get("newest"))
+        })
     }
 }
