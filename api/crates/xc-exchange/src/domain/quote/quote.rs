@@ -104,10 +104,14 @@ pub struct Quote {
 
 impl Quote {
     /// D-3 (`binding-quote.md`): one rule chosen by type. `Indicative`: `now < expires_at` and the publication is
-    /// the branch's current one. `Binding`: `now < expires_at`, whatever is published since (O-4 A). BQ-1 adds
-    /// the `Binding` arm; until then every quote is judged as `Indicative`.
+    /// the branch's current one. `Binding`: `now < expires_at`, whatever is published since (O-4 A).
     pub fn is_valid(&self, now: DateTime<Utc>, current_publication: Uuid) -> bool {
-        now < self.expires_at && self.publication_id == current_publication
+        match self.quote_type {
+            QuoteType::Indicative => {
+                now < self.expires_at && self.publication_id == current_publication
+            }
+            QuoteType::Binding => now < self.expires_at,
+        }
     }
 
     pub fn status_at(&self, now: DateTime<Utc>, current_publication: Uuid) -> QuoteDisplayStatus {
