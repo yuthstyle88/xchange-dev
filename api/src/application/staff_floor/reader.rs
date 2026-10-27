@@ -13,8 +13,10 @@ use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xc_shift::domain::custody::branch_day::BranchDay;
 use xc_shift::domain::custody::entities::customer_hold::HoldStatus;
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
+use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
 
+use super::day::local_day_start;
 use super::directory::StaffDirectory;
 use crate::presentation::dto::v3::staff_attendance::StaffAttendanceRow;
 use crate::presentation::dto::v3::staff_floor::{
@@ -192,21 +194,29 @@ impl StaffFloorReader {
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<StaffAttendanceRow>> {
+        let now = Utc::now();
         let target = Target::new(&actor.organization_id, Some(branch.clone()), None);
-        let can_see_all = Authorizer::check(
-            Some(actor),
-            Permission::BranchDayOperate,
-            &target,
-            Utc::now(),
-        )
-        .is_ok();
+        let can_see_all =
+            Authorizer::check(Some(actor), Permission::BranchDayOperate, &target, now).is_ok();
         let only = if can_see_all {
             None
         } else {
             Some(actor.user_id.as_str())
         };
 
-        let records = self.pages.attendance(branch, only, before, limit).await?;
+        let tz: Tz = sqlx::query_scalar::<_, String>("SELECT timezone FROM branches WHERE id = $1")
+            .bind(branch.as_str())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(AppError::Database)?
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Tz::Asia__Bangkok);
+        let since = CustodyTime::from_epoch_millis(local_day_start(tz, now).timestamp_millis());
+
+        let records = self
+            .pages
+            .attendance_since(branch, only, since, before, limit)
+            .await?;
         let user_ids: Vec<&str> = records.iter().map(|r| r.employee_id.as_str()).collect();
         let names = self.directory.names(&user_ids).await?;
 

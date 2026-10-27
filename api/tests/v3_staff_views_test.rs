@@ -835,9 +835,21 @@ async fn staff_attendance_is_my_own_rows_unless_i_operate_the_branch_day() {
     let f = Floor::start().await;
     let me = f.person("Me Myself").await;
     let other = f.person("Some Other").await;
-    let mine_old = f.clock("MAIN", 1, &me, T0, Some(T0 + 1_000)).await;
-    let theirs = f.clock("MAIN", 2, &other, T0 + 2_000, None).await;
-    let mine_new = f.clock("MAIN", 3, &me, T0 + 3_000, None).await;
+    // #5220: the view answers only today's (Bangkok) rows and open ones, so these sit in today.
+    let today0 = Tz::Asia__Bangkok
+        .from_local_datetime(
+            &Utc::now()
+                .with_timezone(&Tz::Asia__Bangkok)
+                .date_naive()
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        )
+        .single()
+        .unwrap()
+        .timestamp_millis();
+    let mine_old = f.clock("MAIN", 1, &me, today0, Some(today0 + 1_000)).await;
+    let theirs = f.clock("MAIN", 2, &other, today0 + 2_000, None).await;
+    let mine_new = f.clock("MAIN", 3, &me, today0 + 3_000, None).await;
     f.clock(B2, 1, &me, T0, None).await; // another branch's
 
     for (role, _) in test_callers::V2_STAFF {
@@ -877,13 +889,13 @@ async fn staff_attendance_is_my_own_rows_unless_i_operate_the_branch_day() {
         .await;
     let newest = &rows[0];
     assert_eq!(newest["name"], json!("Me Myself"), "the name by user id");
-    assert_eq!(instant(&newest["in"], "in"), millis(T0 + 3_000));
+    assert_eq!(instant(&newest["in"], "in"), millis(today0 + 3_000));
     assert!(
         newest.get("out").is_none_or(Value::is_null),
         "still clocked in"
     );
     let oldest = rows.as_array().unwrap().last().unwrap();
-    assert_eq!(instant(&oldest["out"], "out"), millis(T0 + 1_000));
+    assert_eq!(instant(&oldest["out"], "out"), millis(today0 + 1_000));
 
     let page = f
         .ok(
