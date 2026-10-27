@@ -43,9 +43,7 @@ use xc_cash::application::transfer::TransferFlow;
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
-use xc_cash::domain::transfer::cash_transfer::{
-    NewTransfer, NewTransferLine, TransferError, TransferKind,
-};
+use xc_cash::domain::transfer::cash_transfer::{NewTransfer, NewTransferLine, TransferKind};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 
