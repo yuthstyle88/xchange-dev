@@ -1,6 +1,7 @@
 // P01 v2 one currency row (rate-display.md §9.2, §9.4): flag, code, group, unit, one cell (buy · sell) per band.
 import { createMemo, Index, Show, type JSX } from 'solid-js';
 import type { BoardRow } from './board-model';
+import { BOARD_TEXT, bilingual } from './board-texts';
 import { compareDecimal, formatBandRate } from './decimal-format';
 import { Flag } from './Flag';
 import { FlapPrice } from './FlapPrice';
@@ -9,6 +10,7 @@ import './board-table.css';
 export interface BoardRowViewProps {
   row: BoardRow;
   singleColumn: boolean;
+  bandCount: number;
 }
 
 function createSideState(raw: () => string | null) {
@@ -30,7 +32,7 @@ function createSideState(raw: () => string | null) {
 
 export function BoardRowView(props: BoardRowViewProps): JSX.Element {
   return (
-    <tr class="xc-rb-row">
+    <tr class="xc-rb-row" classList={{ 'xc-rb-row-featured': Boolean(props.row.featured) }}>
       <th scope="row" class="xc-rb-cur">
         <Flag currency={props.row.code} />
         <span class="xc-rb-cur-text">
@@ -41,22 +43,31 @@ export function BoardRowView(props: BoardRowViewProps): JSX.Element {
           </Show>
         </span>
       </th>
-      <Index each={props.row.cells}>
-        {(cell) => {
-          const buy = createSideState(() => cell().buy);
-          const sell = createSideState(() => cell().sell);
-          return (
-            <td class="xc-rb-band-cell" classList={{ 'xc-rb-band-repeat': cell().repeat }}>
-              <span class="xc-rb-side xc-rb-buy">
-                <FlapPrice text={buy().text} direction={buy().direction} />
-              </span>
-              <span class="xc-rb-side xc-rb-sell">
-                <FlapPrice text={sell().text} direction={sell().direction} />
-              </span>
-            </td>
-          );
-        }}
-      </Index>
+      <Show
+        when={!props.row.contactOnly}
+        fallback={
+          <td class="xc-rb-contact-cell" colSpan={props.singleColumn ? 1 : props.bandCount}>
+            {bilingual(BOARD_TEXT.contactCounter)}
+          </td>
+        }
+      >
+        <Index each={props.row.cells}>
+          {(cell) => {
+            const buy = createSideState(() => cell().buy);
+            const sell = createSideState(() => cell().sell);
+            return (
+              <td class="xc-rb-band-cell" classList={{ 'xc-rb-band-repeat': cell().repeat }}>
+                <span class="xc-rb-side xc-rb-buy">
+                  <FlapPrice text={buy().text} direction={buy().direction} />
+                </span>
+                <span class="xc-rb-side xc-rb-sell">
+                  <FlapPrice text={sell().text} direction={sell().direction} />
+                </span>
+              </td>
+            );
+          }}
+        </Index>
+      </Show>
     </tr>
   );
 }

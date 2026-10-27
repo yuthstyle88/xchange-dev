@@ -3,6 +3,8 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use xc_kernel::money::Side;
 
+use crate::domain::pricing::tier_set::{PricingSource, TierSetSource};
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Freshness {
     pub stale: bool,
@@ -17,6 +19,19 @@ impl Freshness {
             .get("source_date")
             .and_then(|v| v.as_str())
             .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok());
+
+        if snapshot
+            .get("pricing")
+            .and_then(|p| p.get("source"))
+            .and_then(|v| v.as_str())
+            .and_then(TierSetSource::parse)
+            .is_some_and(|s| s.pricing_source() == PricingSource::Manual)
+        {
+            return Freshness {
+                stale: false,
+                source_date,
+            };
+        }
 
         let fetched_at = snapshot
             .get("fetched_at")

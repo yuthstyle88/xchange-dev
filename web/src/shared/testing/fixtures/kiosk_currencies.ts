@@ -60,6 +60,7 @@ export function makeKioskCurrency(o: Partial<KioskCurrency> = {}): KioskCurrency
     partnerCost: null,
     enabled: false,
     kbank: [],
+    quoteEnabled: false,
     ...o,
   };
 }

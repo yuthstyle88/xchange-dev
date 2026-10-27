@@ -7,6 +7,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgConnection, Row};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 use crate::domain::pricing::suggestion_settings::SuggestionSettings;
 
 pub struct PricingSuggestionSettingsStore;
@@ -83,6 +84,56 @@ impl PricingSuggestionSettingsStore {
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
             }
         }
+        Ok(())
+    }
+
+    /// gap 10 (pricing-tiers.md §15.10): the branch `'*'` row's `min_spread_pct`.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-l1's.
+    pub async fn branch_min_spread(
+        conn: &mut PgConnection,
+        branch: &str,
+    ) -> Result<Option<Decimal>, RateEngineError> {
+        let row = sqlx::query(
+            "SELECT min_spread_pct FROM pricing_suggestion_settings WHERE branch_id = $1 AND scope = '*'",
+        )
+        .bind(branch)
+        .fetch_optional(&mut *conn)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        Ok(row.and_then(|r| r.get("min_spread_pct")))
+    }
+
+    /// Sets (or with `None` clears) the branch `'*'` row's `min_spread_pct` (0..=5). A `'*'` row that does not exist
+    /// yet is created with V.9's default `better`.
+    ///
+    /// SKELETON (XC-V9-PRICING): PV-l1's.
+    pub async fn save_branch_min_spread(
+        conn: &mut PgConnection,
+        branch: &str,
+        min_spread_pct: Option<Decimal>,
+        by: &str,
+        at: DateTime<Utc>,
+    ) -> Result<(), RateEngineError> {
+        let default_better = SuggestionConfig::v9_default().better;
+        sqlx::query(
+            "INSERT INTO pricing_suggestion_settings (branch_id, scope, better_pct, min_spread_pct, updated_by, updated_at) \
+             VALUES ($1, '*', $2, $3, $4, $5) \
+             ON CONFLICT (branch_id, scope) DO UPDATE \
+             SET min_spread_pct = EXCLUDED.min_spread_pct, \
+                 updated_by = EXCLUDED.updated_by, \
+                 updated_at = EXCLUDED.updated_at",
+        )
+        .bind(branch)
+        .bind(default_better.as_slice())
+        .bind(min_spread_pct)
+        .bind(by)
+        .bind(at)
+        .execute(&mut *conn)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
         Ok(())
     }
 }

@@ -284,6 +284,7 @@ impl CommandAction for OrgStartingPriceSaveCommand {
                             buy: LineSide::Auto,
                             sell: LineSide::Auto,
                             reason: None,
+                            tiers: None,
                         });
                     }
                 }

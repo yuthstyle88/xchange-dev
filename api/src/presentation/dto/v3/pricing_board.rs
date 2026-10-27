@@ -21,6 +21,73 @@ pub struct PricingBoardData {
     pub rows: Vec<PricingRowDto>,
     /// V.9's `recommend` (pricing-tiers.md §5.2).
     pub recommendations: Vec<PricingRecommendationDto>,
+    /// The branch's `'*'` bp row, or 0/0 (pricing-tiers.md §15.8a).
+    pub branch_default: PricingBpDto,
+    /// The effective display settings (§15.8): this is also the display-settings read.
+    pub display: PricingDisplayDto,
+    pub is_main: bool,
+}
+
+/// A bp pair (`H:` §7: 1 bp = 0.01 %).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_board.ts")]
+pub struct PricingBpDto {
+    pub buy_bp: i32,
+    pub sell_bp: i32,
+}
+
+/// The effective display settings (§15.8).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_board.ts")]
+pub struct PricingDisplayDto {
+    pub tiers: Vec<u8>,
+    pub featured: Vec<String>,
+    pub highlight: bool,
+    pub all_market: bool,
+    /// `branch` · `MAIN` · `default`.
+    pub from: String,
+}
+
+/// One approved or followed tier set (§15.2): the price itself, per the unit size.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_board.ts")]
+pub struct PricingTierSetDto {
+    pub id: String,
+    /// `MANUAL` · `MAIN_PUSH` · `FOLLOW`.
+    pub source: String,
+    /// Four tiers 1..=4, decimal strings.
+    pub tiers: Vec<PricingTierRateDto>,
+    pub approved_by: String,
+    pub approved_at: String,
+}
+
+/// MAIN's latest FOLLOW plan for a currency (§15.5).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_board.ts")]
+pub struct PricingFollowResultDto {
+    pub currency: String,
+    /// `CANDIDATE` · `BLOCKED` · `PUBLISHED`.
+    pub status: String,
+    /// `NO_ANCHOR` · `STALE_SOURCE` · `PRECISION` · `BELOW_COST` · `LARGE_MOVE` · `INVALID_TIERS`.
+    pub reasons: Vec<String>,
+    pub planned_at: String,
+}
+
+/// The branch's policy for one currency (§15.4).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "pricing_board.ts")]
+pub struct PricingBranchPolicyDto {
+    pub buy_bp: i32,
+    pub sell_bp: i32,
+    pub own: bool,
+    pub follow: bool,
+    /// `currency` · `*` · `default`.
+    pub from: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -71,6 +138,13 @@ pub struct PricingRowDto {
     pub selectable: bool,
     /// `Current` · `Pending` · `Unpriced` · `Tiers` · `Review` · `Manual` · `Reference`.
     pub status: String,
+    /// The effective pricing mode at this branch (pricing-tiers.md §15.1): `AUTO` · `MANUAL` · `FOLLOW`.
+    pub mode: String,
+    /// The latest tier set for (branch, currency); `null` for AUTO.
+    pub tier_set: Option<PricingTierSetDto>,
+    /// MAIN's latest FOLLOW plan, for FOLLOW currencies; else `null`.
+    pub follow_result: Option<PricingFollowResultDto>,
+    pub branch_policy: PricingBranchPolicyDto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

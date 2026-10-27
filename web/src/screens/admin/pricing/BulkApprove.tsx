@@ -11,6 +11,7 @@ import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import * as table from './i18n';
+import { ApproveResults } from './ApproveResults';
 import { BLOCKING_FLAGS, ROUTE_PRICING_APPROVE, type PricingFlagCode } from './pricing-labels';
 import './bulk-approve.css';
 
@@ -38,6 +39,7 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
   const [reasonError, setReasonError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [approveOut, setApproveOut] = createSignal<PricingApproveOutput | null>(null);
 
   const write = keyedWrite<PricingApproveInput, PricingApproveOutput>(
     props.api,
@@ -52,6 +54,7 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
     if (list.length === 0 || busy()) return;
     setError(null);
     setReasonError(null);
+    setApproveOut(null);
     const trimmedReason = reason().trim();
     if (trimmedReason === '') {
       setReasonError(
@@ -71,15 +74,21 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
           buy: tier.buy ?? '',
           sell: tier.sell ?? '',
         })),
+        ...(r.tierSet ? { tierSetId: r.tierSet.id } : {}),
       }));
       const out = await write.send({
         policyVersionId: props.policyVersionId,
         rows,
         reason: trimmedReason,
       });
+      setApproveOut(out);
       setConfirming(false);
       props.onApproved(out);
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.code === 'staleVersion') {
+        setError(t('approveStale'));
+        return;
+      }
       const fe = fieldError(err, { reason: t('reason') });
       if (fe.field === 'reason') {
         setReasonError(fe.message);
@@ -105,6 +114,7 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
           if (approvable().length === 0) return;
           setError(null);
           setReasonError(null);
+          setApproveOut(null);
           setConfirming(true);
         }}
       >
@@ -141,7 +151,10 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
             name="cancel"
             class="bulk-approve-cancel"
             disabled={busy()}
-            onClick={() => setConfirming(false)}
+            onClick={() => {
+              setApproveOut(null);
+              setConfirming(false);
+            }}
           >
             {t('cancel')}
           </button>
@@ -154,6 +167,7 @@ export function BulkApprove(props: BulkApproveProps): JSX.Element {
           </p>
         )}
       </Show>
+      <Show when={approveOut()}>{(out) => <ApproveResults out={out()} />}</Show>
     </div>
   );
 }
