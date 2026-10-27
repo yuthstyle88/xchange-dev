@@ -163,7 +163,7 @@ pub async fn issue(
 /// The issued quote of an answer that must be `Issued`.
 pub fn issued(got: AppResult<BindingIssueOutcome>) -> IssuedQuote {
     match got {
-        Ok(BindingIssueOutcome::Issued(q)) => q,
+        Ok(BindingIssueOutcome::Issued(q)) => *q,
         other => panic!("expected Ok(Issued(_)), got {other:?}"),
     }
 }

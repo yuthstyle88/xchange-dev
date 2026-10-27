@@ -55,7 +55,8 @@ pub struct IssuedQuote {
 
 #[derive(Debug, Clone)]
 pub enum BindingIssueOutcome {
-    Issued(IssuedQuote),
+    /// Boxed: a quote is far larger than a request id (clippy `large_enum_variant`).
+    Issued(Box<IssuedQuote>),
     /// Over the branch limit (D-15): the PENDING `BINDING_QUOTE` request's id (a new one, or the one already
     /// pending for this proposal). Nothing else is written in the caller's transaction.
     ApprovalRequired(String),

@@ -169,8 +169,10 @@ async fn bq0_existing_rows_keep_their_meaning_and_every_organisation_starts_off(
         "the existing quote is untouched"
     );
     assert_eq!(
-        db.count("SELECT count(*) FROM exchange_settings WHERE binding_quote_ttl_seconds IS NOT NULL")
-            .await,
+        db.count(
+            "SELECT count(*) FROM exchange_settings WHERE binding_quote_ttl_seconds IS NOT NULL"
+        )
+        .await,
         0,
         "every organisation starts with binding quotes off (D-10, §6 item 1)"
     );

@@ -132,7 +132,11 @@ fn q2_a_lifetime_is_the_locks_length() {
 #[test]
 fn q16_desk_is_the_only_channel() {
     on().check_channel(QuoteChannel::Desk).expect("DESK issues");
-    for channel in [QuoteChannel::App, QuoteChannel::Kiosk, QuoteChannel::Booking] {
+    for channel in [
+        QuoteChannel::App,
+        QuoteChannel::Kiosk,
+        QuoteChannel::Booking,
+    ] {
         refused_with(on().check_channel(channel), DESK_ONLY);
     }
 }
