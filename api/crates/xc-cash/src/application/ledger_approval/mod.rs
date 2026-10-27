@@ -4,6 +4,7 @@
 //! Scaffold written by the ticket author; the bodies of the two files are `todo!()`.
 
 pub mod count_difference;
+pub mod ledger_adjustment;
 pub mod negative_stock;
 
 use std::sync::Arc;

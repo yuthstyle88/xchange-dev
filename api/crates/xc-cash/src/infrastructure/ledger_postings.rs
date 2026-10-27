@@ -28,7 +28,7 @@ use crate::domain::ledger::account::AccountKind;
 use crate::domain::ledger::posting::{PostingId, SourceRef, SourceType};
 use crate::domain::posting::{
     ApprovalRequestId, CashPlace, CashPostings, LineCost, PlaceActivity, PostingRequest,
-    PostingResult, ReversedCost, TransactionLineId,
+    PostingResult, RevalueRequest, ReversedCost, TransactionLineId,
 };
 use crate::domain::shortfall::{ShortPlace, Shortfall, StockShortfall};
 use crate::infrastructure::stock_reservations::active_reserved_in;
@@ -1253,6 +1253,22 @@ impl CashPostings for LedgerCashPostings {
         allow_negative: Option<ApprovalRequestId>,
     ) -> BoxFuture<'a, AppResult<PostingResult>> {
         Box::pin(async move { self.post(tx, req, allow_negative).await })
+    }
+
+    /// A COST adjustment (design `ledger-inventory.md` §13.6, LA-8): every request's source must be
+    /// `Adjustment` and its currency not THB; the same source already posted answers its id; each
+    /// position is locked `FOR UPDATE` and must hold a positive quantity and a cost that stays ≥ 0; then
+    /// one `ledger_postings` row with no entries, and per request one `ADJUST` movement (quantity 0,
+    /// `cost_thb_signed` = delta, `average_after` = round8(new cost ÷ quantity), no line) and its
+    /// position's update, through `Plan` and `write`. Any refusal is `validationFailed` and writes
+    /// nothing.
+    fn revalue_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        reqs: &'a [RevalueRequest],
+    ) -> BoxFuture<'a, AppResult<PostingId>> {
+        let _ = (tx, reqs);
+        todo!("LA-8")
     }
 
     /// Σ of the place's account entries per currency (§4.2, L-4). A balance below zero, or one

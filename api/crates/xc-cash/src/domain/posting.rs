@@ -112,6 +112,17 @@ pub struct ReversedCost {
     pub difference_thb: MoneyDelta,
 }
 
+/// A cost-only change of one branch position (design `ledger-inventory.md` §13.6, a COST adjustment): its
+/// quantity is unchanged and its `cost_thb` moves by `cost_delta_thb`. Every request of one `revalue_in`
+/// call shares its `source`, which must be `SourceType::Adjustment`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevalueRequest {
+    pub branch: BranchId,
+    pub currency: CurrencyCode,
+    pub cost_delta_thb: MoneyDelta,
+    pub source: SourceRef,
+}
+
 /// One signed net per currency that ever had an entry in a place, sorted by currency code.
 pub type PlaceActivity = Vec<(CurrencyCode, QuantityDelta)>;
 
@@ -141,6 +152,21 @@ pub trait CashPostings: Send + Sync {
         Box::pin(async move {
             Err(pos_error::AppError::Internal(
                 "activity_in is not implemented by this CashPostings".into(),
+            ))
+        })
+    }
+
+    /// Posts `reqs` as one posting with no entries: one `ADJUST` movement per request (quantity 0,
+    /// `cost_thb_signed` = its delta) and its position's new cost (§13.6). A posting with the same
+    /// source already there answers its id and writes nothing.
+    fn revalue_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _reqs: &'a [RevalueRequest],
+    ) -> BoxFuture<'a, AppResult<PostingId>> {
+        Box::pin(async move {
+            Err(pos_error::AppError::Internal(
+                "revalue_in is not implemented by this CashPostings".into(),
             ))
         })
     }
