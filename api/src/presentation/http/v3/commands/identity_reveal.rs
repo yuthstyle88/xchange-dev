@@ -95,7 +95,15 @@ impl CommandAction for IdentityRevealCommand {
 
         let service = CustomerService::new(BranchTx::new(Transactor::new(self.pool.clone())));
         let revealed = service
-            .reveal_in(tx, who, branch, &input.id, input.identity_id, reason, Utc::now())
+            .reveal_in(
+                tx,
+                who,
+                branch,
+                &input.id,
+                input.identity_id,
+                reason,
+                Utc::now(),
+            )
             .await
             .map_err(|err| match err {
                 AppError::NotFound { .. } => {

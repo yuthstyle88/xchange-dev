@@ -39,6 +39,9 @@ struct CustomerSqlRow {
     completed: i64,
     volume: String,
     last_at: Option<DateTime<Utc>>,
+    rfm_completed: i64,
+    rfm_volume: String,
+    rfm_last_at: Option<DateTime<Utc>>,
 }
 
 type CustomerCursor = (Option<DateTime<Utc>>, String, DateTime<Utc>, String);
@@ -95,7 +98,10 @@ impl PagedView for AdminCustomersPagedView {
                      EXISTS(SELECT 1 FROM customer_identities ci WHERE ci.customer_id = c.id AND ci.type = 'PHONE' AND ci.status = 'ACTIVE' AND ci.verified_at IS NOT NULL) AS member, \
                      COUNT(DISTINCT t.id) AS completed, \
                      COALESCE(SUM(tl.thb_amount)::text, '0.00') AS volume, \
-                     MAX(t.recorded_at) AS last_at \
+                     MAX(t.recorded_at) AS last_at, \
+                     COUNT(DISTINCT t.id) FILTER (WHERE t.recorded_at >= now() - interval '12 months') AS rfm_completed, \
+                     COALESCE((SUM(tl.thb_amount) FILTER (WHERE t.recorded_at >= now() - interval '12 months'))::text, '0.00') AS rfm_volume, \
+                     MAX(t.recorded_at) FILTER (WHERE t.recorded_at >= now() - interval '12 months') AS rfm_last_at \
                  FROM customers c \
                  JOIN branches b ON b.organization_id = c.organization_id \
                  LEFT JOIN transactions t ON t.branch_id = b.id AND t.customer_id = c.id AND t.mode = 'LIVE' AND t.status = 'COMPLETED' \
@@ -161,7 +167,7 @@ impl PagedView for AdminCustomersPagedView {
             builder.push(
                 " GROUP BY c.id, c.display_name, c.created_at, b.id \
                  ) \
-                 SELECT id, name, nationality, created_at, member, completed, volume, last_at \
+                 SELECT id, name, nationality, created_at, member, completed, volume, last_at, rfm_completed, rfm_volume, rfm_last_at \
                  FROM customer_stats \
                  WHERE 1=1",
             );
@@ -200,6 +206,7 @@ impl PagedView for AdminCustomersPagedView {
             let mut rows = Vec::with_capacity(sql_rows.len());
             for r in sql_rows {
                 let volume = format_customer_volume(&r.volume, &r.id)?;
+                let rfm_volume = format_customer_volume(&r.rfm_volume, &r.id)?;
 
                 rows.push(AdminCustomerRow {
                     id: r.id,
@@ -214,10 +221,11 @@ impl PagedView for AdminCustomersPagedView {
                     last_at: r
                         .last_at
                         .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
-                    // Skeleton (feat/be-gaps-b): E-4 computes these from the 12 rolling months.
-                    rfm_completed: 0,
-                    rfm_volume: "0.00".to_string(),
-                    rfm_last_at: None,
+                    rfm_completed: r.rfm_completed,
+                    rfm_volume,
+                    rfm_last_at: r
+                        .rfm_last_at
+                        .map(|t| t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
                 });
             }
 
