@@ -21,19 +21,25 @@ use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 
 use super::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 
+/// The queue's issuer, telling bookings when a ticket ends (the 7th `pg_booking_lifecycle` call site,
+/// `booking_lifecycle_factory_guard_test.rs`), shared by the web request and `KioskQueueEnded`.
+fn queue_tickets(pool: &PgPool) -> Arc<dyn QueueTickets> {
+    Arc::new(
+        TicketIssuer::new(
+            BranchTx::new(Transactor::new(pool.clone())),
+            Arc::new(PgQueueRepository::new(pool.clone())),
+        )
+        .with_booking_events(pg_booking_lifecycle(pool.clone())),
+    )
+}
+
 /// `WebRequestService` over `pool`.
 pub fn web_request_service(pool: &PgPool) -> WebRequestService {
     let audit: Arc<dyn KioskAuditLog> = Arc::new(PgKioskAuditLog::with_pool(pool.clone()));
     let source: Arc<dyn RateSource> = Arc::new(BotRateSource::bot());
     let ports = Arc::new(PgKioskPorts::new(pool.clone(), audit, source));
     let kiosk = KioskService::new(BranchTx::new(Transactor::new(pool.clone())), ports);
-    let queue: Arc<dyn QueueTickets> = Arc::new(
-        TicketIssuer::new(
-            BranchTx::new(Transactor::new(pool.clone())),
-            Arc::new(PgQueueRepository::new(pool.clone())),
-        )
-        .with_booking_events(pg_booking_lifecycle(pool.clone())),
-    );
+    let queue = queue_tickets(pool);
     WebRequestService::new(kiosk, queue)
 }
 
@@ -43,13 +49,7 @@ pub fn kiosk_queue_events(pool: &PgPool) -> Arc<dyn KioskQueueEvents> {
     let audit: Arc<dyn KioskAuditLog> = Arc::new(PgKioskAuditLog::with_pool(pool.clone()));
     let source: Arc<dyn RateSource> = Arc::new(BotRateSource::bot());
     let ports = Arc::new(PgKioskPorts::new(pool.clone(), audit, source));
-    let queue: Arc<dyn QueueTickets> = Arc::new(
-        TicketIssuer::new(
-            BranchTx::new(Transactor::new(pool.clone())),
-            Arc::new(PgQueueRepository::new(pool.clone())),
-        )
-        .with_booking_events(pg_booking_lifecycle(pool.clone())),
-    );
+    let queue = queue_tickets(pool);
     Arc::new(KioskQueueEnded::new(
         PgKioskRepository::new(pool.clone()),
         ports,
