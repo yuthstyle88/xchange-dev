@@ -10,12 +10,14 @@
 use std::sync::Arc;
 
 use pos_error::AppResult;
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
+use xc_kernel::money::Side;
 
 use super::quote::QuoteRequest;
 
@@ -29,8 +31,33 @@ pub const BINDING_QUOTE: &str = "BINDING_QUOTE";
 /// denomination group), in line order. The same request gives the same id; a change to any of those gives
 /// another id (Q22: *"a changed request is `staleVersion`"*).
 pub fn proposal_id(req: &QuoteRequest, coupon_code: Option<&str>) -> String {
-    let _ = (req, coupon_code);
-    todo!("BQ-6")
+    let mut h = Sha256::new();
+    h.update(format!("branch|{}\n", req.branch_id.as_str()));
+    h.update(format!(
+        "customer|{}\n",
+        req.customer_id.as_deref().unwrap_or("-")
+    ));
+    h.update(format!("channel|{}\n", req.channel.as_str()));
+    h.update(format!(
+        "payment|{}\n",
+        req.payment_method.map_or("-", |m| m.as_str())
+    ));
+    h.update(format!("coupon|{}\n", coupon_code.unwrap_or("-")));
+    for line in &req.lines {
+        h.update(format!(
+            "line|{}|{}|{}|{}|{}\n",
+            line.currency.as_str(),
+            match line.shop_side {
+                Side::Buy => "BUY",
+                Side::Sell => "SELL",
+            },
+            line.quantity.value().normalize(),
+            line.fee_thb
+                .map_or_else(|| "-".to_owned(), |f| f.to_string()),
+            line.denomination_group,
+        ));
+    }
+    format!("{:x}", h.finalize())
 }
 
 pub struct BindingQuoteSubject;
@@ -57,8 +84,8 @@ impl ApprovalSubject for BindingQuoteSubject {
         tx: &'a mut Transaction<'_, Postgres>,
         object_id: &'a str,
     ) -> BoxFuture<'a, AppResult<String>> {
-        let _ = (tx, object_id);
-        Box::pin(async move { todo!("BQ-6") })
+        let _ = tx;
+        Box::pin(async move { Ok(object_id.to_owned()) })
     }
 
     /// Nothing to write: the quote is issued by the retry that names the APPROVED request (D-15).
@@ -69,7 +96,7 @@ impl ApprovalSubject for BindingQuoteSubject {
         outcome: Outcome,
     ) -> BoxFuture<'a, AppResult<()>> {
         let _ = (tx, object_id, outcome);
-        Box::pin(async move { todo!("BQ-6") })
+        Box::pin(async move { Ok(()) })
     }
 }
 
@@ -78,11 +105,21 @@ impl ApprovalPolicy for BindingQuoteApprovalPolicy {
     /// `Permission::ApproveExchangeTransaction` on a row covering `request.branch_id` (RBAC §11.9). Anyone else is
     /// `Refusal("outOfScope", …)`. The proposer is refused by AP-1 itself.
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let _ = (who, request);
-        todo!("BQ-6")
+        if ApprovalDecider::holds_on(
+            who,
+            Permission::ApproveExchangeTransaction,
+            request.branch_id.as_deref(),
+        ) {
+            Ok(())
+        } else {
+            Err(Refusal::new(
+                "outOfScope",
+                "only the manager of the quote's branch decides it",
+            ))
+        }
     }
 
     fn policy_version(&self) -> String {
-        todo!("BQ-6")
+        "1".to_owned()
     }
 }
