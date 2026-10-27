@@ -27,7 +27,7 @@ use xc_shift::infrastructure::custody::custody_repository::append_cash_exception
 use crate::application::approval::{TransferApprovalPolicy, TransferApprovalSubject, policy_actor};
 use crate::application::denominations::face_values_in;
 use crate::domain::ledger::posting::{SourceRef, SourceType};
-use crate::domain::posting::{CashPlace, CashPostings, differences};
+use crate::domain::posting::{ApprovalRequestId, CashPlace, CashPostings, differences};
 use crate::domain::transfer::cash_transfer::{
     CashTransfer, NewTransfer, NewTransferLine, TransferError, TransferStatus, TransferStep,
     add_line_minor, checked_line_minor,
@@ -222,9 +222,9 @@ impl TransferFlow {
         let at = t.from_branch.clone();
         self.branch_tx
             .run(&t.from_branch, move |tx| {
-                Box::pin(
-                    async move { Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now).await },
-                )
+                Box::pin(async move {
+                    Self::dispatch_on(&parts, tx, &at, &who, &id_owned, now, None).await
+                })
             })
             .await
     }
@@ -613,7 +613,23 @@ impl TransferFlow {
         id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CashTransfer> {
-        Self::dispatch_on(&self.parts(), tx, branch, who, id, now).await
+        self.dispatch_approved_in(tx, branch, who, id, now, None)
+            .await
+    }
+
+    /// `dispatch_in` allowed to take a drawer or the safe below zero by the APPROVED `NEGATIVE_STOCK`
+    /// request `allow_negative`, keyed on this transfer (R1, `ledger-inventory.md` N-1 and §5.1;
+    /// XC-BE-GAPS-A row 3). `None` is `dispatch_in`.
+    pub async fn dispatch_approved_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        who: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+        allow_negative: Option<ApprovalRequestId>,
+    ) -> AppResult<CashTransfer> {
+        Self::dispatch_on(&self.parts(), tx, branch, who, id, now, allow_negative).await
     }
 
     /// `branch` is the caller's (the session) branch. A transfer whose destination is another branch is refused
@@ -650,6 +666,7 @@ impl TransferFlow {
         who: &Actor,
         id: &str,
         now: DateTime<Utc>,
+        allow_negative: Option<ApprovalRequestId>,
     ) -> AppResult<CashTransfer> {
         let t = parts
             .repo
@@ -669,26 +686,9 @@ impl TransferFlow {
             .ok_or_else(|| AppError::Validation(format!("unknown kind: {:?}", t.kind)))?;
         let reqs = ends.on_dispatch(&t).map_err(from_transfer_error)?;
 
-        // A move out of a drawer or the safe cannot exceed its expected balance.
-        for r in &reqs {
-            match &r.from {
-                CashPlace::Drawer(_) | CashPlace::Safe(_) => {
-                    let balances = parts.postings.expected_in(tx, &r.from).await?;
-                    if balances.get(r.currency).value() < r.quantity.value() {
-                        return Err(AppError::Domain(
-                            TransferError::StockInsufficient.to_string(),
-                        ));
-                    }
-                }
-                CashPlace::InTransit(_)
-                | CashPlace::Customer
-                | CashPlace::Bank
-                | CashPlace::Variance(_) => {}
-            }
-        }
-
+        // Post while still APPROVED so `NegativeStockSource::version_hash` matches the approval request (§5.1).
+        parts.postings.post_in(tx, &reqs, allow_negative).await?;
         parts.repo.mark_dispatched(tx, id, who, now).await?;
-        parts.postings.post_in(tx, &reqs, None).await?;
         parts
             .repo
             .find_by_id_in(tx, id)

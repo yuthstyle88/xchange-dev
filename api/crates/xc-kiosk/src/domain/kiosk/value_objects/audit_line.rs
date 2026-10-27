@@ -31,6 +31,12 @@ pub enum KioskAudit {
         from: KioskStatus,
         reason: CancelReason,
     },
+    /// The desk saved the request on the passport's customer, who is not the request's member
+    /// (`kiosk-shared-phone.md` D13). The member stays on the request and its quote.
+    CustomerDiffers {
+        saved_customer: String,
+        request_customer: String,
+    },
 }
 
 impl KioskAudit {
@@ -43,6 +49,7 @@ impl KioskAudit {
             Self::Completed { .. } => KioskEventKind::Completed.as_str(),
             Self::CurrencyConfigured { .. } => "KIOSK_CURRENCY_CONFIGURED",
             Self::Cancelled { .. } => "KIOSK_CANCELLED",
+            Self::CustomerDiffers { .. } => "KIOSK_CUSTOMER_DIFFERS",
         }
     }
 }

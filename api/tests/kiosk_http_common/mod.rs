@@ -192,6 +192,13 @@ fn detail_of(what: &KioskAudit) -> Value {
             "reason": reason.as_str(),
             "note": reason.note(),
         }),
+        KioskAudit::CustomerDiffers {
+            saved_customer,
+            request_customer,
+        } => json!({
+            "savedCustomerId": saved_customer,
+            "requestCustomerId": request_customer,
+        }),
     }
 }
 
@@ -217,6 +224,8 @@ impl KioskAuditLog for TestAudit {
                 KioskAudit::IdChecked => Some("ID_CHECKED"),
                 // Amended by the author of KC-D #4174: a cancel stores the move, then writes its line.
                 KioskAudit::Cancelled { .. } => Some("CANCELLED"),
+                // XC-BE-GAPS-A row 5: written after the save completed the request (D13).
+                KioskAudit::CustomerDiffers { .. } => Some("COMPLETED"),
                 KioskAudit::Completed { .. } | KioskAudit::CurrencyConfigured { .. } => None,
             };
             if let Some(expected) = moved_to {

@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
-use chrono::Utc;
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
@@ -11,6 +11,8 @@ use ts_rs::TS;
 use xc_auth::domain::access::{Actor, Permission, RoleGrants};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_error::BookingError;
+use xc_booking::domain::booking::booking_status::BookingStatus;
+use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
 use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
@@ -44,6 +46,18 @@ pub struct BookingQrReissueOutput {
     pub qr_version: u32,
 }
 
+#[derive(sqlx::FromRow)]
+struct BookingQrRow {
+    customer_id: String,
+    branch_id: String,
+    status: String,
+    confirm_expires_at: Option<DateTime<Utc>>,
+    grace_until: DateTime<Utc>,
+    service_date: NaiveDate,
+    branch_today: NaiveDate,
+    has_active_ticket: bool,
+}
+
 impl CommandAction for BookingQrReissue {
     const NAME: &'static str = "bookingQrReissue";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "bookingQrReissue");
@@ -67,34 +81,48 @@ impl CommandAction for BookingQrReissue {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let services = self.services.services()?;
+        let now = Utc::now();
 
-        let row: Option<(String, String, String)> =
-            sqlx::query_as("SELECT customer_id, branch_id, status FROM bookings WHERE id = $1")
-                .bind(&input.id)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| {
-                    V3Error::new(
-                        "serverError",
-                        None,
-                        e.to_string(),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                })?;
+        let row: Option<BookingQrRow> = sqlx::query_as(
+            "SELECT b.customer_id, b.branch_id, b.status, \
+                    b.confirm_expires_at, \
+                    (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                    s.service_date, \
+                    ($2 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
+                    EXISTS ( \
+                        SELECT 1 FROM queue_tickets qt_active \
+                        WHERE qt_active.booking_id = b.id \
+                          AND qt_active.status IN ('WAITING', 'CALLED', 'SERVING') \
+                    ) AS has_active_ticket \
+             FROM bookings b \
+             JOIN booking_slots s ON s.id = b.slot_id \
+             JOIN branches br ON br.id = b.branch_id \
+             LEFT JOIN booking_policies p ON p.organization_id = br.organization_id \
+             WHERE b.id = $1",
+        )
+        .bind(&input.id)
+        .bind(now)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
-        let (booking_cust_id, branch_id, status) = match row {
-            Some(r) => r,
-            None => {
-                return Err(V3Error::new(
-                    "notFound",
-                    None,
-                    "NOT_FOUND",
-                    StatusCode::NOT_FOUND,
-                ));
-            }
+        let Some(row) = row else {
+            return Err(V3Error::new(
+                "notFound",
+                None,
+                "NOT_FOUND",
+                StatusCode::NOT_FOUND,
+            ));
         };
 
-        if branch_id != branch.as_str() {
+        if row.branch_id != branch.as_str() {
             return Err(out_of_scope());
         }
 
@@ -103,23 +131,35 @@ impl CommandAction for BookingQrReissue {
             .iter()
             .any(|r| RoleGrants::holds(r.group_code(), Permission::BookingsDesk));
 
-        if !is_staff && who.customer_id.as_deref() != Some(booking_cust_id.as_str()) {
+        if !is_staff && who.customer_id.as_deref() != Some(row.customer_id.as_str()) {
             return Err(out_of_scope());
         }
 
-        match status.as_str() {
-            "PENDING_CUSTOMER_CONFIRMATION" | "CONFIRMED" | "CHECKED_IN" => {}
-            _ => {
-                return Err(V3Error::new(
-                    "staleVersion",
-                    None,
-                    "STALE_VERSION",
-                    StatusCode::CONFLICT,
-                ));
-            }
+        let facts = OverdueFacts {
+            confirm_expires_at: row.confirm_expires_at,
+            grace_until: row.grace_until,
+            service_date: row.service_date,
+            branch_today: row.branch_today,
+            has_active_ticket: row.has_active_ticket,
+        };
+        let effective =
+            BookingStatus::parse(&row.status).map(|st| effective_status(st, &facts, now));
+        if !matches!(
+            effective,
+            Some(
+                BookingStatus::PendingCustomerConfirmation
+                    | BookingStatus::Confirmed
+                    | BookingStatus::CheckedIn
+            )
+        ) {
+            return Err(V3Error::new(
+                "staleVersion",
+                None,
+                "STALE_VERSION",
+                StatusCode::CONFLICT,
+            ));
         }
 
-        let now = Utc::now();
         let reissued = services
             .booking_service
             .reissue_qr_in(tx, &input.id, &who.user_id, now)
