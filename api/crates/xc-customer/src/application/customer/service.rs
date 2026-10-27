@@ -5,10 +5,12 @@ use pos_error::{AppError, AppResult};
 use sqlx::Transaction;
 use uuid::Uuid;
 use xc_auth::domain::access::actor::Actor;
+use xc_auth::domain::access::authorizer::{Authorizer, Target};
+use xc_auth::domain::access::permission::Permission;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher};
+use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher, Sealed};
 
 use crate::domain::customer::commands::reserve_customer::ReserveCustomer;
 use crate::domain::customer::entities::customer::Customer;
@@ -295,8 +297,96 @@ impl CustomerService {
         reason: &str,
         now: DateTime<Utc>,
     ) -> AppResult<RevealedIdentity> {
-        let _ = (tx, actor, branch, customer_id, identity_id, reason, now);
-        todo!("K8: reveal one identity by id (feat/be-gaps-b)")
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(AppError::Validation("reason is required".to_string()));
+        }
+
+        let org_id = self.repo.organization_of_branch(branch).await?;
+
+        let target = Target::new(&org_id.to_string(), Some(branch.clone()), None);
+        let grant = Authorizer::check(Some(actor), Permission::IdentityDocumentRead, &target, now)
+            .map_err(|_| AppError::Forbidden)?;
+
+        let row: Option<(String, Vec<u8>, String)> = sqlx::query_as(
+            "SELECT type, encrypted_value, key_id FROM customer_identities \
+             WHERE id = $1 AND organization_id = $2 AND customer_id = $3 AND status = 'ACTIVE'",
+        )
+        .bind(identity_id)
+        .bind(org_id)
+        .bind(customer_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let (identity_type, encrypted_value, key_id) = row.ok_or_else(|| AppError::NotFound {
+            entity: "customer_identity",
+            id: identity_id.to_string(),
+        })?;
+
+        let keys = get_pii_keys()?;
+        let cipher = PiiCipher::new(keys);
+        let aad = format!("{customer_id}{identity_type}");
+        let sealed = Sealed {
+            key_id,
+            bytes: encrypted_value,
+        };
+        let decrypted = cipher
+            .decrypt(aad.as_bytes(), &sealed)
+            .map_err(|e| AppError::Internal(format!("decrypt failed: {e}")))?;
+
+        let value = match identity_type.as_str() {
+            "PASSPORT" | "NATIONAL_ID" => {
+                let val: serde_json::Value = serde_json::from_slice(&decrypted)
+                    .map_err(|e| AppError::Internal(format!("invalid JSON payload: {e}")))?;
+                val.get("number")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::Internal(
+                            "missing document number in decrypted payload".to_string(),
+                        )
+                    })?
+                    .to_string()
+            }
+            _ => String::from_utf8(decrypted)
+                .map_err(|e| AppError::Internal(format!("invalid UTF-8 payload: {e}")))?,
+        };
+
+        let role_str = grant
+            .roles_used
+            .first()
+            .map(|r| r.as_str())
+            .unwrap_or("TELLER");
+
+        sqlx::query(
+            "INSERT INTO audit_events ( \
+                 actor_id, actor_role, scope, branch_id, action, \
+                 object_ref, before_redacted, after_redacted, at \
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        )
+        .bind(&actor.user_id)
+        .bind(role_str)
+        .bind("BRANCH")
+        .bind(branch.as_str())
+        .bind("identityReveal")
+        .bind(customer_id)
+        .bind(Option::<serde_json::Value>::None)
+        .bind(Some(serde_json::json!({
+            "customerId": customer_id,
+            "identityId": identity_id.to_string(),
+            "identityType": &identity_type,
+            "reason": reason,
+        })))
+        .bind(now)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(RevealedIdentity {
+            identity_id,
+            identity_type,
+            value,
+        })
     }
 }
 
