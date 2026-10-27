@@ -323,9 +323,10 @@ async fn the_kiosk_check_in_names_its_branch_as_branch() {
     )
     .await;
 
+    // Owner ruling R2 (2026-10-27, "kioskBookingCheckIn becomes staff-only", #564 issuecomment-6439994453).
     let res = call(
         &db,
-        None,
+        Some("TELLER@XC-B01"),
         Method::POST,
         "/api/kiosk/bookings/check-in",
         Some(json!({ "branch": B01, "qrToken": token })),
@@ -335,7 +336,7 @@ async fn the_kiosk_check_in_names_its_branch_as_branch() {
     assert_eq!(
         res.status,
         StatusCode::OK,
-        "a public command with no signed-in user, its branch named `branch`: {}",
+        "the branch's staff, the branch named `branch`: {}",
         res.text
     );
     assert_eq!(status_of(&db, id).await, "CHECKED_IN");
