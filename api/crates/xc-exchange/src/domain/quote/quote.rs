@@ -98,6 +98,7 @@ pub struct Quote {
     pub updated_at: DateTime<Utc>,
     pub lines: Vec<QuoteLine>,
     pub stale: bool,
+    pub cash_settlement: bool,
 }
 
 impl Quote {

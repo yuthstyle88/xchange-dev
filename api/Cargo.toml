@@ -75,7 +75,7 @@ sha2 = "0.10"
 # The OTP challenge seal (design kiosk-shared-phone.md §4.2 D11, application/otp_challenge_seal.rs).
 hmac = "0.12"
 uuid = { version = "1", features = ["v4"] }
-actix-web = "4"
+actix-web = { version = "4", default-features = false, features = ["macros", "compress-brotli", "compress-gzip", "cookies", "http2", "unicode", "compat", "ws"] }
 anyhow = "1"
 base64 = "0.22"
 async-trait = "0.1"

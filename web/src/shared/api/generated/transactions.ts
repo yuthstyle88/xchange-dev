@@ -31,7 +31,7 @@ documentRef: string | null, quoteId: string | null, customerId: string,
  */
 approvalRequestId: string | null, cancelReason: string | null, cancelledAt: string | null, recordedAt: string, lines: Array<TransactionLineDto>, payment: TransactionPaymentDto, };
 
-export type TransactionLineDto = { currency: string, shopSide: string, quantity: string, unitSize: string, rateSnapshot: string, thbAmount: string, feeThb: string, settleThb: string, };
+export type TransactionLineDto = { currency: string, shopSide: string, quantity: string, unitSize: string, rateSnapshot: string, thbAmount: string, feeThb: string, roundingThb: string, settleThb: string, };
 
 export type TransactionPaymentDto = { method: string, reference: string, account: string, amountThb: string, bankFeeThb: string, paidAt: string, };
 

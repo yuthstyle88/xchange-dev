@@ -286,7 +286,7 @@ async fn a_draft_is_made_from_the_quote_with_every_figure_from_the_quote() {
     let slip = c.upload("MAIN", "application/pdf", PDF).await;
     let q = c
         .desk
-        .quote("MAIN", Side::Buy, "100", Some("10.00"), now)
+        .quote_non_cash("MAIN", Side::Buy, "100", Some("10.00"), now)
         .await;
     let mut req = c.request("MAIN", &q, &customer, &passport);
     req.staff_draft_id = Some("draft-7".to_owned());
@@ -490,6 +490,7 @@ async fn a_quote_for_another_customer_is_refused_and_nothing_is_written() {
                                 xc_rate::domain::currency::denomination_groups::GroupCode::all(),
                         },
                     ],
+                    payment_method: Some(PaymentMethod::Cash),
                 },
                 &teller(),
                 now,
@@ -688,6 +689,7 @@ async fn desk_quote(
                     fee_thb: None,
                     denomination_group: GroupCode::all(),
                 }],
+                payment_method: Some(PaymentMethod::Cash),
             },
             &teller(),
             now,

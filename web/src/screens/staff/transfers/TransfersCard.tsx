@@ -38,6 +38,25 @@ const KINDS = [
 export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const t = screenT('staff.transfers', { th, en });
 
+  const shortId = (id: string): string => `#${id.slice(0, 8)}`;
+
+  const statusLabel = (status: string): string => {
+    switch (status) {
+      case 'DRAFT':
+        return t('status_DRAFT');
+      case 'APPROVED':
+        return t('status_APPROVED');
+      case 'DISPATCHED':
+        return t('status_DISPATCHED');
+      case 'RECEIVED':
+        return t('status_RECEIVED');
+      case 'RECONCILED':
+        return t('status_RECONCILED');
+      default:
+        return status;
+    }
+  };
+
   const [transfers, setTransfers] = createSignal<CashTransferRow[]>([]);
   const [denominations, setDenominations] = createSignal<DenominationRow[]>([]);
   const [transferBranches, setTransferBranches] = createSignal<TransferBranchRow[]>([]);
@@ -576,8 +595,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             class="xc-transfers-form"
             onSubmit={handleReceiveSubmit}
           >
-            <h3>
-              {t('receive')}: {row().id}
+            <h3 title={row().id}>
+              {t('receive')}: {shortId(row().id)}
             </h3>
             <div class="xc-transfers-denoms">
               <label>{t('lines')}</label>
@@ -633,6 +652,15 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
           fallback={<p class="xc-transfers-empty">{t('empty')}</p>}
         >
           <table class="xc-transfers-table">
+            <thead>
+              <tr>
+                <th>{t('col_id')}</th>
+                <th>{t('col_kind')}</th>
+                <th>{t('col_status')}</th>
+                <th>{t('col_note')}</th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
               <For each={transfers()}>
                 {(row) => {
@@ -654,9 +682,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
 
                   return (
                     <tr data-transfer-id={row.id}>
-                      <td>{row.id}</td>
+                      <td title={row.id}>{shortId(row.id)}</td>
                       <td>{t(('kind_' + row.kind) as any) || row.kind}</td>
-                      <td>{row.status}</td>
+                      <td>{statusLabel(row.status)}</td>
                       <td>{row.note ?? ''}</td>
                       <td>
                         <Show when={canDispatch()}>

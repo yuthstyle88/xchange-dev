@@ -96,6 +96,7 @@ fn request(branch: &str, customer: Option<&str>, lines: Vec<QuoteRequestLine>) -
         customer_id: customer.map(|c| c.to_owned()),
         channel: QuoteChannel::Desk,
         lines,
+        payment_method: None,
     }
 }
 

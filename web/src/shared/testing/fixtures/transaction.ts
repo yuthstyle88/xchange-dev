@@ -85,6 +85,7 @@ export function makeTxLineDto(o: Partial<TxLineDto> = {}): TxLineDto {
     rateSnapshot: 'rateSnapshot',
     thbAmount: '0.00',
     feeThb: '0.00',
+    roundingThb: '0.00',
     settleThb: '0.00',
     ...o,
   };

@@ -1224,9 +1224,9 @@ async fn totals_round_cents_at_midpoint_pins_half_away_from_zero() {
     assert_eq!(data["totals"]["volume"], json!("70.08"), "{data}");
     assert_eq!(data["totals"]["buyPrincipal"], json!("30.03"), "{data}");
     assert_eq!(data["totals"]["sellPrincipal"], json!("40.05"), "{data}");
-    assert_eq!(data["totals"]["paid"], json!("30.03"), "{data}");
-    assert_eq!(data["totals"]["received"], json!("40.05"), "{data}");
-    assert_eq!(data["totals"]["net"], json!("10.02"), "{data}");
+    assert_eq!(data["totals"]["paid"], json!("30.25"), "{data}");
+    assert_eq!(data["totals"]["received"], json!("40.00"), "{data}");
+    assert_eq!(data["totals"]["net"], json!("9.75"), "{data}");
 
     // Shares: 30.03 * 100 / 70.08 = 42.8510... -> 42.85
     //         40.05 * 100 / 70.08 = 57.1489... -> 57.15

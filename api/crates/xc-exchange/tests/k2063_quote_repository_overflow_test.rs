@@ -65,6 +65,7 @@ fn test_quote(id: Uuid, lines: Vec<QuoteLine>) -> Quote {
         updated_at: Utc::now(),
         lines,
         stale: false,
+        cash_settlement: false,
     }
 }
 

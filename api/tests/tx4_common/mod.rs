@@ -242,6 +242,31 @@ impl Desk {
         fee: Option<&str>,
         now: DateTime<Utc>,
     ) -> Quote {
+        self.quote_with_method(branch, side, quantity, fee, Some(PaymentMethod::Cash), now)
+            .await
+    }
+
+    pub async fn quote_non_cash(
+        &self,
+        branch: &str,
+        side: Side,
+        quantity: &str,
+        fee: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Quote {
+        self.quote_with_method(branch, side, quantity, fee, None, now)
+            .await
+    }
+
+    pub async fn quote_with_method(
+        &self,
+        branch: &str,
+        side: Side,
+        quantity: &str,
+        fee: Option<&str>,
+        payment_method: Option<PaymentMethod>,
+        now: DateTime<Utc>,
+    ) -> Quote {
         let mut tx = self.db.pool.begin().await.unwrap();
         let q = QuoteService::new(self.db.pool.clone())
             .quote_in(
@@ -258,6 +283,7 @@ impl Desk {
                         denomination_group:
                             xc_rate::domain::currency::denomination_groups::GroupCode::all(),
                     }],
+                    payment_method,
                 },
                 &teller(),
                 now,

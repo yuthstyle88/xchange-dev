@@ -116,6 +116,7 @@ impl Shop {
                         denomination_group:
                             xc_rate::domain::currency::denomination_groups::GroupCode::all(),
                     }],
+                    payment_method: None,
                 },
                 &teller(),
                 whole_second_now(),
