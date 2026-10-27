@@ -120,7 +120,7 @@ impl IssueBindingQuote {
         policy.check_customer(verified_until, now)?;
 
         let proposal_id = binding_approval::proposal_id(&req.quote, req.coupon_code.as_deref());
-        let mut approved = false;
+        let mut approved_request_id: Option<Uuid> = None;
         if let Some(ref req_id) = req.approval_request_id {
             let req_uuid =
                 Uuid::parse_str(req_id).map_err(|_| AppError::Domain(STALE_PROPOSAL.to_owned()))?;
@@ -143,7 +143,19 @@ impl IssueBindingQuote {
                 "PENDING" => {
                     return Ok(BindingIssueOutcome::ApprovalRequired(req_id.clone()));
                 }
-                "APPROVED" => approved = true,
+                "APPROVED" => {
+                    let used: bool = sqlx::query_scalar(
+                        "SELECT EXISTS (SELECT 1 FROM quotes WHERE approval_request_id = $1)",
+                    )
+                    .bind(req_uuid)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+                    if used {
+                        return Err(AppError::Domain(APPROVAL_USED.into()));
+                    }
+                    approved_request_id = Some(req_uuid);
+                }
                 _ => return Err(AppError::Domain(STALE_PROPOSAL.to_owned())),
             }
         }
@@ -170,7 +182,7 @@ impl IssueBindingQuote {
             .approval_limit_in(&mut sp, org, &req.quote.branch_id)
             .await?;
 
-        if !approved && policy.needs_approval(total, limit) {
+        if approved_request_id.is_none() && policy.needs_approval(total, limit) {
             sp.rollback().await.map_err(AppError::Database)?;
 
             let payload = json!({
@@ -274,6 +286,20 @@ impl IssueBindingQuote {
             reservations
                 .release_for_quote_in(&mut sp, replaces_id, ReleaseReason::Cancelled)
                 .await?;
+        }
+
+        if let Some(req_uuid) = approved_request_id {
+            sqlx::query("UPDATE quotes SET approval_request_id = $1 WHERE id = $2")
+                .bind(req_uuid)
+                .bind(quote.id)
+                .execute(&mut *sp)
+                .await
+                .map_err(|e| match e {
+                    sqlx::Error::Database(ref db) if db.code().as_deref() == Some("23505") => {
+                        AppError::Domain(APPROVAL_USED.into())
+                    }
+                    other => AppError::Database(other),
+                })?;
         }
 
         sp.commit().await.map_err(AppError::Database)?;
