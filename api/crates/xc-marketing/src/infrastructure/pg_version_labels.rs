@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
@@ -31,7 +31,25 @@ impl PgVersionLabels {
         organization_id: Uuid,
         version_ids: &[Uuid],
     ) -> AppResult<HashMap<Uuid, VersionLabel>> {
-        let _ = (tx, organization_id, version_ids);
-        todo!("BE-3: PgVersionLabels::labels_in")
+        if version_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let rows: Vec<(Uuid, String, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT v.id, c.name, v.ends_at \
+             FROM campaign_versions v \
+             JOIN campaigns c ON c.id = v.campaign_id \
+             WHERE v.organization_id = $1 AND v.id = ANY($2)",
+        )
+        .bind(organization_id)
+        .bind(version_ids)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, ends_at)| (id, VersionLabel { name, ends_at }))
+            .collect())
     }
 }

@@ -7,18 +7,19 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 use xc_app::application::planner::planner_preview::PlannerEstimate;
-use xc_app::domain::planner::planner_draft::DraftPlan;
+use xc_app::domain::planner::planner_draft::{DraftAmount, DraftPlan};
+use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{Money, Rate};
+use xc_kernel::money::{ExchangeArithmetic, Money, Rate};
 use xc_marketing::domain::benefit::rule::BenefitClass;
 use xc_marketing::infrastructure::pg_campaign_repository::PgCampaignRepository;
 use xc_marketing::infrastructure::pg_version_labels::PgVersionLabels;
 
-use super::benefit_pricing::BenefitPricing;
+use super::benefit_pricing::{BenefitPricing, BenefitPricingInput, PricingLine};
 
 /// Why no benefit is estimated (E-7). Skip reasons are never sent to the customer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,17 +94,113 @@ impl BenefitEstimator {
         plan: &DraftPlan,
         now: DateTime<Utc>,
     ) -> AppResult<EstimateOutcome> {
-        let _ = (
-            &self.pricing,
-            &self.labels,
-            tx,
-            organization_id,
-            branch,
-            customer_id,
-            planner,
-            plan,
-            now,
-        );
-        todo!("BE-3: BenefitEstimator::estimate_in")
+        let quantity = match plan.amount {
+            DraftAmount::Quantity(q) => q,
+            DraftAmount::BudgetThb(_) => {
+                return Err(AppError::Internal(
+                    "BudgetThb cannot reach BenefitEstimator::estimate_in".to_string(),
+                ));
+            }
+        };
+
+        let shop_side = plan.customer_side.to_shop();
+
+        let priced = self
+            .pricing
+            .evaluate_in(
+                tx,
+                BenefitPricingInput {
+                    organization_id,
+                    branch,
+                    eligibility_channel: QuoteChannel::App,
+                    also_admitted_on: Some(QuoteChannel::Desk),
+                    customer_id,
+                    coupon: None,
+                    coupon_code: None,
+                    line: PricingLine {
+                        currency: plan.currency,
+                        shop_side,
+                        quantity,
+                        fee_thb: Money::ZERO,
+                        published: planner.published.clone(),
+                    },
+                    now,
+                },
+            )
+            .await?;
+
+        let applied = priced.evaluation.snapshot.applied;
+        if applied.is_empty() {
+            let reason = if priced.active_rules.len() + priced.dropped_by_also_admitted_on == 0 {
+                NoBenefitReason::NoActiveRule
+            } else {
+                NoBenefitReason::NotEligible
+            };
+            return Ok(EstimateOutcome::None(reason));
+        }
+
+        let version_ids: Vec<Uuid> = applied.iter().map(|e| e.version_id).collect();
+        let labels = self
+            .labels
+            .labels_in(tx, organization_id, &version_ids)
+            .await?;
+
+        let mut benefit_minor: i128 = 0;
+        let mut items = Vec::with_capacity(applied.len());
+        for entry in applied {
+            let label = labels.get(&entry.version_id).ok_or_else(|| {
+                AppError::Internal(format!(
+                    "missing campaign version label for version {}",
+                    entry.version_id
+                ))
+            })?;
+            let item_money = Money::parse(&entry.amount_thb).map_err(|_| {
+                AppError::Internal(format!(
+                    "applied benefit {} has an unreadable amountThb {:?}",
+                    entry.rule_id, entry.amount_thb
+                ))
+            })?;
+            benefit_minor = benefit_minor
+                .checked_add(item_money.minor_i128())
+                .ok_or_else(|| {
+                    AppError::Internal(format!("benefit_thb overflow at rule {}", entry.rule_id))
+                })?;
+            items.push(EstimateItem {
+                rule_id: entry.rule_id,
+                label: label.name.clone(),
+                benefit_type: entry.benefit_type,
+                benefit_class: entry.benefit_class,
+                amount_thb: entry.amount_thb,
+                rate_before: entry.rate_before,
+                rate_after: entry.rate_after,
+                floor_capped: entry.floor_capped,
+                ends_at: label.ends_at,
+            });
+        }
+
+        let benefit_thb = Money::try_from_minor_i128(benefit_minor)
+            .map_err(|_| AppError::Internal("benefit_thb exceeds Money capacity".to_string()))?;
+        let valid_until = items
+            .iter()
+            .map(|i| i.ends_at)
+            .min()
+            .expect("applied is non-empty");
+        let publication_id = planner.published.publication.id.as_uuid();
+        let final_rate = priced.evaluation.lines[0].final_rate;
+        let thb_after =
+            ExchangeArithmetic::try_thb(quantity, final_rate, planner.published.unit_size)
+                .map_err(|_| {
+                    AppError::Domain("validationFailed: quantity overflows thb amount".to_string())
+                })?;
+
+        Ok(EstimateOutcome::Estimated(BenefitEstimate {
+            evaluated_at: now,
+            valid_until,
+            publication_id,
+            final_rate,
+            thb_after,
+            benefit_thb,
+            items,
+        }))
     }
 }
