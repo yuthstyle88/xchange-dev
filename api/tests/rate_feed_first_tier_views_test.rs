@@ -38,7 +38,7 @@ const ALLOWED: &[&str] = &[
     "crates/xc-kiosk/src/domain/kiosk/value_objects/counter_facts.rs",
     // reads one line by id (controller claude/553782, 2026-10-14, readers added to main after d365b04)
     "crates/xc-alert/src/infrastructure/repository.rs",
-    "src/application/workflows/exchange/quote.rs",
+    "src/application/workflows/exchange/benefit_pricing.rs",
     // DISTINCT currency codes of a publication: any tier gives the same set
     "src/presentation/http/v3/views/admin_cash.rs",
 ];

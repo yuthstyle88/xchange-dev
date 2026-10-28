@@ -68,6 +68,19 @@ function formatSlotTime(startAt?: string, endAt?: string, timeZone = 'Asia/Bangk
   }
 }
 
+function formatSlotDate(startAt?: string, timeZone = 'Asia/Bangkok'): string {
+  if (!startAt) return '';
+  try {
+    return new Intl.DateTimeFormat('th-TH', {
+      timeZone,
+      day: 'numeric',
+      month: 'short',
+    }).format(new Date(startAt));
+  } catch {
+    return '';
+  }
+}
+
 function groupBookingsBySlot(items: DeskBookingItemDto[]): SlotGroup[] {
   const map = new Map<string, SlotGroup>();
   for (const item of items) {
@@ -1086,7 +1099,7 @@ export function DeskBookingsScreen(): JSX.Element {
                 </Show>
                 <form onSubmit={handleSubmitNewBooking}>
                   <div class="xc-form-group">
-                    <label for="new-booking-branch">Branch</label>
+                    <label for="new-booking-branch">{t('dialog.branch')}</label>
                     <input
                       id="new-booking-branch"
                       name="branchId"
@@ -1105,7 +1118,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-slot">Slot</label>
+                    <label for="new-booking-slot">{t('dialog.slot')}</label>
                     <select
                       id="new-booking-slot"
                       name="slotId"
@@ -1126,7 +1139,9 @@ export function DeskBookingsScreen(): JSX.Element {
                       <For each={allSlots()}>
                         {(s) => (
                           <option value={s.slotId}>
-                            {formatSlotTime(s.startAt, s.endAt) || s.slotId}
+                            {s.startAt
+                              ? `${formatSlotDate(s.startAt)} ${formatSlotTime(s.startAt, s.endAt)}`
+                              : s.slotId}
                           </option>
                         )}
                       </For>
@@ -1144,7 +1159,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-side">Side</label>
+                    <label for="new-booking-side">{t('dialog.side')}</label>
                     <select
                       id="new-booking-side"
                       name="shopSide"
@@ -1166,7 +1181,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-currency">Currency</label>
+                    <label for="new-booking-currency">{t('dialog.currency')}</label>
                     <select
                       id="new-booking-currency"
                       name="currency"
@@ -1198,7 +1213,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group" data-field="quantity">
-                    <label for="new-booking-quantity">Quantity</label>
+                    <label for="new-booking-quantity">{t('dialog.quantity')}</label>
                     <input
                       id="new-booking-quantity"
                       type="number"
@@ -1230,7 +1245,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-display-name">Customer Name</label>
+                    <label for="new-booking-display-name">{t('dialog.displayName')}</label>
                     <input
                       id="new-booking-display-name"
                       name="displayName"
@@ -1255,7 +1270,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-phone">Customer Phone</label>
+                    <label for="new-booking-phone">{t('dialog.phone')}</label>
                     <input
                       id="new-booking-phone"
                       type="tel"
@@ -1280,7 +1295,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
 
                   <div class="xc-form-group">
-                    <label for="new-booking-referral">Referral Code</label>
+                    <label for="new-booking-referral">{t('dialog.referralCode')}</label>
                     <input
                       id="new-booking-referral"
                       name="referralCode"

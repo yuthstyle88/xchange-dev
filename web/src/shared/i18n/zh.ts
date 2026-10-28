@@ -42,6 +42,7 @@ export const zh: Record<Key, string> = {
   'error.drawerRoleNotAllowed': '当前账户无权打开钱箱',
   'error.serverError': '服务器错误',
   'error.stockInsufficient': '保险柜或抽屉中的现金不足 — 请先登记存入保险柜的现金，然后重试',
+  'error.rateUnavailable': 'อัตราแลกเปลี่ยนยังไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่ภายหลัง',
   'error.loyaltyUnavailable': '积分系统暂时不可用，请稍后重试。',
   'error.network': '无法连接服务器，请重试。',
   'error.employeeAuthRequired': '需要员工认证',

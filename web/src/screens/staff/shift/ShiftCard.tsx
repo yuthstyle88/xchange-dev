@@ -109,7 +109,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const hasOpenShift = () => !!props.ctx.floor?.myShift;
 
   const loadCashCounts = async () => {
-    if (!canCertify() && !hasOpenShift()) return;
+    if (!canCertify() && !canOperate()) return;
     try {
       const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }, Partial<CashCountsFilter>>('cash_counts', {
         branch: props.ctx.me.branchId,
@@ -192,7 +192,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   };
 
   onMount(() => {
-    if (canCertify() || hasOpenShift()) {
+    if (canCertify() || canOperate()) {
       void loadCashCounts();
     }
     if (canOperate()) {
