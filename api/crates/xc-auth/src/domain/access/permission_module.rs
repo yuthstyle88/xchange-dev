@@ -131,6 +131,7 @@ impl PermissionModule {
             P::AuditLogsRead => Some((AuditLogs, View)),
             P::SignedIn
             | P::AttendanceClock
+            | P::AttendanceCloseFor
             | P::CompatRead
             | P::RequestAbandon
             | P::DocumentsList

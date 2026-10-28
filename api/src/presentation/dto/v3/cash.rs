@@ -151,11 +151,11 @@ pub struct CashCountsFilter {
 impl ViewFilter for CashCountsFilter {
     fn check(&self) -> Result<(), crate::presentation::http::v3::error::V3Error> {
         match self.status.as_deref() {
-            None | Some("WAITING") | Some("VERIFIED") => Ok(()),
+            None | Some("WAITING") | Some("VERIFIED") | Some("REJECTED") => Ok(()),
             Some(_) => Err(crate::presentation::http::v3::error::V3Error::new(
                 "validationFailed",
                 Some("status"),
-                "status must be WAITING or VERIFIED",
+                "status must be WAITING, VERIFIED or REJECTED",
                 actix_web::http::StatusCode::BAD_REQUEST,
             )),
         }
@@ -171,10 +171,22 @@ pub struct CashCountRow {
     pub branch_id: String,
     pub shift_id: Option<String>,
     pub kind: String,
+    /// Staff corrections §10: the closed set `WAITING` | `VERIFIED` | `REJECTED`.
+    #[ts(type = "\"WAITING\" | \"VERIFIED\" | \"REJECTED\"")]
+    pub status: String,
     pub counted_by: String,
     pub counted_at: String,
     pub verified_by: Option<String>,
     pub verified_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub rejected_by: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub rejected_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub reject_reason: Option<String>,
     pub note: Option<String>,
     pub totals: Vec<CashCountTotalRow>,
 }

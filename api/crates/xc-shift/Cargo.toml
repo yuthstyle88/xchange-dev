@@ -20,6 +20,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 chrono = "0.4"
+# staff-corrections SC-D4: the branch timezone decides "an earlier day".
+chrono-tz = { version = "0.10" }
 futures = "0.3"
 uuid = { version = "1", features = ["v4"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring", "postgres", "chrono", "json"] }

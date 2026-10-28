@@ -248,3 +248,28 @@
   color: var(--xc-text-muted, #6b7280);
   margin: 0.5rem 0;
 }
+
+.xc-shift-reject-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.xc-shift-reject-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.xc-shift-reject-input {
+  padding: 0.375rem 0.5rem;
+  font-size: 0.875rem;
+  border: 1px solid var(--xc-border, #d1d5db);
+  border-radius: 0.375rem;
+}
+
+.xc-shift-field-error,
+.xc-shift-count-error {
+  font-size: 0.75rem;
+  color: var(--xc-danger, #ef4444);
+}

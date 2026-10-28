@@ -91,6 +91,10 @@ pub enum Permission {
     /// `binding-quote.md` D-13 (O-1 A): issue a binding quote (`bindingQuoteIssue`). No module; seeded on TELLER and
     /// BRANCH_MANAGER only. BQ-7 adds it to `ALL`, `RoleGrants::seed` and `SEED_ADDITIONS` (version 6).
     BindingQuoteIssue,
+    /// Staff corrections SC-D2 (`docs/design/staff-corrections.md`): close another employee's forgotten clock-in
+    /// from an earlier day (`attendanceCloseFor`, view `open_attendance`), on a row covering the branch. Seeded on
+    /// BRANCH_MANAGER, EXECUTIVE and ADMIN.
+    AttendanceCloseFor,
     /// `ledger-inventory.md` §13.3: decide a `LEDGER_ADJUSTMENT` on a row covering the adjustment's branch (the
     /// payload's, not the requester's). Seeded on FINANCE only. LA-1 adds it to `ALL`, `APPROVAL_KINDS`,
     /// `RoleGrants::seed` and `SEED_ADDITIONS` (version 8).
@@ -99,7 +103,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 63] = [
+    pub const ALL: [Permission; 64] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -162,6 +166,7 @@ impl Permission {
         Permission::ApproveTransactionReversal,
         Permission::ApproveLoyaltyRuleVersion,
         Permission::BindingQuoteIssue,
+        Permission::AttendanceCloseFor,
         Permission::ApproveLedgerAdjustment,
     ];
 }

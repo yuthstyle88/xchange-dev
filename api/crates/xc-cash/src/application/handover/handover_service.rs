@@ -498,6 +498,7 @@ impl HandoverService {
             idempotency_key: cmd.idempotency_key,
             created_at: now,
             updated_at: now,
+            rejection: None,
         };
 
         self.counts

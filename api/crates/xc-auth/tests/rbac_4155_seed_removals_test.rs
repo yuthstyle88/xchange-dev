@@ -128,7 +128,7 @@ async fn database_at_version_2() -> TestDb {
 fn seed_removals_holds_exactly_the_two_dashboard_permissions_at_version_3() {
     // RBAC §11.9 (AP-0) raised SEED_VERSION 3 -> 4 for the nine approval kinds; the removals stay at version 3.
     // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
-    // LA-1: ApproveLedgerAdjustment at 8.
+    // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8.
     assert_eq!(RoleGrants::SEED_VERSION, 8);
     assert_eq!(
         RoleGrants::SEED_REMOVALS,
