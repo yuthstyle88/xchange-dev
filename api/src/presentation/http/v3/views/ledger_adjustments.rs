@@ -12,14 +12,12 @@
 
 use std::future::Future;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use actix_web::http::StatusCode;
 use actix_web::web;
 use chrono::{DateTime, Utc};
 use pos_error::AppResult;
-use rust_decimal::Decimal;
 use serde_json::Value;
 use sqlx::{PgPool, Row};
 use ts_rs::TS;
@@ -105,8 +103,8 @@ impl BranchView for LedgerAdjustmentsView {
                     SELECT json_agg( \
                         json_build_object( \
                             'currency', trim(e.currency), \
-                            'quantity', e.quantity_signed::text, \
-                            'valuation_thb', e.valuation_thb::text \
+                            'quantity', trim_scale(e.quantity_signed)::text, \
+                            'valuationThb', round(abs(e.valuation_thb), 2)::text \
                         ) ORDER BY e.id \
                     ) AS valuations \
                     FROM ledger_entries e \
@@ -195,39 +193,16 @@ impl BranchView for LedgerAdjustmentsView {
                     .and_then(Value::as_str)
                     .map(String::from);
 
-                let valuations = if is_posted {
-                    match raw_valuations {
-                        Some(Value::Array(items)) => items
-                            .into_iter()
-                            .map(|item| {
-                                let currency = item
-                                    .get("currency")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or_default()
-                                    .to_string();
-                                let qty_str =
-                                    item.get("quantity").and_then(Value::as_str).unwrap_or("0");
-                                let val_str = item
-                                    .get("valuation_thb")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("0");
-                                let qty = Decimal::from_str(qty_str)
-                                    .unwrap_or_default()
-                                    .normalize()
-                                    .to_string();
-                                let val = Decimal::from_str(val_str).unwrap_or_default().abs();
-                                LedgerAdjustmentPostedLine {
-                                    currency,
-                                    quantity: qty,
-                                    valuation_thb: format!("{:.2}", val),
-                                }
-                            })
-                            .collect(),
-                        _ => Vec::new(),
-                    }
-                } else {
-                    Vec::new()
-                };
+                // The SQL formats each figure; a row that does not read is refused, never zeroed (#2108).
+                let valuations: Vec<LedgerAdjustmentPostedLine> =
+                    match raw_valuations.filter(|_| is_posted) {
+                        Some(v) => serde_json::from_value(v).map_err(|e| {
+                            pos_error::AppError::Internal(format!(
+                                "ledger adjustment {obj_id}: unreadable valuations: {e}"
+                            ))
+                        })?,
+                        None => Vec::new(),
+                    };
 
                 rows.push(LedgerAdjustmentRow {
                     id: obj_id,
