@@ -128,18 +128,20 @@ impl IssueBindingQuote {
 
         let proposal_id = binding_approval::proposal_id(&req.quote, req.coupon_code.as_deref());
         let mut approved_request_id: Option<Uuid> = None;
+        let mut approved_amount: Option<Money> = None;
         if let Some(ref req_id) = req.approval_request_id {
             let req_uuid =
                 Uuid::parse_str(req_id).map_err(|_| AppError::Domain(STALE_PROPOSAL.to_owned()))?;
-            let row: Option<(String, String, String)> = sqlx::query_as(
-                "SELECT type, object_id, status FROM approval_requests WHERE id = $1",
+            let row: Option<(String, String, String, Option<String>)> = sqlx::query_as(
+                "SELECT type, object_id, status, proposed_payload->>'settleThb' \
+                 FROM approval_requests WHERE id = $1",
             )
             .bind(req_uuid)
             .fetch_optional(&mut **tx)
             .await
             .map_err(AppError::Database)?;
 
-            let Some((type_name, object_id, status)) = row else {
+            let Some((type_name, object_id, status, settle_thb)) = row else {
                 return Err(AppError::Domain(STALE_PROPOSAL.to_owned()));
             };
             if type_name != BINDING_QUOTE || object_id != proposal_id {
@@ -162,6 +164,7 @@ impl IssueBindingQuote {
                         return Err(AppError::Domain(APPROVAL_USED.into()));
                     }
                     approved_request_id = Some(req_uuid);
+                    approved_amount = settle_thb.and_then(|s| Money::parse(&s).ok());
                 }
                 _ => return Err(AppError::Domain(STALE_PROPOSAL.to_owned())),
             }
@@ -184,6 +187,13 @@ impl IssueBindingQuote {
         let total = Money::try_from_minor_i128(total_minor)
             .map_err(|_| AppError::Domain("invalid settle amount".to_owned()))?;
 
+        if approved_request_id.is_some()
+            && approved_amount.is_none_or(|approved| total.minor_i128() > approved.minor_i128())
+        {
+            sp.rollback().await.map_err(AppError::Database)?;
+            return Err(AppError::Domain(APPROVAL_PRICE_MOVED.to_owned()));
+        }
+
         let settings = PgSettingsRepository::new(self.pool.clone());
         let limit = settings
             .approval_limit_in(&mut sp, org, &req.quote.branch_id)
@@ -198,8 +208,17 @@ impl IssueBindingQuote {
                 "branch": req.quote.branch_id.as_str(),
             });
             let actor = who.access_actor_at(&org.to_string(), &req.quote.branch_id, now);
-            let key = format!("bindingQuote:{proposal_id}");
             let mut own_tx = self.pool.begin().await.map_err(AppError::Database)?;
+            let used: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM quotes q \
+                 JOIN approval_requests r ON r.id = q.approval_request_id \
+                 WHERE r.type = 'BINDING_QUOTE' AND r.object_id = $1",
+            )
+            .bind(&proposal_id)
+            .fetch_one(&mut *own_tx)
+            .await
+            .map_err(AppError::Database)?;
+            let key = format!("bindingQuote:{proposal_id}:{payload}:{used}");
 
             return match self
                 .approvals
@@ -239,6 +258,9 @@ impl IssueBindingQuote {
                         ))
                     })?;
                     Ok(BindingIssueOutcome::ApprovalRequired(id))
+                }
+                Err(ApprovalError::IdempotencyConflict(_)) => {
+                    Err(AppError::Domain(APPROVAL_REQUEST_CHANGED.to_owned()))
                 }
                 Err(e) => Err(AppError::Internal(format!(
                     "failed to open {BINDING_QUOTE} approval request: {e}"
