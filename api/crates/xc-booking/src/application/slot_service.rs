@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, Utc};
+use chrono_tz::Tz;
 use pos_error::AppError;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -56,6 +57,14 @@ struct ExistingSlotInfo {
     capacity: i32,
     reserved: i32,
     status: String,
+}
+
+struct BranchSchedule {
+    org_id: Uuid,
+    timezone: String,
+    rule: SlotRule,
+    hours: BranchHours,
+    closures: Vec<BranchClosure>,
 }
 
 pub struct SlotService {
@@ -378,6 +387,54 @@ impl SlotService {
             .execute(&mut **tx)
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+        let Some(sched) = self.load_branch_schedule(tx, branch).await? else {
+            return Ok(());
+        };
+
+        let tz: Tz = sched.timezone.parse().unwrap_or(chrono_tz::Asia::Bangkok);
+        let today = Utc::now().with_timezone(&tz).date_naive();
+        let planned = SlotGenerator::slots_for(
+            &sched.rule,
+            &sched.hours,
+            &sched.closures,
+            today,
+            sched.rule.horizon_days.max(0) as u32,
+        );
+
+        let mut starts = Vec::new();
+        let mut ends = Vec::new();
+        for p in planned {
+            if p.service_date == date {
+                starts.push(p.start_at);
+                ends.push(p.end_at);
+            }
+        }
+
+        if !starts.is_empty() {
+            sqlx::query(
+                "UPDATE booking_slots AS b \
+                 SET status = 'OPEN', closed_by = NULL, updated_at = now() \
+                 FROM unnest($4::timestamptz[], $5::timestamptz[]) AS u(start_at, end_at) \
+                 WHERE b.branch_id = $1 \
+                   AND b.service_date = $2 \
+                   AND b.status = 'CLOSED' \
+                   AND b.closed_by = $3 \
+                   AND b.reserved = 0 \
+                   AND b.start_at > now() \
+                   AND b.start_at = u.start_at \
+                   AND b.end_at = u.end_at",
+            )
+            .bind(branch.as_str())
+            .bind(date)
+            .bind(ClosedBy::Closure.as_str())
+            .bind(&starts)
+            .bind(&ends)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+        }
+
         Ok(())
     }
 
@@ -459,15 +516,11 @@ impl SlotService {
         Ok(())
     }
 
-    /// B2, §4.1: runs [`crate::domain::slot::slot_generator::SlotGenerator::slots_for`] on the branch's rule, hours
-    /// and closures inside an existing transaction.
-    pub async fn generate_in(
+    async fn load_branch_schedule(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        from: NaiveDate,
-        days: u32,
-    ) -> Result<Generated, SlotError> {
+    ) -> Result<Option<BranchSchedule>, SlotError> {
         let branch_row: Option<(Uuid, String, Option<serde_json::Value>)> = sqlx::query_as(
             "SELECT organization_id, timezone, opening_hours FROM branches WHERE id = $1",
         )
@@ -489,10 +542,7 @@ impl SlotService {
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
         let Some((slot_minutes, capacity, horizon_days)) = rule_row else {
-            return Ok(Generated {
-                added: 0,
-                closed: 0,
-            });
+            return Ok(None);
         };
 
         let rule = SlotRule {
@@ -515,6 +565,39 @@ impl SlotService {
 
         let hours =
             BranchHours::new(&timezone, opening_hours.as_ref()).map_err(SlotError::Store)?;
+
+        Ok(Some(BranchSchedule {
+            org_id,
+            timezone,
+            rule,
+            hours,
+            closures,
+        }))
+    }
+
+    /// B2, §4.1: runs [`crate::domain::slot::slot_generator::SlotGenerator::slots_for`] on the branch's rule, hours
+    /// and closures inside an existing transaction.
+    pub async fn generate_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        from: NaiveDate,
+        days: u32,
+    ) -> Result<Generated, SlotError> {
+        let Some(sched) = self.load_branch_schedule(tx, branch).await? else {
+            return Ok(Generated {
+                added: 0,
+                closed: 0,
+            });
+        };
+
+        let BranchSchedule {
+            org_id,
+            rule,
+            hours,
+            closures,
+            ..
+        } = sched;
 
         let planned = SlotGenerator::slots_for(&rule, &hours, &closures, from, days);
 
