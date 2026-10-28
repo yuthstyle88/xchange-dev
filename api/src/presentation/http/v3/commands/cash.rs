@@ -13,19 +13,19 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Refusal, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_cash::application::count::count_service::CountVerified;
 use xc_cash::application::count::{CashCountService, SubmitCount};
-use xc_cash::domain::count::{CountKind, CountLine};
+use xc_cash::domain::count::{CountKind, CountLine, RejectError};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
 use xc_cash::domain::transfer::cash_transfer::TransferError;
@@ -51,6 +51,7 @@ use crate::presentation::dto::v3::cash::{
 use crate::presentation::dto::v3::cash_transfer_policy::{
     CashTransferPolicyData, TransferPolicySaveInput,
 };
+use crate::presentation::dto::v3::staff_corrections::{CountRejectInput, CountRejected};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -170,7 +171,18 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             StatusCode::FORBIDDEN,
         ),
         AppError::Domain(message) => {
-            if message == CashError::NotReceiver.to_string() {
+            if let Some(r) = [
+                Refusal::OutOfScope,
+                Refusal::RoleNotAllowed,
+                Refusal::SignIn,
+            ]
+            .into_iter()
+            .find(|&r| message == CashError::Refused(r).to_string())
+            {
+                V3Error::new(r.code(), None, message, StatusCode::FORBIDDEN)
+            } else if message == CashError::NotWaiting.to_string() {
+                V3Error::new("notWaiting", None, message, StatusCode::CONFLICT)
+            } else if message == CashError::NotReceiver.to_string() {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
@@ -384,6 +396,84 @@ impl CommandAction for CountVerify {
     }
 }
 
+/// Staff-corrections §4 B (SC-B2): `countReject` `POST /api/cash-counts/{id}/reject`, beside `countVerify`.
+pub struct CountReject {
+    counts: CashCountService,
+}
+
+impl CountReject {
+    pub fn new(pool: PgPool) -> Self {
+        Self {
+            counts: CashCountService::pg(pool),
+        }
+    }
+}
+
+fn from_reject_error(e: RejectError) -> V3Error {
+    match e {
+        RejectError::Refused(_) => V3Error::new(e.code(), None, e.message(), StatusCode::FORBIDDEN),
+        RejectError::NotFound => V3Error::new(e.code(), None, e.message(), StatusCode::NOT_FOUND),
+        RejectError::OnlyThroughHandover => {
+            V3Error::new(e.code(), None, e.message(), StatusCode::BAD_REQUEST)
+        }
+        RejectError::SameCounter | RejectError::NotWaiting => {
+            V3Error::new(e.code(), None, e.message(), StatusCode::CONFLICT)
+        }
+        RejectError::ReasonRequired | RejectError::ReasonTooLong => V3Error::new(
+            e.code(),
+            Some("reason"),
+            e.message(),
+            StatusCode::BAD_REQUEST,
+        ),
+        RejectError::Other(e) => from_cash_error(e),
+    }
+}
+
+impl CommandAction for CountReject {
+    const NAME: &'static str = "countReject";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "countReject");
+    type Input = CountRejectInput;
+    type Output = CountRejected;
+    const ROUTE: &'static str = "/api/cash-counts/{id}/reject";
+    const METHOD: Method = Method::POST;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        who: &User,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let now = Utc::now();
+        let user = caller_in(tx, who, now).await?;
+        let count = self
+            .counts
+            .reject_in(tx, &user, &input.id, &input.reason, now)
+            .await
+            .map_err(from_reject_error)?;
+        let (rejected_by, rejected_at, reason) = match count.rejection {
+            Some(r) => (
+                r.by,
+                r.at.to_rfc3339_opts(SecondsFormat::Millis, true),
+                r.reason,
+            ),
+            None => (
+                user.user_id,
+                now.to_rfc3339_opts(SecondsFormat::Millis, true),
+                input.reason,
+            ),
+        };
+        Ok(CountRejected {
+            id: count.id,
+            status: "REJECTED".to_owned(),
+            rejected_by,
+            rejected_at,
+            reason,
+        })
+    }
+}
+
 pub struct TransferPolicySave;
 
 impl TransferPolicySave {
@@ -484,6 +574,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     CommandEndpoint::register(cfg, Arc::new(CountSubmit::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(CountVerify::new(pool.clone())));
+    CommandEndpoint::register(cfg, Arc::new(CountReject::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverStart::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverAccept::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverReject::new(pool.clone())));
@@ -515,6 +606,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     CountSubmitOutput::export_all(&cfg)?;
     CountVerifyOutput::export_all(&cfg)?;
     CashRecordOutput::export_all(&cfg)?;
+    crate::presentation::dto::v3::staff_corrections::export_types(dir)?;
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }

@@ -35,6 +35,9 @@ struct CountSqlRow {
     counted_at: DateTime<Utc>,
     verified_by: Option<String>,
     verified_at: Option<DateTime<Utc>>,
+    rejected_by: Option<String>,
+    rejected_at: Option<DateTime<Utc>>,
+    reject_reason: Option<String>,
     note: Option<String>,
 }
 
@@ -71,13 +74,15 @@ impl PagedView for CashCountsView {
         async move {
             let rows: Vec<CountSqlRow> = sqlx::query_as(
                 "SELECT c.id::text AS id, c.branch_id, c.shift_id, c.kind, c.counted_by::text AS counted_by, \
-                        c.counted_at, c.verified_by::text AS verified_by, c.verified_at, c.note \
+                        c.counted_at, c.verified_by::text AS verified_by, c.verified_at, \
+                        c.rejected_by::text AS rejected_by, c.rejected_at, c.reject_reason, c.note \
                  FROM cash_counts c \
                  WHERE c.branch_id = $1 \
                    AND ($2::text IS NULL OR c.shift_id = $2) \
                    AND ($3::text IS NULL \
-                        OR ($3 = 'WAITING' AND c.verified_by IS NULL) \
-                        OR ($3 = 'VERIFIED' AND c.verified_by IS NOT NULL)) \
+                        OR ($3 = 'WAITING' AND c.verified_by IS NULL AND c.rejected_by IS NULL) \
+                        OR ($3 = 'VERIFIED' AND c.verified_by IS NOT NULL) \
+                        OR ($3 = 'REJECTED' AND c.rejected_by IS NOT NULL)) \
                    AND ($4::text IS NULL OR (c.created_at, c.id) < \
                         (SELECT b.created_at, b.id FROM cash_counts b WHERE b.id::text = $4 AND b.branch_id = $1)) \
                  ORDER BY c.created_at DESC, c.id DESC \
@@ -116,17 +121,31 @@ impl PagedView for CashCountsView {
 
             Ok(rows
                 .into_iter()
-                .map(|r| CashCountRow {
-                    totals: by_count.remove(&r.id).unwrap_or_default(),
-                    id: r.id,
-                    branch_id: r.branch_id,
-                    shift_id: r.shift_id,
-                    kind: r.kind,
-                    counted_by: r.counted_by,
-                    counted_at: stamp(r.counted_at),
-                    verified_by: r.verified_by,
-                    verified_at: r.verified_at.map(stamp),
-                    note: r.note,
+                .map(|r| {
+                    let status = if r.verified_by.is_some() {
+                        "VERIFIED"
+                    } else if r.rejected_by.is_some() {
+                        "REJECTED"
+                    } else {
+                        "WAITING"
+                    }
+                    .to_owned();
+                    CashCountRow {
+                        totals: by_count.remove(&r.id).unwrap_or_default(),
+                        id: r.id,
+                        branch_id: r.branch_id,
+                        shift_id: r.shift_id,
+                        kind: r.kind,
+                        status,
+                        counted_by: r.counted_by,
+                        counted_at: stamp(r.counted_at),
+                        verified_by: r.verified_by,
+                        verified_at: r.verified_at.map(stamp),
+                        rejected_by: r.rejected_by,
+                        rejected_at: r.rejected_at.map(stamp),
+                        reject_reason: r.reject_reason,
+                        note: r.note,
+                    }
                 })
                 .collect())
         }
