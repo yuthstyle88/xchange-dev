@@ -41,17 +41,17 @@ if [ "${1:-}" = "--json" ]; then
   JSON=1
   shift
   exec 3>&1 1>&2
-  rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
-  TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
-  TELLER2_PHONE="${TELLER2_PHONE:-+6680011$(rnd)}"
-  MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
-  FINANCE_PHONE="${FINANCE_PHONE:-+6680004$(rnd)}"
-  MARKETING_PHONE="${MARKETING_PHONE:-+6680005$(rnd)}"
-  MANAGER2_PHONE="${MANAGER2_PHONE:-+6680006$(rnd)}"
-  FINANCE2_PHONE="${FINANCE2_PHONE:-+6680007$(rnd)}"
-  EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+6680008$(rnd)}"
-  ADMIN_PHONE="${ADMIN_PHONE:-+6680009$(rnd)}"
-  CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
+  rnd() { printf '%07d' $(( $(od -An -N4 -tu4 /dev/urandom) % 10000000 )); }
+  TELLER_PHONE="${TELLER_PHONE:-+6681$(rnd)}"
+  TELLER2_PHONE="${TELLER2_PHONE:-+6680$(rnd)}"
+  MANAGER_PHONE="${MANAGER_PHONE:-+6683$(rnd)}"
+  FINANCE_PHONE="${FINANCE_PHONE:-+6684$(rnd)}"
+  MARKETING_PHONE="${MARKETING_PHONE:-+6685$(rnd)}"
+  MANAGER2_PHONE="${MANAGER2_PHONE:-+6686$(rnd)}"
+  FINANCE2_PHONE="${FINANCE2_PHONE:-+6687$(rnd)}"
+  EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+6688$(rnd)}"
+  ADMIN_PHONE="${ADMIN_PHONE:-+6689$(rnd)}"
+  CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6682$(rnd)}"
 fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -233,6 +233,7 @@ if [ -n "$TELLER_SUB" ]; then
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    teller created: $TELLER_PHONE  password $TELLER_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($TELLER_PHONE), so its password is unknown; run again (new random phones)"
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
 
@@ -248,6 +249,7 @@ if [ -n "$TELLER2_SUB" ]; then
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    teller 2 created: $TELLER2_PHONE  password $TELLER2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($TELLER2_PHONE), so its password is unknown; run again (new random phones)"
   TELLER2_PW="(unchanged: $TELLER2_PHONE was already registered)"
 fi
 
@@ -263,6 +265,7 @@ if [ -n "$MANAGER_SUB" ]; then
      SELECT id, 'BRANCH_MANAGER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    branch manager created: $MANAGER_PHONE  password $MANAGER_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MANAGER_PHONE), so its password is unknown; run again (new random phones)"
   MANAGER_PW="(unchanged: $MANAGER_PHONE was already registered)"
 fi
 
@@ -281,6 +284,7 @@ if [ -n "$FINANCE_SUB" ]; then
      SELECT id, 'FINANCE', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    finance created: $FINANCE_PHONE  password $FINANCE_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($FINANCE_PHONE), so its password is unknown; run again (new random phones)"
   FINANCE_PW="(unchanged: $FINANCE_PHONE was already registered)"
 fi
 
@@ -296,6 +300,7 @@ if [ -n "$MARKETING_SUB" ]; then
      SELECT id, 'MARKETING', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    marketing created: $MARKETING_PHONE  password $MARKETING_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MARKETING_PHONE), so its password is unknown; run again (new random phones)"
   MARKETING_PW="(unchanged: $MARKETING_PHONE was already registered)"
 fi
 
@@ -311,6 +316,7 @@ if [ -n "$MANAGER2_SUB" ]; then
      SELECT id, 'BRANCH_MANAGER', '$ORG_ID', '$BRANCH2' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    branch manager 2 created: $MANAGER2_PHONE  password $MANAGER2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MANAGER2_PHONE), so its password is unknown; run again (new random phones)"
   MANAGER2_PW="(unchanged: $MANAGER2_PHONE was already registered)"
 fi
 
@@ -326,6 +332,7 @@ if [ -n "$FINANCE2_SUB" ]; then
      SELECT id, 'FINANCE', '$ORG_ID', '$BRANCH2' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    finance 2 created: $FINANCE2_PHONE  password $FINANCE2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($FINANCE2_PHONE), so its password is unknown; run again (new random phones)"
   FINANCE2_PW="(unchanged: $FINANCE2_PHONE was already registered)"
 fi
 
@@ -341,6 +348,7 @@ if [ -n "$EXECUTIVE_SUB" ]; then
      SELECT id, 'EXECUTIVE', '$ORG_ID', NULL FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    executive created: $EXECUTIVE_PHONE  password $EXECUTIVE_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($EXECUTIVE_PHONE), so its password is unknown; run again (new random phones)"
   EXECUTIVE_PW="(unchanged: $EXECUTIVE_PHONE was already registered)"
 fi
 
@@ -356,12 +364,14 @@ if [ -n "$ADMIN_SUB" ]; then
      SELECT id, 'ADMIN', '$ORG_ID', NULL FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    admin created: $ADMIN_PHONE  password $ADMIN_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($ADMIN_PHONE), so its password is unknown; run again (new random phones)"
   ADMIN_PW="(unchanged: $ADMIN_PHONE was already registered)"
 fi
 
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
-if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
+CUSTOMER_SUB="$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")"
+if [ -n "$CUSTOMER_SUB" ]; then
   [ "$JSON" = 1 ] || echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
   resp=$({ cfg url "$BASE/api/app/register"; cfg header 'Content-Type: application/json'
             cfg header "Origin: $BASE"; cfg header 'X-Xchange-Request: 1'
@@ -371,6 +381,7 @@ if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
   # the answer never echoes the identifier, password or a token (customer_register.rs:14)
   [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code: $(sed '$d' <<<"$resp" | head -c 400)"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($CUSTOMER_PHONE), so its password is unknown; run again (new random phones)"
   CUSTOMER_PW="(unchanged: $CUSTOMER_PHONE was already registered)"
 fi
 
