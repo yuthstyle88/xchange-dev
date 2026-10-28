@@ -25,10 +25,7 @@ fn reject_error_message_test() {
             RejectError::OnlyThroughHandover,
             "การนับส่งมอบต้องจัดการผ่านการส่งมอบเท่านั้น".to_owned(),
         ),
-        (
-            RejectError::SameCounter,
-            CashError::SameCounter.to_string(),
-        ),
+        (RejectError::SameCounter, CashError::SameCounter.to_string()),
         (RejectError::NotWaiting, CashError::NotWaiting.to_string()),
         (RejectError::ReasonRequired, "กรุณาระบุเหตุผล".to_owned()),
         (
