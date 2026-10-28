@@ -258,7 +258,7 @@ async function ready(s: ReturnType<typeof fakeServer>, which: "OWNER_DESK" | "ST
 
 const FIGURES = ["amount", "rate", "thbAmount", "settleThb", "finalRate", "baseRate", "unitSize", "principal", "fee", "quantity", "total"];
 /** §4.2's create body: exactly the keys of the generated `TransactionCreateInput` (the compiler checks the list). */
-const CREATE_KEYS: (keyof TransactionCreateInput)[] = ["quoteId", "customerId", "bookingId", "kioskRequestId", "staffDraftId", "passport", "payment", "valueDate", "notes", "countConfirmed"];
+const CREATE_KEYS: (keyof TransactionCreateInput)[] = ["quoteId", "customerId", "bookingId", "kioskRequestId", "queueTicketId", "staffDraftId", "passport", "payment", "valueDate", "notes", "countConfirmed"];
 
 for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
   describe(`submit on ${which}`, () => {
