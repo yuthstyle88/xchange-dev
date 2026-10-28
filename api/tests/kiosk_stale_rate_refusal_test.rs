@@ -7,11 +7,13 @@
 //! refusal (`customer.rs`, the repricing loop that does not settle in 4 rounds) keeps
 //! `AmountOrCurrencyInvalid`.
 //!
-//! What this pins (#5418 §3):
+//! What this pins (#5418 §3, #5432):
 //! - control: a line the stale check admits is quoted, so the scene reaches the stale check;
 //! - K1: `check_stale_in` answers `false` ⇒ `RateChangedOrClosed`, and no request is written;
+//! - K2: `check_stale_in` admits, but `quote_in` answers `rateUnavailable` ⇒ `RateChangedOrClosed`;
 //! - K3: `tier_line_in` never settles ⇒ `AmountOrCurrencyInvalid`, unchanged, and the stale
-//!   check is not asked.
+//!   check is not asked;
+//! - K3 control: a non-stale `Domain` refusal from `quote_in` still answers `AmountOrCurrencyInvalid`.
 //!
 //! The kiosk service is real and so is its repository; the other contexts (`KioskPorts`) are
 //! answered by `Counter` below, which can be told the line is stale or that tiers oscillate.
@@ -26,8 +28,8 @@ mod save_common;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
@@ -58,10 +60,14 @@ struct Counter {
     stale: AtomicBool,
     /// K3: `tier_line_in` answers the other tier line each round, so the loop never settles.
     oscillates: AtomicBool,
+    /// K2 / K3 control: `quote_in` answers this Domain error (e.g. `rateUnavailable: ...`).
+    quote_refusal: Mutex<Option<String>>,
     /// How many times `tier_line_in` was asked.
     tier_asks: AtomicUsize,
     /// How many times `check_stale_in` was asked.
     stale_asks: AtomicUsize,
+    /// How many times `quote_in` was asked.
+    quote_asks: AtomicUsize,
 }
 
 impl Counter {
@@ -156,6 +162,25 @@ impl KioskPorts for Counter {
             None
         };
         Box::pin(async move { Ok(answer) })
+    }
+
+    fn quote_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &'a BranchId,
+        _currency: CurrencyCode,
+        _side: Side,
+        _quantity: ForeignAmount,
+        _now: DateTime<Utc>,
+    ) -> Asked<'a, Option<String>> {
+        self.quote_asks.fetch_add(1, Ordering::SeqCst);
+        let error = self.quote_refusal.lock().unwrap().clone();
+        Box::pin(async move {
+            match error {
+                Some(msg) => Err(AppError::Domain(msg)),
+                None => Ok(None),
+            }
+        })
     }
 }
 
@@ -256,6 +281,36 @@ async fn k1_a_stale_line_is_refused_as_a_rate_change_not_as_bad_input() {
 }
 
 #[tokio::test]
+async fn k2_stale_refusal_from_quote_in_answers_rate_changed_or_closed() {
+    let scene = Scene::start().await;
+    *scene.counter.quote_refusal.lock().unwrap() =
+        Some("rateUnavailable: stale line refused".to_owned());
+
+    let sentence = refusal(scene.quote("00000000-0000-4000-8000-000000541802").await);
+
+    assert_eq!(
+        sentence,
+        KioskError::RateChangedOrClosed.to_string(),
+        "#5432 K2: quote_in returning rateUnavailable is a rate change, not bad customer input"
+    );
+    assert_eq!(
+        scene.counter.stale_asks.load(Ordering::SeqCst),
+        1,
+        "the quote passed check_stale_in before quote_in"
+    );
+    assert_eq!(
+        scene.counter.quote_asks.load(Ordering::SeqCst),
+        1,
+        "the quote reached quote_in"
+    );
+    assert_eq!(
+        scene.requests().await,
+        0,
+        "a refused quote writes no request"
+    );
+}
+
+#[tokio::test]
 async fn k3_tiers_that_never_settle_are_still_refused_as_an_invalid_amount() {
     let scene = Scene::start().await;
     scene.counter.oscillates.store(true, Ordering::SeqCst);
@@ -276,6 +331,36 @@ async fn k3_tiers_that_never_settle_are_still_refused_as_an_invalid_amount() {
         scene.counter.stale_asks.load(Ordering::SeqCst),
         0,
         "the loop refused before the stale check"
+    );
+    assert_eq!(
+        scene.requests().await,
+        0,
+        "a refused quote writes no request"
+    );
+}
+
+#[tokio::test]
+async fn k3_control_non_stale_domain_refusal_from_quote_in_answers_invalid_amount() {
+    let scene = Scene::start().await;
+    *scene.counter.quote_refusal.lock().unwrap() =
+        Some("validationFailed: amount out of range".to_owned());
+
+    let sentence = refusal(scene.quote("00000000-0000-4000-8000-000000541804").await);
+
+    assert_eq!(
+        sentence,
+        KioskError::AmountOrCurrencyInvalid.to_string(),
+        "#5432 K3 control: non-stale domain refusal from quote_in still answers AmountOrCurrencyInvalid"
+    );
+    assert_eq!(
+        scene.counter.stale_asks.load(Ordering::SeqCst),
+        1,
+        "the quote passed check_stale_in before quote_in"
+    );
+    assert_eq!(
+        scene.counter.quote_asks.load(Ordering::SeqCst),
+        1,
+        "the quote reached quote_in"
     );
     assert_eq!(
         scene.requests().await,
