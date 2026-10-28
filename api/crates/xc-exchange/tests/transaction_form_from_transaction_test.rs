@@ -59,6 +59,7 @@ fn paid_at() -> DateTime<Utc> {
 fn usd_sell() -> ExchangeTransaction {
     let id = TransactionId(Uuid::new_v4());
     ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
         branch_id: BranchId::new("B2".to_owned()),

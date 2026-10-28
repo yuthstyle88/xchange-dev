@@ -172,6 +172,7 @@ impl Harness {
         // Payment has slip_file_key = "SLIP-1".
         let store_completed_id = Uuid::new_v4();
         let tx1 = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(store_completed_id),
             organization_id: org_id,
             branch_id: BranchId::new("MAIN".to_string()),
@@ -266,6 +267,7 @@ impl Harness {
         // 2. DRAFT via TX-2 store at t1: BUY 100 USD at 32.10, fee 0.00, settle 3210.00
         let draft_id = Uuid::new_v4();
         let tx2 = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(draft_id),
             organization_id: org_id,
             branch_id: BranchId::new("MAIN".to_string()),
@@ -331,6 +333,7 @@ impl Harness {
         // Payment has slip_file_key = "SLIP-CONFIRMED".
         let confirmed_id = Uuid::new_v4();
         let tx3 = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(confirmed_id),
             organization_id: org_id,
             branch_id: BranchId::new("MAIN".to_string()),
@@ -409,6 +412,7 @@ impl Harness {
         // 4. CANCELLED via TX-2 store at t3: BUY 50 USD at 32.10, fee 0.00, settle 1605.00
         let cancelled_id = Uuid::new_v4();
         let tx4 = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(cancelled_id),
             organization_id: org_id,
             branch_id: BranchId::new("MAIN".to_string()),
@@ -536,6 +540,7 @@ impl Harness {
         let t_day2 = Utc.with_ymd_and_hms(2026, 10, 7, 5, 0, 0).unwrap();
         let cancelled_day2_id = Uuid::new_v4();
         let tx_day2 = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(cancelled_day2_id),
             organization_id: org_id,
             branch_id: BranchId::new("MAIN".to_string()),

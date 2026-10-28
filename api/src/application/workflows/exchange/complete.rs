@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
@@ -27,9 +28,16 @@ use xc_exchange::domain::transaction::transaction::{
 use xc_exchange::infrastructure::exchange::transaction_repository::PgTransactionRepository;
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
+use xc_queue::application::desk::queue_desk::QueueDesk;
+use xc_queue::application::issue::ticket_issuer::TicketIssuer;
+use xc_queue::application::issue::walk_in_desk::WalkInDesk;
+use xc_queue::application::status::status_service::StatusService;
+use xc_queue::domain::repository::QueueRepository;
+use xc_queue::infrastructure::repository::PgQueueRepository;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use super::create::check_valid_in;
@@ -66,6 +74,7 @@ pub struct CompleteExchange {
     steps: Vec<Arc<dyn SaveStep>>,
     effects: Arc<ExchangeEffects>,
     audit: PgAuditLog,
+    walk_in: WalkInDesk,
 }
 
 fn stale<T>(m: String) -> AppResult<T> {
@@ -175,6 +184,11 @@ impl CompleteExchange {
         steps: Vec<Arc<dyn SaveStep>>,
         effects: Arc<ExchangeEffects>,
     ) -> Self {
+        let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+        let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
+        let status = StatusService::new(branch_tx.clone(), repo.clone());
+        let desk = QueueDesk::new(branch_tx.clone(), repo.clone(), status.clone());
+        let issuer = TicketIssuer::new(branch_tx, repo.clone());
         Self {
             store: PgTransactionStore::new(pool.clone()),
             quotes: PgQuoteRepository::new(pool.clone()),
@@ -184,6 +198,7 @@ impl CompleteExchange {
             steps,
             effects,
             audit: PgAuditLog::new(pool),
+            walk_in: WalkInDesk::new(issuer, desk, repo, status),
         }
     }
 
@@ -305,6 +320,11 @@ impl CompleteExchange {
             .store
             .complete_numbered_in(tx, id, &document_ref, &receipt_key, now)
             .await?;
+        if let Some(ticket) = &t.queue_ticket_id {
+            self.walk_in
+                .finish_for_sale_in(tx, &t.branch_id, ticket, now)
+                .await?;
+        }
 
         // 8. Every step's after_in, unchanged (D-7), told the exchange as the save steps know it
         let Some((saved, _)) = self
