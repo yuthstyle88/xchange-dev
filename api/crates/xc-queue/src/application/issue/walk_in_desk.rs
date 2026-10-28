@@ -165,18 +165,13 @@ impl WalkInDesk {
                         return Err(QueueError::OutsideServiceHours.into());
                     }
                     let app = map_row(row)?;
-                    return match app.status {
-                        TicketStatus::Waiting => {
-                            self.desk.call_in(tx, actor, branch, &app.id, now).await?;
-                            self.desk.start_in(tx, actor, branch, &app.id, now).await
-                        }
-                        TicketStatus::Called
-                            if app.counter_teller_id.as_deref() == Some(&actor.user_id) =>
-                        {
-                            self.desk.start_in(tx, actor, branch, &app.id, now).await
-                        }
-                        _ => Ok(app),
-                    };
+                    // W3: answered SERVING for the caller. The caller's own held ticket was (2); a ticket
+                    // another teller holds is not handed over (#5361 review).
+                    if app.status != TicketStatus::Waiting {
+                        return Err(QueueError::AlreadyServing.into());
+                    }
+                    self.desk.call_in(tx, actor, branch, &app.id, now).await?;
+                    return self.desk.start_in(tx, actor, branch, &app.id, now).await;
                 }
             }
         }

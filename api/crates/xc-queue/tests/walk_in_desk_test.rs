@@ -270,6 +270,35 @@ async fn the_customers_waiting_app_ticket_is_served_instead_of_a_new_one() {
     db.finish().await;
 }
 
+/// Added in the #5361 review by the ticket author (W3): the customer's App ticket another teller holds is not
+/// handed to the caller.
+#[tokio::test]
+async fn the_customers_app_ticket_held_by_another_teller_refuses_already_serving() {
+    let (db, q) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let b = on_duty(&db, &q, "MAIN", "Teller B", at(2, 0)).await;
+    issued(
+        &db,
+        IssueSource::App {
+            customer_id: "CUST-9".to_owned(),
+        },
+        "app-1",
+        at(3, 0),
+    )
+    .await;
+    q.desk
+        .call_next(&t(&b), &main_branch(), at(3, 1))
+        .await
+        .expect("B calls the App ticket");
+    let wd = walk_in_desk(&db, &q);
+
+    let got = serve(&db, &wd, &t(&a), Some("CUST-9"), "sale-1", true, at(3, 2)).await;
+
+    assert_eq!(refused(got), "alreadyServing");
+    assert_eq!(ticket_count(&db).await, 1);
+    db.finish().await;
+}
+
 // ------------------------------------------------------------ W4: what the caller already holds
 
 #[tokio::test]
