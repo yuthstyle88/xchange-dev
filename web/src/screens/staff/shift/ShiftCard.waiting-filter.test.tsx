@@ -85,8 +85,8 @@ describe('#4745 ShiftCard cash_counts waiting filter (R3-8)', () => {
     expect(parsed.searchParams.get('status')).toBe('WAITING');
   });
 
-  it('W2: without ShiftCloseCertify, no cash_counts request is sent', async () => {
-    const ctx: StaffCtx = { me: me(['ShiftOperate'], 'B1'), floor: floor(), refresh: vi.fn(async () => {}) };
+  it('W2: with neither ShiftOperate nor ShiftCloseCertify, no cash_counts request is sent', async () => {
+    const ctx: StaffCtx = { me: me([], 'B1'), floor: floor(), refresh: vi.fn(async () => {}) };
     dispose = render(() => <ShiftCard ctx={ctx} />, host);
     await settle();
 
