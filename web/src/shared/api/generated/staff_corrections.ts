@@ -26,4 +26,4 @@ export type CountRejectInput = { branch?: string, id: string, reason: string, };
 /**
  * The answer of `countReject`. `status` is always `REJECTED`.
  */
-export type CountRejected = { id: string, status: string, rejectedBy: string, rejectedAt: string, reason: string, };
+export type CountRejected = { id: string, status: "REJECTED", rejectedBy: string, rejectedAt: string, reason: string, };
