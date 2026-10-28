@@ -153,7 +153,7 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     const row = host.querySelector('[data-count-id="c-wait-1"]');
     expect(row).not.toBeNull();
     const verifyBtn = row!.querySelector<HTMLButtonElement>('[data-testid="shift-verify"]');
-    const rejectBtn = row!.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]');
+    const rejectBtn = row!.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]');
     expect(verifyBtn).not.toBeNull();
     expect(rejectBtn).not.toBeNull();
     expect(rejectBtn!.textContent).toContain(th.reject);
@@ -189,14 +189,14 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     await settle();
 
     const row = host.querySelector('[data-count-id="c-wait-2"]')!;
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]')!.click();
     await settle();
 
-    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-reject-reason"]');
+    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-count-reject-reason"]');
     expect(input).not.toBeNull();
     typeInto(input!, 'เงินในเซฟไม่พอ');
 
-    const confirmBtn = row.querySelector<HTMLButtonElement>('[data-testid="shift-reject-confirm"]');
+    const confirmBtn = row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject-confirm"]');
     expect(confirmBtn).not.toBeNull();
     confirmBtn!.click();
     await settle();
@@ -221,13 +221,13 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     await settle();
 
     const row = host.querySelector('[data-count-id="c-wait-3"]')!;
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]')!.click();
     await settle();
 
-    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-reject-reason"]')!;
+    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-count-reject-reason"]')!;
     typeInto(input, '   ');
 
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject-confirm"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject-confirm"]')!.click();
     await settle();
 
     expect(posts).toEqual([]);
@@ -255,12 +255,12 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     await settle();
 
     const row = host.querySelector('[data-count-id="c-wait-4"]')!;
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]')!.click();
     await settle();
 
-    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-reject-reason"]')!;
+    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-count-reject-reason"]')!;
     typeInto(input, 'นับผิด');
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject-confirm"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject-confirm"]')!.click();
     await settle();
 
     const rowAfter = host.querySelector('[data-count-id="c-wait-4"]')!;
@@ -281,22 +281,22 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     await settle();
 
     const row = host.querySelector('[data-count-id="c-wait-5"]')!;
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]')!.click();
     await settle();
 
     expect(row.querySelector('[data-testid="shift-verify"]')).toBeNull();
-    expect(row.querySelector('[data-testid="shift-reject"]')).toBeNull();
+    expect(row.querySelector('[data-testid="shift-count-reject"]')).toBeNull();
 
-    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-reject-reason"]')!;
+    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-count-reject-reason"]')!;
     typeInto(input, 'เปลี่ยนใจ');
 
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject-cancel"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject-cancel"]')!.click();
     await settle();
 
     expect(posts).toEqual([]);
-    expect(row.querySelector('[data-testid="shift-reject-reason"]')).toBeNull();
+    expect(row.querySelector('[data-testid="shift-count-reject-reason"]')).toBeNull();
     expect(row.querySelector('[data-testid="shift-verify"]')).not.toBeNull();
-    expect(row.querySelector('[data-testid="shift-reject"]')).not.toBeNull();
+    expect(row.querySelector('[data-testid="shift-count-reject"]')).not.toBeNull();
   });
 
   it('Edge case (§9): two managers — one rejects while the other list is stale -> 409 notWaiting -> reload', async () => {
@@ -321,12 +321,12 @@ describe('#5312 ShiftCard count reject and status filter (§8, §9)', () => {
     const readsBefore = cashCountReads;
 
     const row = host.querySelector('[data-count-id="c-wait-6"]')!;
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject"]')!.click();
     await settle();
 
-    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-reject-reason"]')!;
+    const input = row.querySelector<HTMLInputElement>('[data-testid="shift-count-reject-reason"]')!;
     typeInto(input, 'ซ้ำ');
-    row.querySelector<HTMLButtonElement>('[data-testid="shift-reject-confirm"]')!.click();
+    row.querySelector<HTMLButtonElement>('[data-testid="shift-count-reject-confirm"]')!.click();
     await settle();
 
     expect(cashCountReads).toBeGreaterThan(readsBefore);

@@ -581,8 +581,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     }
   };
 
-  const isWaitingCount = (c: CashCountRow) =>
-    c.status === 'WAITING' || (c.status === 'status' && c.verifiedBy === null);
+  const isWaitingCount = (c: CashCountRow) => c.status === 'WAITING' && c.verifiedBy === null;
 
   const countsToVerify = () => {
     if (!canCertify()) return [];
@@ -835,7 +834,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                           <Show when={c.status === 'WAITING'}>
                             <button
                               type="button"
-                              data-testid="shift-reject"
+                              data-testid="shift-count-reject"
                               class="xc-shift-btn xc-shift-btn-danger"
                               disabled={busy()}
                               onClick={() => handleOpenRejectCount(c.id)}
@@ -850,7 +849,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                         <div class="xc-shift-reject-field">
                           <input
                             type="text"
-                            data-testid="shift-reject-reason"
+                            data-testid="shift-count-reject-reason"
                             class="xc-shift-reject-input"
                             maxLength={500}
                             placeholder={t('reason')}
@@ -872,7 +871,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                         </div>
                         <button
                           type="button"
-                          data-testid="shift-reject-confirm"
+                          data-testid="shift-count-reject-confirm"
                           class="xc-shift-btn xc-shift-btn-danger"
                           disabled={busy()}
                           onClick={() => handleConfirmRejectCount(c.id)}
@@ -881,7 +880,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                         </button>
                         <button
                           type="button"
-                          data-testid="shift-reject-cancel"
+                          data-testid="shift-count-reject-cancel"
                           class="xc-shift-cancel-btn"
                           disabled={busy()}
                           onClick={handleCancelRejectCount}
