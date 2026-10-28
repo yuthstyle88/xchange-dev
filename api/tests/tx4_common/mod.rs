@@ -300,6 +300,7 @@ impl Desk {
         let line = &q.lines[0];
         let id = TransactionId(Uuid::new_v4());
         let t = ExchangeTransaction {
+            queue_ticket_id: None,
             id,
             organization_id: q.organization_id,
             branch_id: q.branch_id.clone(),

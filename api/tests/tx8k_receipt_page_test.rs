@@ -315,6 +315,7 @@ async fn draft_confirmed_and_cancelled_exchanges_return_404_not_found() {
     let t = room.tick();
     let draft_id = TransactionId(Uuid::new_v4());
     let draft_tx = ExchangeTransaction {
+        queue_ticket_id: None,
         id: draft_id,
         organization_id: org_id,
         branch_id: BranchId::new(MAIN),

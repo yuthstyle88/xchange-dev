@@ -302,6 +302,7 @@ impl Room {
         let at = bangkok(x.value_date, 10, 0);
         let id = Uuid::new_v4();
         let t = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(id),
             organization_id: Uuid::parse_str(ORG).expect("org"),
             branch_id: BranchId::new(x.branch),

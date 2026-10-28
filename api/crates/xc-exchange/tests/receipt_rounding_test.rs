@@ -54,6 +54,7 @@ fn stored(
 ) -> ExchangeTransaction {
     let now = Utc.with_ymd_and_hms(2026, 10, 27, 20, 30, 0).unwrap();
     ExchangeTransaction {
+        queue_ticket_id: None,
         id: TransactionId(Uuid::from_u128(0x5315)),
         organization_id: Uuid::from_u128(1),
         branch_id: BranchId::new("MAIN"),

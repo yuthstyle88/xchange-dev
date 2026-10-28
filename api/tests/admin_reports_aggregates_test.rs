@@ -258,6 +258,7 @@ async fn seed(room: &Room, staff: &str, lines: &[L], payments: &[P]) -> Transact
         paid_at: t,
     };
     let entity = ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org_id,
         branch_id: BranchId::new(MAIN),

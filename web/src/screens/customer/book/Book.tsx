@@ -415,6 +415,16 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       return;
     }
 
+    if (!currentBranch) {
+      setFieldErrors({ branchId: t('error.branchRequired') });
+      return;
+    }
+
+    if (!currentSlot || !slots().some((s) => s.id === currentSlot && s.available > 0)) {
+      setFieldErrors({ slotId: t('error.slotRequired') });
+      return;
+    }
+
     const seq = ++submitSeq;
     setSubmitting(true);
 

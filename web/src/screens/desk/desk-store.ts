@@ -5,6 +5,7 @@ import { ApiError, type ApiClient } from '../../shared/api/client';
 import type { Me } from '../../shared/api/generated/common';
 import type { DeskConfig } from '../../shared/api/generated/desk_config';
 import type { QuoteDto } from '../../shared/api/generated/quote';
+import type { QueueTicketDto } from '../../shared/api/generated/queue';
 import type { QuotesCommandInput } from '../../shared/api/generated/quotes';
 import { deskPathFor, type DeskPath } from './desk-path';
 import { sharedApi, sharedSession } from '../../shared/session/session';
@@ -93,6 +94,9 @@ export interface DeskStore {
   setValueDate(d: string): void;
   booking: Accessor<string>;
   setBooking(ref: string): void;
+  walkInTicket: Accessor<QueueTicketDto | undefined>;
+  setWalkInTicket(t: QueueTicketDto | undefined): void;
+  serveKey(): string;
   // step 3
   method: Accessor<string>;
   setMethod(m: string): void;
@@ -198,6 +202,8 @@ export function createDeskStore(
 
   const [valueDate, setValueDate] = createSignal(bangkokToday());
   const [booking, setBooking] = createSignal('');
+  const [walkInTicket, setWalkInTicket] = createSignal<QueueTicketDto | undefined>();
+  let currentServeKey = '';
 
   const [method, setMethodS] = createSignal('');
   const [ref, setRef] = createSignal('');
@@ -392,6 +398,9 @@ export function createDeskStore(
     setValueDate,
     booking,
     setBooking,
+    walkInTicket,
+    setWalkInTicket,
+    serveKey: () => (currentServeKey ||= newKey()),
     method,
     setMethod,
     ref,
@@ -468,6 +477,8 @@ export function createDeskStore(
     setCustomerId('');
     setStaffDraftId('');
     setBooking('');
+    setWalkInTicket(undefined);
+    currentServeKey = '';
     setMethodS('');
     setRef('');
     setAccount('');

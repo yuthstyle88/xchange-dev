@@ -138,6 +138,7 @@ fn make_tx(
     let id = TransactionId(Uuid::new_v4());
     let amount = Money::parse(thb_amount).unwrap();
     ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org_id,
         branch_id: BranchId::new(branch_id.to_owned()),

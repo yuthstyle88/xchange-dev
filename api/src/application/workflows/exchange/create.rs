@@ -152,8 +152,35 @@ impl CreateTransaction {
         who: &SaveActor,
         now: DateTime<Utc>,
     ) -> AppResult<ExchangeTransaction> {
-        self.run_inner(tx, req, who, None, None, None, None, None, None, None, now)
-            .await
+        self.run_inner(
+            tx, req, None, who, None, None, None, None, None, None, None, now,
+        )
+        .await
+    }
+
+    pub async fn run_with_ticket_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        req: CreateRequest,
+        queue_ticket_id: Option<String>,
+        who: &SaveActor,
+        now: DateTime<Utc>,
+    ) -> AppResult<ExchangeTransaction> {
+        self.run_inner(
+            tx,
+            req,
+            queue_ticket_id,
+            who,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            now,
+        )
+        .await
     }
 
     /// TX-6: adapter run with optional teller_user_id and caller-supplied submission_id / payload_hash.
@@ -175,6 +202,7 @@ impl CreateTransaction {
         self.run_inner(
             tx,
             req,
+            None,
             who,
             teller_user_id,
             submission_id,
@@ -193,6 +221,7 @@ impl CreateTransaction {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         req: CreateRequest,
+        queue_ticket_id: Option<String>,
         who: &SaveActor,
         teller_user_id: Option<Uuid>,
         custom_submission_id: Option<String>,
@@ -253,6 +282,10 @@ impl CreateTransaction {
             return Err(AppError::Domain(
                 "validationFailed:paymentMethod: re-quote for this payment method".to_owned(),
             ));
+        }
+        if let Some(ticket_id) = queue_ticket_id.as_deref() {
+            let caller = teller_user_id.or_else(|| Uuid::parse_str(&who.id).ok());
+            check_queue_ticket_in(tx, &req, ticket_id, caller).await?;
         }
         // G7 (#4113): a kiosk request reserves a queue place, never a rate; the quote must match
         // the request on side, currency and foreign amount.
@@ -352,6 +385,7 @@ impl CreateTransaction {
         let id = TransactionId(Uuid::new_v4());
         let quote_line_id = Some(line.id);
         let t = ExchangeTransaction {
+            queue_ticket_id: queue_ticket_id.clone(),
             id,
             organization_id: q.organization_id,
             branch_id: req.branch_id.clone(),
@@ -362,7 +396,8 @@ impl CreateTransaction {
             booking_id: req.booking_id.clone(),
             shift_id,
             submission_id: custom_submission_id.unwrap_or_else(|| id.0.to_string()),
-            payload_hash: custom_payload_hash.unwrap_or_else(|| payload_hash(&req)),
+            payload_hash: custom_payload_hash
+                .unwrap_or_else(|| payload_hash(&req, queue_ticket_id.as_deref())),
             customer_id: customer.id,
             customer_name,
             nationality,
@@ -435,8 +470,62 @@ impl CreateTransaction {
     }
 }
 
+/// §7 (WQ-3): queueTicketId checks, in §5's order, before any write.
+async fn check_queue_ticket_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    req: &CreateRequest,
+    ticket_id: &str,
+    caller: Option<Uuid>,
+) -> AppResult<()> {
+    if req.booking_id.is_some() || req.kiosk_request_id.is_some() {
+        return refuse(
+            "validationFailed:queueTicketId: cannot combine queueTicketId with bookingId or kioskRequestId",
+        );
+    }
+    let Ok(ticket_uuid) = Uuid::parse_str(ticket_id) else {
+        return refuse("validationFailed:queueTicketId: invalid queue ticket id");
+    };
+    let row: Option<(String, Option<Uuid>, bool)> = sqlx::query_as(
+        "SELECT status, counter_teller_id, (booking_id IS NOT NULL OR kiosk_request_id IS NOT NULL) \
+         FROM queue_tickets WHERE branch_id = $1 AND id = $2 FOR UPDATE",
+    )
+    .bind(req.branch_id.as_str())
+    .bind(ticket_uuid)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    let Some((status, counter_teller_id, has_entry)) = row else {
+        return Err(AppError::Domain(format!(
+            "validationFailed:queueTicketId: queue ticket {ticket_id} does not exist in branch"
+        )));
+    };
+    if status != "SERVING" || counter_teller_id.is_none() || counter_teller_id != caller {
+        return Err(AppError::Domain(format!(
+            "validationFailed:queueTicketId: queue ticket {ticket_id} is not SERVING for caller"
+        )));
+    }
+    if has_entry {
+        return Err(AppError::Domain(format!(
+            "validationFailed:queueTicketId: queue ticket {ticket_id} belongs to a booking or kiosk request"
+        )));
+    }
+    let has_sale: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM transactions WHERE queue_ticket_id = $1 AND status <> 'CANCELLED')",
+    )
+    .bind(ticket_uuid)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+    if has_sale {
+        return Err(AppError::Domain(format!(
+            "staleVersion: queue ticket {ticket_id} already has a sale"
+        )));
+    }
+    Ok(())
+}
+
 /// What the body asked for, hashed: the draft's `payload_hash`.
-fn payload_hash(req: &CreateRequest) -> String {
+fn payload_hash(req: &CreateRequest, queue_ticket_id: Option<&str>) -> String {
     let parts = [
         req.branch_id.as_str().to_owned(),
         req.quote_id.to_string(),
@@ -459,6 +548,10 @@ fn payload_hash(req: &CreateRequest) -> String {
     for part in parts {
         hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part.as_bytes());
+    }
+    if let Some(ticket) = queue_ticket_id {
+        hasher.update((ticket.len() as u64).to_be_bytes());
+        hasher.update(ticket.as_bytes());
     }
     format!("{:x}", hasher.finalize())
 }

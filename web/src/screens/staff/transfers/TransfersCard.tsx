@@ -681,7 +681,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                     can(props.ctx.me, 'FinanceReconcile');
 
                   return (
-                    <tr data-transfer-id={row.id}>
+                    <tr data-transfer-id={row.id} data-status={row.status}>
                       <td title={row.id}>{shortId(row.id)}</td>
                       <td>{t(('kind_' + row.kind) as any) || row.kind}</td>
                       <td>{statusLabel(row.status)}</td>

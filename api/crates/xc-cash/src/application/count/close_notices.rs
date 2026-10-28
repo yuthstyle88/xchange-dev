@@ -12,6 +12,8 @@ use xc_kernel::notifications::{NotificationObject, NotificationRequest, Notifica
 use crate::domain::count::CashCount;
 use crate::domain::repository::CountTotal;
 
+static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub struct CloseNotices {
     notifications: Arc<dyn Notifications>,
 }
@@ -57,6 +59,63 @@ impl CloseNotices {
             &event_id,
         )
         .await
+    }
+
+    pub async fn notify_rejected_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        count: &CashCount,
+        reason: &str,
+    ) -> AppResult<()> {
+        let bkk = count.counted_at.with_timezone(&xc_kernel::time::bangkok());
+        let params = NotificationParams::new()
+            .text("kind", count.kind.as_str())
+            .display(
+                "branch",
+                DisplayValue::server_id(count.branch_id.as_str())
+                    .map_err(|e| AppError::Internal(e.to_string()))?,
+            )
+            .display("counted_on", DisplayValue::date(bkk.date_naive()))
+            .text("counted_time", bkk.format("%H:%M").to_string())
+            .text("reason", xc_kernel::pii::redact_text(reason));
+        let request = NotificationRequest::with_params(
+            count.counted_by.clone(),
+            format!("count-rejected:{}", count.id),
+            "count_rejected",
+            Some(NotificationObject {
+                object_type: "cash_count".to_string(),
+                object_id: count.id.clone(),
+            }),
+            params,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+        self.send_notice_in(tx, &request).await
+    }
+
+    async fn send_notice_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        request: &NotificationRequest,
+    ) -> AppResult<()> {
+        let sp_id = SAVEPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let sp_name = format!("sp_count_notice_{sp_id}");
+        sqlx::query(AssertSqlSafe(format!("SAVEPOINT {sp_name}")))
+            .execute(&mut **tx)
+            .await?;
+
+        match self.notifications.notify_in(tx, request).await {
+            Ok(_) => {
+                sqlx::query(AssertSqlSafe(format!("RELEASE SAVEPOINT {sp_name}")))
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            Err(_) => {
+                sqlx::query(AssertSqlSafe(format!("ROLLBACK TO SAVEPOINT {sp_name}")))
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn send_in(
@@ -111,7 +170,6 @@ impl CloseNotices {
             .unwrap_or_else(|| actor_id.to_string());
         let safe_by = xc_kernel::pii::redact_text(&raw_by);
 
-        static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
         let mut params = NotificationParams::new()
             .display(
                 "branch",
@@ -136,7 +194,7 @@ impl CloseNotices {
             }
         }
 
-        for (rec_idx, recipient_id) in recipients.iter().enumerate() {
+        for recipient_id in &recipients {
             let request = match NotificationRequest::with_params(
                 recipient_id.to_string(),
                 event_id.to_string(),
@@ -159,24 +217,7 @@ impl CloseNotices {
                 }
             };
 
-            let sp_id = SAVEPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let sp_name = format!("sp_close_notice_{sp_id}_{rec_idx}");
-            sqlx::query(AssertSqlSafe(format!("SAVEPOINT {sp_name}")))
-                .execute(&mut **tx)
-                .await?;
-
-            match self.notifications.notify_in(tx, &request).await {
-                Ok(_) => {
-                    sqlx::query(AssertSqlSafe(format!("RELEASE SAVEPOINT {sp_name}")))
-                        .execute(&mut **tx)
-                        .await?;
-                }
-                Err(_) => {
-                    sqlx::query(AssertSqlSafe(format!("ROLLBACK TO SAVEPOINT {sp_name}")))
-                        .execute(&mut **tx)
-                        .await?;
-                }
-            }
+            self.send_notice_in(tx, &request).await?;
         }
 
         Ok(())

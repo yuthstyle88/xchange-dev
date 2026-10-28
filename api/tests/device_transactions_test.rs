@@ -152,6 +152,7 @@ fn make_tx(
     let r = Rate::parse(rate).expect("valid rate");
 
     ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org_id,
         branch_id: BranchId::new(branch_id.to_owned()),

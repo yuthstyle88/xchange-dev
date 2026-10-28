@@ -15,7 +15,7 @@ id: string, };
 /**
  * §4.2's `[required]` create input. No figure is read from it: every figure is the quote's.
  */
-export type TransactionCreateInput = { quoteId: string | null, customerId: string, bookingId: string | null, kioskRequestId: string | null, staffDraftId: string | null, passport: UploadRef, payment: TransactionPaymentInput, valueDate: string, notes: string, countConfirmed: boolean, };
+export type TransactionCreateInput = { quoteId: string | null, customerId: string, bookingId: string | null, kioskRequestId: string | null, queueTicketId?: string | null, staffDraftId: string | null, passport: UploadRef, payment: TransactionPaymentInput, valueDate: string, notes: string, countConfirmed: boolean, };
 
 export type TransactionDto = { id: string, branchId: string, mode: string, 
 /**

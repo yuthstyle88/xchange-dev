@@ -503,7 +503,7 @@ export async function submitCount(page: Page, kind: 'open' | 'close'): Promise<{
 /** The branch manager verifies the newest count of `kind`; returns POST /api/cash-counts/{id}/verify's answer. */
 export async function verifyCount(page: Page, kind: 'OPEN' | 'CLOSE'): Promise<{ ok: boolean; text: string }> {
   await page.reload();
-  const item = page.locator('[data-count-id]').filter({ hasText: kind }).first();
+  const item = page.locator(`[data-count-id][data-kind="${kind}"]`).first();
   await expect(item, `a ${kind} count waiting for verification`).toBeVisible({ timeout: 20_000 });
   return posted(page, /^\/api\/cash-counts\/[^/]+\/verify$/, () => item.getByTestId('shift-verify').click());
 }

@@ -179,6 +179,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
       customerId: store.customerId(),
       bookingId: text(extras.bookingId) ?? text(extras.onlineBookingId),
       kioskRequestId: text(extras.kioskRequestId),
+      queueTicketId: store.walkInTicket()?.id ?? null,
       staffDraftId: store.path.usesDraft && draft !== '' ? draft : null,
       passport: { uploadKey: s.passportKey ?? '' },
       payment: {

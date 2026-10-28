@@ -80,12 +80,12 @@ test.describe.serial('shift open and close', () => {
     await manager.close();
 
     await finance.reload();
-    await expect(row, 'the transfer is approved').toContainText('APPROVED', { timeout: 20_000 });
+    await expect(row, 'the transfer is approved').toHaveAttribute('data-status', 'APPROVED', { timeout: 20_000 });
     const dispatched = await posted(finance, /\/api\/cash-transfers\/[^/]+\/dispatch$/, () => row.getByTestId('transfer-dispatch').click());
     console.log(`[fund] dispatch ${dispatched.text}`);
     expect(dispatched.ok, `transfer dispatched: ${dispatched.text}`).toBeTruthy();
     await finance.reload();
-    await expect(row, 'the transfer is dispatched').toContainText('DISPATCHED', { timeout: 20_000 });
+    await expect(row, 'the transfer is dispatched').toHaveAttribute('data-status', 'DISPATCHED', { timeout: 20_000 });
     await row.getByTestId('transfer-receive').click();
     const recv = finance.getByTestId('transfer-receive-form');
     await expect(recv).toBeVisible({ timeout: 15_000 });
@@ -97,7 +97,7 @@ test.describe.serial('shift open and close', () => {
     console.log(`[fund] receive ${received.text}`);
     expect(received.ok, `transfer received: ${received.text}`).toBeTruthy();
     await finance.reload();
-    await expect(row, 'the transfer is received').toContainText('RECEIVED', { timeout: 20_000 });
+    await expect(row, 'the transfer is received').toHaveAttribute('data-status', 'RECEIVED', { timeout: 20_000 });
     await shot(finance, 'cash', 'fund-4-received');
     await finance.close();
   });

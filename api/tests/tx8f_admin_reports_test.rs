@@ -339,6 +339,7 @@ async fn seed_store_tx(
     .expect("read open shift");
 
     let tx_entity = ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org_id,
         branch_id: BranchId::new("MAIN"),

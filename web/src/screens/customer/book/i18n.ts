@@ -43,6 +43,8 @@ export const th = {
   'error.bookingsClosed': 'ระบบการจองปิดให้บริการในขณะนี้',
   'error.loadFailed': 'โหลดข้อมูลไม่สำเร็จ',
   'error.general': 'เกิดข้อผิดพลาดในการทำรายการ',
+  'error.branchRequired': 'กรุณาเลือกสาขา',
+  'error.slotRequired': 'กรุณาเลือกช่วงเวลา',
 };
 
 export const en = {
@@ -87,6 +89,8 @@ export const en = {
   'error.bookingsClosed': 'Booking system is currently closed',
   'error.loadFailed': 'Failed to load data',
   'error.general': 'An error occurred during booking',
+  'error.branchRequired': 'กรุณาเลือกสาขา',
+  'error.slotRequired': 'กรุณาเลือกช่วงเวลา',
 };
 
 export const zh = {
@@ -131,4 +135,6 @@ export const zh = {
   'error.bookingsClosed': '预约系统目前已关闭',
   'error.loadFailed': '加载数据失败',
   'error.general': '预约过程中发生错误',
+  'error.branchRequired': 'กรุณาเลือกสาขา',
+  'error.slotRequired': 'กรุณาเลือกช่วงเวลา',
 };
