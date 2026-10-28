@@ -27,12 +27,9 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::ledger_adjustment_create::{
-    LedgerAdjustmentEvidence, LedgerAdjustmentLine,
-};
-use crate::presentation::dto::v3::ledger_adjustment_post::LedgerAdjustmentPostedLine;
 use crate::presentation::dto::v3::ledger_adjustments::{
-    LedgerAdjustmentRow, LedgerAdjustments, LedgerAdjustmentsFilter,
+    LedgerAdjustmentRow, LedgerAdjustmentRowEvidence, LedgerAdjustmentRowLine,
+    LedgerAdjustmentValuation, LedgerAdjustments, LedgerAdjustmentsFilter,
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint, ViewFilter};
@@ -169,7 +166,7 @@ impl BranchView for LedgerAdjustmentsView {
                     .and_then(Value::as_str)
                     .map(String::from);
 
-                let lines: Vec<LedgerAdjustmentLine> = payload
+                let lines: Vec<LedgerAdjustmentRowLine> = payload
                     .get("lines")
                     .cloned()
                     .and_then(|v| serde_json::from_value(v).ok())
@@ -181,7 +178,7 @@ impl BranchView for LedgerAdjustmentsView {
                     .unwrap_or_default()
                     .to_string();
 
-                let evidence: LedgerAdjustmentEvidence = payload
+                let evidence: LedgerAdjustmentRowEvidence = payload
                     .get("evidence")
                     .cloned()
                     .and_then(|v| serde_json::from_value(v).ok())
@@ -194,7 +191,7 @@ impl BranchView for LedgerAdjustmentsView {
                     .map(String::from);
 
                 // The SQL formats each figure; a row that does not read is refused, never zeroed (#2108).
-                let valuations: Vec<LedgerAdjustmentPostedLine> =
+                let valuations: Vec<LedgerAdjustmentValuation> =
                     match raw_valuations.filter(|_| is_posted) {
                         Some(v) => serde_json::from_value(v).map_err(|e| {
                             pos_error::AppError::Internal(format!(

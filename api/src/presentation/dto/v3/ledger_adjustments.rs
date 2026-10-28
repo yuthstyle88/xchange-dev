@@ -3,9 +3,6 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use super::ledger_adjustment_create::{LedgerAdjustmentEvidence, LedgerAdjustmentLine};
-use super::ledger_adjustment_post::LedgerAdjustmentPostedLine;
-
 /// The query key besides `branch`: `status` empty (every row) or one of `PENDING`, `APPROVED`, `REJECTED`,
 /// `POSTED`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -14,6 +11,39 @@ use super::ledger_adjustment_post::LedgerAdjustmentPostedLine;
 pub struct LedgerAdjustmentsFilter {
     #[serde(default)]
     pub status: String,
+}
+
+/// One line of an adjustment row.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "ledger_adjustments.ts")]
+pub struct LedgerAdjustmentRowLine {
+    pub currency: String,
+    #[serde(default)]
+    pub quantity: Option<String>,
+    #[serde(default)]
+    pub cost_delta_thb: Option<String>,
+}
+
+/// Evidence attached to an adjustment row.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "ledger_adjustments.ts")]
+pub struct LedgerAdjustmentRowEvidence {
+    #[serde(default)]
+    pub files: Vec<String>,
+    #[serde(default)]
+    pub reference: String,
+}
+
+/// Valuation figures for a posted adjustment row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "ledger_adjustments.ts")]
+pub struct LedgerAdjustmentValuation {
+    pub currency: String,
+    pub quantity: String,
+    pub valuation_thb: String,
 }
 
 /// One adjustment whose payload's branch is the view's branch. `status` is the request's, or `POSTED` for an
@@ -28,9 +58,9 @@ pub struct LedgerAdjustmentRow {
     pub status: String,
     pub kind: String,
     pub place: Option<String>,
-    pub lines: Vec<LedgerAdjustmentLine>,
+    pub lines: Vec<LedgerAdjustmentRowLine>,
     pub reason: String,
-    pub evidence: LedgerAdjustmentEvidence,
+    pub evidence: LedgerAdjustmentRowEvidence,
     pub exception_id: Option<String>,
     pub requested_by: String,
     pub requested_at: String,
@@ -39,7 +69,7 @@ pub struct LedgerAdjustmentRow {
     pub decision_reason: Option<String>,
     pub posting_id: Option<String>,
     pub posted_at: Option<String>,
-    pub valuations: Vec<LedgerAdjustmentPostedLine>,
+    pub valuations: Vec<LedgerAdjustmentValuation>,
 }
 
 /// Newest request first.
