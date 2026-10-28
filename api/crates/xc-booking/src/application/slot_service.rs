@@ -39,10 +39,19 @@ type SlotDbRow = (
     String,
 );
 
-type ExistingSlotRow = (Uuid, DateTime<Utc>, DateTime<Utc>, i32, i32, String);
+type ExistingSlotRow = (
+    Uuid,
+    NaiveDate,
+    DateTime<Utc>,
+    DateTime<Utc>,
+    i32,
+    i32,
+    String,
+);
 
 struct ExistingSlotInfo {
     id: Uuid,
+    service_date: NaiveDate,
     end_at: DateTime<Utc>,
     capacity: i32,
     reserved: i32,
@@ -512,7 +521,7 @@ impl SlotService {
         let to_date = from + chrono::Duration::days(days as i64);
 
         let existing_rows: Vec<ExistingSlotRow> = sqlx::query_as(
-            "SELECT id, start_at, end_at, capacity, reserved, status \
+            "SELECT id, service_date, start_at, end_at, capacity, reserved, status \
              FROM booking_slots \
              WHERE branch_id = $1 AND service_date >= $2 AND service_date < $3 \
              FOR UPDATE",
@@ -527,18 +536,21 @@ impl SlotService {
         let mut existing_by_start: std::collections::HashMap<DateTime<Utc>, ExistingSlotInfo> =
             existing_rows
                 .into_iter()
-                .map(|(id, start_at, end_at, capacity, reserved, status)| {
-                    (
-                        start_at,
-                        ExistingSlotInfo {
-                            id,
-                            end_at,
-                            capacity,
-                            reserved,
-                            status,
-                        },
-                    )
-                })
+                .map(
+                    |(id, service_date, start_at, end_at, capacity, reserved, status)| {
+                        (
+                            start_at,
+                            ExistingSlotInfo {
+                                id,
+                                service_date,
+                                end_at,
+                                capacity,
+                                reserved,
+                                status,
+                            },
+                        )
+                    },
+                )
                 .collect();
 
         let now = Utc::now();
@@ -590,6 +602,7 @@ impl SlotService {
                         p.start_at,
                         ExistingSlotInfo {
                             id: slot_id,
+                            service_date: p.service_date,
                             end_at: p.end_at,
                             capacity: rule.capacity,
                             reserved: 0,
@@ -604,24 +617,33 @@ impl SlotService {
             planned.iter().map(|p| (p.start_at, p.end_at)).collect();
 
         let mut ids_to_close = Vec::new();
+        let mut reasons_to_close = Vec::new();
         for (start_at, info) in &existing_by_start {
             if info.status == "OPEN"
                 && info.reserved == 0
                 && *start_at > now
                 && !planned_set.contains(&(*start_at, info.end_at))
             {
+                let reason = if closures.iter().any(|c| c.closed_on == info.service_date) {
+                    ClosedBy::Closure.as_str()
+                } else {
+                    ClosedBy::Rule.as_str()
+                };
                 ids_to_close.push(info.id);
+                reasons_to_close.push(reason);
             }
         }
 
         let closed = ids_to_close.len() as u32;
         if !ids_to_close.is_empty() {
             sqlx::query(
-                "UPDATE booking_slots \
-                 SET status = 'CLOSED', updated_at = now() \
-                 WHERE id = ANY($1)",
+                "UPDATE booking_slots AS b \
+                 SET status = 'CLOSED', closed_by = u.closed_by, updated_at = now() \
+                 FROM unnest($1::uuid[], $2::text[]) AS u(id, closed_by) \
+                 WHERE b.id = u.id",
             )
             .bind(&ids_to_close)
+            .bind(&reasons_to_close)
             .execute(&mut **tx)
             .await
             .map_err(|e| SlotError::Store(AppError::Database(e)))?;
