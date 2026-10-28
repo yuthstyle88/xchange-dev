@@ -8,6 +8,7 @@ use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
 use crate::domain::count::{CashCount, CountKind, CountLine, CountRejection};
+use crate::domain::error::CashError;
 use crate::domain::repository::{CashRepository, CountTotal};
 
 #[derive(Clone)]
@@ -83,10 +84,10 @@ impl CashRepository for PgCashRepository {
         reason: &'a str,
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move {
-            sqlx::query(
+            let res = sqlx::query(
                 "UPDATE cash_counts \
                  SET rejected_by = $2::uuid, rejected_at = $3, reject_reason = $4, updated_at = $3 \
-                 WHERE id = $1::uuid",
+                 WHERE id = $1::uuid AND verified_by IS NULL AND rejected_by IS NULL",
             )
             .bind(count_id)
             .bind(rejected_by)
@@ -94,6 +95,9 @@ impl CashRepository for PgCashRepository {
             .bind(reason)
             .execute(&mut **tx)
             .await?;
+            if res.rows_affected() == 0 {
+                return Err(CashError::NotWaiting.into());
+            }
 
             Ok(())
         })
@@ -283,29 +287,32 @@ impl CashRepository for PgCashRepository {
         totals: &'a [CountTotal],
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move {
-            if let Some(s_id) = shift_id {
+            let res = if let Some(s_id) = shift_id {
                 sqlx::query(
                     "UPDATE cash_counts \
                      SET verified_by = $1::uuid, verified_at = $2, shift_id = $3, updated_at = $2 \
-                     WHERE id = $4::uuid",
+                     WHERE id = $4::uuid AND verified_by IS NULL AND rejected_by IS NULL",
                 )
                 .bind(verified_by)
                 .bind(verified_at)
                 .bind(s_id)
                 .bind(count_id)
                 .execute(&mut **tx)
-                .await?;
+                .await?
             } else {
                 sqlx::query(
                     "UPDATE cash_counts \
                      SET verified_by = $1::uuid, verified_at = $2, updated_at = $2 \
-                     WHERE id = $3::uuid",
+                     WHERE id = $3::uuid AND verified_by IS NULL AND rejected_by IS NULL",
                 )
                 .bind(verified_by)
                 .bind(verified_at)
                 .bind(count_id)
                 .execute(&mut **tx)
-                .await?;
+                .await?
+            };
+            if res.rows_affected() == 0 {
+                return Err(CashError::NotWaiting.into());
             }
 
             for total in totals {

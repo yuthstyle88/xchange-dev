@@ -20,7 +20,7 @@ use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Refusal, Role, ScopedRole};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_cash::application::count::count_service::CountVerified;
@@ -171,7 +171,16 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             StatusCode::FORBIDDEN,
         ),
         AppError::Domain(message) => {
-            if message == CashError::NotWaiting.to_string() {
+            if let Some(r) = [
+                Refusal::OutOfScope,
+                Refusal::RoleNotAllowed,
+                Refusal::SignIn,
+            ]
+            .into_iter()
+            .find(|&r| message == CashError::Refused(r).to_string())
+            {
+                V3Error::new(r.code(), None, message, StatusCode::FORBIDDEN)
+            } else if message == CashError::NotWaiting.to_string() {
                 V3Error::new("notWaiting", None, message, StatusCode::CONFLICT)
             } else if message == CashError::NotReceiver.to_string() {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
