@@ -59,6 +59,38 @@ impl CloseNotices {
         .await
     }
 
+    pub async fn notify_rejected_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        count: &CashCount,
+        reason: &str,
+    ) -> AppResult<()> {
+        let bkk = count.counted_at.with_timezone(&xc_kernel::time::bangkok());
+        let params = NotificationParams::new()
+            .text("kind", count.kind.as_str())
+            .display(
+                "branch",
+                DisplayValue::server_id(count.branch_id.as_str())
+                    .map_err(|e| AppError::Internal(e.to_string()))?,
+            )
+            .display("counted_on", DisplayValue::date(bkk.date_naive()))
+            .text("counted_time", bkk.format("%H:%M").to_string())
+            .text("reason", xc_kernel::pii::redact_text(reason));
+        let request = NotificationRequest::with_params(
+            count.counted_by.clone(),
+            format!("count-rejected:{}", count.id),
+            "count_rejected",
+            Some(NotificationObject {
+                object_type: "cash_count".to_string(),
+                object_id: count.id.clone(),
+            }),
+            params,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+        self.notifications.notify_in(tx, &request).await?;
+        Ok(())
+    }
+
     async fn send_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,

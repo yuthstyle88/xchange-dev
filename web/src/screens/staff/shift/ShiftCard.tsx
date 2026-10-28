@@ -798,7 +798,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
           <div class="xc-shift-list">
             <For each={countsToVerify()}>
               {(c) => (
-                <div data-count-id={c.id} class="xc-shift-count-item">
+                <div data-count-id={c.id} data-kind={c.kind} class="xc-shift-count-item">
                   <div class="xc-shift-item-info">
                     <span class="xc-shift-item-title">{kindLabel(c.kind)}</span>
                     <span class="xc-shift-item-sub">

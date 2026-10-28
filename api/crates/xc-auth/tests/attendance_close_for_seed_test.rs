@@ -105,7 +105,8 @@ fn s2_attendance_close_for_enters_the_seed_at_version_7() {
         .map(|&(v, _)| v)
         .collect();
     assert_eq!(entries, vec![7]);
-    assert_eq!(RoleGrants::SEED_VERSION, 7);
+    // LA-1 (ledger adjustment, ledger-inventory.md §13.3) raised it to 8 after SC-D2 set 7; (7, AttendanceCloseFor) is unchanged.
+    assert_eq!(RoleGrants::SEED_VERSION, 8);
 }
 
 #[tokio::test]

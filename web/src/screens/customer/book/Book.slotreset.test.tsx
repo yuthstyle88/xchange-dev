@@ -310,14 +310,14 @@ describe('Customer Book (C02) slot reset on date, branch, and slot reload (#2192
     expect(slotSel.value).toBe('');
 
     const submitBtn = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    // Restated by the FE lane controller claude/e92db6 for #5394 (qa/e2e flow-validation-customer:83): a Book with no
+    // slot is refused on screen and sends nothing; the old slot is never carried either.
     submitBtn.click();
 
     await vi.waitFor(() => {
-      expect(createBodies.length).toBe(1);
+      expect(container.querySelector('[data-field-error="slotId"]')).not.toBeNull();
     });
-    expect(createBodies[0]!.branchId).toBe('XC-B02');
-    expect(createBodies[0]!.slotId).toBe('');
-    expect(createBodies[0]!.slotId).not.toBe('slot-a1');
+    expect(createBodies.length).toBe(0);
   });
 
   it('Row 4: capacityFull / slotUnavailable re-reads booking_slots and clears a slot no longer listed', async () => {
@@ -486,11 +486,13 @@ describe('Customer Book (C02) slot reset on date, branch, and slot reload (#2192
     qtyInput.dispatchEvent(new Event('input', { bubbles: true }));
 
     const submitBtn = container.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    // Restated by the FE lane controller claude/e92db6 for #5394 (qa/e2e flow-validation-customer:83): a Book with no
+    // slot is refused on screen and sends nothing; the old slot is never carried either.
     submitBtn.click();
 
     await vi.waitFor(() => {
-      expect(createBodies.length).toBe(1);
+      expect(container.querySelector('[data-field-error="slotId"]')).not.toBeNull();
     });
-    expect(createBodies[0]!.slotId).toBe('');
+    expect(createBodies.length).toBe(0);
   });
 });
