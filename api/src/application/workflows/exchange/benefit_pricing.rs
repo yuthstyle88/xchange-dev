@@ -14,7 +14,7 @@ use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Side};
 use xc_marketing::domain::engine::active_rules::ActiveRule;
-use xc_marketing::domain::engine::engine::{Evaluation, QuoteLineInput};
+use xc_marketing::domain::engine::engine::{EvalContext, Evaluation, QuoteLineInput};
 use xc_marketing::infrastructure::pg_campaign_repository::PgCampaignRepository;
 use xc_rate::domain::publication::published_rates::PublishedSide;
 
@@ -67,6 +67,9 @@ pub struct BenefitSources {
 #[derive(Debug, Clone)]
 pub struct PricedBenefits {
     pub evaluation: Evaluation,
+    /// The context the engine judged with (channel, customer, coupon code, margin share, segments), so `price_in`'s
+    /// re-evaluation after a skipped reservation judges with the same one and reads nothing twice.
+    pub context: EvalContext,
     pub line_input: QuoteLineInput,
     /// The rules after the budget, coupon and `also_admitted_on` filters: what the engine judged.
     pub active_rules: Vec<ActiveRule>,
