@@ -75,7 +75,7 @@ impl Level {
 /// RBAC §11.9: the nine approval-kind permissions, one per decision (`CASH_TRANSFER` has two, split by the limit).
 /// Each is no-module ([`PermissionModule::module`] = `None`), seeded on exactly the base role that decides that kind
 /// today, and edited on screen. A group holds `ApprovalsDecide` iff it holds at least one of these.
-pub const APPROVAL_KINDS: [Permission; 9] = [
+pub const APPROVAL_KINDS: [Permission; 10] = [
     Permission::ApproveCashTransferWithinLimit,
     Permission::ApproveCashTransferAboveLimit,
     Permission::ApproveCountDifference,
@@ -85,6 +85,7 @@ pub const APPROVAL_KINDS: [Permission; 9] = [
     Permission::ApproveExchangeTransaction,
     Permission::ApproveTransactionReversal,
     Permission::ApproveLoyaltyRuleVersion,
+    Permission::ApproveLedgerAdjustment,
 ];
 
 pub struct PermissionModule;
@@ -156,7 +157,9 @@ impl PermissionModule {
             | P::ApproveTransactionReversal
             | P::ApproveLoyaltyRuleVersion
             // binding-quote.md D-13: no module, so Customers at Create (EXECUTIVE included) never implies it.
-            | P::BindingQuoteIssue => None,
+            | P::BindingQuoteIssue
+            // ledger-inventory.md §13.3: an approval kind, so no module.
+            | P::ApproveLedgerAdjustment => None,
         }
     }
 }

@@ -1,5 +1,6 @@
 //! Domain layer for cash bounded context.
 
+pub mod adjustment;
 pub mod count;
 pub mod error;
 pub mod handover;
