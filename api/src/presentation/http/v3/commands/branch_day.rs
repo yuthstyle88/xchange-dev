@@ -601,10 +601,18 @@ impl CommandAction for AttendanceCloseForCommand {
                 ),
                 CloseForError::Refused(
                     r @ (CloseForRefusal::SelfClose | CloseForRefusal::NotOpen),
-                ) => V3Error::new(r.code(), r.field(), refusal_message(r), StatusCode::CONFLICT),
-                CloseForError::Refused(r) => {
-                    V3Error::new(r.code(), r.field(), refusal_message(r), StatusCode::BAD_REQUEST)
-                }
+                ) => V3Error::new(
+                    r.code(),
+                    r.field(),
+                    refusal_message(r),
+                    StatusCode::CONFLICT,
+                ),
+                CloseForError::Refused(r) => V3Error::new(
+                    r.code(),
+                    r.field(),
+                    refusal_message(r),
+                    StatusCode::BAD_REQUEST,
+                ),
                 CloseForError::Other(e) => map_service_error(e),
             })?;
 
