@@ -330,7 +330,14 @@ impl CommandAction for QuotesCommand {
                     )
                 })?;
 
-        let mut dto = QuoteDto::from_domain(quote, pub_version);
+        let mut dto = QuoteDto::from_domain(quote, pub_version).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
         let published = crate::presentation::http::v3::published_rates::published_rates_data(
             &self.pool, branch,
         )

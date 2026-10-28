@@ -1,5 +1,6 @@
 //! Quote DTOs for v3 API (§4.2).
 
+use pos_error::AppResult;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_exchange::domain::quote::quote::Quote;
@@ -53,8 +54,11 @@ pub struct QuoteDto {
 }
 
 impl QuoteDto {
-    pub fn from_domain(quote: Quote, pub_version: i32) -> Self {
-        Self {
+    /// The answer for `quote`. Fallible (§6.4.3, BE-5): a snapshot entry that does not decode is an
+    /// `AppError::Internal` naming the quote (a 500 `serverError`), never a silently dropped row. The
+    /// skeleton keeps today's body; BE-5 types `benefits` and adds `benefitBasis`.
+    pub fn from_domain(quote: Quote, pub_version: i32) -> AppResult<Self> {
+        Ok(Self {
             id: quote.id.to_string(),
             quote_type: quote.quote_type.as_str().to_string(),
             channel: quote.channel.as_str().to_string(),
@@ -96,6 +100,6 @@ impl QuoteDto {
                 .unwrap_or_default(),
             stale: quote.stale,
             cash_settlement: quote.cash_settlement,
-        }
+        })
     }
 }

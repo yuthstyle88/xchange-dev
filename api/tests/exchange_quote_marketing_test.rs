@@ -366,7 +366,8 @@ async fn quote_with_eligible_rule_updates_final_rate_reserves_and_populates_snap
         "quote benefit_snapshot must contain applied benefits"
     );
 
-    let dto = QuoteDto::from_domain(quote, 1);
+    // the skeleton of §6.4 BE-5 made `from_domain` fallible (claude/e2926a49); what is asserted is unchanged
+    let dto = QuoteDto::from_domain(quote, 1).expect("the quote's answer");
     assert!(
         !dto.benefits.is_empty(),
         "QuoteDto.benefits must list applied benefits from snapshot"
@@ -407,10 +408,11 @@ async fn quote_with_no_rule_leaves_today_quote_unchanged() {
         "benefit_snapshot must have engineVersion: 1"
     );
 
-    let dto = QuoteDto::from_domain(quote, 1);
-    assert_eq!(
-        dto.benefits,
-        Vec::<serde_json::Value>::new(),
+    // the skeleton of §6.4 BE-5 made `from_domain` fallible and BE-5 types `benefits` (claude/e2926a49); what is
+    // asserted is unchanged: the list is empty
+    let dto = QuoteDto::from_domain(quote, 1).expect("the quote's answer");
+    assert!(
+        dto.benefits.is_empty(),
         "with no rule QuoteDto.benefits must be empty []"
     );
 
