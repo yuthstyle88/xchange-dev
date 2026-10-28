@@ -35,7 +35,7 @@ export function makeCountRejectInput(o: Partial<CountRejectInput> = {}): CountRe
 export function makeCountRejected(o: Partial<CountRejected> = {}): CountRejected {
   return {
     id: 'count_rejected-1',
-    status: 'status',
+    status: 'REJECTED',
     rejectedBy: 'rejectedBy',
     rejectedAt: '2026-01-01T00:00:00Z',
     reason: 'reason',
