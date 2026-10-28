@@ -174,7 +174,15 @@ impl Room {
 
     /// A tablet of `branch` added and paired through the service: (code as issued, token).
     async fn paired_tablet(&self, branch: &str, name: &str) -> (PairingCode, String) {
-        let t = now();
+        self.paired_tablet_at(branch, name, now()).await
+    }
+
+    async fn paired_tablet_at(
+        &self,
+        branch: &str,
+        name: &str,
+        t: DateTime<Utc>,
+    ) -> (PairingCode, String) {
         let code = self
             .service
             .pairing()
@@ -434,16 +442,19 @@ async fn me_answers_the_live_tablet_and_touches_it_and_list_names_each_state() {
     assert_eq!(last_seen, Some(t));
     assert_eq!(agent.as_deref(), Some("Mozilla/5.0 (iPad)"));
 
+    let t0 = now();
     let pending = room
         .service
         .pairing()
-        .issue(&BranchId::new(MAIN), "pending", "admin-1", now())
+        .issue(&BranchId::new(MAIN), "pending", "admin-1", t0)
         .await
         .expect("add");
-    let (revoked, _) = room.paired_tablet(MAIN, "gone").await;
+    let (revoked, _) = room
+        .paired_tablet_at(MAIN, "gone", t0 + Duration::seconds(1))
+        .await;
     room.service
         .pairing()
-        .revoke(&revoked.device_id, "admin-1", now())
+        .revoke(&revoked.device_id, "admin-1", t0 + Duration::seconds(1))
         .await
         .expect("revoke");
 
