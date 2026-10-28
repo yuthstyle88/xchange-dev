@@ -404,7 +404,9 @@ pub struct CountReject {
 impl CountReject {
     pub fn new(pool: PgPool) -> Self {
         Self {
-            counts: CashCountService::pg(pool),
+            counts: CashCountService::pg(pool.clone()).with_notices(Arc::new(
+                NotificationService::new(pool, Arc::new(TemplateRegistry::generated())),
+            )),
         }
     }
 }
