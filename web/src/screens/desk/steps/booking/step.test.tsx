@@ -12,10 +12,13 @@
 // - No client-made booking reference (D-10): the server numbers the exchange. The step never calls `setBooking` and no
 //   `BK-` text appears.
 // The store is a stub with §5.3's names, so this file does not depend on `desk-store.ts`.
+// Restated by the FE lane controller claude/e92db6 for #5352 (owner: "G1 ก็ต้องเข้าคิว เสมือน จองเหมือกกัน"): the stub has
+// `api` and the walk-in queue fields, and G3, a walk-in, is served a queue ticket before step 3.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { setLang } from "../../../../shared/i18n";
+import { makeQueueTicketDto } from "../../../../shared/testing/fixtures";
 
 type StepModule = { step: { index: number; label: () => string; component: (p: { store: any }) => JSX.Element } };
 type TextsModule = { th: Record<string, string>; en: Record<string, string> };
@@ -51,7 +54,13 @@ function stubStore(path: unknown, init: { name?: string; staff?: string; valueDa
   const [valueDate, setValueDate] = createSignal(init.valueDate ?? "2026-10-11");
   const [booking, setBooking] = createSignal("");
   const [step] = createSignal(2);
+  const [walkInTicket, setWalkInTicket] = createSignal<unknown>();
   return {
+    api: { command: vi.fn(async () => makeQueueTicketDto({ displayNumber: "W001", status: "SERVING" })) },
+    customerId: () => "",
+    walkInTicket,
+    setWalkInTicket: vi.fn((t: unknown) => setWalkInTicket(t)),
+    serveKey: () => "serve-key-1",
     path,
     step,
     fields,
@@ -144,7 +153,8 @@ for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
       await mount(store);
       expect(submit()?.textContent?.trim()).toBe(SUBMIT);
       submit()!.click();
-      expect(store.go).toHaveBeenCalledWith(3);
+      await vi.waitFor(() => expect(store.go).toHaveBeenCalledWith(3));
+      expect(store.api.command).toHaveBeenCalledWith("POST", "/api/queue/tickets/serve", { customerId: null }, "serve-key-1");
       expect(store.setBooking).not.toHaveBeenCalled();
       expect(host.textContent).not.toMatch(/BK-/);
     });

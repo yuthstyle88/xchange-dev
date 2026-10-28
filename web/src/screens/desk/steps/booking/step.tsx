@@ -21,7 +21,7 @@ const OWN_ERROR_KEYS = {
 } as const satisfies Record<string, keyof typeof texts.th>;
 
 function hasEntryKey(store: DeskStore): boolean {
-  const extras = store.entry?.()?.payloadExtras?.();
+  const extras = store.entry()?.payloadExtras();
   if (!extras) return false;
   return Boolean(extras.bookingId || extras.onlineBookingId || extras.kioskRequestId);
 }
@@ -55,16 +55,16 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
       return;
     }
     setError(undefined);
-    if (!hasEntryKey(store) && !store.walkInTicket?.() && store.api?.command && store.serveKey) {
+    if (!hasEntryKey(store) && !store.walkInTicket()) {
       setServing(true);
       try {
         const answer = await store.api.command<QueueServeWalkInInput, QueueTicketDto>(
           'POST',
           '/api/queue/tickets/serve',
-          { customerId: store.customerId?.() || null },
+          { customerId: store.customerId() || null },
           store.serveKey(),
         );
-        store.setWalkInTicket?.(answer);
+        store.setWalkInTicket(answer);
       } catch (err) {
         setError(serveErrorMessage(err));
         return;
@@ -96,7 +96,7 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
           onInput={(e) => store.setValueDate(e.currentTarget.value)}
         />
       </label>
-      <Show when={store.walkInTicket?.()}>
+      <Show when={store.walkInTicket()}>
         {(ticket) => (
           <p class="desk-notice" data-row="walkin-ticket">
             {t('ticket', { number: ticket().displayNumber })}
