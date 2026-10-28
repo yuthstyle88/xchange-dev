@@ -99,7 +99,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 62] = [
+    pub const ALL: [Permission; 63] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -162,5 +162,6 @@ impl Permission {
         Permission::ApproveTransactionReversal,
         Permission::ApproveLoyaltyRuleVersion,
         Permission::BindingQuoteIssue,
+        Permission::ApproveLedgerAdjustment,
     ];
 }
