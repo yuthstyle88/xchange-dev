@@ -138,6 +138,17 @@ async fn staff_view(app: &TestApp, staff: &str) -> Value {
     view(app, "staff_published_rates", |c| c.session(staff)).await
 }
 
+/// pricing-tiers.md §15.8: the `display` block is PV-17/PV-18's to pin; these tests pin the rest.
+fn without_display(mut data: Value) -> Value {
+    assert!(
+        data.as_object_mut()
+            .and_then(|o| o.remove("display"))
+            .is_some(),
+        "a display block"
+    );
+    data
+}
+
 async fn owner_view(app: &TestApp, owner: &str) -> Value {
     view(app, "published_rates", |c| c.session(owner)).await
 }
@@ -206,13 +217,13 @@ async fn the_staff_view_answers_exactly_the_seeded_publication() {
         "stale": false,
         "bandHeadings": [],
         "lines": [
-            { "currency": "EUR", "group": "ALL", "unitSize": "1", "buyRate": "36.25000000", "sellRate": null, "lineId": eur, "bands": [] },
-            { "currency": "GBP", "group": "50-100", "unitSize": "1", "buyRate": null, "sellRate": "43.12500000", "lineId": gbp, "bands": [] },
-            { "currency": "JPY", "group": "ALL", "unitSize": "100", "buyRate": "21.50000000", "sellRate": "22.75000000", "lineId": jpy, "bands": [] },
-            { "currency": "USD", "group": "ALL", "unitSize": "1", "buyRate": "32.10000000", "sellRate": "32.50000000", "lineId": usd, "bands": [] },
+            { "currency": "EUR", "group": "ALL", "unitSize": "1", "buyRate": "36.25000000", "sellRate": null, "lineId": eur, "bands": [], "pricingSource": "AUTO", "hidden": false, "hiddenReason": null },
+            { "currency": "GBP", "group": "50-100", "unitSize": "1", "buyRate": null, "sellRate": "43.12500000", "lineId": gbp, "bands": [], "pricingSource": "AUTO", "hidden": false, "hiddenReason": null },
+            { "currency": "JPY", "group": "ALL", "unitSize": "100", "buyRate": "21.50000000", "sellRate": "22.75000000", "lineId": jpy, "bands": [], "pricingSource": "AUTO", "hidden": false, "hiddenReason": null },
+            { "currency": "USD", "group": "ALL", "unitSize": "1", "buyRate": "32.10000000", "sellRate": "32.50000000", "lineId": usd, "bands": [], "pricingSource": "AUTO", "hidden": false, "hiddenReason": null },
         ],
     });
-    assert_eq!(staff_view(&app, &staff).await, expected);
+    assert_eq!(without_display(staff_view(&app, &staff).await), expected);
     drop(app);
     desk.drop_schema().await;
 }
@@ -253,7 +264,7 @@ async fn the_staff_view_is_stale_when_a_line_carries_an_old_reference() {
 async fn the_staff_view_before_the_first_publication_is_empty() {
     let (desk, app, _owner, staff) = setup().await;
     assert_eq!(
-        staff_view(&app, &staff).await,
+        without_display(staff_view(&app, &staff).await),
         json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [], "bandHeadings": [] })
     );
     drop(app);

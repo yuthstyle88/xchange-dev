@@ -294,7 +294,11 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         }
       }
     } catch (e) {
-      if (e instanceof Refused || (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'httpError')) {
+      const stillRunning = e instanceof ApiError && e.status === 409 && e.code === 'idempotencyConflict';
+      if (
+        !stillRunning &&
+        (e instanceof Refused || (e instanceof ApiError && e.status >= 400 && e.status < 500 && e.code !== 'httpError'))
+      ) {
         // a refusal: the next submit is a new exchange
         stopWatch();
         s.tx = undefined;
@@ -307,7 +311,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         return 'refused';
       }
       // unknown: the session is kept, so a retry resends the failed request with its key
-      sink.setSaveError(e instanceof NoState ? t('notConfirmed') : t('saveFailed'));
+      sink.setSaveError(stillRunning ? t('stillSaving') : e instanceof NoState ? t('notConfirmed') : t('saveFailed'));
       sink.setOutcome('unknown');
       return 'unknown';
     }

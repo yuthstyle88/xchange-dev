@@ -40,12 +40,6 @@ export function makeStaffFloorTarget(o: Partial<StaffFloorTarget> = {}): StaffFl
 export function makeStaffFloorView(o: Partial<StaffFloorView> = {}): StaffFloorView {
   return {
     phase: 'phase',
-    hours: null,
-    myClockIn: null,
-    myShift: null,
-    cutoff: null,
-    target: null,
-    safe: null,
     ...o,
   };
 }

@@ -948,7 +948,7 @@ classDiagram
 - `PgPublishedRates::line_for` (`xc-rate/src/infrastructure/publication/published_rates.rs:135-335`) returns **tier 1** of a tiered publication, `tier_lower_exclusive_thb IS NULL`, whatever the quantity.
 - That one change covers the desk (`quote.rs:216-228`), the compat save, the kiosk (`kiosk_ports.rs:388-461`; the repricing loop in `customer.rs:119-149` settles in one round) and the planner (`planner_preview.rs:72-80`).
 - `quote.rs`, `customer.rs` and `kiosk_ports.rs` do not change, so this stays clear of CR-b and CR-e.
-- The tier a customer's amount falls in is still recorded for reference (`H:` §8 `orderReference`). The quote line's `published_rate_line_id` points at tier 1, and `source_snapshot.market` already holds the market.
+- The tier a customer's amount falls in is **not stored**. Anything that needs it derives it at read time from `quote_lines.thb_amount` and V.9's fixed bands (`H:` §4.1). `H:` §8 calls `orderReference` reference only, not proof of the charged tier. No column and no migration; PV-21 pins the published bands. The quote line's `published_rate_line_id` points at tier 1, and `source_snapshot.market` already holds the market. (Corrected 2026-10-27 by claude/bc8fd29a's ruling; it read "still recorded".)
 
 ### 15.7 The public projection says what the board may show (B5) [required]
 

@@ -95,6 +95,39 @@ function RequestCard(props: RequestCardProps): JSX.Element {
     return [];
   };
 
+  const cashTransferDetail = () => {
+    if (props.request.type !== 'CASH_TRANSFER') return null;
+    let payload = props.request.proposedPayload;
+    if (typeof payload === 'string') {
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        return null;
+      }
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+
+    const rawTransferId = payload.transfer_id ?? payload.transferId;
+    const transferId =
+      typeof rawTransferId === 'string' && rawTransferId.trim().length > 0
+        ? rawTransferId.trim()
+        : null;
+    const rawBranch = payload.from_branch ?? payload.fromBranch;
+    const fromBranch =
+      typeof rawBranch === 'string' && rawBranch.trim().length > 0
+        ? rawBranch.trim()
+        : null;
+    const withinLimit =
+      typeof payload.within_limit === 'boolean'
+        ? payload.within_limit
+        : typeof payload.withinLimit === 'boolean'
+          ? payload.withinLimit
+          : null;
+
+    if (!transferId && !fromBranch && withinLimit === null) return null;
+    return { transferId, fromBranch, withinLimit };
+  };
+
   const handleApprove = async () => {
     setError(null);
     const r = reason();
@@ -177,6 +210,20 @@ function RequestCard(props: RequestCardProps): JSX.Element {
           <span>{t('requestedBy')}</span>
           <strong>{props.request.requestedBy}</strong>
         </div>
+
+        <Show when={cashTransferDetail()}>
+          {(d) => (
+            <div class="approval-proposer">
+              {d().transferId && <span title={d().transferId!}>#{d().transferId!.slice(0, 8)}</span>}
+              {d().transferId && (d().fromBranch || d().withinLimit !== null) && ' · '}
+              {d().fromBranch && <span>{d().fromBranch}</span>}
+              {d().fromBranch && d().withinLimit !== null && ' · '}
+              {d().withinLimit !== null && (
+                <span>{d().withinLimit ? t('withinLimit') : t('aboveLimit')}</span>
+              )}
+            </div>
+          )}
+        </Show>
 
         <Show when={outOfBound().length > 0}>
           <div class="approval-out-of-bound-list">

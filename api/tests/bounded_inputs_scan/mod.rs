@@ -52,6 +52,10 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
         "BookingCreateOutput.quantity is the command's response DTO, not client input; the input is bounded by #2983",
     ),
     (
+        "src/presentation/http/v3/commands/binding_quote_issue.rs",
+        "parses the stored currencies.unit_size read back from the database, not client input (as quotes.rs)",
+    ),
+    (
         "src/presentation/http/v3/commands/campaign_simulate.rs",
         "parses the stored currencies.unit_size read back from the database, not client input",
     ),

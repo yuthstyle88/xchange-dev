@@ -33,6 +33,8 @@ export function makeQuoteLineDto(o: Partial<QuoteLineDto> = {}): QuoteLineDto {
     roundingThb: '0.00',
     settleThb: '0.00',
     publishedRateLineId: 'quote_line_dto-1',
+    pricingHidden: false,
+    pricingHiddenReason: null,
     ...o,
   };
 }

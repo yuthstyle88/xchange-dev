@@ -1,4 +1,4 @@
-use rust_decimal::RoundingStrategy;
+use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{CurrencyUnits, ExchangeArithmetic, ForeignAmount, Money, Side};
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
@@ -50,11 +50,21 @@ impl KioskMachine {
         let units = CurrencyUnits::new(currency, line.unit_size, line.minor_unit);
         let (foreign, thb) = match side {
             Side::Buy => {
-                let foreign_amt = ForeignAmount::parse(&amount.to_string(), &units)
+                let dp = u32::from(units.minor_unit().get());
+                let dec = Decimal::from_i128_with_scale(amount.minor_i128(), 2);
+                let rounded =
+                    dec.round_dp_with_strategy(dp, RoundingStrategy::MidpointAwayFromZero);
+                if rounded.is_zero() {
+                    return Err(KioskError::AmountTooSmall);
+                }
+                let mut dec_money = rounded;
+                dec_money.rescale(2);
+                let foreign = Money::try_from_minor_i128(dec_money.mantissa())
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
+                let foreign_amt = ForeignAmount::from_decimal(rounded);
                 let thb = ExchangeArithmetic::try_thb(foreign_amt, line.rate, line.unit_size)
                     .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                (amount, thb)
+                (foreign, thb)
             }
             Side::Sell => {
                 let foreign_amt =

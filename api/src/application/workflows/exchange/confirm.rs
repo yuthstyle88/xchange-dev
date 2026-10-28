@@ -144,6 +144,7 @@ impl ConfirmTransaction {
             .await?;
         if let Some(limit) = limit
             && settle.minor_i128() > limit.minor_i128()
+            && !super::binding_approval::covers_in(tx, quote_id, settle).await?
         {
             let request = self
                 .approvals

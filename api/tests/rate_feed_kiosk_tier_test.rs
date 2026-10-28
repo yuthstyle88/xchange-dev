@@ -23,6 +23,11 @@
 //! - §7 / §9.4 / `kiosk_repository.rs:652`: Currency on-switch requires an open-below tier:
 //!   enabling a currency with no open-below tier is refused with RatesFirst and writes no switch or audit row.
 //! - §4/§8: Stored kiosk request and exchange quote hold the tier line's line_id and rate.
+//!
+//! **Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168)** on the owner's ruling
+//! B4 (`docs/design/blueprint/pricing-tiers.md` §15.6): `line_for` answers tier 1 whatever the amount, so the
+//! repricing loop (`customer.rs:119-149`) settles in one round on T1. Edge cases 1, 2 and the oscillation follow-up
+//! now pin T1's line and rate; where this note and the list above disagree, this note wins.
 
 mod common;
 mod compat_common;
@@ -41,7 +46,6 @@ use sqlx::PgPool;
 
 const MAIN: &str = rpc_common::MAIN;
 const RATE_CHANGED: &str = "Rate changed or counter closed. Please start again.";
-const AMOUNT_OR_CURRENCY: &str = "Please enter a valid amount and currency.";
 
 /// One publication on MAIN, made current, with an untiered JPY line and four USD tiers:
 /// - T1: (None, 10000.00] THB, buy 31.50, sell 33.00, base_buy 32.00, base_sell 32.50
@@ -296,105 +300,105 @@ async fn fetch_kiosk_currencies_view(counter: &Counter) -> Value {
     answer.json()["data"].clone()
 }
 
-/// §9 Edge case: BUY with a foreign amount in T2 — priced at T2 in one repricing round.
-/// §4/§8: The kiosk request's `rate`, `line_id`, `foreign` and `thb` are those of the tier line.
+/// §9 Edge case 1, restated for B4 (§15.6): BUY with a foreign amount in T2's band is priced at T1.
+/// §4/§8: The kiosk request's `rate`, `line_id`, `foreign` and `thb` are those of the T1 line.
 /// The exchange quote then has the same line and rate.
 #[actix_web::test]
-async fn kiosk_buy_foreign_amount_in_t2_is_priced_at_t2() {
+async fn kiosk_buy_foreign_amount_in_t2s_band_is_priced_at_t1() {
     let counter = Counter::open(&[]).await;
     let pool = counter.desk.db.pool.clone();
     let (_pub_id, usd_tier_ids) = publish_tiered_usd(&pool).await;
 
-    // Customer enters BUY 500 USD.
-    // 500 USD × base_buy 32.00 = 16,000.00 THB → falls in T2 ((10000, 50000] THB).
-    // T2 buy rate is 31.70 → THB = 500 × 31.70 = 15,850.00 THB.
+    // Customer enters BUY 500 USD. 500 × base_buy 32.00 = 16,000.00 THB is T2's band; B4 prices at T1's 31.50
+    // → THB = 500 × 31.50 = 15,750.00 THB.
     let id = "00000000-0000-4000-8000-00000004b101";
     let answer = quote(&counter, id, "BUY", "USD", json!(500)).await;
 
     assert_eq!(
         number(&answer["rate"], "rate"),
-        d("31.7"),
-        "kiosk JSON rate is T2 buy rate: {answer}"
+        d("31.5"),
+        "kiosk JSON rate is T1 buy rate: {answer}"
     );
     assert_eq!(number(&answer["foreign"], "foreign"), d("500"), "{answer}");
-    assert_eq!(number(&answer["thb"], "thb"), d("15850"), "{answer}");
+    assert_eq!(number(&answer["thb"], "thb"), d("15750"), "{answer}");
 
     let (line_id, rate, unit_size, foreign, thb, input, status) = stored(&counter, id).await;
     assert_eq!(
         line_id.as_deref(),
-        Some(usd_tier_ids[1].as_str()),
-        "stored line_id is T2 line"
+        Some(usd_tier_ids[0].as_str()),
+        "stored line_id is T1 line"
     );
-    assert_eq!(rate, d("31.70"), "stored rate is T2 buy rate");
+    assert_eq!(rate, d("31.50"), "stored rate is T1 buy rate");
     assert_eq!(unit_size, d("1"));
     assert_eq!(foreign, d("500"));
-    assert_eq!(thb, d("15850.00"));
+    assert_eq!(thb, d("15750.00"));
     assert_eq!(input, d("500"));
     assert_eq!(status, "QUOTED");
 
     // §8: The exchange quote has the same line and rate
     let (quote_line_id, quote_final_rate, quote_qty, quote_thb) = quote_line(&counter, id).await;
-    assert_eq!(quote_line_id, usd_tier_ids[1], "exchange quote line is T2");
+    assert_eq!(quote_line_id, usd_tier_ids[0], "exchange quote line is T1");
     assert_eq!(
         quote_final_rate,
-        d("31.70"),
-        "exchange quote final rate is T2"
+        d("31.50"),
+        "exchange quote final rate is T1"
     );
     assert_eq!(quote_qty, d("500"));
-    assert_eq!(quote_thb, d("15850.00"));
+    assert_eq!(quote_thb, d("15750.00"));
 
     counter.finish().await;
 }
 
-/// §9 Edge case: SELL with THB whose foreign amount falls in T2 — priced at T2;
-/// the loop settles because a higher tier sells cheaper.
-/// §4/§8: Stored kiosk request and exchange quote hold T2's line and rate.
+/// §9 Edge case 2, restated for B4 (§15.6): SELL with THB whose foreign amount falls in T2's band is priced at T1;
+/// the loop settles in its first round.
+/// §4/§8: Stored kiosk request and exchange quote hold T1's line and rate.
 #[actix_web::test]
-async fn kiosk_sell_thb_amount_falling_in_t2_is_priced_at_t2() {
+async fn kiosk_sell_thb_amount_in_t2s_band_is_priced_at_t1() {
     let counter = Counter::open(&[]).await;
     let pool = counter.desk.db.pool.clone();
     let (_pub_id, usd_tier_ids) = publish_tiered_usd(&pool).await;
 
-    // Customer enters SELL 16,400 THB.
-    // Step 1: Counter line T1 sell rate 33.00 → 16,400 ÷ 33.00 = 496.96 USD (minor unit 2).
-    //         base_value = 496.96 × 32.50 = 16,151.20 THB → falls in T2.
-    // Step 2: Reprice at T2 sell rate 32.80 → 16,400 ÷ 32.80 = 500.00 USD.
-    //         base_value = 500.00 × 32.50 = 16,250.00 THB → still in T2, loop settles.
-    // Final THB = 500.00 × 32.80 = 16,400.00 THB.
+    // Customer enters SELL 16,400 THB. T1 sell rate 33.00 → 16,400 ÷ 33.00 = 496.96 USD (minor unit 2).
+    // base_value = 496.96 × 32.50 = 16,151.20 THB is T2's band; B4 keeps T1, so the loop settles at once.
+    // Final THB = 496.96 × 33.00 = 16,399.68 THB.
     let id = "00000000-0000-4000-8000-00000004b102";
     let answer = quote(&counter, id, "SELL", "USD", json!(16400)).await;
 
     assert_eq!(
         number(&answer["rate"], "rate"),
-        d("32.8"),
-        "kiosk JSON rate is T2 sell rate: {answer}"
+        d("33"),
+        "kiosk JSON rate is T1 sell rate: {answer}"
     );
-    assert_eq!(number(&answer["foreign"], "foreign"), d("500"), "{answer}");
-    assert_eq!(number(&answer["thb"], "thb"), d("16400"), "{answer}");
+    assert_eq!(
+        number(&answer["foreign"], "foreign"),
+        d("496.96"),
+        "{answer}"
+    );
+    assert_eq!(number(&answer["thb"], "thb"), d("16399.68"), "{answer}");
 
     let (line_id, rate, unit_size, foreign, thb, input, status) = stored(&counter, id).await;
     assert_eq!(
         line_id.as_deref(),
-        Some(usd_tier_ids[1].as_str()),
-        "stored line_id is T2 line"
+        Some(usd_tier_ids[0].as_str()),
+        "stored line_id is T1 line"
     );
-    assert_eq!(rate, d("32.80"), "stored rate is T2 sell rate");
+    assert_eq!(rate, d("33.00"), "stored rate is T1 sell rate");
     assert_eq!(unit_size, d("1"));
-    assert_eq!(foreign, d("500.00"));
-    assert_eq!(thb, d("16400.00"));
+    assert_eq!(foreign, d("496.96"));
+    assert_eq!(thb, d("16399.68"));
     assert_eq!(input, d("16400"));
     assert_eq!(status, "QUOTED");
 
     // §8: The exchange quote has the same line and rate
     let (quote_line_id, quote_final_rate, quote_qty, quote_thb) = quote_line(&counter, id).await;
-    assert_eq!(quote_line_id, usd_tier_ids[1], "exchange quote line is T2");
+    assert_eq!(quote_line_id, usd_tier_ids[0], "exchange quote line is T1");
     assert_eq!(
         quote_final_rate,
-        d("32.80"),
-        "exchange quote final rate is T2"
+        d("33.00"),
+        "exchange quote final rate is T1"
     );
-    assert_eq!(quote_qty, d("500.00"));
-    assert_eq!(quote_thb, d("16400.00"));
+    assert_eq!(quote_qty, d("496.96"));
+    assert_eq!(quote_thb, d("16399.68"));
 
     counter.finish().await;
 }
@@ -595,55 +599,29 @@ async fn kiosk_list_shows_no_row_when_currency_has_no_open_below_tier() {
     counter.finish().await;
 }
 
-/// §9 Ruling follow-up (comment 6100499439, §9.3 step 4): The repricing loop stops after 4 rounds
-/// and refuses with AmountOrCurrencyInvalid when tiers oscillate.
+/// §9 Ruling follow-up (comment 6100499439, §9.3 step 4), restated for B4 (§15.6): tiers that used to oscillate
+/// between T1 and T2 no longer can, because `line_for` answers T1 for every amount; the loop settles in its first
+/// round and the quote is priced at T1.
 #[actix_web::test]
-async fn kiosk_repricing_loop_terminates_and_refuses_when_tiers_oscillate() {
+async fn kiosk_repricing_loop_settles_at_t1_where_tiers_used_to_oscillate() {
     let counter = Counter::open(&[]).await;
     let pool = counter.desk.db.pool.clone();
     let (pub_id, _usd_tier_ids) = publish_tiered_usd(&pool).await;
-
-    // Add non-monotonic GBP tiers that oscillate between T1 and T2 for a SELL of 12,000 THB
     add_oscillating_gbp_tiers(&pool, &pub_id).await;
 
-    let before_requests = requests(&counter).await;
-    let mark = audit_mark(&counter).await;
-
-    // SELL 12,000 THB:
-    // Round 1: T1 sell 30.00 -> 400 GBP -> base 12,000 THB in T2
-    // Round 2: T2 sell 40.00 -> 300 GBP -> base 9,000 THB in T1
-    // Round 3: T1 sell 30.00 -> 400 GBP in T2
-    // Round 4: T2 sell 40.00 -> 300 GBP in T1
-    // Still moving after 4 rounds -> AmountOrCurrencyInvalid
+    // SELL 12,000 THB at T1's sell 30.00 → 400 GBP. 400 × base 30 = 12,000 THB is T2's band, which used to send
+    // the loop to T2 and back; B4 keeps T1.
     let id = "00000000-0000-4000-8000-00000004b107";
-    counter.hands.ids.push(id);
-    let refused = tokio::time::timeout(
+    let answer = tokio::time::timeout(
         std::time::Duration::from_secs(5),
-        counter.ask(
-            None,
-            "quote",
-            json!({ "type": "SELL", "currency": "GBP", "amount": 12000 }),
-        ),
+        quote(&counter, id, "SELL", "GBP", json!(12000)),
     )
     .await
-    .expect("repricing loop must terminate within 5 seconds rather than hanging");
-
-    refused.assert_refused(
-        400,
-        AMOUNT_OR_CURRENCY,
-        "oscillating tiers refuse AmountOrCurrencyInvalid after 4 rounds",
-    );
-
-    assert_eq!(
-        requests(&counter).await,
-        before_requests,
-        "the refused quote wrote no request"
-    );
-    let (written, _) = audit_since(&counter.desk, mark).await;
-    assert!(
-        written.is_empty(),
-        "the refusal wrote no audit line: {written:?}"
-    );
+    .expect("the repricing loop terminates within 5 seconds");
+    assert_eq!(number(&answer["rate"], "rate"), d("30"), "{answer}");
+    assert_eq!(number(&answer["foreign"], "foreign"), d("400"), "{answer}");
+    assert_eq!(number(&answer["thb"], "thb"), d("12000"), "{answer}");
+    assert_eq!(requests(&counter).await, 1, "the quote wrote one request");
 
     counter.finish().await;
 }

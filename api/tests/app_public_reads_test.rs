@@ -446,7 +446,8 @@ async fn the_rates_route_answers_the_published_rates_shape_and_nothing_else() {
             "sourceDate",
             "stale",
             "lines",
-            "bandHeadings"
+            "bandHeadings",
+            "display"
         ])
     );
     assert_eq!(
@@ -466,7 +467,16 @@ async fn the_rates_route_answers_the_published_rates_shape_and_nothing_else() {
         assert_eq!(
             key_set(l),
             set(&[
-                "currency", "group", "unitSize", "buyRate", "sellRate", "lineId", "bands"
+                "currency",
+                "group",
+                "unitSize",
+                "buyRate",
+                "sellRate",
+                "lineId",
+                "bands",
+                "pricingSource",
+                "hidden",
+                "hiddenReason"
             ]),
             "{l}"
         );
@@ -524,8 +534,16 @@ async fn a_branch_with_no_publication_yet_answers_an_empty_board() {
     xc_branch(&db, "b-alpha", "ALPHA").await;
     let answer = rates(&db, XC, "ALPHA").await;
     assert_eq!(answer.status, StatusCode::OK, "{}", answer.text());
+    // pricing-tiers.md §15.8: the `display` block is PV-17/PV-18's to pin; the rest is unchanged.
+    let mut body = answer.json();
+    assert!(
+        body.as_object_mut()
+            .and_then(|o| o.remove("display"))
+            .is_some(),
+        "a display block"
+    );
     assert_eq!(
-        answer.json(),
+        body,
         serde_json::json!({ "publication": null, "sourceDate": null, "stale": false, "lines": [], "bandHeadings": [] })
     );
     db.finish().await;

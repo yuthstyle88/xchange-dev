@@ -56,6 +56,20 @@
   border-bottom: 0;
 }
 
+.xc-rb-row-featured {
+  background: #fdf6e9;
+  box-shadow: inset 4px 0 0 var(--xc-rb-brand, #a5003c);
+}
+
+.xc-rb-contact-cell {
+  padding: 4px 18px;
+  vertical-align: middle;
+  text-align: center;
+  font-size: calc(var(--fs, 28px) * 0.65);
+  font-weight: 600;
+  color: #6f6a73;
+}
+
 .xc-rb-cur {
   display: flex;
   align-items: center;

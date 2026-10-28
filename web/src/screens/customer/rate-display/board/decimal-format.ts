@@ -13,8 +13,9 @@ function splitNormalized(raw: string): { neg: boolean; int: string; frac: string
 }
 
 /**
- * A rate string as the board shows it: `—` for null, empty or not > 0; otherwise 2 decimals when the integer part
- * is ≥ 10, 3 when ≥ 1, else 4, rounded half up on the string, with thousands separators.
+ * A rate string as the board shows it: `—` for null, empty or not > 0; otherwise V.9 decimal rules
+ * (2 decimals when integer part ≥ 10, 3 when ≥ 1, else 4 as minimums, keeping real digits up to 5,
+ * rounded half up only beyond 5 places, with thousands separators).
  */
 export function formatBandRate(value: string | null | undefined): string {
   if (value == null) return '—';
@@ -25,7 +26,9 @@ export function formatBandRate(value: string | null | undefined): string {
   const intPart = rawInt.replace(/^0+/, '') || '0';
   if (intPart === '0' && /^0*$/.test(rawFrac)) return '—';
 
-  const decimals = intPart.length >= 2 ? 2 : intPart !== '0' ? 3 : 4;
+  const minDecimals = intPart.length >= 2 ? 2 : intPart !== '0' ? 3 : 4;
+  const sigFrac = rawFrac.replace(/0+$/, '').length;
+  const decimals = minDecimals >= sigFrac ? minDecimals : (sigFrac >= 5 ? 5 : sigFrac);
   const paddedFrac = rawFrac.padEnd(decimals + 1, '0');
   const digits = (intPart + paddedFrac.slice(0, decimals)).split('');
 

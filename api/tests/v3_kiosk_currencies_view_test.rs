@@ -81,7 +81,8 @@ const INVALID_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const DATA_KEYS: [&str; 3] = ["currencies", "freshness", "kbank"];
 /// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`;
 /// plus `unitSize` (#603 item 3).
-const CURRENCY_KEYS: [&str; 12] = [
+// pricing-tiers.md §15.8a adds `quoteEnabled` (XC-V9-PRICING skeleton, restated by the sub-controller).
+const CURRENCY_KEYS: [&str; 13] = [
     "code",
     "name",
     "nameEn",
@@ -94,6 +95,7 @@ const CURRENCY_KEYS: [&str; 12] = [
     "partnerCost",
     "enabled",
     "kbank",
+    "quoteEnabled",
 ];
 /// The keys of one KBank comparison row (§7.3).
 const COMPARISON_KEYS: [&str; 7] = [

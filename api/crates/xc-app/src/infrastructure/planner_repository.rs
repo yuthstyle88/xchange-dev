@@ -90,11 +90,14 @@ impl PlannerRepository for PgPlannerRepository {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         id: Uuid,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Option<PlannerDraft>, CustomerAppError>> {
         Box::pin(async move {
-            let sql = format!("SELECT {COLUMNS} FROM planner_drafts WHERE id = $1");
+            let sql =
+                format!("SELECT {COLUMNS} FROM planner_drafts WHERE id = $1 AND expires_at > $2");
             let row = sqlx::query(sqlx::AssertSqlSafe(sql))
                 .bind(id)
+                .bind(now)
                 .fetch_optional(&mut **tx)
                 .await?;
             row.as_ref().map(draft_of).transpose()
@@ -104,6 +107,7 @@ impl PlannerRepository for PgPlannerRepository {
     fn list<'a>(
         &'a self,
         owner: &'a DraftOwner,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, Result<Vec<PlannerDraft>, CustomerAppError>> {
         Box::pin(async move {
             let (column, value) = match owner {
@@ -111,11 +115,12 @@ impl PlannerRepository for PgPlannerRepository {
                 DraftOwner::Session(hash) => ("session_hash", hash.as_str()),
             };
             let sql = format!(
-                "SELECT {COLUMNS} FROM planner_drafts WHERE {column} = $1 \
+                "SELECT {COLUMNS} FROM planner_drafts WHERE {column} = $1 AND expires_at > $2 \
                  ORDER BY created_at DESC, id DESC"
             );
             let rows = sqlx::query(sqlx::AssertSqlSafe(sql))
                 .bind(value)
+                .bind(now)
                 .fetch_all(&self.pool)
                 .await?;
             rows.iter().map(draft_of).collect()

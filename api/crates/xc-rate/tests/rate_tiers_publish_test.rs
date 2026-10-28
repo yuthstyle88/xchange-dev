@@ -17,6 +17,9 @@
 //!    buy_adjust −0.5000, sell_adjust +0.4000, and the example's bands and margins: a customer
 //!    selling 1,000 USD gets the T2 line, and the quote is 32,320.20 THB. With OFF, the same
 //!    customer gets 32,287.75 THB.
+//!    Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168) on the owner's ruling
+//!    B4 (`docs/design/blueprint/pricing-tiers.md` §15.6): `line_for` answers tier 1 whatever the amount, so the
+//!    ON customer gets the T1 line at 32.28775000, and the quote is 32,287.75 THB, the same as OFF.
 //! 6. Each ON line's source_snapshot.tier carries no and both margins (design §12.4's [required] snapshot).
 
 mod rate_engine_common;
@@ -727,12 +730,11 @@ async fn evaluation_hash_moves_when_tier_margin_changes_and_unchanged_when_off()
     );
 }
 
-/// Case 5: line_for picks T2 for design §12.3's worked example.
-/// USD at BoT 32.4500/32.9000, buy_adjust −0.5000, sell_adjust +0.4000, and the example's bands and margins:
-/// a customer selling 1,000 USD gets the T2 line, and the quote is 32,320.20 THB.
-/// With OFF, the same customer gets 32,287.75 THB.
+/// Case 5, restated for B4 (§15.6): design §12.3's worked example. USD at BoT 32.4500/32.9000, buy_adjust −0.5000,
+/// sell_adjust +0.4000, and the example's bands and margins: a customer selling 1,000 USD (32,287.75 THB at the base,
+/// T2's band) gets the T1 line, and the quote is 32,287.75 THB. With OFF, the same customer gets 32,287.75 THB.
 #[tokio::test]
-async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
+async fn line_for_picks_t1_for_worked_example_and_quotes_correct_thb() {
     let db = TestDb::start().await;
     let e = db.engine();
 
@@ -787,9 +789,9 @@ async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
 
     // Customer selling 1,000 USD (shop BUY):
     // base_buy = 32.4500 * (1 - 0.005) = 32.28775000
-    // base_value = 1,000 * 32.28775000 = 32,287.75 THB -> falls in T2 (20,000, 100,000]
-    // T2 buy rate = 32.4500 * (1 - 0.005 + 0.001) = 32.4500 * 0.996 = 32.32020000
-    // quote = 1,000 * 32.32020000 = 32,320.20 THB
+    // base_value = 1,000 * 32.28775000 = 32,287.75 THB -> T2's band (20,000, 100,000], but B4 prices at T1
+    // T1 buy rate = 32.4500 * (1 - 0.005 + 0) = 32.28775000
+    // quote = 1,000 * 32.28775000 = 32,287.75 THB
     let sel = LineSelector {
         code: code("USD"),
         side: Side::Buy,
@@ -808,10 +810,10 @@ async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
 
     assert_eq!(
         line_on.value_tier.as_str(),
-        "T2",
-        "customer must receive T2 line"
+        "T1",
+        "B4: the customer receives the T1 line"
     );
-    assert_eq!(line_on.rate, Rate::parse("32.32020000").unwrap());
+    assert_eq!(line_on.rate, Rate::parse("32.28775000").unwrap());
     let quote_on = ExchangeArithmetic::try_thb(
         ForeignAmount::from_decimal(Decimal::from(1000)),
         line_on.rate,
@@ -820,8 +822,8 @@ async fn line_for_picks_t2_for_worked_example_and_quotes_correct_thb() {
     .expect("no overflow");
     assert_eq!(
         quote_on,
-        Money::parse("32320.20").unwrap(),
-        "ON quote for 1,000 USD must be 32,320.20 THB"
+        Money::parse("32287.75").unwrap(),
+        "ON quote for 1,000 USD must be 32,287.75 THB (tier 1)"
     );
 
     // 2. Publish with OFF: same customer gets 32,287.75 THB

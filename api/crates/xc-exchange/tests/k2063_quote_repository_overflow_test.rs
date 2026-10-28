@@ -53,7 +53,7 @@ fn test_quote(id: Uuid, lines: Vec<QuoteLine>) -> Quote {
         organization_id: Uuid::new_v4(),
         branch_id: BranchId::new("MAIN"),
         customer_id: None,
-        quote_type: "INDICATIVE".to_string(),
+        quote_type: xc_exchange::domain::quote::quote_type::QuoteType::Indicative,
         channel: QuoteChannel::Desk,
         status: QuoteStatus::Active,
         publication_id: Uuid::new_v4(),

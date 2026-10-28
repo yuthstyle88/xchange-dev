@@ -405,6 +405,19 @@ async fn a_database_failure_is_the_server_error_sentence() {
 
 // ── rpc/engine_actions.json ──────────────────────────────────────────────────
 
+/// RF-D9: the `reserveCustomer` refusals of `engine_actions.json` (#68–#76) and the key each names (RF-D5, RF-D6).
+const REFUSED_AT: [(usize, &str); 9] = [
+    (68, "name"),
+    (69, "name"),
+    (70, "passportNo"),
+    (71, "nationality"),
+    (72, "mode"),
+    (73, "mode"),
+    (74, "birthDate"),
+    (75, "birthDate"),
+    (76, "passportExpiry"),
+];
+
 /// `rpc/engine_actions.json` through HTTP, step by step: every step of the ten
 /// actions equals v2's answer (ids made by the server paired; `row`,
 /// `startRow`, `endRow`, `rawStatus` left out), every refusal in status and
@@ -433,6 +446,11 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         // re-expected for CA-10 #626 (design §6 retires the direct shift actions): #151 asks after
         // the id of #40, a direct shift open, which v3 no longer applies under that id
         .rule(151, Rule::ResolvedAs("CANCELLED"));
+    // RF-D9 (`docs/design/rpc-refusal-field.md`, owner 2026-10-27 Q1): v2's refusal of a customer's details,
+    // plus the payload key at fault
+    for (n, field) in REFUSED_AT {
+        replay = replay.rule(n, Rule::RefusedAt(field));
+    }
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 184);
@@ -444,6 +462,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // SameCustomerAs rule.
     let mut differences: Vec<usize> = [124, 150, 151, 159].to_vec();
     differences.extend(&retired);
+    differences.extend(REFUSED_AT.map(|(n, _)| n));
     // re-expected for CA-10 #626: the 49 direct shift steps (#32–#67, #132–#143, #149)
     let ca10: Vec<usize> = (32..=67).chain(132..=143).chain([149]).collect();
     assert_eq!(ca10.len(), 49);
@@ -482,7 +501,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     );
     assert_eq!(
         replay.tally.replayed.len(),
-        107 - 50 - 1 + (43 - part_two.len())
+        107 - 50 - 1 - REFUSED_AT.len() + (43 - part_two.len())
             - owners_c2_c3.len()
             - replay.tally.widened.len()
             - replay.tally.owner_no_open_shift.len()
@@ -510,6 +529,8 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
             assert!(
                 replay.tally.replayed.contains(&step.n)
                     || [124, 150, 151, 159].contains(&step.n)
+                    // RF-D9: held to v2's refusal plus the field it names
+                    || REFUSED_AT.iter().any(|(n, _)| *n == step.n)
                     || retired.contains(&step.n)
                     // CA-10 #626: held to the unknown-name answer instead
                     || ca10.contains(&step.n)

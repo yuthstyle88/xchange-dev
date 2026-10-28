@@ -88,11 +88,14 @@ pub enum Permission {
     ApproveTransactionReversal,
     /// RBAC §11.9: decide a `LOYALTY_RULE_VERSION`, any row. Seeded on EXECUTIVE.
     ApproveLoyaltyRuleVersion,
+    /// `binding-quote.md` D-13 (O-1 A): issue a binding quote (`bindingQuoteIssue`). No module; seeded on TELLER and
+    /// BRANCH_MANAGER only. BQ-7 adds it to `ALL`, `RoleGrants::seed` and `SEED_ADDITIONS` (version 6).
+    BindingQuoteIssue,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 61] = [
+    pub const ALL: [Permission; 62] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -154,5 +157,6 @@ impl Permission {
         Permission::ApproveExchangeTransaction,
         Permission::ApproveTransactionReversal,
         Permission::ApproveLoyaltyRuleVersion,
+        Permission::BindingQuoteIssue,
     ];
 }

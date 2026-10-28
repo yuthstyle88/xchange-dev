@@ -13,6 +13,13 @@
 //!    picked side NULL → `Ok(None)`.
 //! 7. via `QuoteService::quote_in` on a tiered line with an overflowing quantity
 //!    → `Err(AppError::Domain(s))`, `s` starts with `validationFailed: quantity` (was: panic).
+//!
+//! **Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168)** on the owner's ruling
+//! B4 (`docs/design/blueprint/pricing-tiers.md` §15.6): `line_for` answers tier 1 of a tiered line whatever the
+//! quantity and never reads the quantity or the base rates, so it has no arithmetic left to overflow. Rows 1–4 and 6
+//! now read: rows 1–2 → `Ok(Some(T1))` even for `Decimal::MAX`; row 3 → T1 for every amount; row 4 → T1 without a
+//! quantity; row 6 → a missing or disagreeing base rate and a gap change nothing (T1), and tier 1's side NULL →
+//! `Ok(None)`. Row 7 is unchanged: an overflowing quantity is still refused, by `quote_in`'s own arithmetic.
 
 mod quote_common;
 
@@ -160,6 +167,14 @@ async fn try_line_for(
     res
 }
 
+fn assert_tier_1(res: AppResult<Option<PublishedSide>>, rate: &str, what: &str) {
+    let side = res
+        .unwrap_or_else(|e| panic!("{what}: {e:?}"))
+        .unwrap_or_else(|| panic!("{what}: tier 1"));
+    assert_eq!(side.value_tier.as_str(), "T1", "{what}");
+    assert_eq!(side.rate.value(), dec(rate), "{what}");
+}
+
 fn assert_quantity_overflow<T: std::fmt::Debug>(res: AppResult<T>, what: &str) {
     match res {
         Err(AppError::Domain(msg)) => {
@@ -187,10 +202,10 @@ fn teller() -> SaveActor {
     }
 }
 
-/// Row 1: `quantity × base_rate` overflows `Decimal` (quantity `Decimal::MAX`, base rate `33.50`, unit `1`)
-/// → `Err(AppError::Domain(s))`, `s` starts with `validationFailed: quantity`; no panic.
+/// Row 1, restated for B4: quantity `Decimal::MAX` (base rate `33.50`, unit `1`) → `Ok(Some(T1))`; the quantity is
+/// not read, so nothing overflows and nothing panics.
 #[tokio::test]
-async fn row_1_product_overflow_refused_as_validation_failed_quantity() {
+async fn row_1_decimal_max_quantity_answers_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
@@ -204,14 +219,13 @@ async fn row_1_product_overflow_refused_as_validation_failed_quantity() {
     )
     .await;
 
-    assert_quantity_overflow(res, "row 1 product overflow");
+    assert_tier_1(res, "33.00", "row 1");
     db.finish().await;
 }
 
-/// Row 2: product fits but `÷ unit_size` overflows (quantity `Decimal::MAX`, base rate `1`, unit `0.0001`)
-/// → `Err(AppError::Domain(s))`, `s` starts with `validationFailed: quantity`; no panic.
+/// Row 2, restated for B4: quantity `Decimal::MAX` with base rate `1` and unit `0.0001` → `Ok(Some(T1))`.
 #[tokio::test]
-async fn row_2_division_by_unit_size_overflow_refused_as_validation_failed_quantity() {
+async fn row_2_decimal_max_quantity_on_a_small_unit_answers_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     let div_tiers: [Tier; 2] = [
@@ -245,47 +259,41 @@ async fn row_2_division_by_unit_size_overflow_refused_as_validation_failed_quant
     )
     .await;
 
-    assert_quantity_overflow(res, "row 2 division overflow");
+    assert_tier_1(res, "1.00", "row 2");
     db.finish().await;
 }
 
-/// Row 3: kept: ordinary quantity in a band → `Ok(Some(side))` with the tier of that band.
+/// Row 3, restated for B4: an ordinary quantity in any band → `Ok(Some(T1))`.
 #[tokio::test]
-async fn row_3_ordinary_quantity_in_band_returns_matching_tier() {
+async fn row_3_ordinary_quantity_in_any_band_returns_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
 
-    // 100 * 33.50 = 3,350 THB -> T1
-    let side_t1 = try_line_for(&db, "USD", Side::Buy, "ALL", Some(qty("100")))
-        .await
-        .expect("ok")
-        .expect("tier found");
-    assert_eq!(side_t1.value_tier.as_str(), "T1");
-    assert_eq!(side_t1.rate.value(), dec("33.00"));
-
-    // 500 * 33.50 = 16,750 THB -> T2
-    let side_t2 = try_line_for(&db, "USD", Side::Buy, "ALL", Some(qty("500")))
-        .await
-        .expect("ok")
-        .expect("tier found");
-    assert_eq!(side_t2.value_tier.as_str(), "T2");
-    assert_eq!(side_t2.rate.value(), dec("33.20"));
+    // 100 × 33.50 = 3,350 THB (T1's band) and 500 × 33.50 = 16,750 THB (T2's band): both T1.
+    for quantity in ["100", "500"] {
+        assert_tier_1(
+            try_line_for(&db, "USD", Side::Buy, "ALL", Some(qty(quantity))).await,
+            "33.00",
+            &format!("row 3, {quantity}"),
+        );
+    }
 
     db.finish().await;
 }
 
-/// Row 4: kept: no quantity on a tiered line → `Ok(None)`.
+/// Row 4, restated for B4: no quantity on a tiered line → `Ok(Some(T1))`.
 #[tokio::test]
-async fn row_4_no_quantity_on_tiered_line_returns_none() {
+async fn row_4_no_quantity_on_tiered_line_returns_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
 
-    let got = try_line_for(&db, "USD", Side::Buy, "ALL", None)
-        .await
-        .expect("ok");
-    assert_eq!(got, None);
+    assert_tier_1(
+        try_line_for(&db, "USD", Side::Buy, "ALL", None).await,
+        "33.00",
+        "row 4",
+    );
 
     db.finish().await;
 }
@@ -313,15 +321,14 @@ async fn row_5_untiered_line_with_decimal_max_returns_some() {
     db.finish().await;
 }
 
-/// Row 6: kept: missing/disagreeing base rate (even with `Decimal::MAX`), no band containing the value,
-/// picked side NULL → `Ok(None)`.
+/// Row 6, restated for B4: a missing or disagreeing base rate (even with `Decimal::MAX`) and a value in a gap
+/// change nothing (`Ok(Some(T1))`); tier 1's side NULL → `Ok(None)`, with no other tier used instead.
 #[tokio::test]
-async fn row_6_missing_or_disagreeing_base_rate_gap_or_null_side_returns_none() {
+async fn row_6_base_rates_and_gaps_are_not_read_and_a_null_tier_1_side_returns_none() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
 
-    // Group "MISSING_BASE": base_sell is missing on T2, base_buy disagrees between T1 and T2.
-    // Even with Decimal::MAX, base-rate check at :216-235 runs before :247 and returns Ok(None).
+    // Group "MISSING": base_sell is missing on T2, base_buy disagrees between T1 and T2.
     let bad_base_tiers: [Tier; 2] = [
         (
             "T1",
@@ -344,7 +351,7 @@ async fn row_6_missing_or_disagreeing_base_rate_gap_or_null_side_returns_none() 
     ];
     add_tiers(&db, &p.id, "USD", "MISSING", "1", &bad_base_tiers, false).await;
 
-    assert_eq!(
+    assert_tier_1(
         try_line_for(
             &db,
             "USD",
@@ -352,12 +359,11 @@ async fn row_6_missing_or_disagreeing_base_rate_gap_or_null_side_returns_none() 
             "MISSING",
             Some(ForeignAmount::from_decimal(Decimal::MAX)),
         )
-        .await
-        .expect("ok"),
-        None,
-        "missing base rate with Decimal::MAX returns Ok(None) before arithmetic"
+        .await,
+        "34.20",
+        "missing base SELL rate",
     );
-    assert_eq!(
+    assert_tier_1(
         try_line_for(
             &db,
             "USD",
@@ -365,10 +371,9 @@ async fn row_6_missing_or_disagreeing_base_rate_gap_or_null_side_returns_none() 
             "MISSING",
             Some(ForeignAmount::from_decimal(Decimal::MAX)),
         )
-        .await
-        .expect("ok"),
-        None,
-        "disagreeing base rate with Decimal::MAX returns Ok(None) before arithmetic"
+        .await,
+        "33.00",
+        "disagreeing base BUY rate",
     );
 
     // Group "GAP": gap between 10,000 and 50,000, and T1 SELL is NULL.
@@ -394,20 +399,20 @@ async fn row_6_missing_or_disagreeing_base_rate_gap_or_null_side_returns_none() 
     ];
     add_tiers(&db, &p.id, "USD", "GAP", "1", &gap_tiers, false).await;
 
-    assert_eq!(
-        try_line_for(&db, "USD", Side::Buy, "GAP", Some(qty("1000")))
-            .await
-            .expect("ok"),
-        None,
-        "value in gap returns Ok(None)"
+    assert_tier_1(
+        try_line_for(&db, "USD", Side::Buy, "GAP", Some(qty("1000"))).await,
+        "31.50",
+        "a value in the gap",
     );
-    assert_eq!(
-        try_line_for(&db, "USD", Side::Sell, "GAP", Some(qty("100")))
-            .await
-            .expect("ok"),
-        None,
-        "picked tier with NULL side returns Ok(None)"
-    );
+    for quantity in ["100", "2000"] {
+        assert_eq!(
+            try_line_for(&db, "USD", Side::Sell, "GAP", Some(qty(quantity)))
+                .await
+                .expect("ok"),
+            None,
+            "SELL {quantity}: tier 1's SELL is NULL, and T3 is never used instead"
+        );
+    }
 
     db.finish().await;
 }
