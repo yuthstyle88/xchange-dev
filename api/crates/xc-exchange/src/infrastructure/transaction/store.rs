@@ -92,12 +92,12 @@ impl TransactionStore for PgTransactionStore {
                 id, organization_id, branch_id, mode, status, document_ref, quote_id, \
                 booking_id, shift_id, submission_id, payload_hash, customer_id, customer_name, \
                 nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
-                recorded_by, kiosk_request_id, staff_draft_id, count_confirmed \
+                recorded_by, kiosk_request_id, queue_ticket_id, staff_draft_id, count_confirmed \
             ) VALUES ( \
                 $1, $2, $3, $4, 'DRAFT', NULL, $5, \
                 $6, $7, $8, $9, $10, $11, \
                 $12, $13, $14, $15, $16, $17, $18, \
-                $19, $20, $21, $22 \
+                $19, $20, $21::uuid, $22, $23 \
             )",
         )
         .bind(t.id.0)
@@ -120,11 +120,22 @@ impl TransactionStore for PgTransactionStore {
         .bind(t.recorded_at)
         .bind(&t.recorded_by)
         .bind(t.kiosk_request_id.as_deref())
+        .bind(t.queue_ticket_id.as_deref())
         .bind(t.staff_draft_id.as_deref())
         .bind(t.count_confirmed)
         .execute(&mut **tx)
         .await
-        .map_err(AppError::Database)?;
+        .map_err(|e| {
+            if let sqlx::Error::Database(db) = &e
+                && db.constraint() == Some("transactions_one_per_queue_ticket")
+            {
+                return AppError::Domain(format!(
+                    "staleVersion: queue ticket {} already has a sale",
+                    t.queue_ticket_id.as_deref().unwrap_or_default()
+                ));
+            }
+            AppError::Database(e)
+        })?;
 
         sqlx::query(
             "INSERT INTO transaction_lines ( \
@@ -214,7 +225,7 @@ impl TransactionStore for PgTransactionStore {
                 t.customer_id, t.customer_name, t.nationality, t.staff_id, t.booking_no, \
                 t.notes, t.value_date, t.recorded_at, t.recorded_by, \
                 t.completed_at, t.cancelled_at, t.cancel_reason, t.approval_request_id, \
-                t.kiosk_request_id, t.staff_draft_id, t.count_confirmed, \
+                t.kiosk_request_id, t.queue_ticket_id::text AS queue_ticket_id, t.staff_draft_id, t.count_confirmed, \
                 (SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'PASSPORT') AS passport_key \
             FROM transactions t \
             WHERE t.id = $1",
@@ -411,8 +422,7 @@ impl TransactionStore for PgTransactionStore {
             kiosk_request_id: row
                 .try_get("kiosk_request_id")
                 .map_err(AppError::Database)?,
-            // skeleton: WQ-3 reads `transactions.queue_ticket_id` (the column is WQ-3's migration)
-            queue_ticket_id: None,
+            queue_ticket_id: row.try_get("queue_ticket_id").map_err(AppError::Database)?,
             staff_draft_id: row.try_get("staff_draft_id").map_err(AppError::Database)?,
             count_confirmed: row.try_get("count_confirmed").map_err(AppError::Database)?,
             lines,
