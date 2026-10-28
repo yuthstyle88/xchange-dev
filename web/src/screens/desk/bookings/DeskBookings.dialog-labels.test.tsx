@@ -193,7 +193,7 @@ describe('DeskBookingsScreen — New-booking dialog labels and slot date (#5425)
     expect(slotOption?.textContent?.trim()).toBe('slot-no-date');
   });
 
-  it('copies Thai labels into en without change (en parity)', async () => {
+  it('en carries the English dialog labels (#5332)', async () => {
     setLang('en');
     stubBookingsFetch();
     dispose = render(() => <DeskBookingsScreen />, host);
@@ -209,13 +209,13 @@ describe('DeskBookingsScreen — New-booking dialog labels and slot date (#5425)
     const phoneLabel = host.querySelector<HTMLLabelElement>('label[for="new-booking-phone"]');
     const referralLabel = host.querySelector<HTMLLabelElement>('label[for="new-booking-referral"]');
 
-    expect(branchLabel?.textContent?.trim()).toBe('สาขา');
-    expect(slotLabel?.textContent?.trim()).toBe('ช่วงเวลา');
-    expect(sideLabel?.textContent?.trim()).toBe('ประเภทรายการ');
-    expect(currencyLabel?.textContent?.trim()).toBe('สกุลเงิน');
-    expect(quantityLabel?.textContent?.trim()).toBe('จำนวน');
-    expect(displayNameLabel?.textContent?.trim()).toBe('ชื่อลูกค้า');
-    expect(phoneLabel?.textContent?.trim()).toBe('เบอร์โทรลูกค้า');
-    expect(referralLabel?.textContent?.trim()).toBe('รหัสแนะนำ');
+    expect(branchLabel?.textContent?.trim()).toBe('Branch');
+    expect(slotLabel?.textContent?.trim()).toBe('Slot');
+    expect(sideLabel?.textContent?.trim()).toBe('Side');
+    expect(currencyLabel?.textContent?.trim()).toBe('Currency');
+    expect(quantityLabel?.textContent?.trim()).toBe('Quantity');
+    expect(displayNameLabel?.textContent?.trim()).toBe('Customer Name');
+    expect(phoneLabel?.textContent?.trim()).toBe('Customer Phone');
+    expect(referralLabel?.textContent?.trim()).toBe('Referral Code');
   });
 });

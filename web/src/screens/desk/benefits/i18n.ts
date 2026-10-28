@@ -10,5 +10,5 @@ export const en: typeof th = {
   benefit: 'Benefit',
   coupon: 'Coupon',
   capped: 'capped',
-  indicative: 'ประมาณการ',
+  indicative: 'Estimate',
 };
