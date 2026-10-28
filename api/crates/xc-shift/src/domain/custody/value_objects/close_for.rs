@@ -93,10 +93,28 @@ impl CloseFor {
         now: DateTime<Utc>,
         tz: Tz,
     ) -> Result<(), CloseForRefusal> {
-        todo!(
-            "SC-A1: check {} for {caller_id} on {} at {now} in {tz}",
-            self.attendance_id,
-            row.id
-        )
+        if row.employee_id == caller_id {
+            return Err(CloseForRefusal::SelfClose);
+        }
+        if row.clock_out.is_some() {
+            return Err(CloseForRefusal::NotOpen);
+        }
+        let reason = self.reason.trim();
+        if reason.is_empty() {
+            return Err(CloseForRefusal::ReasonRequired);
+        }
+        if reason.encode_utf16().count() > REASON_MAX_UTF16 {
+            return Err(CloseForRefusal::ReasonTooLong);
+        }
+        if self.clock_out.timestamp_millis() < row.clock_in.epoch_millis() {
+            return Err(CloseForRefusal::BeforeClockIn);
+        }
+        if self.clock_out > now {
+            return Err(CloseForRefusal::InFuture);
+        }
+        if self.clock_out.with_timezone(&tz).date_naive() >= now.with_timezone(&tz).date_naive() {
+            return Err(CloseForRefusal::NotEarlierDay);
+        }
+        Ok(())
     }
 }

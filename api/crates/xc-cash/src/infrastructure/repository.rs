@@ -76,13 +76,27 @@ impl CashCountDbRow {
 impl CashRepository for PgCashRepository {
     fn reject_count<'a>(
         &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
+        tx: &'a mut Transaction<'_, Postgres>,
         count_id: &'a str,
         rejected_by: &'a str,
         rejected_at: DateTime<Utc>,
         reason: &'a str,
     ) -> BoxFuture<'a, AppResult<()>> {
-        todo!("SC-B1: reject {count_id} by {rejected_by} at {rejected_at}: {reason}")
+        Box::pin(async move {
+            sqlx::query(
+                "UPDATE cash_counts \
+                 SET rejected_by = $2::uuid, rejected_at = $3, reject_reason = $4, updated_at = $3 \
+                 WHERE id = $1::uuid",
+            )
+            .bind(count_id)
+            .bind(rejected_by)
+            .bind(rejected_at)
+            .bind(reason)
+            .execute(&mut **tx)
+            .await?;
+
+            Ok(())
+        })
     }
 
     fn find_count_by_id<'a>(
