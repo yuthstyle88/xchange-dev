@@ -567,7 +567,8 @@ export async function closeShift(teller: Page, manager: Page): Promise<void> {
  * `web/src/screens/staff/parts/ConfirmDialog.tsx:20-33`; `web/src/screens/staff/floor/i18n.ts:5-6,28-29`).
  *
  * Returns `'started'` when this call transitioned the branch day from `READY` to `OPEN`, or `'alreadyOpen'` when the
- * branch day was already `OPEN` (writing nothing). If `POST /api/branch-day/start` is refused because the branch is
+ * branch day was already `OPEN` (writing nothing). If the branch day is `CUT_OFF`, calls `test.skip(true, reason)`
+ * because another session's day is waiting for its close count to be certified. If `POST /api/branch-day/start` is refused because the branch is
  * outside opening hours (#4130: the worded hours refusal of `CustodyError::ServiceNotReady` / `OutsideServiceHours`, `value_objects/custody_error.rs:57-58,69-71`; any other refusal fails), calls
  * `test.skip(true, reason)` instead of failing. Otherwise fails with the text of `floor-error`.
  *
@@ -622,6 +623,13 @@ export async function startService(manager: Page): Promise<'started' | 'alreadyO
     /^(เปิดรับรายการ|Open)$/i.test(phaseText)
   ) {
     return 'alreadyOpen';
+  }
+
+  if (/(ตัดรายการแล้ว|Cut-off|^CUT_OFF$)/i.test(phaseText)) {
+    test.skip(
+      true,
+      `branch day is CUT_OFF (${phaseText}); another session's day is waiting for its close count to be certified`,
+    );
   }
 
   const errText = (await manager.getByTestId('floor-error').innerText().catch(() => '')).trim();
