@@ -21,7 +21,7 @@ function mount(buy: string | null = '35.40', sell: string | null = '35.50') {
   const [row, setRow] = createSignal(makeRow(buy, sell));
   host = document.createElement('tbody');
   document.body.appendChild(host);
-  dispose = render(() => <BoardRowView row={row()} singleColumn={true} />, host);
+  dispose = render(() => <BoardRowView row={row()} singleColumn={true} bandCount={4} />, host);
   return (nextBuy: string | null, nextSell: string | null = sell) => setRow(makeRow(nextBuy, nextSell));
 }
 

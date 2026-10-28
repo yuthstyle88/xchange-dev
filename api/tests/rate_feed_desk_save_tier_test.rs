@@ -8,6 +8,10 @@
 //! tiered publication the rate of the amount's tier is accepted and that line is stored; another
 //! tier's rate is refused `RATE_MISMATCH`. An untiered publication is checked as before (the
 //! existing `rates_re4_desk_save_test` suite).
+//!
+//! **Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168)** on the owner's ruling
+//! B4 (`docs/design/blueprint/pricing-tiers.md` §15.6): `line_for` answers tier 1 whatever the amount, so a save
+//! of 500 USD (T2's band) is accepted at T1's rate and stores the T1 line, and T2's rate is refused `RATE_MISMATCH`.
 
 mod save_common;
 
@@ -104,7 +108,7 @@ async fn a_save_at_the_rate_of_its_tier_is_accepted_and_stores_that_line() {
     let (customer, passport) = counter(&shop).await;
     let ids = publish_tiered_usd(&shop).await;
 
-    // 500 USD × base 32.00 = 16,000.00 THB → T2, bought at 31.70.
+    // B4: 500 USD × base 32.00 = 16,000.00 THB is T2's band, but it is bought at T1's 31.50.
     let saved = shop
         .save(
             MAIN,
@@ -115,16 +119,16 @@ async fn a_save_at_the_rate_of_its_tier_is_accepted_and_stores_that_line() {
                 "BUY",
                 "USD",
                 "500",
-                "31.7",
+                "31.5",
             ),
             at(0),
         )
         .await
-        .expect("the save at the T2 rate is accepted");
+        .expect("the save at the T1 rate is accepted");
     assert_eq!(
         stored(&shop, &saved.document_ref).await,
-        (Some(ids[1].clone()), d("31.7")),
-        "the T2 line and its rate are stored"
+        (Some(ids[0].clone()), d("31.5")),
+        "the T1 line and its rate are stored"
     );
     shop.finish().await;
 }
@@ -146,7 +150,7 @@ async fn a_save_at_another_tiers_rate_is_refused() {
                 "BUY",
                 "USD",
                 "500",
-                "31.5",
+                "31.7",
             ),
             at(0),
         )
@@ -154,7 +158,7 @@ async fn a_save_at_another_tiers_rate_is_refused() {
     assert_eq!(
         refusal(refused),
         RATE_MISMATCH,
-        "31.50 is T1's rate; 500 USD is in T2"
+        "B4: 31.70 is T2's rate; 500 USD is priced at T1"
     );
     assert_eq!(
         shop.everything().await,

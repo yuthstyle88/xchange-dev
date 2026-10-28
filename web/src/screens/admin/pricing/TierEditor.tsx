@@ -12,6 +12,7 @@ import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { RATE, checkDecimal } from '../../../shared/ui/bounded';
 import { en, th } from './i18n';
+import { ApproveResults } from './ApproveResults';
 import { ROUTE_PRICING_APPROVE, type TierNo } from './pricing-labels';
 import './tier-editor.css';
 
@@ -34,6 +35,7 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
   const [submitting, setSubmitting] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+  const [approveOut, setApproveOut] = createSignal<PricingApproveOutput | null>(null);
 
   const labels = (): Record<string, string> => {
     const out: Record<string, string> = { reason: tr('reason') };
@@ -95,6 +97,7 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     if (!props.row.suggestion || submitting()) return;
     setErrorMsg(null);
     setFieldErrors({});
+    setApproveOut(null);
 
     const nextFieldErrors: Record<string, string> = {};
     const tiers: PricingTierPriceInput[] = TIER_NOS.map((tierNo) => {
@@ -122,11 +125,22 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     try {
       const out = await approveCmd.send({
         policyVersionId: props.policyVersionId,
-        rows: [{ currency: props.row.currency, tiers }],
+        rows: [
+          {
+            currency: props.row.currency,
+            tiers,
+            ...(props.row.tierSet ? { tierSetId: props.row.tierSet.id } : {}),
+          },
+        ],
         reason: trimmedReason,
       });
+      setApproveOut(out);
       props.onApproved(out);
     } catch (err: unknown) {
+      if (err instanceof ApiError && err.code === 'staleVersion') {
+        setErrorMsg(tr('approveStale'));
+        return;
+      }
       const fe = fieldError(err, labels());
       if (fe.field) {
         setFieldErrors({ [fe.field]: fe.message });
@@ -248,6 +262,8 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
           {tr('approve')}
         </button>
       </div>
+
+      <Show when={approveOut()}>{(out) => <ApproveResults out={out()} />}</Show>
     </section>
   );
 }

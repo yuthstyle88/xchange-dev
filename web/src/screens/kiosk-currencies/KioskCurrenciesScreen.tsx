@@ -64,6 +64,11 @@ function CurrencyCard(props: CardProps): JSX.Element {
         {props.currency.code} · {props.currency.name} / {props.currency.nameEn}
       </h3>
       <p>{props.currency.countries.map((c) => c.th).join(', ')}</p>
+      <Show when={props.currency.quoteEnabled === false}>
+        <p class="kiosk-quote-off" data-quote="off">
+          {props.t('contactStaff')}
+        </p>
+      </Show>
       <div>
         <label for={`enabled-${props.currency.code}`}>
           <input

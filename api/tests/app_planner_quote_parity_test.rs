@@ -21,6 +21,10 @@
 //! default group, which is `ALL` until groups exist. So the desk is asked for group `ALL`, and a
 //! tiered `(USD, ALL)` must give the same THB, rate and tier in both.
 //!
+//! Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168) on the owner's ruling B4
+//! (`docs/design/blueprint/pricing-tiers.md` §15.6): `line_for` answers tier 1 whatever the quantity, so the
+//! tiered case now pins that the preview and the desk agree at tier 1. Parity itself is unchanged.
+//!
 //! Signatures this test assumes: `xchange::application::workflows::exchange::quote::QuoteService`
 //! as merged (#669); `xc_app::application::planner::planner_preview::PlannerPreview` and the
 //! `xc_app` types of the scaffold commit before this one.
@@ -293,26 +297,25 @@ async fn tier_usd(db: &TestDb, publication: &str) {
 }
 
 #[tokio::test]
-async fn a_tiered_line_is_priced_at_the_tier_of_the_quantity_like_the_desk() {
+async fn a_tiered_line_is_priced_at_tier_1_like_the_desk() {
     let db = TestDb::start().await;
     let p = db.publish(BRANCH, &[USD]).await;
     tier_usd(&db, &p.id).await;
 
-    // CUSTOMER_SELL is the shop's BUY (P4): base 32.00. 100 → 3,200 (T1); 312.50 → 10,000 exactly
-    // (T1, the upper edge is inclusive); 312.51 → T2; 2000 → 64,000 (T3).
+    // CUSTOMER_SELL is the shop's BUY (P4). 100 · 312.50 · 312.51 · 2000 used to fall in T1, T1, T2, T3; B4 prices
+    // every one at T1, and the preview must agree with the desk on each.
     for quantity in ["100", "312.50", "312.51", "2000"] {
         assert_same(&db, "USD", CustomerSide::CustomerSell, quantity).await;
     }
-    // CUSTOMER_BUY is the shop's SELL: base 32.50. 308 → 10,010 (T2, where base 32.00 would give T1).
     assert_same(&db, "USD", CustomerSide::CustomerBuy, "308").await;
 
-    let t2 = preview(&db, "USD", CustomerSide::CustomerSell, "312.51")
+    let large = preview(&db, "USD", CustomerSide::CustomerSell, "312.51")
         .await
-        .expect("the preview estimates a T2 amount");
+        .expect("the preview estimates the amount");
     assert_eq!(
-        t2.rate,
-        xc_kernel::money::Rate::parse("31.70").expect("a rate"),
-        "the T2 rate, not the first tier's 31.50"
+        large.rate,
+        xc_kernel::money::Rate::parse("31.50").expect("a rate"),
+        "B4: tier 1's 31.50, not T2's 31.70"
     );
     db.finish().await;
 }

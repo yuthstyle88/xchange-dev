@@ -1,0 +1,34 @@
+/* approve-results.css — styles for ApproveResults.tsx (V.9 PV-c, #5197). */
+
+.approve-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e5e6ea);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.approve-results-title,
+.approve-results-branch-title {
+  font-weight: 600;
+}
+
+.approve-results-item,
+.approve-results-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.approve-results-branches {
+  padding-left: 12px;
+}
+
+.approve-results-line,
+.approve-results-branch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

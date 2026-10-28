@@ -28,6 +28,10 @@ pub struct QuoteLineDto {
     pub rounding_thb: String,
     pub settle_thb: String,
     pub published_rate_line_id: String,
+    /// Whether the board hides this line (`pricing-tiers.md` §15.7); the desk still quotes it and warns the teller.
+    pub pricing_hidden: bool,
+    /// `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+    pub pricing_hidden_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -79,6 +83,8 @@ impl QuoteDto {
                         rounding_thb,
                         settle_thb: line.settle_thb.to_string(),
                         published_rate_line_id: line.published_rate_line_id.to_string(),
+                        pricing_hidden: false,
+                        pricing_hidden_reason: None,
                     }
                 })
                 .collect(),

@@ -1,6 +1,10 @@
 // §9 Pricing: loads pricing_board, branch, filter (all · to approve · review · current), search, reload; composes the parts (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
-import { Show, createEffect, createMemo, createSignal, onMount, type JSX } from 'solid-js';
+import { Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import type {
+  MarketRatesRefreshInput,
+  MarketRatesRefreshOutput,
+} from '../../../shared/api/generated/market_rates_refresh';
 import type { MeView } from '../../../shared/api/generated/me';
 import type { PricingBoardData, PricingRowDto } from '../../../shared/api/generated/pricing_board';
 import type {
@@ -10,13 +14,18 @@ import type {
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { ViewPoller } from '../../../shared/live/view-poller';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import type { AdminMenuProps } from '../menus';
+import { BranchDefault } from './BranchDefault';
+import { BranchPolicy } from './BranchPolicy';
 import { BulkApprove } from './BulkApprove';
+import { DisplaySettings } from './DisplaySettings';
 import * as table from './i18n';
 import { MarketSources } from './MarketSources';
 import {
   FILTER_STATUSES,
+  ROUTE_PRICING_MARKET_REFRESH,
   ROUTE_RATE_REFERENCE_FETCH,
   VIEW_PRICING_BOARD,
   type MarketSourceCode,
@@ -24,6 +33,7 @@ import {
   type RowStatusCode,
 } from './pricing-labels';
 import { PricingGrid } from './PricingGrid';
+import { PricingMode } from './PricingMode';
 import { PricingPolicy } from './PricingPolicy';
 import { Recommendations } from './Recommendations';
 import { TierEditor } from './TierEditor';
@@ -98,9 +108,27 @@ export function Pricing(props: PricingProps): JSX.Element {
     void loadMe();
   });
 
+  const paused = createMemo(() => openedCurrency() !== null || selected().size > 0);
+
   createEffect(() => {
     const branch = props.branch();
-    void loadBoard(branch);
+    const poller = new ViewPoller<PricingBoardData>(api, VIEW_PRICING_BOARD, {
+      params: { branch },
+      intervalMs: 60_000,
+      maxIntervalMs: 300_000,
+    });
+    createEffect(() => {
+      const data = poller.data();
+      if (data !== undefined) setBoard(data);
+    });
+    createEffect(() => {
+      if (paused()) {
+        poller.stop();
+      } else {
+        poller.start();
+      }
+    });
+    onCleanup(() => poller.stop());
   });
 
   const filteredRows = createMemo<readonly PricingRowDto[]>(() => {
@@ -153,14 +181,32 @@ export function Pricing(props: PricingProps): JSX.Element {
     'POST',
     ROUTE_RATE_REFERENCE_FETCH,
   );
+  const marketRefreshWrite = keyedWrite<MarketRatesRefreshInput, MarketRatesRefreshOutput>(
+    api,
+    'POST',
+    ROUTE_PRICING_MARKET_REFRESH,
+  );
 
   const disabledReason = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
 
-  function handleRefreshSource(_provider: MarketSourceCode): void {
+  function handleRefreshSource(provider: MarketSourceCode): void {
     if (meError() !== null || !canRefresh()) return;
-    void refreshWrite
+    if (provider === 'BOT') {
+      void refreshWrite
+        .send({})
+        .then(() => loadBoard())
+        .catch((err) => setError(wordedError(err)));
+      return;
+    }
+    void marketRefreshWrite
       .send({})
-      .then(() => loadBoard())
+      .then(async (out) => {
+        await loadBoard();
+        const failed = (out?.sources ?? []).filter((s) => !s.ok).map((s) => s.source);
+        if (failed.length > 0) {
+          setError(t('marketRefreshFailed', { source: failed.join(', ') }));
+        }
+      })
       .catch((err) => setError(wordedError(err)));
   }
 
@@ -228,6 +274,9 @@ export function Pricing(props: PricingProps): JSX.Element {
       <Show when={openedRow()}>
         {(row) => (
           <div class="pricing-detail">
+            <button type="button" name="close-detail" onClick={() => setOpenedCurrency(null)}>
+              {t('closeDetail')}
+            </button>
             <TierEditor
               api={api}
               branch={props.branch()}
@@ -241,6 +290,48 @@ export function Pricing(props: PricingProps): JSX.Element {
               branch={props.branch()}
               policyVersionId={board()?.policyVersionId ?? ''}
               row={row()}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <PricingMode
+              api={api}
+              branch={props.branch()}
+              row={row()}
+              isMain={board()?.isMain ?? false}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <BranchPolicy
+              api={api}
+              branch={props.branch()}
+              row={row()}
+              isMain={board()?.isMain ?? false}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+          </div>
+        )}
+      </Show>
+
+      <Show when={board()}>
+        {(b) => (
+          <div class="pricing-settings">
+            <BranchDefault
+              api={api}
+              branch={props.branch()}
+              value={b().branchDefault}
+              mayEdit={mayEditPolicy()}
+              disabledReason={disabledReason()}
+              onSaved={() => void loadBoard()}
+            />
+            <DisplaySettings
+              api={api}
+              branch={props.branch()}
+              value={b().display}
+              currencies={b().rows.map((r) => r.currency)}
               mayEdit={mayEditPolicy()}
               disabledReason={disabledReason()}
               onSaved={() => void loadBoard()}

@@ -21,6 +21,7 @@ use crate::domain::draft::tier_proposal::TierProposal;
 use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
+use crate::domain::pricing::tier_set::TierRate;
 use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
 use crate::domain::publication::sharp_move::{ComparablePrice, SharpMove};
@@ -172,7 +173,7 @@ impl PublishService {
 
         // Load draft lines
         let db_lines = sqlx::query(
-            "SELECT l.currency_code, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason, \
+            "SELECT l.id, l.currency_code, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason, \
                     l.reference_line_id, l.policy_version_id \
              FROM rate_draft_lines l \
              JOIN rate_drafts d ON d.id = l.draft_id \
@@ -183,6 +184,45 @@ impl PublishService {
         .fetch_all(&mut **tx)
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        let raw_tiers: Vec<(Uuid, i16, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT t.draft_line_id, t.tier_no, t.buy, t.sell \
+             FROM rate_draft_line_tiers t \
+             JOIN rate_draft_lines l ON l.id = t.draft_line_id \
+             WHERE l.draft_id = $1 \
+             ORDER BY t.draft_line_id, t.tier_no",
+        )
+        .bind(id.as_uuid())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let mut tiers_by_line: std::collections::HashMap<Uuid, [TierRate; 4]> = {
+            let mut grouped: std::collections::HashMap<Uuid, Vec<(i16, TierRate)>> =
+                std::collections::HashMap::new();
+            for (line_id, tier_no, buy_dec, sell_dec) in raw_tiers {
+                let buy = Rate::parse(&buy_dec.to_string())
+                    .map_err(|e| RateEngineError::Internal(format!("invalid tier buy: {e}")))?;
+                let sell = Rate::parse(&sell_dec.to_string())
+                    .map_err(|e| RateEngineError::Internal(format!("invalid tier sell: {e}")))?;
+                grouped
+                    .entry(line_id)
+                    .or_default()
+                    .push((tier_no, TierRate { buy, sell }));
+            }
+            let mut map = std::collections::HashMap::with_capacity(grouped.len());
+            for (line_id, mut list) in grouped {
+                list.sort_by_key(|(no, _)| *no);
+                if list.len() == 4
+                    && list
+                        .iter()
+                        .enumerate()
+                        .all(|(i, (no, _))| *no as usize == i + 1)
+                {
+                    map.insert(line_id, [list[0].1, list[1].1, list[2].1, list[3].1]);
+                }
+            }
+            map
+        };
 
         let mut policy_tiers_cache: std::collections::HashMap<
             Uuid,
@@ -261,6 +301,7 @@ impl PublishService {
         }
 
         for r in &db_lines {
+            let line_id: Uuid = r.get("id");
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
                 .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
@@ -317,7 +358,8 @@ impl PublishService {
                     )
                 }
             };
-            let line = DraftLine::new(c, buy, sell, reason);
+            let mut line = DraftLine::new(c, buy, sell, reason);
+            line.tiers = tiers_by_line.remove(&line_id);
 
             // Load policy if any (cached per policy_version_id)
             let (policy, max_ref_age, pol_buy_pct, pol_sell_pct) = if let Some(pid) = pol_id {
@@ -497,7 +539,69 @@ impl PublishService {
                 snapshot["partner"] = serde_json::Value::Null;
             }
 
-            if let Some(pt) = policy_tiers {
+            if let Some(tiers) = &line.tiers {
+                let tier_set_row: Option<(Uuid, String)> = sqlx::query_as(
+                    "SELECT id, source FROM pricing_tier_sets \
+                     WHERE branch_id = $1 AND currency_code = $2 \
+                     ORDER BY (draft_id = $3) DESC NULLS LAST, approved_at DESC \
+                     LIMIT 1",
+                )
+                .bind(branch_str)
+                .bind(c.as_str())
+                .bind(id.as_uuid())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+                if let Some((tier_set_id, source)) = tier_set_row {
+                    snapshot["pricing"] = json!({
+                        "tier_set_id": tier_set_id.to_string(),
+                        "source": source,
+                    });
+                }
+
+                let v9_bands: [(&str, Option<Decimal>, Option<Decimal>); 4] = [
+                    ("T1", None, Some(Decimal::from(10_000))),
+                    (
+                        "T2",
+                        Some(Decimal::from(10_000)),
+                        Some(Decimal::from(50_000)),
+                    ),
+                    (
+                        "T3",
+                        Some(Decimal::from(50_000)),
+                        Some(Decimal::from(200_000)),
+                    ),
+                    ("T4", Some(Decimal::from(200_000)), None),
+                ];
+                let base_buy = tiers[0].buy.value();
+                let base_sell = tiers[0].sell.value();
+
+                for (tier, (code, lower_dec, upper_dec)) in tiers.iter().zip(v9_bands) {
+                    sqlx::query(
+                        "INSERT INTO published_rate_lines \
+                         (id, publication_id, currency_code, denomination_group, unit_size, \
+                          buy_rate, sell_rate, source_snapshot, value_tier, \
+                          tier_lower_exclusive_thb, tier_upper_inclusive_thb, \
+                          base_buy_rate, base_sell_rate) \
+                         VALUES (gen_random_uuid(), $1, $2, 'ALL', $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+                    )
+                    .bind(pub_id.as_uuid())
+                    .bind(c.as_str())
+                    .bind(unit_val)
+                    .bind(tier.buy.value())
+                    .bind(tier.sell.value())
+                    .bind(&snapshot)
+                    .bind(code)
+                    .bind(lower_dec)
+                    .bind(upper_dec)
+                    .bind(base_buy)
+                    .bind(base_sell)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| RateEngineError::Database(e.to_string()))?;
+                }
+            } else if let Some(pt) = policy_tiers {
                 let tier_lines = TierProposal::of(
                     &prop,
                     &line,

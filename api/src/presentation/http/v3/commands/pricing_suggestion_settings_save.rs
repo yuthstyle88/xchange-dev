@@ -35,6 +35,21 @@ pub struct PricingSuggestionSettingsSaveInput {
     /// Four decimal strings, % better than the market per tier (each in −2..=2, each ≥ the previous), or `null` to
     /// remove the row (back to the branch default, then V.9's).
     pub better_pct: Option<Vec<String>>,
+    /// pricing-tiers.md §15.10 (gap 10): the branch `'*'` min spread %, 0..=5, a decimal string; `null` clears it.
+    /// Only with `currency: "*"` (another currency ⇒ `validationFailed`). A request that carries the key changes only
+    /// the min spread and leaves `betterPct` as stored; omitted ⇒ today's `betterPct` save. SKELETON (XC-V9-PRICING):
+    /// PV-l1 reads it.
+    #[serde(default, deserialize_with = "some_or_null")]
+    #[ts(optional, type = "string | null")]
+    pub min_spread_pct: Option<Option<String>>,
+}
+
+/// `Some(None)` for an explicit `null`, `None` (via `default`) when the key is absent.
+fn some_or_null<'de, D>(d: D) -> Result<Option<Option<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -77,6 +92,58 @@ impl CommandAction for PricingSuggestionSettingsSaveCommand {
                 })?
                 .as_str()
         };
+
+        if let Some(min_spread_opt) = input.min_spread_pct {
+            if scope != "*" {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("minSpreadPct"),
+                    "minSpreadPct is only allowed on currency '*'",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+            let min_spread_val = match min_spread_opt {
+                Some(s) => {
+                    let d = s.trim().parse::<Decimal>().map_err(|e| {
+                        V3Error::new(
+                            "validationFailed",
+                            Some("minSpreadPct"),
+                            format!("invalid decimal in minSpreadPct: {e}"),
+                            StatusCode::BAD_REQUEST,
+                        )
+                    })?;
+                    if d < Decimal::ZERO || d > Decimal::from(5) {
+                        return Err(V3Error::new(
+                            "validationFailed",
+                            Some("minSpreadPct"),
+                            "minSpreadPct must be between 0 and 5",
+                            StatusCode::BAD_REQUEST,
+                        ));
+                    }
+                    Some(d)
+                }
+                None => None,
+            };
+
+            let now = Utc::now();
+            if !crate::presentation::http::v3::rate_policy_save::may_change_the_frame(
+                who, branch, now,
+            ) {
+                return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+            }
+
+            PricingSuggestionSettingsStore::save_branch_min_spread(
+                tx,
+                branch.as_str(),
+                min_spread_val,
+                &who.user_id,
+                now,
+            )
+            .await
+            .map_err(|_| server_error())?;
+
+            return Ok(PricingSuggestionSettingsSaveOutput { saved: true });
+        }
 
         let values = match &input.better_pct {
             Some(strings) => {

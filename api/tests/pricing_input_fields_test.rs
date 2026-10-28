@@ -24,7 +24,7 @@ const CONFIGURE: &str = "/api/pricing/configure";
 /// The in-bound USD prices `pricing_approve_test.rs` approves (T1 +0.4/−0.4 … T4 +0.6/−0.6).
 const USD_PRICES: [(&str, &str); 4] = [
     ("32.41755", "32.90"),
-    ("32.433775", "32.88355"),
+    ("32.43378", "32.88355"),
     ("32.45", "32.8671"),
     ("32.48245", "32.8342"),
 ];
@@ -96,7 +96,7 @@ async fn pa1_approve_tier_2_sell_not_above_buy_names_tiers_1_sell() {
     let room = Room::start().await;
     let v1 = room.worked_example().await;
     let mut p = USD_PRICES;
-    p[1] = ("32.433775", "32.433775");
+    p[1] = ("32.43378", "32.43378");
     let a = command(
         &room,
         &owner(),
@@ -206,8 +206,9 @@ async fn px_valid_requests_are_accepted_as_today() {
         None,
     )
     .await;
+    // Restated for pricing-tiers.md §15.8a (XC-V9-PRICING, claude/451f0116): the answer is `{currencies}`.
     assert_eq!(
-        a.ok("PX approve")["draftState"],
+        a.ok("PX approve")["currencies"][0]["state"],
         json!("PUBLISHED"),
         "{}",
         a.text

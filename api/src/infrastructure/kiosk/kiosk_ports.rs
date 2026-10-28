@@ -369,7 +369,7 @@ impl KioskPorts for PgKioskPorts {
         thb: Money,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<bool>> {
-        let _ = (currency, now);
+        let _ = now;
         Box::pin(async move {
             let published_rates = PgPublishedRates::new(self.pool.clone());
             let quoted_uuid = uuid::Uuid::from_u128(line_id.0);
@@ -384,6 +384,27 @@ impl KioskPorts for PgKioskPorts {
             if published_side.stale {
                 let stale_policy = published_rates.stale_policy_in(tx, &published_side).await?;
                 if stale_policy.admits(&published_side, thb).is_err() {
+                    return Ok(false);
+                }
+            }
+
+            let is_follow: Option<bool> = sqlx::query_scalar(
+                "SELECT COALESCE(source_snapshot->'pricing'->>'source' = 'FOLLOW', false) FROM published_rate_lines WHERE id = $1",
+            )
+            .bind(quoted_uuid)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            if is_follow == Some(true) {
+                let hidden = crate::presentation::http::v3::published_rates::published_rates_data(
+                    &self.pool, branch,
+                )
+                .await?
+                .lines
+                .iter()
+                .any(|l| l.currency == currency.as_str() && l.group == "ALL" && l.hidden);
+                if hidden {
                     return Ok(false);
                 }
             }

@@ -6,6 +6,14 @@
 //!
 //! Needs `TEST_DATABASE_URL` (see `quote_common/mod.rs`).
 //!
+//! **Restated 2026-10-27 by the sub-controller claude/451f0116 (XC-V9-PRICING PV-h, #5168)** on the owner's ruling
+//! B4 (`docs/design/blueprint/pricing-tiers.md` §15.6; `H:` §8: the server quote takes the currency's buy/sell and
+//! does not change the price with the amount). `line_for` answers **tier 1** of a tiered `(code, group)` (the line
+//! with `tier_lower_exclusive_thb IS NULL`) whatever the quantity, with or without one; the base rates are not read.
+//! Tier 1's side not priced, or no tier 1 line → `None`; another tier is never used instead. The untiered rows, the
+//! `line_in` guard and the group rules below are unchanged. Where this header and the list below disagree, this
+//! header wins.
+//!
 //! What this pins:
 //! - `xc_rate::domain::publication::published_rates::LineSelector { code, side, group: GroupCode,
 //!   quantity: Option<ForeignAmount> }` and `PublishedRates::line_for(tx, branch, LineSelector)
@@ -267,51 +275,43 @@ async fn an_untiered_line_is_read_with_or_without_a_quantity() {
 }
 
 #[tokio::test]
-async fn the_tier_is_picked_on_the_base_value_with_the_upper_edge_inclusive() {
+async fn every_quantity_is_priced_at_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     let ids = add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
 
-    // BUY: base_buy 32.00 per 1.
-    let cases = [
-        ("100", "T1", "31.50"),     // 3,200.00
-        ("312.50", "T1", "31.50"),  // 10,000.00 exactly: the lower tier (design §3.8)
-        ("312.51", "T2", "31.70"),  // 10,000.32
-        ("1562.50", "T2", "31.70"), // 50,000.00 exactly
-        ("2000", "T3", "31.90"),    // 64,000.00
-    ];
-    for (quantity, tier, rate) in cases {
+    // B4: 3,200.00 · 10,000.00 · 10,000.32 · 50,000.00 · 64,000.00 THB at base 32.00 used to pick T1, T1, T2, T2, T3.
+    for quantity in ["100", "312.50", "312.51", "1562.50", "2000"] {
         let side = line_for(&db, "USD", Side::Buy, "ALL", Some(quantity))
             .await
-            .unwrap_or_else(|| panic!("a tier for {quantity}"));
-        assert_eq!(side.value_tier.as_str(), tier, "BUY {quantity}");
+            .unwrap_or_else(|| panic!("tier 1 for {quantity}"));
+        assert_eq!(side.value_tier.as_str(), "T1", "BUY {quantity}");
         assert_eq!(
             side.line_id.to_string(),
-            id_of(&ids, tier),
+            id_of(&ids, "T1"),
             "BUY {quantity}"
         );
-        assert_eq!(side.rate.value(), dec(rate), "BUY {quantity}");
+        assert_eq!(side.rate.value(), dec("31.50"), "BUY {quantity}");
     }
 
-    // SELL picks on base_sell 32.50: 308 × 32.50 = 10,010.00 is T2, while 308 × 32.00 would be T1.
     let sell = line_for(&db, "USD", Side::Sell, "ALL", Some("308"))
         .await
-        .expect("a SELL tier");
-    assert_eq!(
-        sell.value_tier.as_str(),
-        "T2",
-        "picked on the side's own base rate"
-    );
-    assert_eq!(sell.rate.value(), dec("32.80"));
+        .expect("tier 1's SELL");
+    assert_eq!(sell.value_tier.as_str(), "T1", "B4: no SELL tier by amount");
+    assert_eq!(sell.rate.value(), dec("33.00"));
     db.finish().await;
 }
 
 #[tokio::test]
-async fn a_tiered_line_without_a_quantity_is_unavailable() {
+async fn a_tiered_line_without_a_quantity_is_tier_1() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
-    add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
-    assert_eq!(line_for(&db, "USD", Side::Buy, "ALL", None).await, None);
+    let ids = add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
+    let side = line_for(&db, "USD", Side::Buy, "ALL", None)
+        .await
+        .expect("B4: tier 1 needs no quantity");
+    assert_eq!(side.line_id.to_string(), id_of(&ids, "T1"));
+    assert_eq!(side.rate.value(), dec("31.50"));
     db.finish().await;
 }
 
@@ -334,7 +334,7 @@ async fn line_in_never_reads_a_tiered_line() {
 }
 
 #[tokio::test]
-async fn a_gap_or_a_tier_whose_side_is_not_priced_is_unavailable() {
+async fn tier_1_whose_side_is_not_priced_is_unavailable_and_no_other_tier_is_used() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     // T1 ≤ 10,000; T3 > 50,000; nothing in between. T1 has no SELL price (hidden or paused).
@@ -360,32 +360,26 @@ async fn a_gap_or_a_tier_whose_side_is_not_priced_is_unavailable() {
     ];
     add_tiers(&db, &p.id, "USD", "ALL", "1", &tiers, true).await;
 
-    assert_eq!(
-        line_for(&db, "USD", Side::Buy, "ALL", Some("1000")).await,
-        None,
-        "32,000.00 falls in the gap"
-    );
-    assert_eq!(
-        line_for(&db, "USD", Side::Sell, "ALL", Some("100")).await,
-        None,
-        "3,250.00 picks T1, whose SELL side is not priced; no other tier is used instead"
-    );
-    let buy = line_for(&db, "USD", Side::Buy, "ALL", Some("100"))
+    let buy = line_for(&db, "USD", Side::Buy, "ALL", Some("1000"))
         .await
-        .expect("T1 BUY is priced");
+        .expect("B4: 32,000.00 THB, once in the gap, is tier 1");
     assert_eq!(buy.value_tier.as_str(), "T1");
-    let sell = line_for(&db, "USD", Side::Sell, "ALL", Some("2000"))
-        .await
-        .expect("65,000.00 picks T3, whose SELL is priced");
-    assert_eq!(sell.value_tier.as_str(), "T3");
+    assert_eq!(buy.rate.value(), dec("31.50"));
+    for quantity in ["100", "2000"] {
+        assert_eq!(
+            line_for(&db, "USD", Side::Sell, "ALL", Some(quantity)).await,
+            None,
+            "SELL {quantity}: tier 1's SELL is not priced, and T3 is never used instead"
+        );
+    }
     db.finish().await;
 }
 
 #[tokio::test]
-async fn tier_lines_that_disagree_on_the_base_rate_are_unavailable() {
+async fn the_base_rates_are_not_read() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
-    // The base SELL is missing on T3 and the base BUY differs between the two lines.
+    // The base SELL is missing on T2 and the base BUY differs between the two lines: B4 reads neither.
     let tiers: [Tier; 2] = [
         (
             "T1",
@@ -408,16 +402,14 @@ async fn tier_lines_that_disagree_on_the_base_rate_are_unavailable() {
     ];
     add_tiers(&db, &p.id, "USD", "ALL", "1", &tiers, true).await;
 
-    assert_eq!(
-        line_for(&db, "USD", Side::Sell, "ALL", Some("100")).await,
-        None,
-        "one tier line has no base SELL rate"
-    );
-    assert_eq!(
-        line_for(&db, "USD", Side::Buy, "ALL", Some("100")).await,
-        None,
-        "the tier lines carry different base BUY rates"
-    );
+    let sell = line_for(&db, "USD", Side::Sell, "ALL", Some("100"))
+        .await
+        .expect("tier 1's SELL");
+    assert_eq!(sell.rate.value(), dec("33.00"));
+    let buy = line_for(&db, "USD", Side::Buy, "ALL", Some("100"))
+        .await
+        .expect("tier 1's BUY");
+    assert_eq!(buy.rate.value(), dec("31.50"));
     db.finish().await;
 }
 
@@ -467,8 +459,8 @@ async fn each_group_has_its_own_lines() {
 
     let large = line_for(&db, "USD", Side::Buy, "LARGE", Some("2000"))
         .await
-        .expect("a LARGE tier");
-    assert_eq!(large.line_id.to_string(), id_of(&ids, "T3"));
+        .expect("LARGE's tier 1");
+    assert_eq!(large.line_id.to_string(), id_of(&ids, "T1"), "B4");
     let all = line_for(&db, "USD", Side::Buy, "ALL", Some("2000"))
         .await
         .expect("the ALL line");
@@ -478,21 +470,21 @@ async fn each_group_has_its_own_lines() {
 }
 
 #[tokio::test]
-async fn a_quote_prices_the_asked_group_at_its_tier_and_stores_both() {
+async fn a_quote_prices_the_asked_group_at_tier_1_and_stores_both() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
     let ids = add_tiers(&db, &p.id, "USD", "LARGE", "1", &USD_TIERS, false).await;
     let now = whole_second_now();
 
-    // 500 × base 32.00 = 16,000.00 → T2 at 31.70 → 15,850.00 THB.
+    // B4: 500 × base 32.00 = 16,000.00 THB used to pick T2; it is priced at T1's 31.50 → 15,750.00 THB.
     let q = quote(&db, "USD", Side::Buy, "LARGE", "500", now)
         .await
         .unwrap_or_else(|e| panic!("quote_in refused: {e}"));
     let (line_id, grp, final_rate, thb) = stored(&db, &q).await;
-    assert_eq!(line_id, id_of(&ids, "T2"));
+    assert_eq!(line_id, id_of(&ids, "T1"));
     assert_eq!(grp, "LARGE");
-    assert_eq!(final_rate, dec("31.70"));
-    assert_eq!(thb, dec("15850.00"));
+    assert_eq!(final_rate, dec("31.50"));
+    assert_eq!(thb, dec("15750.00"));
 
     // The ALL group is still the untiered line.
     let q = quote(&db, "USD", Side::Buy, "ALL", "500", now)
@@ -506,23 +498,24 @@ async fn a_quote_prices_the_asked_group_at_its_tier_and_stores_both() {
 }
 
 #[tokio::test]
-async fn a_quote_with_no_fitting_tier_is_refused_and_nothing_is_stored() {
+async fn a_quote_on_tiers_with_no_tier_1_is_refused_and_nothing_is_stored() {
     let db = TestDb::start().await;
     let p = db.publish("MAIN", &[USD]).await;
+    // No line is open below (`tier_lower_exclusive_thb IS NULL`): there is no tier 1 to price at.
     let tiers: [Tier; 1] = [(
-        "T1",
-        None,
+        "T2",
         Some("10000.00"),
+        None,
         Some("32.00"),
         Some("32.50"),
-        Some("31.50"),
-        Some("33.00"),
+        Some("31.70"),
+        Some("32.80"),
     )];
     add_tiers(&db, &p.id, "USD", "ALL", "1", &tiers, true).await;
     let before = db.quote_rows().await;
 
     let answer = quote(&db, "USD", Side::Buy, "ALL", "1000", whole_second_now()).await;
-    let err = answer.expect_err("32,000.00 THB fits no band");
+    let err = answer.expect_err("no tier 1");
     assert!(err.to_string().contains("rateUnavailable"), "{err}");
     assert_eq!(db.quote_rows().await, before, "nothing stored");
     db.finish().await;

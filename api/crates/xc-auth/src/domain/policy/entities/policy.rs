@@ -88,6 +88,8 @@ impl Policy {
                 "adminCreateBranch" => Some(Need::Permission(Permission::BranchesManage)),
                 "adminAbandonRequest" => Some(Need::Permission(Permission::RequestAbandon)),
                 "ratePolicySave" => Some(Need::Permission(Permission::RatePolicySave)),
+                // pricing-tiers.md §15.5 gap 6: the `/pricing` fetch button.
+                "marketRatesRefresh" => Some(Need::Permission(Permission::MarketRatesRefresh)),
                 "approvalDecide" | "approvalRead" => {
                     Some(Need::Permission(Permission::ApprovalsDecide))
                 }

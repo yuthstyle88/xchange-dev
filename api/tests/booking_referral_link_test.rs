@@ -363,6 +363,7 @@ fn dummy_form(_branch: &BranchId, customer_id: &str) -> TransactionForm {
             received: Money::ZERO,
             paid: Money::ZERO,
         },
+        cash_rounding: None,
     }
 }
 

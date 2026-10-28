@@ -1,6 +1,6 @@
 //! The `kiosk_currencies` view (§7.1).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::path::Path;
 use std::str::FromStr;
@@ -215,6 +215,15 @@ impl BranchView for KioskCurrenciesView {
                 .map(|l| (l.currency_code.clone(), l))
                 .collect();
 
+            let hidden_codes: HashSet<String> =
+                super::published_rates::published_rates_data(&pool, &branch)
+                    .await?
+                    .lines
+                    .into_iter()
+                    .filter(|l| l.group == "ALL" && l.hidden)
+                    .map(|l| l.currency)
+                    .collect();
+
             let currencies_table = dto_kiosk::currency_table();
 
             let kbank_ref = KBANK_DATA.as_ref().map(|kf| KbankReference {
@@ -408,6 +417,7 @@ impl BranchView for KioskCurrenciesView {
                     partner_cost,
                     enabled,
                     kbank: kbank_comparisons,
+                    quote_enabled: enabled && !hidden_codes.contains(&entry.code),
                 });
             }
 

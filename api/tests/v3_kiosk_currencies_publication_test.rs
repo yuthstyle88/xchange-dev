@@ -85,7 +85,8 @@ const MAIN: &str = "MAIN";
 const B9: &str = "B9";
 
 /// The keys of one currency: today's eleven plus `unitSize`.
-const CURRENCY_KEYS: [&str; 12] = [
+// pricing-tiers.md §15.8a adds `quoteEnabled` (XC-V9-PRICING skeleton, restated by the sub-controller).
+const CURRENCY_KEYS: [&str; 13] = [
     "code",
     "name",
     "nameEn",
@@ -98,6 +99,7 @@ const CURRENCY_KEYS: [&str; 12] = [
     "partnerCost",
     "enabled",
     "kbank",
+    "quoteEnabled",
 ];
 
 fn unique(prefix: &str) -> String {

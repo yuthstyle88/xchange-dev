@@ -51,6 +51,14 @@ export function PricingRow(props: PricingRowProps): JSX.Element {
         >
           {props.row.currency}
         </button>
+        <span class="pricing-row-mode" data-mode={props.row.mode}>
+          {t(`mode.${props.row.mode}` as keyof typeof table.th)}
+        </span>
+        <Show when={props.row.followResult?.status === 'BLOCKED'}>
+          <span class="pricing-row-follow" data-follow="BLOCKED">
+            {t('followStatus.BLOCKED')}
+          </span>
+        </Show>
         <Show when={props.row.overridden}>
           <span class="pricing-badge-overridden">{t('overridden')}</span>
         </Show>
