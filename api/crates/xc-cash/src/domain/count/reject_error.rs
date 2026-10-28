@@ -39,9 +39,18 @@ impl RejectError {
         }
     }
 
-    /// The sentence the client shows for this refusal (§5). Until the follow-up ticket writes the sentences, the code.
+    /// The sentence the client shows for this refusal (§5), in Thai like `CashError`.
     pub fn message(&self) -> String {
-        self.code().to_owned()
+        match self {
+            RejectError::Refused(_) => "ไม่มีสิทธิ์ปฏิเสธการนับของสาขานี้".to_owned(),
+            RejectError::NotFound => "ไม่พบการนับนี้".to_owned(),
+            RejectError::OnlyThroughHandover => "การนับส่งมอบต้องจัดการผ่านการส่งมอบเท่านั้น".to_owned(),
+            RejectError::SameCounter => crate::domain::error::CashError::SameCounter.to_string(),
+            RejectError::NotWaiting => crate::domain::error::CashError::NotWaiting.to_string(),
+            RejectError::ReasonRequired => "กรุณาระบุเหตุผล".to_owned(),
+            RejectError::ReasonTooLong => "เหตุผลยาวเกิน 500 ตัวอักษร".to_owned(),
+            RejectError::Other(e) => e.to_string(),
+        }
     }
 }
 
