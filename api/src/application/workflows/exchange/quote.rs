@@ -14,6 +14,7 @@ use uuid::Uuid;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::{Quote, QuoteChannel, QuoteStatus};
 use xc_exchange::domain::quote::quote_line::QuoteLine;
+use xc_exchange::domain::quote::quote_type::QuoteType;
 use xc_exchange::domain::quote::repository::QuoteRepository;
 use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
@@ -73,6 +74,42 @@ pub struct QuoteRequest {
     pub channel: QuoteChannel,
     pub lines: Vec<QuoteRequestLine>,
     pub payment_method: Option<PaymentMethod>,
+}
+
+/// What `QuoteService::price_in` writes (`binding-quote.md` D-1, D-10): the quote's type and, for a binding
+/// quote, its lifetime (the organisation's `binding_quote_ttl_seconds`) in place of the indicative TTL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuoteTerms {
+    /// Today's quote: `INDICATIVE`, `expires_at = now + exchange_settings.quote_ttl_seconds`.
+    Indicative,
+    /// `BINDING`, `expires_at = now + ttl`.
+    Binding { ttl: Duration },
+}
+
+impl QuoteTerms {
+    pub fn quote_type(&self) -> QuoteType {
+        match self {
+            Self::Indicative => QuoteType::Indicative,
+            Self::Binding { .. } => QuoteType::Binding,
+        }
+    }
+}
+
+/// `marketing-campaigns.md` O-3 A: the channel a quote's benefits are judged eligible on. A `Booking` quote is
+/// issued by staff holding `BookingsDesk` (no customer reaches `QuoteService`), so it is judged as `DESK`;
+/// every other channel is its own. (`CustomerSelf` ⇒ `APP` has no caller yet: the customer-side estimate needs a
+/// design of its own.)
+pub fn benefit_channel(channel: QuoteChannel) -> QuoteChannel {
+    match channel {
+        QuoteChannel::Booking => QuoteChannel::Desk,
+        other => other,
+    }
+}
+
+/// `marketing-campaigns.md` O-3 A: a `Booking` quote shows its benefit with no reservation (no budget, no coupon
+/// lock); every other channel reserves as today. The completion's DESK quote is the one that reserves.
+pub fn reserves_benefits(channel: QuoteChannel) -> bool {
+    channel != QuoteChannel::Booking
 }
 
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
@@ -169,13 +206,16 @@ impl QuoteService {
         self.quote_with_coupon_in(tx, req, who, now, None).await
     }
 
-    pub async fn quote_with_coupon_in(
+    /// `binding-quote.md` D-1: the one priced path for every quote, writing `terms`' type and lifetime
+    /// (BQ-2). `quote_with_coupon_in` is this with `QuoteTerms::Indicative`.
+    pub async fn price_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         req: QuoteRequest,
         who: &SaveActor,
         now: DateTime<Utc>,
         coupon_code: Option<&str>,
+        terms: QuoteTerms,
     ) -> AppResult<Quote> {
         // Step 1: Exactly 1 line
         if req.lines.len() != 1 {
@@ -303,8 +343,13 @@ impl QuoteService {
             }
         }
 
-        let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
-        let expires_at = now + Duration::seconds(ttl_seconds as i64);
+        let expires_at = match terms {
+            QuoteTerms::Indicative => {
+                let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
+                now + Duration::seconds(ttl_seconds as i64)
+            }
+            QuoteTerms::Binding { ttl } => now + ttl,
+        };
 
         let quote_id = Uuid::new_v4();
         let line_id = Uuid::new_v4();
@@ -427,7 +472,7 @@ impl QuoteService {
         let eval_ctx = EvalContext {
             organization_id: org_id,
             branch: req.branch_id.as_str().to_string(),
-            channel: req.channel.as_str().to_string(),
+            channel: benefit_channel(req.channel).as_str().to_string(),
             customer_id: req.customer_id.clone(),
             coupon_code: coupon_code.map(str::to_string),
             now,
@@ -546,7 +591,7 @@ impl QuoteService {
             organization_id: org_id,
             branch_id: req.branch_id,
             customer_id: req.customer_id.clone(),
-            quote_type: "INDICATIVE".to_string(),
+            quote_type: terms.quote_type(),
             channel: req.channel,
             status: QuoteStatus::Active,
             publication_id: published_side.publication.id.as_uuid(),
@@ -564,7 +609,7 @@ impl QuoteService {
         // Write quote to DB first so benefit_reservations FK (quote_id -> quotes.id) is satisfied
         self.quote_repo.insert_in(tx, &quote).await?;
 
-        if !eval.snapshot.applied.is_empty() {
+        if reserves_benefits(req.channel) && !eval.snapshot.applied.is_empty() {
             let mut reserved_applied = Vec::new();
             let mut recompute_needed = false;
 
@@ -710,6 +755,18 @@ impl QuoteService {
         }
 
         Ok(quote)
+    }
+
+    pub async fn quote_with_coupon_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        req: QuoteRequest,
+        who: &SaveActor,
+        now: DateTime<Utc>,
+        coupon_code: Option<&str>,
+    ) -> AppResult<Quote> {
+        self.price_in(tx, req, who, now, coupon_code, QuoteTerms::Indicative)
+            .await
     }
 }
 
