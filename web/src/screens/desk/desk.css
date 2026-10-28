@@ -121,6 +121,11 @@ ol.steps li[aria-current="step"] {
   margin: 0;
 }
 
+.desk-warning {
+  color: #b00020;
+  margin: 0;
+}
+
 .desk-actions {
   display: flex;
   flex-wrap: wrap;
