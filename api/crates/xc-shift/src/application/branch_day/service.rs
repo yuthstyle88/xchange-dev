@@ -388,8 +388,49 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
         cmd: CloseFor,
         now: DateTime<Utc>,
     ) -> Result<Attendance, CloseForError> {
-        let _ = (&tx, who, branch, now);
-        todo!("SC-A2: close {} for someone else", cmd.attendance_id)
+        let target = Target::new(&who.organization_id, Some(branch.clone()), None);
+        Authorizer::check(Some(who), Permission::AttendanceCloseFor, &target, now)
+            .map_err(CloseForError::NotAllowed)?;
+
+        let tz = self.repo.branch_timezone_in(tx, branch).await?;
+        let before = self.repo.load_state_in(tx, branch).await?;
+        let mut after = before.clone();
+
+        let row = after
+            .attendance
+            .iter_mut()
+            .find(|a| a.id == cmd.attendance_id)
+            .ok_or(CloseForError::NotFound)?;
+
+        cmd.check(row, &who.user_id, now, tz)
+            .map_err(CloseForError::Refused)?;
+
+        row.clock_out = Some(CustodyTime::from_epoch_millis(
+            cmd.clock_out.timestamp_millis(),
+        ));
+        let closed = row.clone();
+
+        self.append_event(
+            tx,
+            branch,
+            who,
+            EventKind::ClockOutFor,
+            now,
+            json!({
+                "attendanceId": closed.id,
+                "employeeId": closed.employee_id,
+                "clockIn": iso_time(closed.clock_in),
+                "clockOut": cmd.clock_out.to_rfc3339_opts(SecondsFormat::Millis, true),
+                "reason": cmd.reason.trim(),
+            }),
+        )
+        .await?;
+
+        self.repo
+            .store_state_in(tx, branch, &before, &after)
+            .await?;
+
+        Ok(closed)
     }
 
     pub async fn hold(
