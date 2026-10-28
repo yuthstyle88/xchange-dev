@@ -16,7 +16,7 @@
 //!   JSON `rate` stays per 1, through `CompatRate::per_one`), R4 (confirm refuses when the current
 //!   line is not the stored one, with the existing "the rate changed" refusal, and writes
 //!   nothing), R5 (stale: the policy version the line was published under; a refusal is the
-//!   reader's existing "no rate for this currency" answer);
+//!   kiosk's rate refusal `RateChangedOrClosed`, #5418);
 //! - §8 migration 5 (`kiosk_requests.published_rate_line_id`, merged `d6ce058`), D-3 (the current
 //!   rate is the line of `branches.current_publication_id`; a currency without a line is
 //!   unavailable);
