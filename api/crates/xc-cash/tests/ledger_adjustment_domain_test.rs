@@ -280,7 +280,11 @@ fn la_t6_a_currency_without_a_known_minor_unit_is_refused() {
 
 #[test]
 fn la_t6_cost_lines_are_refused_on_thb_and_zero() {
-    refused_on(&cost(&[("THB", "10.00")]), "lines[0].currency", "COST on THB");
+    refused_on(
+        &cost(&[("THB", "10.00")]),
+        "lines[0].currency",
+        "COST on THB",
+    );
     refused_on(
         &cost(&[("USD", "0.00")]),
         "lines[0].costDeltaThb",
@@ -312,7 +316,10 @@ fn la_t6_reason_and_evidence_are_required() {
     a.reason = "x".repeat(501);
     refused_on(&a, "reason", "a 501-character reason");
     a.reason = "x".repeat(500);
-    assert!(a.validate(&minor_units()).is_ok(), "500 characters are allowed");
+    assert!(
+        a.validate(&minor_units()).is_ok(),
+        "500 characters are allowed"
+    );
 
     let mut a = quantity(&[("USD", "-1")]);
     a.evidence = Evidence {
@@ -326,7 +333,10 @@ fn la_t6_reason_and_evidence_are_required() {
         files: vec![],
         reference: "slip 1".to_owned(),
     };
-    assert!(a.validate(&minor_units()).is_ok(), "a reference alone is evidence");
+    assert!(
+        a.validate(&minor_units()).is_ok(),
+        "a reference alone is evidence"
+    );
 
     let mut a = quantity(&[("USD", "-1")]);
     a.evidence.files = (0..11).map(|i| format!("F{i}")).collect();

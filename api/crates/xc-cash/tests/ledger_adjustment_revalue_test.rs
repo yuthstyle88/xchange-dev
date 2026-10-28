@@ -128,8 +128,20 @@ async fn buy(pool: &PgPool, branch: &str, qty: &str, thb: &str) {
     post(
         pool,
         vec![
-            leg(CashPlace::Customer, CashPlace::Safe(BranchId::new(branch)), usd(), qty, &s),
-            leg(CashPlace::Bank, CashPlace::Customer, CurrencyCode::THB, thb, &s),
+            leg(
+                CashPlace::Customer,
+                CashPlace::Safe(BranchId::new(branch)),
+                usd(),
+                qty,
+                &s,
+            ),
+            leg(
+                CashPlace::Bank,
+                CashPlace::Customer,
+                CurrencyCode::THB,
+                thb,
+                &s,
+            ),
         ],
     )
     .await;
@@ -141,8 +153,20 @@ async fn sell(pool: &PgPool, branch: &str, qty: &str, thb: &str) -> SourceRef {
     post(
         pool,
         vec![
-            leg(CashPlace::Safe(BranchId::new(branch)), CashPlace::Customer, usd(), qty, &s),
-            leg(CashPlace::Customer, CashPlace::Bank, CurrencyCode::THB, thb, &s),
+            leg(
+                CashPlace::Safe(BranchId::new(branch)),
+                CashPlace::Customer,
+                usd(),
+                qty,
+                &s,
+            ),
+            leg(
+                CashPlace::Customer,
+                CashPlace::Bank,
+                CurrencyCode::THB,
+                thb,
+                &s,
+            ),
         ],
     )
     .await;
@@ -197,7 +221,10 @@ async fn run(pool: &PgPool, reqs: &[RevalueRequest]) -> Result<PostingId, String
 
 fn assert_validation(out: Result<PostingId, String>, what: &str) {
     let e = out.expect_err(&format!("{what} is refused"));
-    assert!(e.contains("validationFailed"), "{what}: validationFailed, got {e}");
+    assert!(
+        e.contains("validationFailed"),
+        "{what}: validationFailed, got {e}"
+    );
 }
 
 /// `(movement_type, quantity_signed, cost_thb_signed, average_after, transaction_line_id is null)` of a posting's movements.
@@ -261,7 +288,11 @@ async fn la_t25_a_revaluation_moves_the_cost_and_not_the_quantity() {
     .fetch_one(&pool)
     .await
     .expect("the sale's movement");
-    assert_eq!(dispose, d("-3300.00"), "the next SELL disposes at the new average");
+    assert_eq!(
+        dispose,
+        d("-3300.00"),
+        "the next SELL disposes at the new average"
+    );
 }
 
 // ── LA-T26 ──────────────────────────────────────────────────────────────────

@@ -119,10 +119,18 @@ async fn la_t24_the_branch_lists_its_adjustments_with_their_status() {
     let only_posted = read(&room, FIN_A, B1, Some("POSTED")).await;
     assert_eq!(only_posted.status, StatusCode::OK, "{}", only_posted.text);
     let ids: Vec<Value> = rows(&only_posted).iter().map(|r| r["id"].clone()).collect();
-    assert_eq!(ids, vec![json!(posted)], "status=POSTED: {}", only_posted.text);
+    assert_eq!(
+        ids,
+        vec![json!(posted)],
+        "status=POSTED: {}",
+        only_posted.text
+    );
 
     let approved_only = read(&room, FIN_A, B1, Some("APPROVED")).await;
-    let ids: Vec<Value> = rows(&approved_only).iter().map(|r| r["id"].clone()).collect();
+    let ids: Vec<Value> = rows(&approved_only)
+        .iter()
+        .map(|r| r["id"].clone())
+        .collect();
     assert_eq!(
         ids,
         vec![json!(approved)],
@@ -131,7 +139,12 @@ async fn la_t24_the_branch_lists_its_adjustments_with_their_status() {
     );
 
     let bad = read(&room, FIN_A, B1, Some("DONE")).await;
-    assert_refused(&bad, StatusCode::BAD_REQUEST, "invalidRequest", "status=DONE");
+    assert_refused(
+        &bad,
+        StatusCode::BAD_REQUEST,
+        "invalidRequest",
+        "status=DONE",
+    );
 
     let teller = read(&room, TELLER, B1, None).await;
     assert!(

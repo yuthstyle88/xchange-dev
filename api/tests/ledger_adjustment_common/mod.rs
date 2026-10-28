@@ -238,7 +238,10 @@ impl Room {
     }
 
     /// `(actor_id, object_ref, branch_id, after_redacted)` of every audit row of `action`, oldest first.
-    pub async fn audit_rows(&self, action: &str) -> Vec<(String, String, Option<String>, Option<Value>)> {
+    pub async fn audit_rows(
+        &self,
+        action: &str,
+    ) -> Vec<(String, String, Option<String>, Option<Value>)> {
         sqlx::query_as(
             "SELECT actor_id, object_ref, branch_id, after_redacted FROM audit_events WHERE action = $1 ORDER BY id",
         )
