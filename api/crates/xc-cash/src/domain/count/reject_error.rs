@@ -39,7 +39,7 @@ impl RejectError {
         }
     }
 
-    /// The sentence the client shows for this refusal (§5). Until the follow-up ticket writes the sentences, the code.
+    /// The sentence the client shows for this refusal (§5), in Thai like `CashError`.
     pub fn message(&self) -> String {
         match self {
             RejectError::Refused(_) => "ไม่มีสิทธิ์ปฏิเสธการนับของสาขานี้".to_owned(),
