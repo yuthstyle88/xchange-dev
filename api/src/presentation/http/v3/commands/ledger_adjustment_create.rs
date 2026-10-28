@@ -11,13 +11,18 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use sqlx::PgPool;
 use ts_rs::TS;
+use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_cash::application::adjustment::adjustment_service::LedgerAdjustmentService;
+use xc_cash::application::adjustment::adjustment_service::{
+    AdjustmentRefusal, LedgerAdjustmentService,
+};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
 
@@ -27,8 +32,11 @@ use crate::presentation::dto::v3::ledger_adjustment_create::{
     LedgerAdjustmentCreateInput, LedgerAdjustmentCreateOutput, LedgerAdjustmentEvidence,
     LedgerAdjustmentLine,
 };
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, out_of_scope, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::me::me_roles;
 
 pub const AUDIT_ACTION: &str = "LEDGER_ADJUSTMENT_CREATE";
 
@@ -64,8 +72,58 @@ impl CommandAction for LedgerAdjustmentCreateCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (&self.pool, &self.service, tx, branch, who, input);
-        todo!("LA-5")
+        let payload = serde_json::to_value(&input).map_err(|_| server_error())?;
+        let created = match self
+            .service
+            .create_in(tx, branch, &payload, who)
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "ledger adjustment create failed");
+                server_error()
+            })? {
+            Ok(created) => created,
+            Err(AdjustmentRefusal::Invalid(e)) => {
+                return Err(V3Error::with_field_path(
+                    "validationFailed",
+                    e.field,
+                    e.message,
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+            Err(AdjustmentRefusal::OutOfScope) => return Err(out_of_scope()),
+            Err(_) => return Err(server_error()),
+        };
+
+        let mut roles: Vec<String> = me_roles(who, Utc::now())
+            .into_iter()
+            .map(|r| r.role)
+            .collect();
+        roles.dedup();
+        PgAuditLog::new(self.pool.clone())
+            .append(
+                tx,
+                &AuditEvent {
+                    actor_id: who.user_id.clone(),
+                    actor_role: roles.join(","),
+                    scope: "branch".to_owned(),
+                    action: AUDIT_ACTION.to_owned(),
+                    object_ref: format!("ledger_adjustment:{}", created.id),
+                    branch_id: Some(branch.as_str().to_owned()),
+                    before: None,
+                    after: Some(payload),
+                },
+            )
+            .await
+            .map_err(|e| {
+                tracing::error!(error = %e, "ledger adjustment create audit failed");
+                server_error()
+            })?;
+
+        Ok(LedgerAdjustmentCreateOutput {
+            id: created.id,
+            approval_request_id: created.approval_request_id.to_string(),
+            status: "REQUESTED".to_owned(),
+        })
     }
 }
 
