@@ -103,6 +103,9 @@ pub struct TransactionCreateInput {
     pub customer_id: String,
     pub booking_id: Option<String>,
     pub kiosk_request_id: Option<String>,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub queue_ticket_id: Option<String>,
     pub staff_draft_id: Option<String>,
     pub passport: UploadRef,
     pub payment: TransactionPaymentInput,
@@ -387,7 +390,13 @@ impl CommandAction for TransactionCreateCommand {
         };
         let made = self
             .service
-            .run_in(tx, req, &save_actor(who)?, Utc::now())
+            .run_with_ticket_in(
+                tx,
+                req,
+                input.queue_ticket_id,
+                &save_actor(who)?,
+                Utc::now(),
+            )
             .await
             .map_err(refusal)?;
         answer(&self.store, tx, made.id).await
