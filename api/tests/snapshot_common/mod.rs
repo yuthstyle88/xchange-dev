@@ -337,6 +337,116 @@ pub fn without_keys(value: &Value, keys: &[&str]) -> Value {
     }
 }
 
+// ── decided receipt differences in the recorded day (#5315, #5368) ───────────
+
+/// A save of a recorded day whose receipt v3 prints differently from v2, on purpose. #5315 (R1, R3, R5) makes
+/// `THB Total` the settled figure (principal ± fee ± cash rounding) and adds the signed cash-rounding row on a cash
+/// save whose rounding is not zero; the receipt's address is the SHA-256 of what is stored, so it changes too.
+/// Ruled per save on #5368 (2026-10-28) as #5349 ruled the save scenarios: these differ only in those two rows.
+/// The other saves of the day (#10, #11, #21) settle at their principal and keep v2's receipt. A decided
+/// difference, listed in `docs/design/xchange-v3-known-differences.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettledDayReceipt {
+    pub fixture: &'static str,
+    pub step: usize,
+    /// The `THB Total` v3 prints, without " THB".
+    pub total: &'static str,
+    /// The signed cash-rounding row, when the save has one.
+    pub rounding: Option<&'static str>,
+    /// The SHA-256 in v2's recorded receipt address, which this entry replaces wherever the day records it.
+    pub v2_receipt: &'static str,
+    /// The SHA-256 of the receipt v3 stores.
+    pub v3_receipt: &'static str,
+}
+
+pub const DAY_SETTLED_RECEIPTS: [SettledDayReceipt; 2] = [
+    SettledDayReceipt {
+        fixture: "snapshot/transactions.json",
+        step: 15,
+        total: "1,656.25",
+        rounding: Some("-0.05"),
+        v2_receipt: "6e6c4b9ea2119eb7e18e0be319600e93aa54969c6f62233825e18ad032e41eee",
+        v3_receipt: "eb52a61ddc0ca3ca4ff263b5c686a98336c30549d2df9210f5b831e5c558cbc8",
+    },
+    SettledDayReceipt {
+        fixture: "snapshot/transactions.json",
+        step: 18,
+        total: "7,675.50",
+        rounding: None,
+        v2_receipt: "3baf9a0f76d87a57ccba40a0cf523a947f590a7c4752186a22b58d078a8481df",
+        v3_receipt: "a18d728e094f59b09ced4b67b7450402bb2756a6709cf517c89daa46df836a3b",
+    },
+];
+
+/// The entry of `fixture`'s save `step`, when its receipt is a decided difference.
+pub fn settled_day_receipt(fixture: &str, step: usize) -> Option<&'static SettledDayReceipt> {
+    DAY_SETTLED_RECEIPTS
+        .iter()
+        .find(|e| e.fixture == fixture && e.step == step)
+}
+
+/// `recorded` (an answer or a page of `fixture`) with every receipt address listed in [`DAY_SETTLED_RECEIPTS`]
+/// read as v3's. Nothing else changes.
+pub fn with_settled_receipts(fixture: &str, recorded: &str) -> String {
+    DAY_SETTLED_RECEIPTS
+        .iter()
+        .filter(|e| e.fixture == fixture)
+        .fold(recorded.to_string(), |text, e| {
+            text.replace(
+                &format!("receipt-{}", e.v2_receipt),
+                &format!("receipt-{}", e.v3_receipt),
+            )
+        })
+}
+
+/// [`with_settled_receipts`] on a JSON answer.
+pub fn with_settled_receipts_json(fixture: &str, recorded: &Value) -> Value {
+    let text = recorded.to_string();
+    let restated = with_settled_receipts(fixture, &text);
+    if restated == text {
+        return recorded.clone();
+    }
+    serde_json::from_str(&restated).expect("a restated answer is JSON")
+}
+
+/// Holds the receipt a listed save stored: its address is v3's decided one and the hash of what is stored, and it
+/// prints the decided `THB Total` and cash-rounding row (or none).
+pub fn hold_settled_day_receipt(
+    entry: &SettledDayReceipt,
+    url: &str,
+    stored_receipt: &[u8],
+    label: &str,
+) {
+    use sha2::{Digest, Sha256};
+    let key = url.rsplit('/').next().unwrap_or_default();
+    assert_eq!(
+        key,
+        format!("receipt-{:x}", Sha256::digest(stored_receipt)),
+        "{label}: the receipt address is not the hash of the stored receipt"
+    );
+    assert_eq!(
+        key,
+        format!("receipt-{}", entry.v3_receipt),
+        "{label}: not the decided v3 receipt"
+    );
+    let html = std::str::from_utf8(stored_receipt).expect("the receipt is UTF-8");
+    assert!(
+        html.contains(&format!("<dt>THB Total</dt><dd>{} THB</dd>", entry.total)),
+        "{label}: THB Total is not {}",
+        entry.total
+    );
+    match entry.rounding {
+        Some(r) => assert!(
+            html.contains(&format!("Cash rounding</dt><dd>{r}</dd>")),
+            "{label}: no cash-rounding row {r}"
+        ),
+        None => assert!(
+            !html.contains("Cash rounding"),
+            "{label}: a cash-rounding row where none is due"
+        ),
+    }
+}
+
 // ── the database ─────────────────────────────────────────────────────────────
 
 pub struct TestDb {
