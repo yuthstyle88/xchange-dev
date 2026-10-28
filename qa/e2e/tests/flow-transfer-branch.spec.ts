@@ -107,14 +107,14 @@ async function dispatchTransfer(
 ): Promise<void> {
   await dispatcher.goto('/staff');
   const row = transferRow(dispatcher, id);
-  await expect(row, `${label} transfer ${id} is APPROVED`).toContainText('APPROVED', { timeout: 20_000 });
+  await expect(row, `${label} transfer ${id} is APPROVED`).toHaveAttribute('data-status', 'APPROVED', { timeout: 20_000 });
   const dispatched = await posted(dispatcher, /\/api\/cash-transfers\/[^/]+\/dispatch$/, () =>
     row.getByTestId('transfer-dispatch').click(),
   );
   console.log(`[f12b:${label}] dispatch ${id} -> ${dispatched.text}`);
   expect(dispatched.ok, `${label} transfer ${id} dispatched: ${dispatched.text}`).toBeTruthy();
   await dispatcher.reload();
-  await expect(row, `${label} transfer ${id} is DISPATCHED`).toContainText('DISPATCHED', { timeout: 20_000 });
+  await expect(row, `${label} transfer ${id} is DISPATCHED`).toHaveAttribute('data-status', 'DISPATCHED', { timeout: 20_000 });
 }
 
 async function receiveTransfer(
@@ -126,7 +126,7 @@ async function receiveTransfer(
 ): Promise<void> {
   await receiver.goto('/staff');
   const row = transferRow(receiver, id);
-  await expect(row, `${label} transfer ${id} is DISPATCHED at destination`).toContainText('DISPATCHED', {
+  await expect(row, `${label} transfer ${id} is DISPATCHED at destination`).toHaveAttribute('data-status', 'DISPATCHED', {
     timeout: 20_000,
   });
   await row.getByTestId('transfer-receive').click();
@@ -142,7 +142,7 @@ async function receiveTransfer(
   console.log(`[f12b:${label}] receive ${id} -> ${received.text}`);
   expect(received.ok, `${label} transfer ${id} received: ${received.text}`).toBeTruthy();
   await receiver.reload();
-  await expect(row, `${label} transfer ${id} is RECEIVED`).toContainText('RECEIVED', { timeout: 20_000 });
+  await expect(row, `${label} transfer ${id} is RECEIVED`).toHaveAttribute('data-status', 'RECEIVED', { timeout: 20_000 });
 }
 
 test.describe.serial('F12b branch-to-branch cash transfer', () => {

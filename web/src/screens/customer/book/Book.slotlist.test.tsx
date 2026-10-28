@@ -224,13 +224,13 @@ describe('Customer Book (C02) slot list sequencing, failed re-read cleanup, and 
 
     expect(slotSel.value).toBe('');
 
-    // Next Book must send '' and NOT the hidden/refused slot-a1
+    // Restated by the FE lane controller claude/e92db6 for #5394 (qa/e2e flow-validation-customer:83): a Book with no
+    // slot is refused on screen and sends nothing; the old slot is never carried either.
     submitBtn.click();
     await vi.waitFor(() => {
-      expect(createBodies.length).toBe(2);
+      expect(container.querySelector('[data-field-error="slotId"]')).not.toBeNull();
     });
-    expect(createBodies[1]!.slotId).toBe('');
-    expect(createBodies[1]!.slotId).not.toBe('slot-a1');
+    expect(createBodies.length).toBe(1);
   });
 
   it('Row 3: Re-read still lists the chosen slot -> The select shows that slot', async () => {
@@ -487,12 +487,13 @@ describe('Customer Book (C02) slot list sequencing, failed re-read cleanup, and 
       expect(container.querySelector('.xc-book-slots-error')).not.toBeNull();
     });
 
-    // POST with no valid slot is still allowed and sends ''
+    // Restated by the FE lane controller claude/e92db6 for #5394 (qa/e2e flow-validation-customer:83): a Book with no
+    // slot is refused on screen and sends nothing; the old slot is never carried either.
     submitBtn.click();
     await vi.waitFor(() => {
-      expect(createBodies.length).toBe(2);
+      expect(container.querySelector('[data-field-error="slotId"]')).not.toBeNull();
     });
-    expect(createBodies[1]!.slotId).toBe('');
+    expect(createBodies.length).toBe(1);
   });
 
   it("Edge: Branch change while slots load -> new branch's list shown; old branch's late answer ignored", async () => {
