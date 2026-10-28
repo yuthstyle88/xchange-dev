@@ -2,6 +2,7 @@
 import {
   createEffect,
   createSignal,
+  onCleanup,
   onMount,
   For,
   Show,
@@ -13,11 +14,14 @@ import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error'
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { readHostOrg } from '../../../shared/api/public-host';
+import { PublicPoller } from '../../../shared/live/public-poller';
 import { checkDecimal, numeric } from '../../../shared/ui/bounded';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { QrCode } from '../../../shared/ui/QrCode';
+import { IndicativeBenefit } from '../benefit-estimate/IndicativeBenefit';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
+import type { PlannerBenefitDto } from '../../../shared/api/generated/planner_preview';
 import { th, en, zh } from './i18n';
 import './book.css';
 
@@ -26,6 +30,7 @@ export const BOOKING_CREATE_COMMAND_ROUTE = '/api/bookings';
 
 export interface BookScreenProps {
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
+  ratesIntervalMs?: number;
   [key: string]: unknown;
 }
 
@@ -46,6 +51,7 @@ export interface PlannerPreviewResult {
   unitSize?: string;
   stale?: boolean;
   sourceDate?: string;
+  benefit?: PlannerBenefitDto;
   [key: string]: unknown;
 }
 
@@ -126,6 +132,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   const [branches, setBranches] = createSignal<PublicBranch[]>([]);
   const [branchesLoading, setBranchesLoading] = createSignal(true);
   const [branchesError, setBranchesError] = createSignal<string | null>(null);
+  const [hostOrg, setHostOrg] = createSignal('');
 
   const [slots, setSlots] = createSignal<BookingSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = createSignal(false);
@@ -169,6 +176,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
         typeof props.org === 'string' && props.org
           ? props.org
           : await readHostOrg(api);
+      setHostOrg(org);
       const branchJson = await api.publicGet<{ branches?: PublicBranch[] }>(
         `/api/public/orgs/${encodeURIComponent(org)}/branches`,
       );
@@ -274,6 +282,37 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
 
   let previewSeq = 0;
   let createFailed = false;
+
+  createEffect(() => {
+    const org = hostOrg();
+    const id = branchId();
+    const br = id ? branches().find((b) => b.id === id) : undefined;
+    if (!org || !br?.code) return;
+    const url = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(br.code)}/rates`;
+    const poller = new PublicPoller<unknown>(url, fetchFn, props.ratesIntervalMs ?? 10_000, 300_000);
+    poller.start();
+    onCleanup(() => poller.stop());
+    let prev: unknown;
+    createEffect(() => {
+      const data = poller.data();
+      if (data === undefined) return;
+      if (prev !== undefined && data !== prev) {
+        void updatePreview();
+      }
+      prev = data;
+    });
+  });
+
+  createEffect(() => {
+    const p = preview();
+    if (!p || p.benefit?.state !== 'ESTIMATED') return;
+    const delay = Date.parse(p.benefit.validUntil) - Date.now();
+    if (!(delay > 0 && delay <= 2_147_483_647)) return;
+    const timer = setTimeout(() => {
+      void updatePreview();
+    }, delay);
+    onCleanup(() => clearTimeout(timer));
+  });
 
   const updatePreview = async () => {
     const seq = ++previewSeq;
@@ -756,6 +795,10 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               <MoneyText value={preview()!.thb} currency="THB" />
             </div>
             <p class="preview-notice xc-book-preview-notice">{t('estimateNotice')}</p>
+            <IndicativeBenefit
+              benefit={preview()!.benefit}
+              slotStartAt={slots().find((s) => s.id === slotId())?.start ?? null}
+            />
           </div>
         </Show>
 
