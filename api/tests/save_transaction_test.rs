@@ -211,6 +211,22 @@ async fn play(fx: &Fixture, scenario: &Scenario) -> Vec<String> {
                                 receipt_url: saved.receipt_url.clone(),
                                 ..want
                             }
+                        } else if let Some(entry) = settled_total_receipt(&scenario.name, i + 1) {
+                            // #5349: a decided receipt difference (#5315's settled total and rounding row)
+                            let key = saved.receipt_url.trim_start_matches("/files/");
+                            let bytes = std::fs::read(shop.dir.join(key))
+                                .unwrap_or_else(|e| panic!("{here}: the receipt {key}: {e}"));
+                            hold_settled_total_receipt(
+                                &entry,
+                                &v2.receipt_url,
+                                &saved.receipt_url,
+                                &bytes,
+                                &here,
+                            );
+                            SavedTransaction {
+                                receipt_url: saved.receipt_url.clone(),
+                                ..want
+                            }
                         } else {
                             want
                         };

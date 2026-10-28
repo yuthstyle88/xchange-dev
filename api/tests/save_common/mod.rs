@@ -895,6 +895,212 @@ pub fn hold_same_scenario_customer(got: &str, existing: bool, earlier: &str, lab
     );
 }
 
+// ── decided receipt differences in the save scenarios (#5315, #5349) ─────────
+
+/// A save whose receipt v3 prints differently from v2, on purpose. #5315 (R1, R3, R5) makes `THB Total` the
+/// settled figure (principal ± fee ± cash rounding) and adds the signed cash-rounding row on a cash save whose
+/// rounding is not zero. v2 printed the principal as the total and had no rounding row. Ruled per save on #5349
+/// (2026-10-28): every one of these differs only in those two rows; the `Staff` row is v2's on all of them.
+/// A decided difference, listed in `docs/design/xchange-v3-known-differences.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SettledTotalReceipt {
+    pub scenario: &'static str,
+    pub step: usize,
+    /// The `THB Total` v3 prints, without " THB".
+    pub total: &'static str,
+    /// The signed cash-rounding row, when the save has one.
+    pub rounding: Option<&'static str>,
+    /// The SHA-256 in v2's recorded `receipt_url`, which this entry replaces.
+    pub v2_receipt: &'static str,
+    /// The SHA-256 of the receipt v3 stores.
+    pub v3_receipt: &'static str,
+}
+
+pub const RECEIPT_SETTLED_TOTAL: [SettledTotalReceipt; 17] = [
+    SettledTotalReceipt {
+        scenario: "a fee moves with the baht",
+        step: 4,
+        total: "3,184.50",
+        rounding: None,
+        v2_receipt: "d2e4c20958a519f14e5c1d221016d43869485c90d482464b2e3a59bfd77f1139",
+        v3_receipt: "f7f07731a74e82b80f8f44f2fa21faa87b659503cc0fc09014b849c8ae1e2928",
+    },
+    SettledTotalReceipt {
+        scenario: "a fee moves with the baht",
+        step: 5,
+        total: "3,310.00",
+        rounding: None,
+        v2_receipt: "9a07d8d78c5e287486fd6d9546eb5997f636c0a8f939399cbc52892c26064163",
+        v3_receipt: "d88a1e787172527240c6f81675751ce12ed30b43525c0865ed6d6a94ac08180b",
+    },
+    SettledTotalReceipt {
+        scenario: "paid by transfer: only the currency moves",
+        step: 5,
+        total: "3,305.00",
+        rounding: None,
+        v2_receipt: "2c32f51f00a859aaad8f8ee01f8972c76661029f9102f07a3ad353bf0e529ec2",
+        v3_receipt: "987700decdcb9bf178f5cd0740ca9f6e7a6e6e8ea8bab93a8644e81a37a9246e",
+    },
+    SettledTotalReceipt {
+        scenario: "numbers follow one another through a day, live and demo apart",
+        step: 7,
+        total: "32.25",
+        rounding: Some("+0.15"),
+        v2_receipt: "53067d44263991099778e16c45629ef56778893d59dff066ff18a5bcbce78ec5",
+        v3_receipt: "e5744267d0b79f4bde8e6ba3ee502bb3bb2e66eb595500784dffb7a416727191",
+    },
+    SettledTotalReceipt {
+        scenario: "the number is counted for the whole shop, not per branch",
+        step: 10,
+        total: "64.25",
+        rounding: Some("+0.05"),
+        v2_receipt: "0fa92a7ef880ec1421757e495f20b1908fae93533518516a4ee509c17dd2461d",
+        v3_receipt: "86c22ca50f8854c06ee026440b38a3cb96b7da4c51ab3e9f6aa18b69d5130ece",
+    },
+    SettledTotalReceipt {
+        scenario: "the day turns at Bangkok midnight",
+        step: 5,
+        total: "32.25",
+        rounding: Some("+0.15"),
+        v2_receipt: "ee14a7f615454850af4332da43259b25d4891fd0c17b37228a69eb4071ae6110",
+        v3_receipt: "c4b1a3527fa8b3e3e1e76eeab12ccf4c34e07cb1334c2809d0d9b6a0a03e2ad6",
+    },
+    SettledTotalReceipt {
+        scenario: "the day turns at Bangkok midnight",
+        step: 6,
+        total: "64.25",
+        rounding: Some("+0.05"),
+        v2_receipt: "34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
+        v3_receipt: "23aafe905e84d5a35f98a4f501e0f6ebb7c5986670550c03e0b0cfadeff966d0",
+    },
+    SettledTotalReceipt {
+        scenario: "sending a saved exchange again changes nothing and answers the same",
+        step: 4,
+        total: "3,208.75",
+        rounding: None,
+        v2_receipt: "fd769d9713606b3ec9b37895292d90b30c61ed6e6efd3a4a2199882dad054095",
+        v3_receipt: "fe1325bfacc3234a38ea5ea667c7010e71361ee611135423137acb166db205fb",
+    },
+    SettledTotalReceipt {
+        scenario: "sending a saved exchange again changes nothing and answers the same",
+        step: 5,
+        total: "3,208.75",
+        rounding: None,
+        v2_receipt: "fd769d9713606b3ec9b37895292d90b30c61ed6e6efd3a4a2199882dad054095",
+        v3_receipt: "fe1325bfacc3234a38ea5ea667c7010e71361ee611135423137acb166db205fb",
+    },
+    SettledTotalReceipt {
+        scenario: "sending a saved exchange again changes nothing and answers the same",
+        step: 6,
+        total: "3,208.75",
+        rounding: None,
+        v2_receipt: "fd769d9713606b3ec9b37895292d90b30c61ed6e6efd3a4a2199882dad054095",
+        v3_receipt: "fe1325bfacc3234a38ea5ea667c7010e71361ee611135423137acb166db205fb",
+    },
+    SettledTotalReceipt {
+        scenario: "sending a saved exchange again changes nothing and answers the same",
+        step: 7,
+        total: "3,208.75",
+        rounding: None,
+        v2_receipt: "fd769d9713606b3ec9b37895292d90b30c61ed6e6efd3a4a2199882dad054095",
+        v3_receipt: "fe1325bfacc3234a38ea5ea667c7010e71361ee611135423137acb166db205fb",
+    },
+    SettledTotalReceipt {
+        scenario: "a fee lowers what a buy takes out",
+        step: 5,
+        total: "3,200.00",
+        rounding: None,
+        v2_receipt: "5a99b544d39f32192741fa0abc4cf9e4cfb141c8c53eac5d99195a5fa10f8954",
+        v3_receipt: "b1c08957fa46bdde285599952d9aaa6201d4e5578fefd30f9df693f57cb40fe1",
+    },
+    SettledTotalReceipt {
+        scenario: "a save writes the customer as the form has it",
+        step: 5,
+        total: "32.25",
+        rounding: Some("+0.15"),
+        v2_receipt: "55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
+        v3_receipt: "3e18a1ff2ff95f4bc3801c628d8f57deeb2d3318271e891d03f24fb77faa8b76",
+    },
+    SettledTotalReceipt {
+        scenario: "a reference rate is kept and changes nothing else",
+        step: 5,
+        total: "32.25",
+        rounding: Some("+0.15"),
+        v2_receipt: "55c29172e200b62127330bb73b089b15e8aa844883ff13240207f490a6bd0ca9",
+        v3_receipt: "3e18a1ff2ff95f4bc3801c628d8f57deeb2d3318271e891d03f24fb77faa8b76",
+    },
+    SettledTotalReceipt {
+        scenario: "an exchange belongs to the shift that was open",
+        step: 7,
+        total: "64.25",
+        rounding: Some("+0.05"),
+        v2_receipt: "34d6038d6cbeeae6bfab669124083e21b9fd680e2a24e29c192cd09df0144088",
+        v3_receipt: "23aafe905e84d5a35f98a4f501e0f6ebb7c5986670550c03e0b0cfadeff966d0",
+    },
+    SettledTotalReceipt {
+        scenario: "several currencies in one shift",
+        step: 9,
+        total: "2.50",
+        rounding: Some("+0.01"),
+        v2_receipt: "e84eab6e90fce2bd13ec72c933bf8d1dd1ecf1e0666437dfce4aea4e78614f5b",
+        v3_receipt: "899b6de651fc799340764a4fc8c9b3b71f9c8213d6c9154132856f5d337dbc90",
+    },
+    SettledTotalReceipt {
+        scenario: "several currencies in one shift",
+        step: 10,
+        total: "2.50",
+        rounding: Some("-0.05"),
+        v2_receipt: "8ba58c95515d5294e41c5fb65c263022e7d5f057be3de790496d2307006a1547",
+        v3_receipt: "46a817585562d89a8db755aba03155150385f0e245a8b606bd7edb8ff6b47703",
+    },
+];
+
+/// The decided receipt difference of this scenario step, if any.
+pub fn settled_total_receipt(scenario: &str, step: usize) -> Option<SettledTotalReceipt> {
+    RECEIPT_SETTLED_TOTAL
+        .iter()
+        .find(|r| r.scenario == scenario && r.step == step)
+        .copied()
+}
+
+/// Holds a decided receipt strictly: it replaces v2's recorded receipt, it is the receipt v3 stored, it is the
+/// pinned v3 receipt byte for byte, and it prints the entry's total and rounding row. Panics, naming the step.
+pub fn hold_settled_total_receipt(
+    entry: &SettledTotalReceipt,
+    v2_url: &str,
+    url: &str,
+    stored_receipt: &[u8],
+    label: &str,
+) {
+    assert_eq!(
+        v2_url,
+        format!("/files/receipt-{}", entry.v2_receipt),
+        "{label}: the entry does not replace v2's recorded receipt"
+    );
+    hold_receipt_hash(url, stored_receipt, label);
+    assert_eq!(
+        url,
+        format!("/files/receipt-{}", entry.v3_receipt),
+        "{label}: not the decided v3 receipt"
+    );
+    let html = std::str::from_utf8(stored_receipt).expect("the receipt is UTF-8");
+    assert!(
+        html.contains(&format!("<dt>THB Total</dt><dd>{} THB</dd>", entry.total)),
+        "{label}: THB Total is not {}",
+        entry.total
+    );
+    match entry.rounding {
+        Some(r) => assert!(
+            html.contains(&format!("Cash rounding</dt><dd>{r}</dd>")),
+            "{label}: no cash-rounding row {r}"
+        ),
+        None => assert!(
+            !html.contains("Cash rounding"),
+            "{label}: a cash-rounding row where none is due"
+        ),
+    }
+}
+
 /// Holds the receipt address of a save for an aliased customer: `/files/receipt-<SHA-256 of the stored receipt>`.
 pub fn hold_receipt_hash(url: &str, stored_receipt: &[u8], label: &str) {
     use sha2::{Digest, Sha256};
