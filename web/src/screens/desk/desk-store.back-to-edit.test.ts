@@ -262,7 +262,7 @@ describe('DeskStore backToEdit (#2659)', () => {
     await flush();
 
     expect(store.quote()).toBeUndefined();
-    expect(store.quoteError()).toEqual({ message: 'เรทไม่พร้อมใช้งาน' });
+    expect(store.quoteError()).toEqual({ message: 'อัตราแลกเปลี่ยนยังไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่ภายหลัง' });
   });
 
   it('B5 clears staffDraftId and resets step to 0', async () => {
