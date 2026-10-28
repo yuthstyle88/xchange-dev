@@ -14,7 +14,7 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
 use xc_approval::domain::subject::ApprovalSubject;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 
 pub use crate::domain::adjustment::LEDGER_ADJUSTMENT;
 
@@ -51,8 +51,15 @@ impl ApprovalSubject for LedgerAdjustmentSubject {
         tx: &'a mut Transaction<'_, Postgres>,
         object_id: &'a str,
     ) -> BoxFuture<'a, AppResult<String>> {
-        let _ = (tx, object_id);
-        todo!("LA-3")
+        Box::pin(async move {
+            let posted: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM ledger_postings WHERE source_type = 'ADJUSTMENT' AND source_id = $1)",
+            )
+            .bind(object_id)
+            .fetch_one(&mut **tx)
+            .await?;
+            Ok(format!("ledger-adjustment:{object_id}|posted:{posted}"))
+        })
     }
 
     /// Nothing: the post is its own command, under the adjustment's branch lock (AD-5).
@@ -74,8 +81,28 @@ pub struct LedgerAdjustmentPolicy;
 
 impl ApprovalPolicy for LedgerAdjustmentPolicy {
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal> {
-        let _ = (who, request);
-        todo!("LA-3")
+        let Some(branch) = request.proposed_payload["branch"]
+            .as_str()
+            .filter(|b| !b.is_empty())
+        else {
+            return Err(Refusal::new(
+                "outOfScope",
+                "ledger adjustment payload is missing branch",
+            ));
+        };
+        if ApprovalDecider::holds_on(who, Permission::ApproveLedgerAdjustment, Some(branch)) {
+            Ok(())
+        } else if !ApprovalDecider::holds_anywhere(who, Permission::ApproveLedgerAdjustment) {
+            Err(Refusal::new(
+                "outOfScope",
+                "only finance staff may decide ledger adjustment",
+            ))
+        } else {
+            Err(Refusal::new(
+                "outOfScope",
+                "finance staff can only decide requests for their own branch",
+            ))
+        }
     }
 
     fn allows_self_decision(&self, _who: &Actor) -> bool {
