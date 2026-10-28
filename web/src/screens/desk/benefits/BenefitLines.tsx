@@ -35,7 +35,7 @@ export function BenefitLines(props: {
               {value()}
               <Show when={props.basis === 'INDICATIVE'}>
                 {' '}
-                <span class={`desk-badge`} data-row="benefit-indicative">
+                <span class="desk-badge" data-row="benefit-indicative">
                   {t('indicative')}
                 </span>
               </Show>
