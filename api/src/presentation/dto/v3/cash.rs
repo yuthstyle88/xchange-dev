@@ -171,6 +171,8 @@ pub struct CashCountRow {
     pub branch_id: String,
     pub shift_id: Option<String>,
     pub kind: String,
+    /// Staff corrections §10: the closed set `WAITING` | `VERIFIED` | `REJECTED`.
+    #[ts(type = "\"WAITING\" | \"VERIFIED\" | \"REJECTED\"")]
     pub status: String,
     pub counted_by: String,
     pub counted_at: String,

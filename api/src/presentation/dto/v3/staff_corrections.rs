@@ -53,6 +53,7 @@ pub struct CountRejectInput {
 #[ts(export_to = "staff_corrections.ts")]
 pub struct CountRejected {
     pub id: String,
+    #[ts(type = "\"REJECTED\"")]
     pub status: String,
     pub rejected_by: String,
     pub rejected_at: String,

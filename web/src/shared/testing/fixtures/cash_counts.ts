@@ -11,7 +11,7 @@ export function makeCashCountRow(o: Partial<CashCountRow> = {}): CashCountRow {
     branchId: 'cash_count_row-1',
     shiftId: null,
     kind: 'kind',
-    status: 'status',
+    status: 'WAITING',
     countedBy: 'countedBy',
     countedAt: '2026-01-01T00:00:00Z',
     verifiedBy: null,
