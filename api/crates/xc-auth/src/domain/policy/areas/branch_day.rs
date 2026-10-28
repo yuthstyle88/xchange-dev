@@ -29,6 +29,17 @@ pub const ROWS: &[AreaRow] = &[
         action: "clock",
         need: Need::Permission(Permission::AttendanceClock),
     },
+    // Staff corrections §4 A: a manager closes another employee's forgotten clock-in, and lists them.
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "attendanceCloseFor",
+        need: Need::Permission(Permission::AttendanceCloseFor),
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "openAttendance",
+        need: Need::Permission(Permission::AttendanceCloseFor),
+    },
     AreaRow {
         path: EntryPath::Rpc,
         action: "holdCreate",

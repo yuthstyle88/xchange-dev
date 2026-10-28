@@ -33,7 +33,7 @@ use crate::application::denominations::face_values_in;
 use crate::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
 };
-use crate::domain::count::{CashCount, CountKind, CountLine};
+use crate::domain::count::{CashCount, CountKind, CountLine, CountRejection, RejectError};
 use crate::domain::error::CashError;
 use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::person_rules::PersonRules;
@@ -1009,6 +1009,7 @@ impl CashCountService {
             idempotency_key: cmd.idempotency_key,
             created_at: now,
             updated_at: now,
+            rejection: None,
         };
 
         self.repo
@@ -1024,6 +1025,66 @@ impl CashCountService {
         }
 
         Ok(cash_count)
+    }
+
+    /// Staff-corrections §4 B (SC-B1): a verifier rejects a waiting count with a reason. The row keeps the
+    /// rejection (`rejected_by`, `rejected_at` = `now`, `reject_reason`), leaves `WAITING` and shows as `REJECTED`.
+    /// Checked in order: B2 not found, B3 handover, B1 permission (`ShiftCloseCertify` on the count's branch),
+    /// B4 same counter, B5 not waiting, B6 reason. No posting, no shift change.
+    pub async fn reject_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        count_id: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> Result<CashCount, RejectError> {
+        let mut count = self
+            .repo
+            .find_count_by_id(&mut *tx, count_id)
+            .await?
+            .ok_or(RejectError::NotFound)?;
+
+        if count.kind == CountKind::HandoverOut {
+            return Err(RejectError::OnlyThroughHandover);
+        }
+
+        let target = Target::new(&count.organization_id, Some(count.branch_id.clone()), None);
+        Authorizer::check(Some(actor), Permission::ShiftCloseCertify, &target, now)
+            .map_err(RejectError::Refused)?;
+
+        PersonRules::verifier_is_not_counter(&count.counted_by, actor)
+            .map_err(|_| RejectError::SameCounter)?;
+
+        if count.verified_by.is_some() || count.rejection.is_some() {
+            return Err(RejectError::NotWaiting);
+        }
+
+        let trimmed = reason.trim();
+        if trimmed.is_empty() {
+            return Err(RejectError::ReasonRequired);
+        }
+        if trimmed.encode_utf16().count() > 500 {
+            return Err(RejectError::ReasonTooLong);
+        }
+
+        self.repo
+            .reject_count(&mut *tx, count_id, &actor.user_id, now, trimmed)
+            .await
+            .map_err(|e| match e {
+                AppError::Domain(m) if m == CashError::NotWaiting.to_string() => {
+                    RejectError::NotWaiting
+                }
+                other => RejectError::Other(other),
+            })?;
+
+        count.updated_at = now;
+        count.rejection = Some(CountRejection {
+            by: actor.user_id.clone(),
+            at: now,
+            reason: trimmed.to_string(),
+        });
+        Ok(count)
     }
 
     pub async fn verify_in(
@@ -1044,6 +1105,10 @@ impl CashCountService {
 
         if count.verified_at.is_some() {
             return Err(AppError::Conflict("การนับนี้ได้รับการรับรองแล้ว".into()));
+        }
+
+        if count.rejection.is_some() {
+            return Err(CashError::NotWaiting.into());
         }
 
         if count.kind == CountKind::HandoverOut {

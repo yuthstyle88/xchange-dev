@@ -340,10 +340,13 @@ async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_
                     Permission::ApproveCampaignVersion,
                     Permission::ApproveRatePublication,
                     Permission::ApproveLoyaltyRuleVersion,
+                    // Staff corrections SC-D2 (version 7): binding quote's seed sync gives every new no-module
+                    // permission of the base to its custom groups.
+                    Permission::AttendanceCloseFor,
                 ])
                 .collect::<Vec<_>>()
         ),
-        "the custom group gains only EXECUTIVE's four version-4 kinds"
+        "the custom group gains EXECUTIVE's four version-4 kinds and AttendanceCloseFor"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,

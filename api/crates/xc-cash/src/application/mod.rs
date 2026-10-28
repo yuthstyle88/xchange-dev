@@ -1,5 +1,6 @@
 //! Application layer for cash bounded context.
 
+pub mod adjustment;
 pub mod approval;
 pub mod count;
 pub mod denominations;

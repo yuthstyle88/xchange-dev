@@ -18,6 +18,13 @@ pub trait CustodyRepository: Send + Sync + 'static {
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<CustodyState>>;
 
+    /// Staff corrections SC-D4: the branch's timezone (`branches.timezone`), which decides "today" there.
+    fn branch_timezone_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<chrono_tz::Tz>>;
+
     /// Stores what a command made of the branch's state: `before` is the state
     /// as loaded in this transaction, `after` what it became. Only what is new
     /// or differs is written.

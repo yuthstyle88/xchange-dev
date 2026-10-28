@@ -26,6 +26,9 @@ pub enum CashError {
     AwaitingFinance(String),
     #[error("ฝ่ายการเงินปฏิเสธ: {0}")]
     RejectedByFinance(String),
+    /// Staff-corrections §4 B8: `countVerify` on a count a verifier already rejected.
+    #[error("การนับนี้ไม่ได้รอการรับรองแล้ว")]
+    NotWaiting,
 }
 
 impl CashError {
@@ -43,6 +46,7 @@ impl CashError {
             Self::Refused(_) => "refused",
             Self::AwaitingFinance(_) => "awaitingFinance",
             Self::RejectedByFinance(_) => "rejectedByFinance",
+            Self::NotWaiting => "notWaiting",
         }
     }
 }

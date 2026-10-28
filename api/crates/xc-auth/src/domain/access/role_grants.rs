@@ -107,8 +107,9 @@ impl RoleGrants {
         Role::VerificationReviewer,
     ];
 
-    /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN; 6, BindingQuoteIssue (binding quote)).
-    pub const SEED_VERSION: i32 = 6;
+    /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN;
+    /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2); 8, ApproveLedgerAdjustment (ledger adjustment)).
+    pub const SEED_VERSION: i32 = 8;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
@@ -124,6 +125,9 @@ impl RoleGrants {
         (4, Permission::ApproveTransactionReversal),
         (4, Permission::ApproveLoyaltyRuleVersion),
         (6, Permission::BindingQuoteIssue),
+        // Staff corrections SC-D2: close another employee's forgotten clock-in.
+        (7, Permission::AttendanceCloseFor),
+        (8, Permission::ApproveLedgerAdjustment),
     ];
 
     /// Existing permissions seeded on one more built-in role after version 1 (#5108).
@@ -218,6 +222,7 @@ impl RoleGrants {
                 P::CashManage,
                 P::ShiftCloseCertify,
                 P::AttendanceClock,
+                P::AttendanceCloseFor,
                 P::CompatRead,
                 P::RequestAbandon,
                 P::DocumentsList,
@@ -231,6 +236,7 @@ impl RoleGrants {
             Role::Admin => &[
                 P::ShiftCloseCertify,
                 P::AttendanceClock,
+                P::AttendanceCloseFor,
                 P::CompatRead,
                 P::DocumentsList,
                 P::SignedIn,
@@ -252,6 +258,7 @@ impl RoleGrants {
                 P::ShiftCloseCertify,
                 P::BranchDayOperate,
                 P::AttendanceClock,
+                P::AttendanceCloseFor,
                 P::CompatRead,
                 P::DocumentsList,
                 P::DeviceQueue,
@@ -278,6 +285,7 @@ impl RoleGrants {
                 // RBAC §11.9: the branch approval kinds finance decides today.
                 P::ApproveCountDifference,
                 P::ApproveTransactionReversal,
+                P::ApproveLedgerAdjustment,
                 P::CashManage,
                 P::AttendanceClock,
                 P::CompatRead,

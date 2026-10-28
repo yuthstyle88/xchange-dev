@@ -248,6 +248,7 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     // #4155 W/A1: only EXECUTIVE keeps DASHBOARD (OverviewRead, AlertSettingsSave).
     // RBAC §11.9 (AP-0): EXECUTIVE +4, BRANCH_MANAGER +3, FINANCE +2 approval kinds (48 -> 52, 31 -> 34, 20 -> 22).
     // #5095 (owner, 2026-10-25): EXECUTIVE and ADMIN gain ShiftCloseCertify (52 -> 53, 9 -> 10).
+    // Staff corrections SC-D2: EXECUTIVE, ADMIN and BRANCH_MANAGER gain AttendanceCloseFor (53 -> 54, 10 -> 11, 34 -> 35).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -256,12 +257,12 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 53),      // #5095: +ShiftCloseCertify
-            ("ADMIN", 10),          // #4155 W/A1: -OverviewRead; #5095: +ShiftCloseCertify
-            ("RATE_MANAGER", 29),   // #4155 W/A1: -OverviewRead, -AlertSettingsSave
-            ("BRANCH_MANAGER", 35), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; BQ-7: +BindingQuoteIssue
+            ("EXECUTIVE", 54),      // #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor
+            ("ADMIN", 11), // #4155 W/A1: -OverviewRead; #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor
+            ("RATE_MANAGER", 29), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("BRANCH_MANAGER", 36), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; BQ-7: +BindingQuoteIssue; SC-D2: +AttendanceCloseFor
             ("TELLER", 21),         // #4155 W/A1: -OverviewRead; BQ-7: +BindingQuoteIssue
-            ("FINANCE", 22),        // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("FINANCE", 23), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; LA-1: +ApproveLedgerAdjustment
             ("MARKETING", 5),
             ("VERIFICATION_REVIEWER", 15), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("CUSTOMER", 2),

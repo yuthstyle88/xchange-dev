@@ -29,6 +29,12 @@ pub const ROWS: &[AreaRow] = &[
         action: "countVerify",
         need: Need::Permission(Permission::ShiftCloseCertify),
     },
+    // staff-corrections §4 B: the same people as verify.
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "countReject",
+        need: Need::Permission(Permission::ShiftCloseCertify),
+    },
     AreaRow {
         path: EntryPath::Rpc,
         action: "handoverStart",

@@ -17,7 +17,7 @@ use xc_auth::domain::access::{
 use Permission as P;
 
 /// §11.9's table: each kind and the one built-in group it is seeded on.
-const SEEDED_ON: [(Permission, Role); 9] = [
+const SEEDED_ON: [(Permission, Role); 10] = [
     (P::ApproveCashTransferWithinLimit, Role::BranchManager),
     (P::ApproveCashTransferAboveLimit, Role::Executive),
     (P::ApproveCountDifference, Role::Finance),
@@ -27,21 +27,23 @@ const SEEDED_ON: [(Permission, Role); 9] = [
     (P::ApproveExchangeTransaction, Role::BranchManager),
     (P::ApproveTransactionReversal, Role::Finance),
     (P::ApproveLoyaltyRuleVersion, Role::Executive),
+    // ledger-inventory.md §13.3 (LA-1): the tenth kind.
+    (P::ApproveLedgerAdjustment, Role::Finance),
 ];
 
 #[test]
 fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
     let kinds: BTreeSet<Permission> = APPROVAL_KINDS.into_iter().collect();
-    assert_eq!(kinds.len(), 9, "APPROVAL_KINDS has no duplicates");
+    assert_eq!(kinds.len(), 10, "APPROVAL_KINDS has no duplicates");
     assert_eq!(
         kinds,
         SEEDED_ON.iter().map(|&(p, _)| p).collect::<BTreeSet<_>>(),
-        "APPROVAL_KINDS is §11.9's nine"
+        "APPROVAL_KINDS is §11.9's nine plus §13.3's ApproveLedgerAdjustment (LA-1)"
     );
     assert_eq!(
         Permission::ALL.len(),
-        62,
-        "Permission::ALL grows 52 -> 61, then 62 (BQ-7)"
+        64,
+        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), 63 (staff corrections AttendanceCloseFor), 64 (LA-1)"
     );
     for p in APPROVAL_KINDS {
         assert_eq!(
@@ -83,9 +85,16 @@ fn seed_approvals_decide_iff_some_kind() {
 /// §11.9 data migration: `SEED_VERSION` 3 -> 4, and each kind is in `SEED_ADDITIONS` at version 4, exactly once.
 #[test]
 fn seed_version_4_adds_the_nine() {
-    // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6.
-    assert_eq!(RoleGrants::SEED_VERSION, 6);
+    // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
+    // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8.
+    assert_eq!(RoleGrants::SEED_VERSION, 8);
     for p in APPROVAL_KINDS {
+        // LA-1 (ledger-inventory.md §13.3): the tenth kind enters at version 8, not with §11.9's nine.
+        let want = if p == P::ApproveLedgerAdjustment {
+            8
+        } else {
+            4
+        };
         let at: Vec<i32> = RoleGrants::SEED_ADDITIONS
             .iter()
             .filter(|&&(_, q)| q == p)
@@ -93,8 +102,8 @@ fn seed_version_4_adds_the_nine() {
             .collect();
         assert_eq!(
             at,
-            vec![4],
-            "{p:?} enters SEED_ADDITIONS once, at version 4"
+            vec![want],
+            "{p:?} enters SEED_ADDITIONS once, at version {want}"
         );
     }
     assert!(

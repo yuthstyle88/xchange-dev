@@ -27,6 +27,12 @@ export const th: Record<string, string> = {
   CLOSE: 'ปิดกะ',
   HANDOVER_OUT: 'ส่งมอบเงินออก',
   HANDOVER_IN: 'รับมอบเงินเข้า',
+  reason: 'เหตุผล',
+  notWaiting: 'การนับนี้ไม่ได้รอการรับรองแล้ว',
+  sameCounter: 'ผู้ตรวจนับและผู้รับรองต้องไม่เป็นบุคคลเดียวกัน',
+  onlyThroughHandover: 'การนับส่งมอบต้องจัดการผ่านการส่งมอบเท่านั้น',
+  reasonRequired: 'กรุณาระบุเหตุผล',
+  reasonTooLong: 'เหตุผลยาวเกิน 500 ตัวอักษร',
 };
 
 export const en: Record<string, string> = {
@@ -57,4 +63,10 @@ export const en: Record<string, string> = {
   CLOSE: 'Close',
   HANDOVER_OUT: 'Hand Over Out',
   HANDOVER_IN: 'Hand Over In',
+  reason: 'เหตุผล',
+  notWaiting: 'การนับนี้ไม่ได้รอการรับรองแล้ว',
+  sameCounter: 'ผู้ตรวจนับและผู้รับรองต้องไม่เป็นบุคคลเดียวกัน',
+  onlyThroughHandover: 'การนับส่งมอบต้องจัดการผ่านการส่งมอบเท่านั้น',
+  reasonRequired: 'กรุณาระบุเหตุผล',
+  reasonTooLong: 'เหตุผลยาวเกิน 500 ตัวอักษร',
 };
