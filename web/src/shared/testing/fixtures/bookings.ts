@@ -64,7 +64,7 @@ export function makeBookingCreateInput(o: Partial<BookingCreateInput> = {}): Boo
     shopSide: 'shopSide',
     currency: 'USD',
     quantity: '0.00',
-    quoteId: 'booking_create_input-1',
+    quoteId: null,
     referralCode: null,
     customerId: null,
     displayName: null,
