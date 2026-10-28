@@ -43,7 +43,7 @@ async function releaseHoldOnStaff(manager: Page, holdId: string, note: string): 
     await manager.reload();
   }
   await expect(row, `hold row [data-hold-id="${holdId}"]`).toBeVisible({ timeout: 20_000 });
-  await expect(row, `hold ${holdId} is OPEN before release`).toContainText('OPEN', { timeout: 15_000 });
+  await expect(row, `hold ${holdId} is OPEN before release`).toHaveAttribute('data-status', 'OPEN', { timeout: 15_000 });
 
   await row.getByTestId('holds-release').click();
   const dialog = card.locator('dialog.xc-dialog');
@@ -59,7 +59,7 @@ async function releaseHoldOnStaff(manager: Page, holdId: string, note: string): 
   expect(relRes.ok, `POST /api/customer-holds/${holdId}/release: ${relRes.text}`).toBeTruthy();
 
   await expect(dialog, 'release dialog closed after confirm').toBeHidden({ timeout: 15_000 });
-  await expect(row, `hold row [data-hold-id="${holdId}"] shows RELEASED`).toContainText('RELEASED', {
+  await expect(row, `hold row [data-hold-id="${holdId}"] shows RELEASED`).toHaveAttribute('data-status', 'RELEASED', {
     timeout: 20_000,
   });
 }
@@ -166,7 +166,7 @@ test.describe.serial('F16 customer hold', () => {
       }
       expect(placedHoldId, 'placed hold id').not.toBe('');
       await expect(tellerHoldRow).toContainText(runMarker);
-      await expect(tellerHoldRow, '[data-hold-id] row shows OPEN').toContainText('OPEN');
+      await expect(tellerHoldRow, '[data-hold-id] row shows OPEN').toHaveAttribute('data-status', 'OPEN');
       await shot(teller, 'staff', 'f16-1-hold-placed');
 
       // Step 3 (manager): holds-release on that row, a reason in dialog.xc-dialog, confirm -> ok; the row shows RELEASED.

@@ -54,14 +54,14 @@ async function createAndSubmitTransfer(
 async function dispatchAndReceiveTransfer(finance: Page, id: string, qty: string): Promise<void> {
   const row = transferRow(finance, id);
   await finance.reload();
-  await expect(row, `transfer ${id} is APPROVED`).toContainText('APPROVED', { timeout: 20_000 });
+  await expect(row, `transfer ${id} is APPROVED`).toHaveAttribute('data-status', 'APPROVED', { timeout: 20_000 });
   const dispatched = await posted(finance, /\/api\/cash-transfers\/[^/]+\/dispatch$/, () =>
     row.getByTestId('transfer-dispatch').click(),
   );
   console.log(`[f12:${id}] dispatch ${dispatched.text}`);
   expect(dispatched.ok, `transfer ${id} dispatched: ${dispatched.text}`).toBeTruthy();
   await finance.reload();
-  await expect(row, `transfer ${id} is DISPATCHED`).toContainText('DISPATCHED', { timeout: 20_000 });
+  await expect(row, `transfer ${id} is DISPATCHED`).toHaveAttribute('data-status', 'DISPATCHED', { timeout: 20_000 });
 
   await row.getByTestId('transfer-receive').click();
   const recv = finance.getByTestId('transfer-receive-form');
@@ -78,7 +78,7 @@ async function dispatchAndReceiveTransfer(finance: Page, id: string, qty: string
   console.log(`[f12:${id}] receive ${received.text}`);
   expect(received.ok, `transfer ${id} received: ${received.text}`).toBeTruthy();
   await finance.reload();
-  await expect(row, `transfer ${id} is RECEIVED`).toContainText('RECEIVED', { timeout: 20_000 });
+  await expect(row, `transfer ${id} is RECEIVED`).toHaveAttribute('data-status', 'RECEIVED', { timeout: 20_000 });
 }
 
 async function findPendingTransferRequestId(admin: Page, transferId: string): Promise<string> {

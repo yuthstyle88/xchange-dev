@@ -264,7 +264,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
       <div class="xc-holds-list">
         <For each={holds()}>
           {(hold) => (
-            <div data-hold-id={hold.id} class="xc-holds-row">
+            <div data-hold-id={hold.id} data-status={hold.status} class="xc-holds-row">
               <span class="xc-holds-name">{hold.customerName ?? hold.customerId}</span>
               <span class="xc-holds-reason">{hold.reason}</span>
               <span class="xc-holds-status">{statusLabel(hold.status)}</span>
