@@ -259,8 +259,8 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
             ("EXECUTIVE", 53),      // #5095: +ShiftCloseCertify
             ("ADMIN", 10),          // #4155 W/A1: -OverviewRead; #5095: +ShiftCloseCertify
             ("RATE_MANAGER", 29),   // #4155 W/A1: -OverviewRead, -AlertSettingsSave
-            ("BRANCH_MANAGER", 34), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
-            ("TELLER", 20),         // #4155 W/A1: -OverviewRead
+            ("BRANCH_MANAGER", 35), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; BQ-7: +BindingQuoteIssue
+            ("TELLER", 21),         // #4155 W/A1: -OverviewRead; BQ-7: +BindingQuoteIssue
             ("FINANCE", 22),        // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("MARKETING", 5),
             ("VERIFICATION_REVIEWER", 15), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
