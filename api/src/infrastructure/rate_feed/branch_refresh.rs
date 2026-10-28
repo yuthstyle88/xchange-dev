@@ -72,6 +72,54 @@ impl DraftBranchRefresh {
             return Ok(RefreshOutcome::UpToDate);
         }
 
+        // pricing-tiers.md §15.1: a branch whose priced currencies (MANUAL or FOLLOW) would be
+        // its only changes writes no draft.
+        let has_auto_change: bool = sqlx::query_scalar(
+            "SELECT EXISTS ( \
+                 SELECT 1 \
+                 FROM rate_draft_lines l \
+                 WHERE l.draft_id = $1 \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM rate_draft_line_tiers t WHERE t.draft_line_id = l.id \
+                   ) \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pricing_tier_sets s \
+                       WHERE s.branch_id IN ($2, 'MAIN') AND s.currency_code = l.currency_code \
+                   ) \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pricing_modes m \
+                       WHERE m.currency_code = l.currency_code AND m.mode = 'FOLLOW' \
+                   ) \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM pricing_branch_policy bp \
+                       WHERE bp.branch_id = $2 AND bp.currency_code = l.currency_code AND bp.own \
+                   ) \
+                   AND EXISTS ( \
+                       SELECT 1 \
+                       FROM rate_reference_lines r \
+                       WHERE r.id = ( \
+                           SELECT r2.id \
+                           FROM rate_reference_lines r2 \
+                           JOIN rate_reference_batches b2 ON b2.id = r2.batch_id \
+                           WHERE r2.currency_code = l.currency_code \
+                             AND r2.reference_type = 'BOT' \
+                           ORDER BY b2.fetched_at DESC, r2.id DESC \
+                           LIMIT 1 \
+                       ) \
+                       AND r.id IS DISTINCT FROM l.reference_line_id \
+                   ) \
+             )",
+        )
+        .bind(published_draft_id.as_uuid())
+        .bind(branch.as_str())
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        if !has_auto_change {
+            return Ok(RefreshOutcome::UpToDate);
+        }
+
         // 3. Copy.
         let system_actor = Actor::new(
             "SYSTEM:rate-feed:BOT",

@@ -5,6 +5,8 @@ use std::str::FromStr;
 use uuid::Uuid;
 use xc_kernel::money::{CurrencyCode, Rate};
 
+use crate::domain::pricing::tier_set::TierRate;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct DraftId(Uuid);
 
@@ -80,6 +82,9 @@ pub struct DraftLine {
     pub buy: LineSide,
     pub sell: LineSide,
     pub reason: Option<String>,
+    /// Four approved tier prices (pricing-tiers.md §15.3): stored as `rate_draft_line_tiers`, in bound when
+    /// `TierCheck` passed, published as 4 tier lines. `None` for every line that is not a MANUAL/FOLLOW tier set.
+    pub tiers: Option<[TierRate; 4]>,
 }
 
 impl DraftLine {
@@ -94,6 +99,7 @@ impl DraftLine {
             buy,
             sell,
             reason,
+            tiers: None,
         }
     }
 }

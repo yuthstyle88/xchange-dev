@@ -19,6 +19,7 @@ export const BOARD_TEXT = {
   currencyHeading: { th: 'สกุลเงิน', en: 'Currency' },
   bandSub: { th: 'รับซื้อ · ขาย', en: 'Buy · Sell' },
   allAmounts: { th: 'ทุกยอด', en: 'All amounts' },
+  contactCounter: { th: 'ติดต่อเคาน์เตอร์', en: 'Contact the counter' },
   loading: 'กำลังโหลดเรทจากสาขา…',
   askCounter: 'กรุณาสอบถามเรทที่เคาน์เตอร์ · Please ask at the counter',
   noCurrencies: 'สาขานี้ยังไม่มีสกุลเงินที่เปิดให้บริการ',

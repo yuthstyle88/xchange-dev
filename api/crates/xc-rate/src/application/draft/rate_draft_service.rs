@@ -22,6 +22,7 @@ use crate::domain::draft::tier_proposal::{TierLine, TierProposal};
 use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
+use crate::domain::pricing::tier_set::TierRate;
 use crate::domain::reference::reference_batch::ReferenceLine;
 use crate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
@@ -68,6 +69,57 @@ fn refuse_duplicate_currency(lines: &[DraftLine]) -> Result<(), RateEngineError>
         }
     }
     Ok(())
+}
+
+async fn insert_line_tiers(
+    tx: &mut Transaction<'_, Postgres>,
+    line_id: Uuid,
+    tiers: &[TierRate; 4],
+) -> Result<(), RateEngineError> {
+    for (idx, tier) in tiers.iter().enumerate() {
+        sqlx::query(
+            "INSERT INTO rate_draft_line_tiers (draft_line_id, tier_no, buy, sell) \
+             VALUES ($1, $2, $3, $4)",
+        )
+        .bind(line_id)
+        .bind((idx + 1) as i16)
+        .bind(tier.buy.value())
+        .bind(tier.sell.value())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+    }
+    Ok(())
+}
+
+fn decode_tier_rows(
+    rows: Vec<(Uuid, i16, Decimal, Decimal)>,
+) -> Result<std::collections::HashMap<Uuid, [TierRate; 4]>, RateEngineError> {
+    let mut grouped: std::collections::HashMap<Uuid, Vec<(i16, TierRate)>> =
+        std::collections::HashMap::new();
+    for (line_id, tier_no, buy_dec, sell_dec) in rows {
+        let buy = Rate::parse(&buy_dec.to_string())
+            .map_err(|e| RateEngineError::Internal(format!("invalid tier buy: {e}")))?;
+        let sell = Rate::parse(&sell_dec.to_string())
+            .map_err(|e| RateEngineError::Internal(format!("invalid tier sell: {e}")))?;
+        grouped
+            .entry(line_id)
+            .or_default()
+            .push((tier_no, TierRate { buy, sell }));
+    }
+    let mut map = std::collections::HashMap::with_capacity(grouped.len());
+    for (line_id, mut list) in grouped {
+        list.sort_by_key(|(no, _)| *no);
+        if list.len() == 4
+            && list
+                .iter()
+                .enumerate()
+                .all(|(i, (no, _))| *no as usize == i + 1)
+        {
+            map.insert(line_id, [list[0].1, list[1].1, list[2].1, list[3].1]);
+        }
+    }
+    Ok(map)
 }
 
 impl RateDraftService {
@@ -140,12 +192,14 @@ impl RateDraftService {
                 LineSide::Manual(rate) => ("MANUAL", Some(rate.value())),
             };
 
+            let line_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO rate_draft_lines \
                  (id, draft_id, branch_id, currency_code, denomination_group, reference_line_id, \
                   policy_version_id, buy_mode, sell_mode, manual_buy, manual_sell, reason) \
-                 VALUES (gen_random_uuid(), $1, $2, $3, 'ALL', $4, $5, $6, $7, $8, $9, $10)",
+                 VALUES ($1, $2, $3, $4, 'ALL', $5, $6, $7, $8, $9, $10, $11)",
             )
+            .bind(line_id)
             .bind(draft_id.as_uuid())
             .bind(branch_str)
             .bind(line.currency.as_str())
@@ -159,6 +213,10 @@ impl RateDraftService {
             .execute(&mut **tx)
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            if let Some(tiers) = &line.tiers {
+                insert_line_tiers(tx, line_id, tiers).await?;
+            }
         }
 
         Ok(RateDraft {
@@ -258,12 +316,14 @@ impl RateDraftService {
                 LineSide::Manual(rate) => ("MANUAL", Some(rate.value())),
             };
 
+            let line_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO rate_draft_lines \
                  (id, draft_id, branch_id, currency_code, denomination_group, reference_line_id, \
                   policy_version_id, buy_mode, sell_mode, manual_buy, manual_sell, reason) \
-                 VALUES (gen_random_uuid(), $1, $2, $3, 'ALL', $4, $5, $6, $7, $8, $9, $10)",
+                 VALUES ($1, $2, $3, $4, 'ALL', $5, $6, $7, $8, $9, $10, $11)",
             )
+            .bind(line_id)
             .bind(id.as_uuid())
             .bind(branch_str)
             .bind(line.currency.as_str())
@@ -277,6 +337,10 @@ impl RateDraftService {
             .execute(&mut **tx)
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+            if let Some(tiers) = &line.tiers {
+                insert_line_tiers(tx, line_id, tiers).await?;
+            }
         }
 
         Ok(RateDraft {
@@ -307,7 +371,7 @@ impl RateDraftService {
 
         // Load lines
         let db_lines = sqlx::query(
-            "SELECT currency_code, buy_mode, sell_mode, manual_buy, manual_sell, reason, \
+            "SELECT id, currency_code, buy_mode, sell_mode, manual_buy, manual_sell, reason, \
                     reference_line_id, policy_version_id \
              FROM rate_draft_lines WHERE draft_id = $1 ORDER BY id",
         )
@@ -316,12 +380,26 @@ impl RateDraftService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+        let raw_tiers: Vec<(Uuid, i16, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT t.draft_line_id, t.tier_no, t.buy, t.sell \
+             FROM rate_draft_line_tiers t \
+             JOIN rate_draft_lines l ON l.id = t.draft_line_id \
+             WHERE l.draft_id = $1 \
+             ORDER BY t.draft_line_id, t.tier_no",
+        )
+        .bind(id.as_uuid())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let mut tiers_by_line = decode_tier_rows(raw_tiers)?;
+
         let mut lines = Vec::new();
         let mut line_policy_ids = Vec::new();
         let mut ref_ids: Vec<Uuid> = Vec::new();
         let mut policy_version_id: Option<Uuid> = None;
 
         for r in &db_lines {
+            let line_id: Uuid = r.get("id");
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
                 .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
@@ -366,7 +444,9 @@ impl RateDraftService {
                 }
             };
 
-            lines.push(DraftLine::new(c, buy, sell, reason));
+            let mut line = DraftLine::new(c, buy, sell, reason);
+            line.tiers = tiers_by_line.remove(&line_id);
+            lines.push(line);
         }
 
         // Load policy
@@ -470,6 +550,12 @@ impl RateDraftService {
             let ref_line = references.iter().find(|r| r.currency == line.currency);
             let prop = RateProposal::of(line, ref_line, policy.as_ref(), &units)?;
             proposals.push(prop.clone());
+
+            if line.tiers.is_some() {
+                tier_lines_vec.push(None);
+                tiers.push(None);
+                continue;
+            }
 
             let line_pol_id = line_policy_ids.get(i).copied().flatten();
             let pt_opt = if let Some(pid) = line_pol_id {
@@ -686,7 +772,7 @@ impl RateDraftService {
         }
 
         let db_lines = sqlx::query(
-            "SELECT l.currency_code, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason \
+            "SELECT l.id, l.currency_code, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason \
              FROM rate_draft_lines l \
              JOIN rate_drafts d ON d.id = l.draft_id \
              WHERE l.draft_id = $1 AND d.branch_id = $2 ORDER BY l.id",
@@ -697,8 +783,22 @@ impl RateDraftService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+        let raw_tiers: Vec<(Uuid, i16, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT t.draft_line_id, t.tier_no, t.buy, t.sell \
+             FROM rate_draft_line_tiers t \
+             JOIN rate_draft_lines l ON l.id = t.draft_line_id \
+             WHERE l.draft_id = $1 \
+             ORDER BY t.draft_line_id, t.tier_no",
+        )
+        .bind(from.as_uuid())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let mut tiers_by_line = decode_tier_rows(raw_tiers)?;
+
         let mut lines = Vec::new();
         for r in &db_lines {
+            let line_id: Uuid = r.get("id");
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
                 .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
@@ -731,7 +831,9 @@ impl RateDraftService {
                 }
             };
 
-            lines.push(DraftLine::new(c, buy, sell, reason));
+            let mut line = DraftLine::new(c, buy, sell, reason);
+            line.tiers = tiers_by_line.remove(&line_id);
+            lines.push(line);
         }
 
         self.create(tx, branch, who, lines).await
@@ -760,7 +862,7 @@ impl RateDraftService {
             .ok_or_else(|| RateEngineError::Internal(format!("invalid status: {status_str}")))?;
 
         let db_lines = sqlx::query(
-            "SELECT currency_code, buy_mode, sell_mode, manual_buy, manual_sell, reason \
+            "SELECT id, currency_code, buy_mode, sell_mode, manual_buy, manual_sell, reason \
              FROM rate_draft_lines WHERE draft_id = $1 ORDER BY id",
         )
         .bind(id.as_uuid())
@@ -768,8 +870,22 @@ impl RateDraftService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+        let raw_tiers: Vec<(Uuid, i16, Decimal, Decimal)> = sqlx::query_as(
+            "SELECT t.draft_line_id, t.tier_no, t.buy, t.sell \
+             FROM rate_draft_line_tiers t \
+             JOIN rate_draft_lines l ON l.id = t.draft_line_id \
+             WHERE l.draft_id = $1 \
+             ORDER BY t.draft_line_id, t.tier_no",
+        )
+        .bind(id.as_uuid())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let mut tiers_by_line = decode_tier_rows(raw_tiers)?;
+
         let mut lines = Vec::new();
         for r in &db_lines {
+            let line_id: Uuid = r.get("id");
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
                 .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
@@ -794,7 +910,9 @@ impl RateDraftService {
                     )?),
                 };
 
-            lines.push(DraftLine::new(c, buy, sell, reason));
+            let mut line = DraftLine::new(c, buy, sell, reason);
+            line.tiers = tiers_by_line.remove(&line_id);
+            lines.push(line);
         }
 
         Ok(Some(RateDraft {

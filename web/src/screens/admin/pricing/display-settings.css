@@ -1,0 +1,7 @@
+/* display-settings.css — styles for DisplaySettings.tsx (PV-j, #5201). */
+
+.display-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

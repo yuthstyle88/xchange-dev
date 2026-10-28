@@ -2,6 +2,14 @@
 
 export type QuoteDto = { id: string, type: string, channel: string, expiresAt: string, publication: QuotePublicationDto, lines: Array<QuoteLineDto>, benefits: Array<any>, stale: boolean, cashSettlement: boolean, };
 
-export type QuoteLineDto = { currency: string, shopSide: string, quantity: string, unitSize: string, baseRate: string, finalRate: string, thbAmount: string, feeThb: string, roundingThb: string, settleThb: string, publishedRateLineId: string, };
+export type QuoteLineDto = { currency: string, shopSide: string, quantity: string, unitSize: string, baseRate: string, finalRate: string, thbAmount: string, feeThb: string, roundingThb: string, settleThb: string, publishedRateLineId: string, 
+/**
+ * Whether the board hides this line (`pricing-tiers.md` §15.7); the desk still quotes it and warns the teller.
+ */
+pricingHidden: boolean, 
+/**
+ * `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+ */
+pricingHiddenReason: string | null, };
 
 export type QuotePublicationDto = { id: string, version: number, };

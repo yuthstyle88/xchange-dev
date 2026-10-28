@@ -35,6 +35,7 @@ export const th = {
   bankReference: 'ข้อมูลอ้างอิงกสิกรไทย',
   kbLoading: 'KB · กำลังโหลดข้อมูลอ้างอิง…',
   resultSecondsRange: 'ระยะเวลาแสดงผลต้องเป็นจำนวนเต็มระหว่าง 3–120 วินาที',
+  contactStaff: 'ติดต่อพนักงาน — ลูกค้าขอราคาสกุลนี้ที่ตู้ไม่ได้',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -74,4 +75,5 @@ export const en: Record<keyof typeof th, string> = {
   bankReference: 'KBank reference',
   kbLoading: 'KB · Loading reference…',
   resultSecondsRange: 'Display duration must be a whole number between 3–120 seconds.',
+  contactStaff: "Contact staff: customers can't get a quote for this currency at the kiosk",
 };

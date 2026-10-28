@@ -51,6 +51,9 @@ impl DraftEvaluation {
         let mut out_of_bound = Vec::new();
 
         for (i, line) in lines.iter().enumerate() {
+            if line.tiers.is_some() {
+                continue;
+            }
             let proposal = match proposals.get(i) {
                 Some(p) => p,
                 None => continue,

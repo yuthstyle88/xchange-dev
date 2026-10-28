@@ -18,6 +18,21 @@
 //!
 //! Prices are §12.3's worked example (USD BoT 32.4500 / 32.9000, adjust −0.5 / +0.4, see `pricing_common`).
 //! Runs once PT-1, PT-2, PT-3 and PT-4 are on `feat/pricing-tiers`.
+//!
+//! RESTATED 2026-10-27 by the XC-V9-PRICING sub-controller (claude/451f0116), pricing-tiers.md §15.0 V-1/V-2: the
+//! owner ruled *"แก้ให้ ตรงกับ เอกสารที่เค้าส่งมาล่า สุด"* and *"Follow the new pricing document for B2-B6"* — the
+//! approved tiers are the counter price (no margins, no policy version), with no EXECUTIVE step (B3) and 5 decimals
+//! (B2). The six margin-model tests that pinned the replaced behaviour are removed; their successors are in
+//! `v9_pricing_approve_test.rs` / `v9_pricing_push_test.rs`:
+//! - `approve_in_bound_writes_a_version_with_the_margins_and_publishes_the_prices`, `a_rate_manager_may_approve_in_bound`
+//!   → `v9_approve_manual_publishes_the_approved_tiers_as_the_counter_price_with_no_executive_wait`;
+//! - `bulk_approve_writes_one_version_and_one_draft_for_every_currency` → each currency is its own tier set
+//!   (`request_id = <key>:<currency>`), covered by the same test and the push tests;
+//! - `approve_out_of_bound_waits_for_executive` → reversed by B3 (same v9 test);
+//! - `a_stale_policy_version_is_refused_and_nothing_is_written` →
+//!   `v9_approve_a_tier_set_id_older_than_the_latest_is_a_conflict_and_writes_nothing` (the policy-version guard
+//!   itself still answers `staleVersion`);
+//! - `the_same_request_twice_writes_once` → `v9_push_the_same_request_twice_writes_main_and_each_branch_once`.
 
 mod pricing_common;
 
@@ -71,260 +86,6 @@ async fn nothing_written(room: &Room, what: &str) {
         "{what}: no override row"
     );
     assert_eq!(room.count("rate_drafts").await, 0, "{what}: no draft");
-}
-
-#[tokio::test]
-async fn approve_in_bound_writes_a_version_with_the_margins_and_publishes_the_prices() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-
-    let a = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES)]),
-        None,
-    )
-    .await;
-    let out = a.ok("approve");
-    let v2 = room.current_version(B01).await;
-    assert_eq!(out["policyVersionId"], json!(v2.to_string()), "{}", a.text);
-    assert_eq!(out["version"], json!(2));
-    assert_eq!(
-        out["draftState"],
-        json!("PUBLISHED"),
-        "§11: approve, in bound ⇒ published"
-    );
-
-    let margins: Vec<_> = room
-        .override_rows(v2)
-        .await
-        .into_iter()
-        .map(|(_, _, b, s)| (b, s))
-        .collect();
-    assert_eq!(
-        margins,
-        USD_MARGINS
-            .iter()
-            .map(|(b, s)| (dec(b), dec(s)))
-            .collect::<Vec<_>>()
-    );
-
-    let status: String = sqlx::query_scalar("SELECT status FROM rate_drafts WHERE id::text = $1")
-        .bind(out["draftId"].as_str().expect("draftId"))
-        .fetch_one(&room.pool)
-        .await
-        .expect("the draft");
-    assert_eq!(status, "PUBLISHED");
-    assert_eq!(
-        room.current_rates(B01, "USD").await,
-        vec![
-            (
-                "T1".to_string(),
-                "32.41755000".to_string(),
-                "32.90000000".to_string()
-            ),
-            (
-                "T2".to_string(),
-                "32.43377500".to_string(),
-                "32.88355000".to_string()
-            ),
-            (
-                "T3".to_string(),
-                "32.45000000".to_string(),
-                "32.86710000".to_string()
-            ),
-            (
-                "T4".to_string(),
-                "32.48245000".to_string(),
-                "32.83420000".to_string()
-            ),
-        ],
-        "the published prices are the approved ones"
-    );
-    room.finish().await;
-}
-
-#[tokio::test]
-async fn bulk_approve_writes_one_version_and_one_draft_for_every_currency() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-    let a = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES), row("EUR", EUR_PRICES)]),
-        None,
-    )
-    .await;
-    a.ok("bulk approve");
-    assert_eq!(room.versions(B01).await.len(), 2, "one new version");
-    assert_eq!(room.count("rate_drafts").await, 1, "one draft");
-    let lines: i64 = sqlx::query_scalar("SELECT count(*) FROM rate_draft_lines")
-        .fetch_one(&room.pool)
-        .await
-        .expect("draft lines");
-    assert_eq!(lines, 2, "one AUTO line per currency");
-    let v2 = room.current_version(B01).await;
-    let eur: Vec<_> = room
-        .override_rows(v2)
-        .await
-        .into_iter()
-        .filter(|r| r.0 == "EUR")
-        .map(|r| (r.2, r.3))
-        .collect();
-    assert_eq!(
-        eur,
-        vec![
-            (dec("0"), dec("0")),
-            (dec("0.1"), dec("-0.1")),
-            (dec("0.2"), dec("-0.2")),
-            (dec("0.3"), dec("-0.3"))
-        ]
-    );
-    assert_eq!(
-        room.current_rates(B01, "EUR").await[0],
-        (
-            "T1".to_string(),
-            "37.81000000".to_string(),
-            "38.75440000".to_string()
-        )
-    );
-    room.finish().await;
-}
-
-#[tokio::test]
-async fn approve_out_of_bound_waits_for_executive() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-    // Restated on feat/4324-pricing-suggestion by the XC-PRICING controller (claude/mbp-xc-pricing, PX-0): the
-    // out-of-bound tier is now T1's buy, because a T4 sell above T3's breaks equal-or-better, which `TierCheck`
-    // refuses before the guard (PX-7; V.9 `engine.mjs:75-76`; pricing-tiers.md §5.2). It was T4 sell 34.6766.
-    // T1 buy 30.66525 = 32.45 × 0.945 ⇒ margin −5.0, adjust + margin = −5.5 < USD's −5 (buy stays below sell, and
-    // T1's buy is the lowest, so every higher tier is equal-or-better).
-    // A RATE_MANAGER approves: an EXECUTIVE proposer self-approves an out-of-bound draft (rates.md §4.5).
-    let mut prices = USD_PRICES;
-    prices[0] = ("30.66525", "32.90");
-    let a = command(
-        &room,
-        &rate_manager(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", prices)]),
-        None,
-    )
-    .await;
-    let out = a.ok("approve out of bound");
-    assert_eq!(
-        out["draftState"],
-        json!("PENDING_APPROVAL"),
-        "§11: approve, out of bound ⇒ waits in A06"
-    );
-    assert_eq!(room.versions(B01).await.len(), 2, "the version is written");
-    assert!(
-        room.current_rates(B01, "USD").await.is_empty(),
-        "nothing published"
-    );
-    room.finish().await;
-}
-
-#[tokio::test]
-async fn a_rate_manager_may_approve_in_bound() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-    let out = command(
-        &room,
-        &rate_manager(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES)]),
-        None,
-    )
-    .await
-    .ok("RATE_MANAGER approves");
-    assert_eq!(out["draftState"], json!("PUBLISHED"));
-    room.finish().await;
-}
-
-#[tokio::test]
-async fn a_stale_policy_version_is_refused_and_nothing_is_written() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-    let a = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(uuid::Uuid::new_v4(), vec![row("USD", USD_PRICES)]),
-        None,
-    )
-    .await;
-    a.refused(
-        409,
-        "staleVersion",
-        "§11: approve with a stale policy_version_id",
-    );
-    nothing_written(&room, "stale").await;
-
-    command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("EUR", EUR_PRICES)]),
-        None,
-    )
-    .await
-    .ok("first approve");
-    let a = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES)]),
-        None,
-    )
-    .await;
-    a.refused(409, "staleVersion", "built on v1 after v2");
-    assert_eq!(room.versions(B01).await.len(), 2);
-    assert_eq!(room.count("rate_drafts").await, 1);
-    room.finish().await;
-}
-
-#[tokio::test]
-async fn the_same_request_twice_writes_once() {
-    let room = Room::start().await;
-    let v1 = room.worked_example().await;
-    let key = unique("approve");
-    let first = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES)]),
-        Some(&key),
-    )
-    .await
-    .ok("first");
-    let second = command(
-        &room,
-        &owner(),
-        ROUTE,
-        B01,
-        body(v1, vec![row("USD", USD_PRICES)]),
-        Some(&key),
-    )
-    .await
-    .ok("second");
-    assert_eq!(
-        first, second,
-        "§11: approve twice with one requestId ⇒ the same answer"
-    );
-    assert_eq!(room.versions(B01).await.len(), 2, "one version");
-    assert_eq!(room.count("rate_drafts").await, 1, "one draft");
-    room.finish().await;
 }
 
 #[tokio::test]

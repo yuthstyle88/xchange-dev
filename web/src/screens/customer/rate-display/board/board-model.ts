@@ -3,6 +3,7 @@
 import type {
   PublishedBandDto,
   PublishedBandHeadingDto,
+  PublishedDisplayDto,
   PublishedLineDto,
   PublishedRatesData,
 } from '../../../../shared/api/generated/published_rates';
@@ -14,12 +15,13 @@ export type BandHeadingIn = PublishedBandHeadingDto;
 export type BandIn = PublishedBandDto;
 
 /**
- * The route's answer. `bandHeadings` and `line.bands` stay optional here on purpose: a server older than RB-BE
- * (e.g. during a deploy) sends neither, and the board then reads as tiers off (§9.4) instead of failing.
+ * The route's answer. `bandHeadings`, `line.bands` and `display` stay optional here on purpose: a server older than
+ * RB-BE / PV-i (e.g. during a deploy) omits them, and the board then reads as tiers off (§9.4) instead of failing.
  */
-export type BoardRatesData = Omit<PublishedRatesData, 'bandHeadings' | 'lines'> & {
+export type BoardRatesData = Omit<PublishedRatesData, 'bandHeadings' | 'lines' | 'display'> & {
   bandHeadings?: BandHeadingIn[];
   lines: Array<Omit<PublishedLineDto, 'bands'> & { bands?: BandIn[] }>;
+  display?: PublishedDisplayDto;
 };
 
 export interface BandHeading {
@@ -46,6 +48,8 @@ export interface BoardRow {
   /** `100 JPY` when the unit is not 1, else empty. */
   unitLabel: string;
   cells: BandCell[];
+  featured?: boolean;
+  contactOnly?: boolean;
 }
 
 export interface BoardModel {
@@ -116,46 +120,76 @@ export function bandLabel(h: BandHeadingIn): string {
 }
 
 export function boardModel(data: BoardRatesData): BoardModel {
+  const disp = data.display;
   const rawHeadings = data.bandHeadings ?? [];
-  const singleColumn = rawHeadings.length === 0;
-  const headings: BandHeading[] = rawHeadings.map((h) => ({
+  const allowedTiers = disp ? new Set(disp.tiers.map((n) => `T${n}`)) : null;
+  const keptHeadings = allowedTiers ? rawHeadings.filter((h) => allowedTiers.has(h.tier)) : rawHeadings;
+  const singleColumn = keptHeadings.length === 0;
+  const headings: BandHeading[] = keptHeadings.map((h) => ({
     tier: h.tier,
     label: bandLabel(h),
   }));
 
+  const visibleLines = disp ? data.lines.filter((l) => l.hidden !== true) : data.lines;
+  const orderedLines = disp
+    ? [...visibleLines].sort((a, b) => {
+        const ia = disp.order.indexOf(a.currency);
+        const ib = disp.order.indexOf(b.currency);
+        const ra = ia === -1 ? Infinity : ia;
+        const rb = ib === -1 ? Infinity : ib;
+        return ra - rb;
+      })
+    : visibleLines;
+
+  const pricedRows: BoardRow[] = orderedLines.map((l) => {
+    let cells: BandCell[];
+    if (singleColumn) {
+      cells = [{ tier: 'ALL', buy: l.buyRate, sell: l.sellRate, repeat: false }];
+    } else {
+      const lineBands = l.bands ?? [];
+      if (lineBands.length === 0) {
+        cells = headings.map((h, idx) => ({
+          tier: h.tier,
+          buy: l.buyRate,
+          sell: l.sellRate,
+          repeat: idx > 0,
+        }));
+      } else {
+        cells = headings.map((h) => {
+          const match = lineBands.find((b) => b.tier === h.tier);
+          return match
+            ? { tier: h.tier, buy: match.buyRate, sell: match.sellRate, repeat: false }
+            : { tier: h.tier, buy: null, sell: null, repeat: false };
+        });
+      }
+    }
+
+    return {
+      key: `${l.currency}|${l.group}`,
+      code: l.currency,
+      group: l.group === 'ALL' ? null : l.group,
+      unitLabel: formatUnitLabel(l.unitSize, l.currency),
+      cells,
+      featured: disp ? disp.highlight && disp.featured.includes(l.currency) : false,
+      contactOnly: false,
+    };
+  });
+
+  const moreRows: BoardRow[] = disp
+    ? disp.more.map((code) => ({
+        key: `${code}|more`,
+        code,
+        group: null,
+        unitLabel: '',
+        cells: [],
+        featured: false,
+        contactOnly: true,
+      }))
+    : [];
+
   return {
     headings,
     singleColumn,
-    rows: data.lines.map((l) => {
-      let cells: BandCell[];
-      if (singleColumn) {
-        cells = [{ tier: 'ALL', buy: l.buyRate, sell: l.sellRate, repeat: false }];
-      } else {
-        const lineBands = l.bands ?? [];
-        if (lineBands.length === 0) {
-          cells = headings.map((h, idx) => ({
-            tier: h.tier,
-            buy: l.buyRate,
-            sell: l.sellRate,
-            repeat: idx > 0,
-          }));
-        } else {
-          cells = headings.map((h) => {
-            const match = lineBands.find((b) => b.tier === h.tier);
-            return match
-              ? { tier: h.tier, buy: match.buyRate, sell: match.sellRate, repeat: false }
-              : { tier: h.tier, buy: null, sell: null, repeat: false };
-          });
-        }
-      }
-
-      return {
-        key: `${l.currency}|${l.group}`,
-        code: l.currency,
-        group: l.group === 'ALL' ? null : l.group,
-        unitLabel: formatUnitLabel(l.unitSize, l.currency),
-        cells,
-      };
-    }),
+    rows: [...pricedRows, ...moreRows],
   };
 }
