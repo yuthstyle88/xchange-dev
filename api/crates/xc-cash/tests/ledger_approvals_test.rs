@@ -342,6 +342,7 @@ async fn count(pool: &PgPool, counter: &str, totals: &[(&str, &str)]) -> CashCou
         idempotency_key: "k".to_string(),
         created_at: now,
         updated_at: now,
+        rejection: None,
     }
 }
 
