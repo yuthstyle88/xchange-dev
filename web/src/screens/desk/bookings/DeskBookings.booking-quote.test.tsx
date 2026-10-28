@@ -23,7 +23,6 @@ import {
   makeQuoteBenefitDto,
   makeQuoteDto,
 } from '../../../shared/testing/fixtures';
-import type { QuoteDto } from '../../../shared/api/generated/quote';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 
@@ -61,12 +60,12 @@ const DESK_BOOKINGS_DATA = makeDeskBookingsData({
   ],
 });
 
-function bookingQuote(id: string, o: Partial<QuoteDto> = {}): QuoteDto {
+function bookingQuote(id: string, o: Parameters<typeof makeQuoteDto>[0] = {}) {
   return makeQuoteDto({
     id,
     channel: 'BOOKING',
     benefitBasis: 'INDICATIVE',
-    benefits: [makeQuoteBenefitDto({ benefitClass: 'PRICE', rateBefore: '35.10', rateAfter: '35.20' })],
+    benefits: [makeQuoteBenefitDto({ benefitClass: 'PRICE', rateBefore: '35.10', rateAfter: '35.20', feeBefore: '0.00', feeAfter: '0.00' })],
     ...o,
   });
 }
