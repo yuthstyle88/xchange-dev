@@ -65,7 +65,7 @@ Already decided elsewhere, not asked again:
 | # | Decision | Source |
 |---|---|---|
 | B1 | **A booking is a place in a time slot, not a rate.** It holds what the customer intends (`shop_side`, `requested_currency`, `requested_quantity`) and, optionally, the indicative quote they were shown (`quote_id`). It stores no rate, no rate line and no lock. The rate is the transaction's own quote at completion. RE-4d's R6/R7 apply to v2 rows only and leave with them (§8 M2). | §06 Quote *"indicative สำหรับจองคิว; binding … ระยะ 6"*, C02 *"เรทสุดท้ายยืนยันเมื่อทำรายการ"*, K5/Q5 |
-| B2 | **Slots are rows.** `booking_slots(start_at, end_at, capacity, reserved, status)` per branch. A generator makes them from the branch's slot rule (Q-B1) inside `BranchHours::window` for each day ahead; closed days (`branch_closures`) and days with hours `Closed`/`NotSet` get none. | §07 BookingSlot *"วันหยุด/เวลาปิดไม่เปิด slot"*, A04, B4 |
+| B2 | **Slots are rows.** `booking_slots(start_at, end_at, capacity, reserved, status)` per branch. A generator makes them from the branch's slot rule (Q-B1) inside `BranchHours::window` for each day ahead; closed days (`branch_closures`) and days with hours `Closed`/`NotSet` get none. **A closed slot records why** (`closed_by`: `SLOT` an ADMIN's `slotClose`, `CLOSURE` the generator on a closure date, `RULE` the generator after a rule, hours or horizon change). **Removing a closure reopens only the slots that closure closed** (§4.6, #5392). | §07 BookingSlot *"วันหยุด/เวลาปิดไม่เปิด slot"*, A04, B4; owner 2026-10-29 *"อนุมัติ A เปิด slot กลับเฉพาะที่วันหยุดปิด"* (#5392) |
 | B3 | **Capacity is checked atomically.** Reserving is one `UPDATE booking_slots SET reserved = reserved + 1 WHERE id = $1 AND status = 'OPEN' AND reserved < capacity RETURNING …` in the booking's transaction. No row back = `CAPACITY_FULL`. `reserved` counts the bookings of the slot in a holding state (§4.2). | §09, §10 `CAPACITY_FULL`, §13 phase 4 |
 | B4 | **Rescheduling moves one place atomically.** Lock both slot rows in ascending `id` order, reserve the new one (B3), release the old one, in one transaction. The same slot is `unchanged`. | §09 *"เปลี่ยนเวลา release slot เดิม + reserve ใหม่พร้อมกัน"*, §13 |
 | B5 | **States** (§06): `PENDING_CUSTOMER_CONFIRMATION → CONFIRMED → CHECKED_IN → IN_SERVICE → COMPLETED`; `CANCELLED`, `NO_SHOW`, `EXPIRED`. Start state by channel: `APP` → `CONFIRMED`; `PARTNER` → `PENDING_CUSTOMER_CONFIRMATION`; `DESK` → `CONFIRMED` (Q-B5). | §06 *"ลูกค้าจองเองเริ่ม CONFIRMED; partner จองต้องยืนยันลูกค้า; COMPLETED ได้เมื่อ transaction สำเร็จ"* |
@@ -119,8 +119,10 @@ booking_slots(id uuid PK, organization_id, branch_id text NOT NULL,
               capacity integer NOT NULL CHECK (capacity >= 0),
               reserved integer NOT NULL DEFAULT 0 CHECK (reserved >= 0 AND reserved <= capacity),
               status text NOT NULL CHECK (status IN ('OPEN','CLOSED')),
+              closed_by text NULL CHECK (closed_by IN ('SLOT','CLOSURE','RULE')),   -- M3 (#5392); NULL = open, or closed before M3
               updated_at, created_at,
               CHECK (end_at > start_at),
+              CHECK (status = 'CLOSED' OR closed_by IS NULL),                      -- M3
               UNIQUE (branch_id, start_at),
               UNIQUE (organization_id, branch_id, id))                     -- target of the bookings FK
 booking_sequences(organization_id, issued_on date, last_sequence integer NOT NULL,
@@ -167,6 +169,7 @@ booking_events(id uuid PK, organization_id, booking_id text NOT NULL REFERENCES 
 - **A slot's capacity can be lowered only to `reserved` or more** (`capacityBelowReserved`). A slot with places taken
   cannot be closed (`slotHasBookings`); staff cancel its bookings first. Re-running the generator after a rule change
   adds missing future slots and closes future slots with `reserved = 0` that no longer fit. It never deletes a slot.
+  Every close writes `closed_by`, every open clears it (§4.6).
 - **Requested quantity** is `numeric(20,4)`, the quote lines' scale (`20261014100000_quotes.sql:31`). It replaces
   v2's `amount numeric(20,2)` (`rates.md` §1 hands `bookings.amount` to this design).
 - **`booking_no`** comes from `booking_sequences` with one `INSERT … ON CONFLICT … DO UPDATE SET last_sequence =
@@ -208,6 +211,7 @@ booking_events(id uuid PK, organization_id, booking_id text NOT NULL REFERENCES 
 | check-in: `CONFIRMED` (or `CHECKED_IN` with no active ticket), the slot's service date is today at the branch, now ≤ `start_at + grace` (Q-B3), the owner proven (QR or the teller's identity tick) | `CheckInService::check_in` | `checkInWindow`, `qrMismatch`, `STALE_VERSION` |
 | check-in and the ticket issue commit together; `queueClosed` rolls both back | `CheckInService::check_in` | the queue's `queueClosed` |
 | completion: booking `CHECKED_IN`/`IN_SERVICE`, same branch and customer; repeat with the same transaction is a no-op | `BookingLifecycle::complete_in` via `BookingSaveStep` | `bookingNotUsable`, `bookingNotThisCustomer` |
+| `closureRemove` reopens the date's slots with `closed_by = 'CLOSURE'`, `reserved = 0`, `start_at > now`, still planned by the current rule and hours, in the same transaction; nothing else (§4.6) | `SlotService::remove_closure_in` | — |
 | every transition is compare-and-set on the expected status, writes one `booking_events` row and raises the branch version | `BookingMachine`, `PgBookingRepository::transition_in` | `STALE_VERSION` |
 | a customer reads and changes only their own bookings; no view shows another customer's data or a phone in full | `CustomerSelf` + owner check; views | `outOfScope` |
 
@@ -313,6 +317,56 @@ The code ticket adds up-front tests for rows 1, 2 and 5. For row 6 it adds a QR-
 - This is a wire change on the customer and desk screens that call these routes, so it ships in the same code ticket.
 - The code ticket's up-front tests include the mismatch: a booking of branch A, sent with `branch` = B, gets `outOfScope` and changes nothing.
 
+### 4.6 Why a slot is closed, and what a closure's removal reopens (#5392)
+
+**Owner, 2026-10-29 05:4x ICT** (typed in the lane controller's session, recorded on #5392 issuecomment-6482598541):
+*"อนุมัติ A เปิด slot กลับเฉพาะที่วันหยุดปิด"* ("approve A: reopen only the slots the holiday closed").
+
+**Root cause, measured on `main` `29c956ed`.**
+- `SlotService::generate_in` (`xc-booking/src/application/slot_service.rs:453-629`) only closes: an OPEN, empty, future slot that is no longer planned becomes `CLOSED` (`:617-626`). It never reopens.
+- `remove_closure_in` (`:358-371`) deletes the `branch_closures` row and nothing else.
+- `booking_slots` (`api/migrations/20261205131000_booking_slots.sql:56`) does not record why a slot is `CLOSED`. So code cannot tell a closure's close from an ADMIN's `slotClose`.
+- Result: a closure added and removed leaves its day closed for good. The e2e spec `flow-booking.spec.ts:115` did this on the test host: all 47 MAIN slots of 2026-10-28 and 2026-10-29 stayed `CLOSED` (#5392).
+
+**Who writes `closed_by`.**
+
+| Writer | `status` | `closed_by` |
+|---|---|---|
+| `SlotService::close_in` (`slotClose`) | `CLOSED` | `'SLOT'` |
+| `SlotService::open_in` (`slotOpen`) | `OPEN` | `NULL` |
+| `generate_in` closing a slot whose `service_date` is one of the branch's closure dates | `CLOSED` | `'CLOSURE'` |
+| `generate_in` closing any other slot (rule, hours or horizon change) | `CLOSED` | `'RULE'` |
+| `remove_closure_in` reopening (below) | `OPEN` | `NULL` |
+| rows `CLOSED` before M3 | `CLOSED` | `NULL` = reason unknown; never reopened automatically |
+
+**What `remove_closure_in(tx, branch, date)` reopens.** After deleting the closure row, it reopens every slot of the
+branch that meets all of these:
+- `service_date = date`, `status = 'CLOSED'`, `closed_by = 'CLOSURE'`, `reserved = 0`, `start_at > now()`;
+- still planned: its `(start_at, end_at)` is in `SlotGenerator::slots_for(rule, hours, closures, today, horizon_days)`, with
+  the branch's current rule, hours and remaining closures, from the branch's local today.
+
+It sets `status = 'OPEN'`, `closed_by = NULL`, `updated_at = now()`. A branch with no rule reopens nothing. It reopens
+only what the closure closed, and it reopens it whether or not a closure row was deleted.
+
+**Not reopened:** `'SLOT'` (an ADMIN's hand close), `'RULE'`, `NULL` (before M3), a slot in the past, one no longer
+planned. **Out of scope:** reopening `RULE` slots when a rule change is undone. The owner's words name only the
+holiday's slots.
+
+**Behaviour table** (route-level up-front tests, through `POST /api/branches/{id}/closures` and
+`POST /api/branches/{id}/closures/{date}/remove`, plus `slotClose`/`slotOpen`):
+
+| # | Case | Required result |
+|---|---|---|
+| R1 | add a closure on D, then remove it | every empty future slot of D is `OPEN` with `closed_by` NULL; D's open count equals the count before the add |
+| R2 | `slotClose` S on D, then add a closure on D and remove it | S stays `CLOSED` with `closed_by = 'SLOT'`; D's other slots reopen |
+| R3 | slot T on D has a booking; add a closure on D and remove it | T is `OPEN` throughout, `closed_by` NULL |
+| R4 | a rule change closes R (`closed_by = 'RULE'`); add a closure on R's date and remove it | R stays `CLOSED` with `closed_by = 'RULE'` |
+| R5 | a `CLOSED` row with `closed_by` NULL on D (before M3); add a closure on D and remove it | it stays `CLOSED`, `closed_by` NULL |
+| R6 | remove a closure on D whose slots have started | nothing reopens |
+| R7 | `slotOpen` on a slot closed by a closure | `OPEN`, `closed_by` NULL |
+
+Also asserted: adding a closure writes `closed_by = 'CLOSURE'` on the slots it closes, and `slotClose` writes `'SLOT'`.
+
 ## 5. Class diagram
 
 ```mermaid
@@ -330,12 +384,13 @@ classDiagram
   class BookingRepository { <<trait xc-booking domain/booking/repository.rs>> +insert_in() +transition_in() +by_qr_hash() }
   class PgBookingRepository { <<xc-booking infrastructure/booking_repository.rs>> }
   class BookingSlot { <<xc-booking domain/slot/booking_slot.rs>> start_at; end_at; capacity; reserved; status }
+  class ClosedBy { <<xc-booking domain/slot/closed_by.rs  #5392>> Slot; Closure; Rule; +as_str() }
   class SlotRule { <<xc-booking domain/slot/slot_rule.rs  Q-B1>> }
   class BranchClosure { <<xc-booking domain/slot/branch_closure.rs>> }
   class SlotGenerator { <<xc-booking domain/slot/slot_generator.rs  pure>> +slots_for(rule, hours, closures, from, days) }
   class SlotRepository { <<trait xc-booking domain/slot/repository.rs>> +reserve_in() +release_in() +move_in() }
   class PgSlotRepository { <<xc-booking infrastructure/slot_repository.rs>> }
-  class SlotService { <<xc-booking application/slot_service.rs>> +set_rule() +add_closure() +set_capacity() +close() +generate() }
+  class SlotService { <<xc-booking application/slot_service.rs>> +set_rule() +add_closure() +remove_closure() +set_capacity() +close() +open() +generate() }
   class BookingService { <<xc-booking application/booking_service.rs>> +create() +confirm() +cancel() +reschedule() +reissue_qr() }
   class CheckInService { <<xc-booking application/check_in.rs>> +check_in(by) }
   class BookingLifecycle { <<xc-booking application/lifecycle.rs>> +complete_in() }
@@ -379,6 +434,7 @@ classDiagram
   ContactReserve --> CustomerService
   SlotService --> SlotGenerator
   SlotService --> SlotRepository
+  SlotService --> ClosedBy : writes booking_slots.closed_by (§4.6)
   SlotGenerator --> SlotRule
   SlotGenerator --> BranchClosure
   SlotGenerator --> BranchHours
@@ -557,6 +613,22 @@ LG-1 #923. The order is fixed: **BK-1's M1 comes before BK-11's M2** (M2 drops w
 
 M2 is a destructive operation. The deploy that runs it is ordered by the owner.
 
+**M3. `api/migrations/<M3>_booking_slot_closed_by.sql` (slot from `scripts/migration-slot.sh next` at push time) (BK-15, #5392): why a slot is closed.**
+The file name must not end in `_booking_slots.sql`: `booking_slots_migration_test.rs:38` requires exactly one file with that suffix (M1).
+1. *Existing rows.* `ALTER TABLE booking_slots ADD COLUMN closed_by text NULL`, a named
+   `CHECK (closed_by IN ('SLOT','CLOSURE','RULE'))` and a named `CHECK (status = 'CLOSED' OR closed_by IS NULL)`. Every
+   existing row gets `closed_by` NULL and satisfies both checks: an OPEN row has NULL, and a CLOSED row may have NULL.
+2. *Backfill.* None, by the owner's choice A. A pre-M3 `CLOSED` row keeps NULL, which means "reason unknown", and is
+   never reopened automatically. Inferring `CLOSURE` from today's closures would reopen slots an ADMIN closed by hand on
+   that day. Count for the record before the deploy:
+   `SELECT status, count(*) FROM booking_slots GROUP BY status;`. The test host's closed MAIN days are the qa lane's
+   (#5392 section 3), not this migration's.
+3. *Order.* M3 before BK-16's binary. The previous binary works with M3: it never names `closed_by`, and its
+   `SET status = 'OPEN'` leaves `closed_by` as it is. That is allowed only while `closed_by` is NULL, so the old
+   binary's `open_in` on a slot BK-16 closed would be refused by the second check. Deploy M3 and BK-16 together.
+4. *`down`* drops both checks and the column. It loses only the reasons. After `down`, nothing reopens on a closure
+   removal again.
+
 ## 9. Tickets
 
 Each owns disjoint files. Up-front tests are written by the ticket author on each ticket's `feat/…` branch once its
@@ -580,6 +652,8 @@ start dependencies are merged (fleet rule 🧪).
 | BK-6-FE | (#1915) every booking command the web sends names its `branch` (FE twin of #1913); merges with or before #1913 | customer `book/Book.tsx`, `bookings/Bookings.tsx`, the desk screen, admin `booking-slots/BookingSlots.tsx` and their tests | BK-8b |
 | BK-9b | A04's booking-policy section (`BookingSlots.tsx` "Section 4: Booking Policy") is shown only to an organisation-wide ADMIN: `sharedSession().me()?.roles` has a row with `role === 'ADMIN'` and `branchId === null`, the same test as `web/src/screens/login/home.ts:8`. A branch-scoped ADMIN still sees the rule, closures and slots sections. FE twin of BE #2086, which makes `bookingPolicySet` answer 403 `outOfScope` to a branch-scoped ADMIN; it may land before #2086, since hiding the form from a branch-scoped ADMIN is right either way. Only ADMIN holds `BranchesManage` (`role_permissions.rs:40-41`), so no other role is checked | `web/src/screens/admin/booking-slots/BookingSlots.tsx`, `web/src/screens/admin/booking-slots/BookingSlots.policy-gate.test.tsx` | BK-9 |
 | BK-13 | B12's reader half (§5.2): `effective_status` and its readers | `api/crates/xc-booking/src/domain/booking/effective_status.rs` (+ one `pub mod` line), `api/src/presentation/http/v3/views/my_bookings.rs`, `api/src/presentation/http/v3/views/desk_bookings.rs`, their tests | — |
+| BK-15 | (#5392) M3: `booking_slots.closed_by` and its two checks (§8 M3) | `api/migrations/<M3>_booking_slot_closed_by.sql`, and its up-front test `api/tests/booking_slot_closed_by_migration_test.rs` | owner's choice A on #5392 (2026-10-29) |
+| BK-16 | (#5392) `SlotService` writes `closed_by` and `remove_closure_in` reopens the closure's slots (§4.6); `ClosedBy` | `api/crates/xc-booking/src/application/slot_service.rs` (`close_in`, `open_in`, `generate_in`, `remove_closure_in`, one shared private planning helper); `ClosedBy` and its `mod` line come with the skeleton on `feat/booking-slot-reopen`. Up-front test `api/tests/closure_remove_reopens_slots_test.rs`. Must stay green unchanged, in scope because they pin today's close/open behaviour: `api/crates/xc-booking/tests/{slot_service_test,slot_reshape_test,slot_capacity_test,slot_common/mod}.rs`, `api/tests/{closure_add_closes_slots_test,bk6_slot_admin_test,booking_admin_path_branch_scope_test,booking_slots_view_day_test,bookings_error_mapping_test}.rs` | BK-15 merged into `feat/booking-slot-reopen` |
 | BK-14 | one core for the overdue rule (§5.2, ♻️): the sweeper's selections, `CheckInService`'s window and `qr.rs` call `effective_status` (`booking_facts.rs` dropped, §5.2) | the files named in §5.2 | BK-13 |
 
 C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking conversion) reads `bookings` after BK-3.
@@ -599,6 +673,8 @@ C02/C03/C08 customer screens are #558's and read BK-6's views. EX-8 (booking con
 | BK-10 | verifying a phone writes one PHONE identity with `verified_at` and one audit row without the value; the member flag is true for that customer at every branch |
 | BK-11 | the workspace builds and passes with the v2 module, routes, tables and screen gone; `git grep -n -E "v2_bookings\|FROM members" -- api` is empty |
 | BK-12 | a partner booking without `referralCode` refused; with it, one ACTIVE capture on the booking; it starts `PENDING_CUSTOMER_CONFIRMATION` |
+| BK-15 | M3 applies on a fresh database after every earlier migration; an existing OPEN and CLOSED row keep `closed_by` NULL; `closed_by = 'OTHER'` is refused; `status = 'OPEN'` with `closed_by = 'SLOT'` is refused; `CLOSED` with each of the three values is accepted; `down` removes the column |
+| BK-16 | §4.6 R1–R7 through HTTP, and `closed_by` written by `closureAdd` (`CLOSURE`), a rule change (`RULE`) and `slotClose` (`SLOT`) |
 | BK-13 | `effective_status`'s table (§5.2): each stored status before, at and after its boundary; `PENDING` with no `confirm_expires_at`; `CHECKED_IN` on a later day with and without an active ticket; and through HTTP, `my_bookings` shows a `CONFIRMED` booking past start + grace as `NO_SHOW` with no QR while its stored row stays `CONFIRMED` |
 
 ## 10. Owner decisions (2026-10-10)
