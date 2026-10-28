@@ -43,6 +43,13 @@ pub const APPROVAL_REJECTED: &str = "approvalRejected: the binding quote was rej
 /// quote it issues (`quotes.approval_request_id`, UNIQUE).
 pub const APPROVAL_USED: &str =
     "staleVersion: the approval request has already issued a binding quote";
+/// The named APPROVED request approved a lower `settleThb` than the quote prices at now (D-15, Q36): nothing is
+/// issued, and the request stays unused.
+pub const APPROVAL_PRICE_MOVED: &str =
+    "staleVersion: the price is above the amount the approval request approved";
+/// AP-1 refused the request's idempotency key as reused with another payload (D-15, BQ-10).
+pub const APPROVAL_REQUEST_CHANGED: &str =
+    "staleVersion: the binding quote's approval request changed; ask again";
 
 /// One binding-quote issue.
 #[derive(Debug, Clone)]
