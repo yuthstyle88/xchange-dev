@@ -2,10 +2,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
+import { makeMyBookingItemDto } from '../../../shared/testing/fixtures/my_bookings';
 import { BookingWait, type BookingWaitProps } from './BookingWait';
 
 function booking(over: Partial<BookingWaitProps['booking']> = {}): BookingWaitProps['booking'] {
-  return {
+  return makeMyBookingItemDto({
     id: 'bk-1',
     bookingNo: 'B261015-0001',
     status: 'CONFIRMED',
@@ -24,7 +25,7 @@ function booking(over: Partial<BookingWaitProps['booking']> = {}): BookingWaitPr
     estimateAsOf: null,
     readiness: 'unknown',
     ...over,
-  };
+  });
 }
 
 let host: HTMLDivElement;

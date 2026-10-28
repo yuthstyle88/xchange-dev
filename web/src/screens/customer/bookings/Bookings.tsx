@@ -1,7 +1,9 @@
 // APP-17: C03 Customer My Bookings screen (design customer-app.md §4.5, #987).
 
 import {
+  createEffect,
   createSignal,
+  onCleanup,
   onMount,
   For,
   Show,
@@ -24,10 +26,13 @@ import type {
   MyBookingItemDto,
   MyBookingsData,
 } from '../../../shared/api/generated/my_bookings';
+import type { PlannerPreviewAnswer } from '../../../shared/api/generated/planner_preview';
 import type { PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { PublicPoller } from '../../../shared/live/public-poller';
 import { QrCode } from '../../../shared/ui/QrCode';
+import { IndicativeBenefit } from '../benefit-estimate/IndicativeBenefit';
 import { formatSlotTime, getTodayInTimezone } from '../book/Book';
 import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
@@ -82,6 +87,7 @@ function canReschedule(booking: MyBookingItemDto): boolean {
 export interface BookingsScreenProps {
   client?: ApiClient;
   fetch?: (input: string, init?: RequestInit) => Promise<Response>;
+  ratesIntervalMs?: number;
 }
 
 export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
@@ -121,11 +127,90 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const [branchTimezones, setBranchTimezones] = createSignal<Map<string, string>>(new Map());
   const branchTimezone = (branchId: string) => branchTimezones().get(branchId)!;
 
+  let hostOrg = '';
+  let disposed = false;
+  const branchCodes = new Map<string, string>();
+  const openedBookings = new Map<string, MyBookingItemDto>();
+  const pollers = new Map<string, PublicPoller<unknown>>();
+  const seenRatesData = new Map<string, unknown>();
+  const [activePollers, setActivePollers] = createSignal<
+    Array<{ branchId: string; poller: PublicPoller<unknown> }>
+  >([]);
+  const [estimates, setEstimates] = createSignal<Record<string, PlannerPreviewAnswer>>({});
+
+  const loadEstimate = async (booking: MyBookingItemDto): Promise<void> => {
+    try {
+      const answer = await api.act<
+        {
+          branch: string;
+          currency: string;
+          customerSide: 'CUSTOMER_BUY' | 'CUSTOMER_SELL';
+          amount: { quantity: string };
+        },
+        PlannerPreviewAnswer
+      >('compute', 'planner_preview', {
+        branch: booking.branchId,
+        currency: booking.currency,
+        customerSide: booking.customerSide,
+        amount: { quantity: booking.quantity },
+      });
+      if (disposed) return;
+      setEstimates((prev) => ({ ...prev, [booking.id]: answer }));
+    } catch {
+      // Failed call shows nothing new and sends no retry on a timer.
+    }
+  };
+
+  const openEstimate = (booking: MyBookingItemDto) => {
+    openedBookings.set(booking.id, booking);
+    void loadEstimate(booking);
+    const code = branchCodes.get(booking.branchId);
+    if (hostOrg && code && !pollers.has(booking.branchId)) {
+      const poller = new PublicPoller<unknown>(
+        `/api/public/orgs/${encodeURIComponent(hostOrg)}/branches/${encodeURIComponent(code)}/rates`,
+        fetchFn,
+        props.ratesIntervalMs ?? 10_000,
+        300_000,
+      );
+      pollers.set(booking.branchId, poller);
+      poller.start();
+      setActivePollers((prev) => [...prev, { branchId: booking.branchId, poller }]);
+    }
+  };
+
+  createEffect(() => {
+    for (const { branchId, poller } of activePollers()) {
+      const data = poller.data();
+      if (data === undefined) continue;
+      if (!seenRatesData.has(branchId)) {
+        seenRatesData.set(branchId, data);
+        continue;
+      }
+      if (seenRatesData.get(branchId) !== data) {
+        seenRatesData.set(branchId, data);
+        for (const b of openedBookings.values()) {
+          if (b.branchId === branchId) {
+            void loadEstimate(b);
+          }
+        }
+      }
+    }
+  });
+
+  onCleanup(() => {
+    disposed = true;
+    for (const poller of pollers.values()) {
+      poller.stop();
+    }
+  });
+
   const loadBranches = async (): Promise<void> => {
     setBranchNames(new Map());
     setBranchTimezones(new Map());
+    branchCodes.clear();
     try {
       const org = await readHostOrg(api);
+      hostOrg = org;
       const data = await api.publicGet<PublicBranchesData | null>(
         `/api/public/orgs/${encodeURIComponent(org)}/branches`,
       );
@@ -138,6 +223,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
         getTodayInTimezone(b.timezone);
         names.set(b.id, b.name);
         timezones.set(b.id, b.timezone);
+        branchCodes.set(b.id, b.code);
       }
       setBranchNames(names);
       setBranchTimezones(timezones);
@@ -422,6 +508,20 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                     api={api}
                     timeZone={branchTimezone(booking.branchId)}
                     onChange={(patch) => patchBooking(booking.id, patch)}
+                  />
+
+                  <Show when={booking.status === 'CONFIRMED'}>
+                    <button
+                      type="button"
+                      data-action="booking-estimate"
+                      onClick={() => openEstimate(booking)}
+                    >
+                      {t('estimate')}
+                    </button>
+                  </Show>
+                  <IndicativeBenefit
+                    benefit={estimates()[booking.id]?.benefit}
+                    slotStartAt={booking.startAt}
                   />
 
                   {/* Actions: Cancel & Reschedule */}

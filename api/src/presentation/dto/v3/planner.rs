@@ -220,6 +220,61 @@ pub struct PlannerPreviewAnswer {
     pub unit_size: String,
     pub stale: bool,
     pub source_date: Option<String>,
+    /// The indicative benefit on the plan (`marketing-campaigns.md` §6.4 E-1). `thb` and `rate` stay the
+    /// published ones.
+    pub benefit: PlannerBenefitDto,
+}
+
+/// The customer's indicative benefit (`marketing-campaigns.md` §6.4.3). `basis` is always `INDICATIVE` and
+/// `channel` always `APP`; both are sent so the screen never infers the label. No field carries a coupon id,
+/// a reservation id, a segment id or a skip reason.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(tag = "state", rename_all_fields = "camelCase")]
+#[ts(export_to = "planner_preview.ts")]
+pub enum PlannerBenefitDto {
+    #[serde(rename = "ESTIMATED")]
+    Estimated {
+        #[ts(type = "\"INDICATIVE\"")]
+        basis: String,
+        #[ts(type = "\"APP\"")]
+        channel: String,
+        evaluated_at: String,
+        valid_until: String,
+        publication_id: String,
+        final_rate: String,
+        thb_after: String,
+        benefit_thb: String,
+        items: Vec<PlannerBenefitItemDto>,
+    },
+    #[serde(rename = "NONE")]
+    None {
+        #[ts(type = "\"INDICATIVE\"")]
+        basis: String,
+        #[ts(type = "\"APP\"")]
+        channel: String,
+        evaluated_at: String,
+        #[ts(type = "\"noActiveRule\" | \"notEligible\"")]
+        reason: String,
+    },
+}
+
+/// One applied benefit of the estimate (`marketing-campaigns.md` §6.4.3).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "planner_preview.ts")]
+pub struct PlannerBenefitItemDto {
+    pub rule_id: String,
+    /// The campaign's name, as `my_benefits` (§6.3).
+    pub label: String,
+    pub benefit_type: String,
+    #[ts(type = "\"PRICE\" | \"REWARD\"")]
+    pub benefit_class: String,
+    pub amount_thb: String,
+    pub rate_before: String,
+    pub rate_after: String,
+    pub floor_capped: bool,
+    /// The campaign version's `ends_at` (E-6).
+    pub ends_at: String,
 }
 
 // ------------------------------------------------------------ my_planner_drafts

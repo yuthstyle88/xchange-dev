@@ -18,7 +18,7 @@ use crate::domain::planner::planner_draft::{DraftAmount, DraftPlan};
 use crate::infrastructure::assistant_repository::PgAssistantRepository;
 
 /// The answer returned by `AssistantService::ask`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssistantAnswer {
     pub conversation_id: Uuid,
     pub customer_message: AssistantMessage,

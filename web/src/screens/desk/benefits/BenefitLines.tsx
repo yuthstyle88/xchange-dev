@@ -1,37 +1,19 @@
 // B03 benefit lines (FE-desk skeleton stub, #564; design marketing-campaigns.md §10: the quote's `benefits` lists the
 // snapshot's `applied`, shape `AppliedBenefit` at api/crates/xc-marketing/src/domain/engine/snapshot.rs:8-25). Rendered
 // inside the summary's <dl>. Filled by its own ticket.
-import { For, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
+import type { QuoteBenefitBasis, QuoteBenefitDto } from '../../../shared/api/generated/quote';
 import { th, en } from './i18n';
 
-/** One applied benefit, as the server serialises `AppliedBenefit` (camelCase; money and rates as strings). */
-export interface AppliedBenefitView {
-  ruleId: string;
-  versionId: string;
-  benefitType: string;
-  /** `PRICE` or `REWARD`. */
-  benefitClass: string;
-  couponId?: string;
-  reservationId?: string;
-  amountThb: string;
-  rateBefore: string;
-  rateAfter: string;
-  feeBefore: string;
-  feeAfter: string;
-  floorCapped: boolean;
-}
-
-export function BenefitLines(props: { benefits: readonly unknown[] }): JSX.Element {
+export function BenefitLines(props: {
+  benefits: readonly QuoteBenefitDto[];
+  basis?: QuoteBenefitBasis;
+}): JSX.Element {
   const t = screenT('desk.benefits', { th, en });
 
-  const validBenefits = () =>
-    (props.benefits ?? []).filter(
-      (b): b is AppliedBenefitView => typeof b === 'object' && b !== null,
-    );
-
   return (
-    <For each={validBenefits()}>
+    <For each={props.benefits}>
       {(b) => {
         const label = () => (b.couponId ? `${t('benefit')} (${t('coupon')})` : t('benefit'));
         const value = () => {
@@ -49,7 +31,15 @@ export function BenefitLines(props: { benefits: readonly unknown[] }): JSX.Eleme
         return (
           <>
             <dt>{label()}</dt>
-            <dd>{value()}</dd>
+            <dd>
+              {value()}
+              <Show when={props.basis === 'INDICATIVE'}>
+                {' '}
+                <span class="desk-badge" data-row="benefit-indicative">
+                  {t('indicative')}
+                </span>
+              </Show>
+            </dd>
           </>
         );
       }}

@@ -34,6 +34,7 @@ export const th = {
   rescheduleDeadline: 'เลื่อนนัดได้ถึง {date}',
   waitAhead: 'มีคิวก่อนหน้า {count} คิว',
   waitEstimate: 'รอประมาณ {low}–{high} นาที',
+  estimate: 'ดูสิทธิประโยชน์โดยประมาณ',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -71,6 +72,7 @@ export const en: Record<keyof typeof th, string> = {
   rescheduleDeadline: 'Reschedule by {date}',
   waitAhead: '{count} ahead of you',
   waitEstimate: 'About {low}–{high} min wait',
+  estimate: 'ดูสิทธิประโยชน์โดยประมาณ',
 };
 
 export const zh: Record<keyof typeof th, string> = {
@@ -108,4 +110,5 @@ export const zh: Record<keyof typeof th, string> = {
   rescheduleDeadline: '{date} 前可改期',
   waitAhead: '前面还有 {count} 位',
   waitEstimate: '预计等候 {low}–{high} 分钟',
+  estimate: 'ดูสิทธิประโยชน์โดยประมาณ',
 };

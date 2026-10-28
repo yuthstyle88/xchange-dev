@@ -61,7 +61,7 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
               </dd>
               <dt>{t('beforeFee')}</dt>
               <dd>{l().thbAmount} THB</dd>
-              <BenefitLines benefits={props.store.quote()?.benefits ?? []} />
+              <BenefitLines benefits={props.store.quote()?.benefits ?? []} basis={props.store.quote()?.benefitBasis ?? 'RESERVED'} />
               <Show when={props.store.step() >= 3}>
                 <dt>{t('fee')}</dt>
                 <dd>{l().feeThb}</dd>
