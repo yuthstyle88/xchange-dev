@@ -65,10 +65,17 @@ async fn la_t11_finance_creates_a_requested_adjustment_and_nothing_is_posted() {
         (before.0, before.1, before.2, before.3, before.4 + 1),
         "only the request is written"
     );
-    assert_eq!(room.position(B1, "USD").await, Some((d("1000"), d("32500.00"))));
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("1000"), d("32500.00")))
+    );
 
     let audits = room.audit_rows(CREATE_AUDIT).await;
-    assert_eq!(audits.len(), 1, "one LEDGER_ADJUSTMENT_CREATE row: {audits:?}");
+    assert_eq!(
+        audits.len(),
+        1,
+        "one LEDGER_ADJUSTMENT_CREATE row: {audits:?}"
+    );
     let (actor, object_ref, branch, _after) = &audits[0];
     assert_eq!(actor, &user_id(FIN_A));
     assert_eq!(object_ref, &format!("ledger_adjustment:{id}"));
@@ -112,7 +119,10 @@ async fn la_t12_a_manager_or_a_teller_cannot_create() {
 #[actix_web::test]
 async fn la_t13_an_evidence_file_of_another_branch_or_unknown_is_refused() {
     let room = Room::start().await;
-    for (file, what) in [(FILE_B2, "a file of XC-B02"), ("NO-SUCH-FILE", "an unknown file")] {
+    for (file, what) in [
+        (FILE_B2, "a file of XC-B02"),
+        ("NO-SUCH-FILE", "an unknown file"),
+    ] {
         let mut body = quantity_payload(B1, &[("USD", "-100")]);
         body["evidence"] = json!({ "files": [file], "reference": "" });
         let a = create(&room, FIN_A, body, &unique("k")).await;

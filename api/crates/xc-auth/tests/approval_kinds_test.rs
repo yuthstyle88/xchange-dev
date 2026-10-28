@@ -90,7 +90,11 @@ fn seed_version_4_adds_the_nine() {
     assert_eq!(RoleGrants::SEED_VERSION, 8);
     for p in APPROVAL_KINDS {
         // LA-1 (ledger-inventory.md §13.3): the tenth kind enters at version 8, not with §11.9's nine.
-        let want = if p == P::ApproveLedgerAdjustment { 8 } else { 4 };
+        let want = if p == P::ApproveLedgerAdjustment {
+            8
+        } else {
+            4
+        };
         let at: Vec<i32> = RoleGrants::SEED_ADDITIONS
             .iter()
             .filter(|&&(_, q)| q == p)

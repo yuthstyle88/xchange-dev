@@ -160,7 +160,11 @@ fn p3_it_enters_the_seed_in_version_6() {
         "SEED_ADDITIONS has (6, BindingQuoteIssue) once"
     );
     // LA-1 (ledger adjustment) raised it to 8 after D-18's 6; (6, BindingQuoteIssue) is unchanged.
-    assert_eq!(RoleGrants::SEED_VERSION, 8, "SEED_VERSION is 8 (D-18: 6, then LA-1: 8)");
+    assert_eq!(
+        RoleGrants::SEED_VERSION,
+        8,
+        "SEED_VERSION is 8 (D-18: 6, then LA-1: 8)"
+    );
 }
 
 #[tokio::test]

@@ -169,7 +169,14 @@ async fn decide(
 ) -> Result<(), ApprovalError> {
     let mut tx = pool.begin().await.unwrap();
     let out = svc
-        .decide(&mut tx, &req.id, who, outcome, "checked the slip", &unique("k"))
+        .decide(
+            &mut tx,
+            &req.id,
+            who,
+            outcome,
+            "checked the slip",
+            &unique("k"),
+        )
         .await;
     if out.is_ok() {
         tx.commit().await.unwrap();
