@@ -25,7 +25,7 @@ fn quote(status: QuoteStatus, expires_at: DateTime<Utc>, publication: Uuid) -> Q
         organization_id: Uuid::from_u128(20),
         branch_id: BranchId::new("MAIN"),
         customer_id: None,
-        quote_type: "INDICATIVE".to_string(),
+        quote_type: xc_exchange::domain::quote::quote_type::QuoteType::Indicative,
         channel: QuoteChannel::Desk,
         status,
         publication_id: publication,

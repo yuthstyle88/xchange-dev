@@ -154,7 +154,9 @@ impl PermissionModule {
             | P::ApproveRatePublication
             | P::ApproveExchangeTransaction
             | P::ApproveTransactionReversal
-            | P::ApproveLoyaltyRuleVersion => None,
+            | P::ApproveLoyaltyRuleVersion
+            // binding-quote.md D-13: no module, so Customers at Create (EXECUTIVE included) never implies it.
+            | P::BindingQuoteIssue => None,
         }
     }
 }

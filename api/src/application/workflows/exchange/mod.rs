@@ -1,6 +1,8 @@
 //! Exchange workflows module.
 
 pub mod approval;
+pub mod binding_approval;
+pub mod binding_issue;
 pub mod cancel;
 pub mod complete;
 pub mod confirm;

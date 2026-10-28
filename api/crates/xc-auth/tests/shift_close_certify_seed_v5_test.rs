@@ -146,7 +146,7 @@ async fn v1_a_version_4_database_gains_shift_close_certify_for_executive_and_adm
             "{role:?} holds ShiftCloseCertify after boot"
         );
     }
-    // Staff corrections SC-D2 raised it to 7 (6 is binding quote's, #5281).
+    // BQ-7 (binding quote) raised it to 6, staff corrections SC-D2 to 7.
     assert_eq!(RoleGrants::SEED_VERSION, 7);
     for role in RoleGrants::BUILT_IN {
         assert_eq!(

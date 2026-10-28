@@ -4,7 +4,6 @@ import { Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import type { DeskStore, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
-import * as pricingHiddenI18n from './pricing-hidden.i18n';
 import { BenefitLines } from './benefits/BenefitLines';
 import { CustomerLoyalty } from './loyalty/CustomerLoyalty';
 import { CouponField } from './coupon/CouponField';
@@ -17,9 +16,14 @@ const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stat
   CANCELLED: 'stateCancelled',
 };
 
+const HIDDEN_REASON_KEYS = {
+  STALE: 'pricingHiddenSTALE',
+  BLOCKED: 'pricingHiddenBLOCKED',
+  MISMATCH: 'pricingHiddenMISMATCH',
+} as const;
+
 export function Summary(props: { store: DeskStore }): JSX.Element {
   const t = screenT('desk', screenI18n);
-  const tHidden = screenT('desk.pricingHidden', pricingHiddenI18n);
   const line = () => props.store.quote()?.lines[0];
   const foreignLabel = () =>
     props.store.type() === 'BUY'
@@ -30,14 +34,14 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
   const hiddenReason = () => {
     const r = line()?.pricingHiddenReason;
     if (r === 'STALE' || r === 'BLOCKED' || r === 'MISMATCH') {
-      return tHidden(r);
+      return t(HIDDEN_REASON_KEYS[r]);
     }
     return null;
   };
 
   const hiddenWarningText = () => {
     const reason = hiddenReason();
-    return reason ? `${tHidden('warning')}: ${reason}` : tHidden('warning');
+    return reason ? `${t('pricingHiddenWarning')}: ${reason}` : t('pricingHiddenWarning');
   };
 
   return (

@@ -3,9 +3,8 @@
 //! Written before the implementation by the sub-controller (SC-0, claude/studio-claude-4). Do not edit, delete or
 //! weaken these tests; add your own in another file.
 //!
-//! Version 6 is binding quote's (#5281); the boot sync applies `SEED_ADDITIONS` entries with `v > seed_version`, so a
-//! gap is harmless. Custom groups gaining a no-module permission at boot is binding quote's change to `seed_additions`
-//! (on main at this file's writing only version 4 reaches custom groups); that case is pinned after the rebase on it.
+//! Version 6 is binding quote's (#5281); the boot sync applies `SEED_ADDITIONS` entries with `v > seed_version`.
+//! Binding quote's `seed_additions` also gives a new no-module permission to every custom group of a holder base.
 //!
 //! What this file pins ([required]):
 //! - S1: `AttendanceCloseFor` is in the seed of BRANCH_MANAGER, EXECUTIVE and ADMIN, and of no other built-in group.
@@ -13,14 +12,16 @@
 //! - S3: a database at seed version 5 gains it on those three groups at boot; every built-in group ends with its full
 //!   seed at `SEED_VERSION`.
 //! - S4: a second boot inserts nothing.
+//! - S5: a BRANCH_MANAGER-based custom group made before gains `AttendanceCloseFor` at boot and nothing else; a
+//!   TELLER-based one is unchanged.
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; nothing here skips.
 mod account_common;
 
 use std::collections::BTreeSet;
 
-use account_common::TestDb;
-use xc_auth::domain::access::{Permission, Role, RoleGrantStore, RoleGrants};
+use account_common::{TestDb, unique};
+use xc_auth::domain::access::{Group, Permission, Role, RoleGrantStore, RoleGrants};
 use xc_auth::infrastructure::access::PgRoleGrantStore;
 
 use Permission as P;
@@ -138,5 +139,49 @@ async fn s4_a_second_boot_inserts_nothing() {
     let db = database_at_version_5().await;
     boot(&db).await;
     assert_eq!(boot(&db).await, 0, "the second boot inserts nothing");
+    db.drop_schema().await;
+}
+
+async fn add_group(db: &TestDb, base: Role, set: &[Permission]) -> String {
+    let group = Group {
+        code: unique("SCACF").to_uppercase(),
+        name: "กลุ่มกำหนดเอง".to_owned(),
+        base,
+        built_in: false,
+    };
+    let mut tx = db.pool.begin().await.expect("begin");
+    PgRoleGrantStore::new()
+        .add_group(&mut tx, &group, set)
+        .await
+        .expect("add_group");
+    tx.commit().await.expect("commit");
+    group.code
+}
+
+#[tokio::test]
+async fn s5_a_branch_manager_based_custom_group_gains_it_and_a_teller_based_one_does_not() {
+    let db = database_at_version_5().await;
+    let bm_held: Vec<Permission> = RoleGrants::seed(Role::BranchManager)
+        .into_iter()
+        .filter(|&p| p != P::AttendanceCloseFor)
+        .collect();
+    let bm_based = add_group(&db, Role::BranchManager, &bm_held).await;
+    let teller_held = RoleGrants::seed(Role::Teller);
+    let teller_based = add_group(&db, Role::Teller, &teller_held).await;
+
+    boot(&db).await;
+
+    let mut want = bm_held.clone();
+    want.push(P::AttendanceCloseFor);
+    assert_eq!(
+        stored_set(&db, &bm_based).await,
+        names(&want),
+        "a BRANCH_MANAGER-based custom group gains AttendanceCloseFor and nothing else"
+    );
+    assert_eq!(
+        stored_set(&db, &teller_based).await,
+        names(&teller_held),
+        "a TELLER-based custom group is unchanged"
+    );
     db.drop_schema().await;
 }

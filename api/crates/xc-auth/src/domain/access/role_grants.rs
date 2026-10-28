@@ -108,7 +108,7 @@ impl RoleGrants {
     ];
 
     /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN;
-    /// 7, AttendanceCloseFor (staff corrections SC-D2; 6 is binding quote, #5281)).
+    /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2)).
     pub const SEED_VERSION: i32 = 7;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
@@ -124,6 +124,7 @@ impl RoleGrants {
         (4, Permission::ApproveExchangeTransaction),
         (4, Permission::ApproveTransactionReversal),
         (4, Permission::ApproveLoyaltyRuleVersion),
+        (6, Permission::BindingQuoteIssue),
         // Staff corrections SC-D2: close another employee's forgotten clock-in.
         (7, Permission::AttendanceCloseFor),
     ];
@@ -264,6 +265,7 @@ impl RoleGrants {
                 P::DevicePrinterOnline,
                 P::DrawerPassport,
                 P::SignedIn,
+                P::BindingQuoteIssue,
             ],
             Role::Teller => &[
                 P::ShiftOperate,
@@ -275,6 +277,7 @@ impl RoleGrants {
                 P::DeviceProcess,
                 P::DrawerPassport,
                 P::SignedIn,
+                P::BindingQuoteIssue,
             ],
             Role::Finance => &[
                 P::ApprovalsDecide,

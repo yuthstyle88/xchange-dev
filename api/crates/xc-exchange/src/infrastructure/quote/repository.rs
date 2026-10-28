@@ -10,6 +10,7 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, Rate, Side, UnitSize};
 
 use crate::domain::quote::quote::{Quote, QuoteChannel, QuoteStatus};
 use crate::domain::quote::quote_line::QuoteLine;
+use crate::domain::quote::quote_type::QuoteType;
 use crate::domain::quote::repository::QuoteRepository;
 use crate::infrastructure::parse_stored_money;
 
@@ -40,7 +41,7 @@ impl QuoteRepository for PgQuoteRepository {
         .bind(quote.organization_id)
         .bind(quote.branch_id.as_str())
         .bind(&quote.customer_id)
-        .bind(&quote.quote_type)
+        .bind(quote.quote_type.as_str())
         .bind(quote.channel.as_str())
         .bind(quote.status.as_str())
         .bind(quote.publication_id)
@@ -139,7 +140,7 @@ impl QuoteRepository for PgQuoteRepository {
         let organization_id: Uuid = q_row.get(1);
         let branch_id_str: String = q_row.get(2);
         let customer_id: Option<String> = q_row.get(3);
-        let quote_type: String = q_row.get(4);
+        let quote_type_str: String = q_row.get(4);
         let channel_str: String = q_row.get(5);
         let status_str: String = q_row.get(6);
         let publication_id: Uuid = q_row.get(7);
@@ -153,6 +154,9 @@ impl QuoteRepository for PgQuoteRepository {
 
         let channel = QuoteChannel::parse_db(&channel_str).ok_or_else(|| {
             pos_error::AppError::Domain(format!("invalid channel: {channel_str}"))
+        })?;
+        let quote_type = QuoteType::parse_db(&quote_type_str).ok_or_else(|| {
+            pos_error::AppError::Domain(format!("invalid quote type: {quote_type_str}"))
         })?;
         let status = QuoteStatus::parse_db(&status_str)
             .ok_or_else(|| pos_error::AppError::Domain(format!("invalid status: {status_str}")))?;

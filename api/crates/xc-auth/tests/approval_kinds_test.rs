@@ -40,8 +40,8 @@ fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
     );
     assert_eq!(
         Permission::ALL.len(),
-        62,
-        "Permission::ALL grows 52 -> 61, then 62 (staff corrections AttendanceCloseFor)"
+        63,
+        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), then 63 (staff corrections AttendanceCloseFor)"
     );
     for p in APPROVAL_KINDS {
         assert_eq!(
@@ -83,8 +83,8 @@ fn seed_approvals_decide_iff_some_kind() {
 /// §11.9 data migration: `SEED_VERSION` 3 -> 4, and each kind is in `SEED_ADDITIONS` at version 4, exactly once.
 #[test]
 fn seed_version_4_adds_the_nine() {
-    // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5.
-    // Staff corrections SC-D2: AttendanceCloseFor enters at version 7 (6 is binding quote's, #5281).
+    // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
+    // staff corrections SC-D2: AttendanceCloseFor at 7.
     assert_eq!(RoleGrants::SEED_VERSION, 7);
     for p in APPROVAL_KINDS {
         let at: Vec<i32> = RoleGrants::SEED_ADDITIONS
