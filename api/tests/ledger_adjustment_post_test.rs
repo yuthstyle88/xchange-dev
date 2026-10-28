@@ -94,18 +94,34 @@ async fn la_t15_an_approved_shortfall_posts_safe_to_variance_at_the_average() {
     );
     assert_eq!(
         movements(&room, &id).await,
-        vec![("USD".into(), "ADJUST".into(), d("-100"), d("-3250.00"), true)],
+        vec![(
+            "USD".into(),
+            "ADJUST".into(),
+            d("-100"),
+            d("-3250.00"),
+            true
+        )],
         "one ADJUST at the average, never a DISPOSE"
     );
-    assert_eq!(room.position(B1, "USD").await, Some((d("900"), d("29250.00"))));
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("900"), d("29250.00")))
+    );
 
     let audits = room.audit_rows(POST_AUDIT).await;
-    assert_eq!(audits.len(), 1, "one LEDGER_ADJUSTMENT_POST row: {audits:?}");
+    assert_eq!(
+        audits.len(),
+        1,
+        "one LEDGER_ADJUSTMENT_POST row: {audits:?}"
+    );
     let (actor, object_ref, branch, _after) = &audits[0];
     assert_eq!(actor, &user_id(FIN_A));
     assert_eq!(object_ref, &format!("ledger_adjustment:{id}"));
     assert_eq!(branch.as_deref(), Some(B1));
-    assert!(room.version(B1).await > version, "B01's branch version moved");
+    assert!(
+        room.version(B1).await > version,
+        "B01's branch version moved"
+    );
     room.finish().await;
 }
 
@@ -140,7 +156,10 @@ async fn la_t16_an_approved_overage_posts_variance_to_safe_with_no_lot() {
         lots,
         "an ADJUST in opens no lot"
     );
-    assert_eq!(room.position(B1, "USD").await, Some((d("1050"), d("34125.00"))));
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("1050"), d("34125.00")))
+    );
     assert_eq!(room.position(B1, "THB").await, None, "THB has no position");
     room.finish().await;
 }
@@ -203,7 +222,10 @@ async fn la_t18_posting_twice_writes_once_and_answers_the_same_posting() {
     );
     assert_eq!(room.postings_of(&id).await, 1, "one posting");
     assert_eq!(movements(&room, &id).await.len(), 1, "one movement");
-    assert_eq!(room.position(B1, "USD").await, Some((d("900"), d("29250.00"))));
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("900"), d("29250.00")))
+    );
     room.finish().await;
 }
 
@@ -220,9 +242,19 @@ async fn la_t19_a_pending_or_rejected_adjustment_does_not_post() {
         .await;
     let before = room.written().await;
     let a = post(&room, FIN_A, B1, &pending, &unique("k")).await;
-    assert_refused(&a, StatusCode::CONFLICT, "approvalRequired", "a PENDING adjustment");
+    assert_refused(
+        &a,
+        StatusCode::CONFLICT,
+        "approvalRequired",
+        "a PENDING adjustment",
+    );
     let a = post(&room, FIN_A, B1, &rejected, &unique("k")).await;
-    assert_refused(&a, StatusCode::CONFLICT, "staleVersion", "a REJECTED adjustment");
+    assert_refused(
+        &a,
+        StatusCode::CONFLICT,
+        "staleVersion",
+        "a REJECTED adjustment",
+    );
     assert_eq!(room.written().await, before, "nothing written");
     assert_eq!(room.audits(POST_AUDIT).await, 0);
     room.finish().await;
@@ -255,7 +287,10 @@ async fn la_t20_a_shortfall_beyond_the_safe_is_refused_and_opens_no_negative_sto
         0,
         "no NEGATIVE_STOCK request (AD-7)"
     );
-    assert_eq!(room.position(B1, "USD").await, Some((d("1000"), d("32500.00"))));
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("1000"), d("32500.00")))
+    );
     room.finish().await;
 }
 
@@ -275,7 +310,14 @@ async fn la_t21_another_branch_cannot_post_this_branchs_adjustment() {
         "notFound",
         "XC-B01's adjustment posted as XC-B02",
     );
-    let unknown = post(&room, FIN_A, B1, "ADJ-00000000-0000-4000-8000-000000000000", &unique("k")).await;
+    let unknown = post(
+        &room,
+        FIN_A,
+        B1,
+        "ADJ-00000000-0000-4000-8000-000000000000",
+        &unique("k"),
+    )
+    .await;
     assert_refused(&unknown, StatusCode::NOT_FOUND, "notFound", "an unknown id");
     assert_eq!(room.written().await, before, "nothing written");
     room.finish().await;
@@ -291,8 +333,16 @@ async fn la_t22_reservations_do_not_hold_back_a_down_adjustment() {
         .adjustment("APPROVED", quantity_payload(B1, &[("USD", "-100")]))
         .await;
     let a = post(&room, FIN_A, B1, &id, &unique("k")).await;
-    assert_eq!(a.status, StatusCode::OK, "posted despite 950 reserved (AD-8): {}", a.text);
-    assert_eq!(room.position(B1, "USD").await, Some((d("900"), d("29250.00"))));
+    assert_eq!(
+        a.status,
+        StatusCode::OK,
+        "posted despite 950 reserved (AD-8): {}",
+        a.text
+    );
+    assert_eq!(
+        room.position(B1, "USD").await,
+        Some((d("900"), d("29250.00")))
+    );
     room.finish().await;
 }
 

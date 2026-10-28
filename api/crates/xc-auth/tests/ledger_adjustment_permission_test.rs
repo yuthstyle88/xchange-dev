@@ -182,7 +182,8 @@ fn la_t3_it_enters_the_seed_in_version_8() {
 #[tokio::test]
 async fn la_t3_a_version_7_database_grants_it_to_finance_and_its_custom_groups_only() {
     let db = database_at_version_7().await;
-    let executive_based = add_custom(&db, Role::Executive, &RoleGrants::seed(Role::Executive)).await;
+    let executive_based =
+        add_custom(&db, Role::Executive, &RoleGrants::seed(Role::Executive)).await;
     let finance_held: Vec<Permission> = RoleGrants::seed(Role::Finance)
         .into_iter()
         .filter(|&p| p != KIND)
@@ -225,7 +226,10 @@ async fn la_t3_a_version_7_database_grants_it_to_finance_and_its_custom_groups_o
         want,
         "a FINANCE-based custom group gains exactly ApproveLedgerAdjustment"
     );
-    let mut want_holders = vec![Role::Finance.as_str().to_owned(), finance_based.code.clone()];
+    let mut want_holders = vec![
+        Role::Finance.as_str().to_owned(),
+        finance_based.code.clone(),
+    ];
     want_holders.sort();
     assert_eq!(holders(&db).await, want_holders, "the holders after boot");
     assert_eq!(boot(&db).await, 0, "a second boot inserts nothing");
