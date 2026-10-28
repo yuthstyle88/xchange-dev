@@ -1084,6 +1084,11 @@ impl CashCountService {
             at: now,
             reason: trimmed.to_string(),
         });
+        if let Some(ref n) = self.notices {
+            CloseNotices::new(n.clone())
+                .notify_rejected_in(tx, &count, trimmed)
+                .await?;
+        }
         Ok(count)
     }
 
