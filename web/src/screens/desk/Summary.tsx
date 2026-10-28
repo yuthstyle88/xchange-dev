@@ -4,6 +4,7 @@ import { Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import type { DeskStore, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
+import * as pricingHiddenI18n from './pricing-hidden.i18n';
 import { BenefitLines } from './benefits/BenefitLines';
 import { CustomerLoyalty } from './loyalty/CustomerLoyalty';
 import { CouponField } from './coupon/CouponField';
@@ -18,12 +19,26 @@ const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stat
 
 export function Summary(props: { store: DeskStore }): JSX.Element {
   const t = screenT('desk', screenI18n);
+  const tHidden = screenT('desk.pricingHidden', pricingHiddenI18n);
   const line = () => props.store.quote()?.lines[0];
   const foreignLabel = () =>
     props.store.type() === 'BUY'
       ? t('customerSells', { currency: props.store.currency() })
       : t('customerBuys', { currency: props.store.currency() });
   const direction = () => (props.store.type() === 'SELL' ? t('shopReceives') : t('shopPays'));
+
+  const hiddenReason = () => {
+    const r = line()?.pricingHiddenReason;
+    if (r === 'STALE' || r === 'BLOCKED' || r === 'MISMATCH') {
+      return tHidden(r);
+    }
+    return null;
+  };
+
+  const hiddenWarningText = () => {
+    const reason = hiddenReason();
+    return reason ? `${tHidden('warning')}: ${reason}` : tHidden('warning');
+  };
 
   return (
     <div class="desk-summary">
@@ -61,6 +76,11 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
           <dd>{props.store.customerId()}</dd>
         </Show>
       </dl>
+      <Show when={line()?.pricingHidden}>
+        <p class="desk-warning" data-row="pricing-hidden" role="status">
+          {hiddenWarningText()}
+        </p>
+      </Show>
       <CouponField store={props.store} />
       <CustomerLoyalty store={props.store} />
       <Show when={props.store.quoting()}>
