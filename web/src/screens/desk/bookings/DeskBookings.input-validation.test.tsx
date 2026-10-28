@@ -10,6 +10,7 @@ import {
   makeDeskRate,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -87,6 +88,9 @@ function makeServer(createAnswer: () => CreateAnswer) {
         posts.push({ path: u.pathname, body: JSON.parse(String(init?.body ?? '{}')) });
         const a = createAnswer();
         return jsonResponse(a.status, a.body);
+      }
+      if (method === 'POST' && u.pathname === '/api/quotes') {
+        return jsonResponse(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
       }
       return jsonResponse(404, { error: { code: 'notFound', message: u.pathname } });
     }),
@@ -278,6 +282,7 @@ describe('DeskBookingsScreen — new-booking dialog input checks (#4909)', () =>
       displayName: 'Somchai',
       phone: '0812345678',
       referralCode: 'abc123',
+      quoteId: 'q-booking',
     });
     await flush();
     expect(host.querySelector('.xc-modal'), 'dialog closes on success').toBeNull();

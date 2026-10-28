@@ -11,6 +11,7 @@ import {
   makeDeskBookingsData,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
   type MeView,
 } from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
@@ -301,6 +302,10 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
                 bookingNo: 'B261014-0021',
               }),
           );
+        }
+
+        if (method === 'POST' && u.pathname === '/api/quotes') {
+          return json(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
         }
 
         return json(404, { error: { code: 'notFound', message: u.pathname } });
@@ -759,6 +764,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
         displayName: 'Charlie Customer',
         phone: '+66812345678',
         referralCode: 'BROKER789',
+        quoteId: 'q-booking',
       });
     });
 
@@ -800,6 +806,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
         quantity: 250,
         displayName: 'Charlie Customer',
         phone: '+66812345678',
+        quoteId: 'q-booking',
       });
       // [required] referralCode key must be omitted completely when empty
       expect('referralCode' in (req!.body ?? {}), 'referralCode key must NOT be present in body').toBe(false);

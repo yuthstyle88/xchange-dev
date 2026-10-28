@@ -11,11 +11,15 @@ import type {
   BookingRescheduleOutput,
 } from '../../../shared/api/generated/bookings';
 import type { MeView } from '../../../shared/api/generated/me';
+import type { QuoteDto } from '../../../shared/api/generated/quote';
+import type { QuotesCommandInput } from '../../../shared/api/generated/quotes';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
 import { QrCode } from '../../../shared/ui/QrCode';
+import { BenefitLines } from '../benefits/BenefitLines';
+import { newKey } from '../save';
 import { en, th } from './i18n';
 import './desk-bookings.css';
 
@@ -121,6 +125,56 @@ export function DeskBookingsScreen(): JSX.Element {
   const [formPhone, setFormPhone] = createSignal('');
   const [formReferralCode, setFormReferralCode] = createSignal('');
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+  const [bookingQuote, setBookingQuote] = createSignal<QuoteDto | undefined>(undefined);
+  let bookingQuoteSeq = 0;
+
+  async function requestBookingQuote(rethrow = false): Promise<QuoteDto | undefined> {
+    const slot = formSlotId().trim();
+    const shopSide = formShopSide().trim();
+    const currency = formCurrency().trim();
+    const rawQty = formQuantity().trim();
+    const qty = Number(rawQty);
+    if (!slot || !shopSide || !currency || !/^\d+$/.test(rawQty) || !Number.isSafeInteger(qty) || qty <= 0) {
+      bookingQuoteSeq += 1;
+      setBookingQuote(undefined);
+      return undefined;
+    }
+    const mine = ++bookingQuoteSeq;
+    setBookingQuote(undefined);
+    const targetBranch = formBranchId() || branchId();
+    const body: QuotesCommandInput = {
+      branch: targetBranch,
+      branchId: targetBranch,
+      customerId: null,
+      channel: 'BOOKING',
+      lines: [
+        {
+          currency,
+          shopSide,
+          quantity: String(qty),
+          feeThb: null,
+          denominationGroup: null,
+        },
+      ],
+    };
+    try {
+      const answered = await api.command<QuotesCommandInput, QuoteDto>(
+        'POST',
+        '/api/quotes',
+        body,
+        newKey(),
+      );
+      if (mine !== bookingQuoteSeq) return bookingQuote();
+      setBookingQuote(answered);
+      return answered;
+    } catch (err) {
+      if (mine === bookingQuoteSeq) {
+        setBookingQuote(undefined);
+      }
+      if (rethrow) throw err;
+      return undefined;
+    }
+  }
 
   function clearFieldError(field: string) {
     setFieldErrors((prev) => {
@@ -328,6 +382,7 @@ export function DeskBookingsScreen(): JSX.Element {
     'POST',
     () => routeQr(activeQrId),
   );
+  let activeCreateQuoteId = '';
   const createWrite = keyedWrite<Record<string, unknown>, BookingCreateOutput>(
     api,
     'POST',
@@ -569,6 +624,8 @@ export function DeskBookingsScreen(): JSX.Element {
   }
 
   function resetNewBookingForm() {
+    bookingQuoteSeq += 1;
+    setBookingQuote(undefined);
     setFormQuantity('');
     setQuantityInvalid(false);
     setFormDisplayName('');
@@ -643,6 +700,20 @@ export function DeskBookingsScreen(): JSX.Element {
 
     setWriting(true);
     try {
+      let quote = bookingQuote();
+      if (!quote) {
+        quote = await requestBookingQuote(true);
+      }
+      if (!quote) {
+        readErrorActive = false;
+        setErrorMessage(t('error.validationFailed'));
+        return;
+      }
+      if (activeCreateQuoteId !== quote.id) {
+        createWrite.reset();
+        activeCreateQuoteId = quote.id;
+      }
+      payload.quoteId = quote.id;
       await createWrite.send(payload);
       readErrorActive = false;
       setErrorMessage(null);
@@ -659,8 +730,16 @@ export function DeskBookingsScreen(): JSX.Element {
         quantity: t('field.quantity'),
         slotId: t('field.slotId'),
         displayName: t('field.displayName'),
+        quoteId: t('field.quoteId'),
       });
-      if (fe.field) {
+      if (fe.field === 'quoteId') {
+        bookingQuoteSeq += 1;
+        setBookingQuote(undefined);
+        createWrite.reset();
+        activeCreateQuoteId = '';
+        setErrorMessage(fe.message);
+        setRetryAction(() => () => handleCreateBooking());
+      } else if (fe.field) {
         setErrorMessage(null);
         setRetryAction(null);
         setFieldErrors({ [fe.field]: fe.message });
@@ -1012,8 +1091,16 @@ export function DeskBookingsScreen(): JSX.Element {
                       id="new-booking-branch"
                       name="branchId"
                       value={formBranchId()}
-                      onInput={(e) => setFormBranchId(e.currentTarget.value)}
-                      onChange={(e) => setFormBranchId(e.currentTarget.value)}
+                      onInput={(e) => {
+                        if (e.currentTarget.value === formBranchId()) return;
+                        setFormBranchId(e.currentTarget.value);
+                        void requestBookingQuote();
+                      }}
+                      onChange={(e) => {
+                        if (e.currentTarget.value === formBranchId()) return;
+                        setFormBranchId(e.currentTarget.value);
+                        void requestBookingQuote();
+                      }}
                     />
                   </div>
 
@@ -1024,12 +1111,16 @@ export function DeskBookingsScreen(): JSX.Element {
                       name="slotId"
                       value={formSlotId()}
                       onInput={(e) => {
-                        setFormSlotId(e.currentTarget.value);
                         clearFieldError('slotId');
+                        if (e.currentTarget.value === formSlotId()) return;
+                        setFormSlotId(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                       onChange={(e) => {
-                        setFormSlotId(e.currentTarget.value);
                         clearFieldError('slotId');
+                        if (e.currentTarget.value === formSlotId()) return;
+                        setFormSlotId(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                     >
                       <For each={allSlots()}>
@@ -1058,8 +1149,16 @@ export function DeskBookingsScreen(): JSX.Element {
                       id="new-booking-side"
                       name="shopSide"
                       value={formShopSide()}
-                      onInput={(e) => setFormShopSide(e.currentTarget.value)}
-                      onChange={(e) => setFormShopSide(e.currentTarget.value)}
+                      onInput={(e) => {
+                        if (e.currentTarget.value === formShopSide()) return;
+                        setFormShopSide(e.currentTarget.value);
+                        void requestBookingQuote();
+                      }}
+                      onChange={(e) => {
+                        if (e.currentTarget.value === formShopSide()) return;
+                        setFormShopSide(e.currentTarget.value);
+                        void requestBookingQuote();
+                      }}
                     >
                       <option value="BUY">BUY</option>
                       <option value="SELL">SELL</option>
@@ -1073,12 +1172,16 @@ export function DeskBookingsScreen(): JSX.Element {
                       name="currency"
                       value={formCurrency()}
                       onInput={(e) => {
-                        setFormCurrency(e.currentTarget.value);
                         clearFieldError('currency');
+                        if (e.currentTarget.value === formCurrency()) return;
+                        setFormCurrency(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                       onChange={(e) => {
-                        setFormCurrency(e.currentTarget.value);
                         clearFieldError('currency');
+                        if (e.currentTarget.value === formCurrency()) return;
+                        setFormCurrency(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                     >
                       <For each={currencies()}>
@@ -1103,14 +1206,18 @@ export function DeskBookingsScreen(): JSX.Element {
                       value={formQuantity()}
                       aria-invalid={quantityInvalid() || Boolean(fieldErrors().quantity) ? 'true' : undefined}
                       onInput={(e) => {
-                        setFormQuantity(e.currentTarget.value);
                         setQuantityInvalid(false);
                         clearFieldError('quantity');
+                        if (e.currentTarget.value === formQuantity()) return;
+                        setFormQuantity(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                       onChange={(e) => {
-                        setFormQuantity(e.currentTarget.value);
                         setQuantityInvalid(false);
                         clearFieldError('quantity');
+                        if (e.currentTarget.value === formQuantity()) return;
+                        setFormQuantity(e.currentTarget.value);
+                        void requestBookingQuote();
                       }}
                     />
                     <Show when={quantityInvalid() ? t('error.validationFailed') : fieldErrors().quantity}>
@@ -1197,12 +1304,23 @@ export function DeskBookingsScreen(): JSX.Element {
                     </Show>
                   </div>
 
+                  <Show when={bookingQuote()}>
+                    {(q) => (
+                      <dl data-row="booking-estimate">
+                        <BenefitLines benefits={q().benefits} basis={q().benefitBasis} />
+                      </dl>
+                    )}
+                  </Show>
+
                   <div class="xc-modal-actions">
                     <button
                       type="button"
                       class="xc-btn-secondary"
                       disabled={writing()}
-                      onClick={() => setShowNewBookingModal(false)}
+                      onClick={() => {
+                        resetNewBookingForm();
+                        setShowNewBookingModal(false);
+                      }}
                     >
                       Close
                     </button>

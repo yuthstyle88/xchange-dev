@@ -5,6 +5,7 @@ import {
   makeDeskBookingsData,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -80,6 +81,10 @@ function makeServer() {
       const answer = await new Promise<Answer>((resolve) => held.push({ resolve }));
       if (answer.kind === 'network') throw new TypeError('Failed to fetch');
       return jsonResponse(answer.status, answer.body);
+    }
+
+    if (method === 'POST' && u.pathname === '/api/quotes') {
+      return jsonResponse(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
     }
 
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
