@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
@@ -25,7 +25,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::infrastructure::lifecycle_factory::pg_booking_lifecycle;
 use xc_cash::application::count::count_service::CountVerified;
 use xc_cash::application::count::{CashCountService, SubmitCount};
-use xc_cash::domain::count::{CountKind, CountLine};
+use xc_cash::domain::count::{CountKind, CountLine, RejectError};
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::HandoverError;
 use xc_cash::domain::transfer::cash_transfer::TransferError;
@@ -171,7 +171,9 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             StatusCode::FORBIDDEN,
         ),
         AppError::Domain(message) => {
-            if message == CashError::NotReceiver.to_string() {
+            if message == CashError::NotWaiting.to_string() {
+                V3Error::new("notWaiting", None, message, StatusCode::CONFLICT)
+            } else if message == CashError::NotReceiver.to_string() {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
@@ -398,6 +400,23 @@ impl CountReject {
     }
 }
 
+fn from_reject_error(e: RejectError) -> V3Error {
+    match e {
+        RejectError::Refused(_) => V3Error::new(e.code(), None, e.code(), StatusCode::FORBIDDEN),
+        RejectError::NotFound => V3Error::new(e.code(), None, e.code(), StatusCode::NOT_FOUND),
+        RejectError::OnlyThroughHandover => {
+            V3Error::new(e.code(), None, e.code(), StatusCode::BAD_REQUEST)
+        }
+        RejectError::SameCounter | RejectError::NotWaiting => {
+            V3Error::new(e.code(), None, e.code(), StatusCode::CONFLICT)
+        }
+        RejectError::ReasonRequired | RejectError::ReasonTooLong => {
+            V3Error::new(e.code(), Some("reason"), e.code(), StatusCode::BAD_REQUEST)
+        }
+        RejectError::Other(e) => from_cash_error(e),
+    }
+}
+
 impl CommandAction for CountReject {
     const NAME: &'static str = "countReject";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "countReject");
@@ -414,8 +433,32 @@ impl CommandAction for CountReject {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (&tx, who, &self.counts);
-        todo!("SC-B2: countReject {}: {}", input.id, input.reason)
+        let now = Utc::now();
+        let user = caller_in(tx, who, now).await?;
+        let count = self
+            .counts
+            .reject_in(tx, &user, &input.id, &input.reason, now)
+            .await
+            .map_err(from_reject_error)?;
+        let (rejected_by, rejected_at, reason) = match count.rejection {
+            Some(r) => (
+                r.by,
+                r.at.to_rfc3339_opts(SecondsFormat::Millis, true),
+                r.reason,
+            ),
+            None => (
+                user.user_id,
+                now.to_rfc3339_opts(SecondsFormat::Millis, true),
+                input.reason,
+            ),
+        };
+        Ok(CountRejected {
+            id: count.id,
+            status: "REJECTED".to_owned(),
+            rejected_by,
+            rejected_at,
+            reason,
+        })
     }
 }
 
