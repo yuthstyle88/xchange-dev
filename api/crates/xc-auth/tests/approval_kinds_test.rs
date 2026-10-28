@@ -38,7 +38,11 @@ fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
         SEEDED_ON.iter().map(|&(p, _)| p).collect::<BTreeSet<_>>(),
         "APPROVAL_KINDS is §11.9's nine"
     );
-    assert_eq!(Permission::ALL.len(), 61, "Permission::ALL grows 52 -> 61");
+    assert_eq!(
+        Permission::ALL.len(),
+        62,
+        "Permission::ALL grows 52 -> 61, then 62 (staff corrections AttendanceCloseFor)"
+    );
     for p in APPROVAL_KINDS {
         assert_eq!(
             Permission::ALL.iter().filter(|q| **q == p).count(),
@@ -80,7 +84,8 @@ fn seed_approvals_decide_iff_some_kind() {
 #[test]
 fn seed_version_4_adds_the_nine() {
     // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5.
-    assert_eq!(RoleGrants::SEED_VERSION, 5);
+    // Staff corrections SC-D2: AttendanceCloseFor enters at version 7 (6 is binding quote's, #5281).
+    assert_eq!(RoleGrants::SEED_VERSION, 7);
     for p in APPROVAL_KINDS {
         let at: Vec<i32> = RoleGrants::SEED_ADDITIONS
             .iter()

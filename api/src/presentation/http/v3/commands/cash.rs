@@ -51,6 +51,7 @@ use crate::presentation::dto::v3::cash::{
 use crate::presentation::dto::v3::cash_transfer_policy::{
     CashTransferPolicyData, TransferPolicySaveInput,
 };
+use crate::presentation::dto::v3::staff_corrections::{CountRejectInput, CountRejected};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -384,6 +385,40 @@ impl CommandAction for CountVerify {
     }
 }
 
+/// Staff-corrections §4 B (SC-B2): `countReject` `POST /api/cash-counts/{id}/reject`, beside `countVerify`.
+pub struct CountReject {
+    counts: CashCountService,
+}
+
+impl CountReject {
+    pub fn new(pool: PgPool) -> Self {
+        Self {
+            counts: CashCountService::pg(pool),
+        }
+    }
+}
+
+impl CommandAction for CountReject {
+    const NAME: &'static str = "countReject";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "countReject");
+    type Input = CountRejectInput;
+    type Output = CountRejected;
+    const ROUTE: &'static str = "/api/cash-counts/{id}/reject";
+    const METHOD: Method = Method::POST;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        who: &User,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let _ = (&tx, who, &self.counts);
+        todo!("SC-B2: countReject {}: {}", input.id, input.reason)
+    }
+}
+
 pub struct TransferPolicySave;
 
 impl TransferPolicySave {
@@ -484,6 +519,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     CommandEndpoint::register(cfg, Arc::new(CountSubmit::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(CountVerify::new(pool.clone())));
+    CommandEndpoint::register(cfg, Arc::new(CountReject::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverStart::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverAccept::new(pool.clone())));
     CommandEndpoint::register(cfg, Arc::new(handovers::HandoverReject::new(pool.clone())));
@@ -515,6 +551,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     CountSubmitOutput::export_all(&cfg)?;
     CountVerifyOutput::export_all(&cfg)?;
     CashRecordOutput::export_all(&cfg)?;
+    crate::presentation::dto::v3::staff_corrections::export_types(dir)?;
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }

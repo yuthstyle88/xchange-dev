@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 use xc_kernel::ids::BranchId;
 
-use crate::domain::count::{CashCount, CountKind, CountLine};
+use crate::domain::count::{CashCount, CountKind, CountLine, CountRejection};
 use crate::domain::repository::{CashRepository, CountTotal};
 
 #[derive(Clone)]
@@ -40,6 +40,9 @@ struct CashCountDbRow {
     idempotency_key: String,
     created_at: DateTime<Utc>,
     updated_at: DateTime<Utc>,
+    rejected_by: Option<uuid::Uuid>,
+    rejected_at: Option<DateTime<Utc>>,
+    reject_reason: Option<String>,
 }
 
 impl CashCountDbRow {
@@ -58,11 +61,30 @@ impl CashCountDbRow {
             idempotency_key: self.idempotency_key,
             created_at: self.created_at,
             updated_at: self.updated_at,
+            rejection: match (self.rejected_by, self.rejected_at, self.reject_reason) {
+                (Some(by), Some(at), Some(reason)) => Some(CountRejection {
+                    by: by.to_string(),
+                    at,
+                    reason,
+                }),
+                _ => None,
+            },
         }
     }
 }
 
 impl CashRepository for PgCashRepository {
+    fn reject_count<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        count_id: &'a str,
+        rejected_by: &'a str,
+        rejected_at: DateTime<Utc>,
+        reason: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        todo!("SC-B1: reject {count_id} by {rejected_by} at {rejected_at}: {reason}")
+    }
+
     fn find_count_by_id<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
@@ -74,7 +96,8 @@ impl CashRepository for PgCashRepository {
             };
             let row: Option<CashCountDbRow> = sqlx::query_as(
                 "SELECT id, organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
-                        verified_by, verified_at, note, idempotency_key, created_at, updated_at \
+                        verified_by, verified_at, note, idempotency_key, created_at, updated_at, \
+                        rejected_by, rejected_at, reject_reason \
                  FROM cash_counts WHERE id = $1",
             )
             .bind(id)
@@ -94,7 +117,8 @@ impl CashRepository for PgCashRepository {
         Box::pin(async move {
             let row: Option<CashCountDbRow> = sqlx::query_as(
                 "SELECT id, organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
-                        verified_by, verified_at, note, idempotency_key, created_at, updated_at \
+                        verified_by, verified_at, note, idempotency_key, created_at, updated_at, \
+                        rejected_by, rejected_at, reject_reason \
                  FROM cash_counts WHERE branch_id = $1 AND idempotency_key = $2",
             )
             .bind(branch.as_str())

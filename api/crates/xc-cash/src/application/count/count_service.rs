@@ -33,7 +33,7 @@ use crate::application::denominations::face_values_in;
 use crate::application::ledger_approval::count_difference::{
     COUNT_DIFFERENCE, CountDifferenceGate, GateResult,
 };
-use crate::domain::count::{CashCount, CountKind, CountLine};
+use crate::domain::count::{CashCount, CountKind, CountLine, RejectError};
 use crate::domain::error::CashError;
 use crate::domain::ledger::posting::{SourceRef, SourceType};
 use crate::domain::person_rules::PersonRules;
@@ -1009,6 +1009,7 @@ impl CashCountService {
             idempotency_key: cmd.idempotency_key,
             created_at: now,
             updated_at: now,
+            rejection: None,
         };
 
         self.repo
@@ -1024,6 +1025,22 @@ impl CashCountService {
         }
 
         Ok(cash_count)
+    }
+
+    /// Staff-corrections §4 B (SC-B1): a verifier rejects a waiting count with a reason. The row keeps the
+    /// rejection (`rejected_by`, `rejected_at` = `now`, `reject_reason`), leaves `WAITING` and shows as `REJECTED`.
+    /// Checked in order: B2 not found, B3 handover, B1 permission (`ShiftCloseCertify` on the count's branch),
+    /// B4 same counter, B5 not waiting, B6 reason. No posting, no shift change.
+    pub async fn reject_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        count_id: &str,
+        reason: &str,
+        now: DateTime<Utc>,
+    ) -> Result<CashCount, RejectError> {
+        let _ = (&tx, actor, now);
+        todo!("SC-B1: reject {count_id}: {reason}")
     }
 
     pub async fn verify_in(

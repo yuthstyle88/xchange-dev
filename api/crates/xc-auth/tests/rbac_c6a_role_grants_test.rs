@@ -101,6 +101,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ApproveCampaignVersion,
             P::ApproveRatePublication,
             P::ApproveLoyaltyRuleVersion,
+            P::AttendanceCloseFor, // staff corrections SC-D2
         ],
     ),
     (
@@ -117,6 +118,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::AttendanceClock,
             P::SignedIn,
             P::AuditLogsRead,
+            P::AttendanceCloseFor, // staff corrections SC-D2
         ],
     ),
     (
@@ -194,6 +196,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ApproveCashTransferWithinLimit,
             P::ApproveNegativeStock,
             P::ApproveExchangeTransaction,
+            P::AttendanceCloseFor, // staff corrections SC-D2
         ],
     ),
     (
@@ -287,7 +290,7 @@ const SEED: [(Role, &[Permission]); 9] = [
 
 /// The no-module permissions: §11.2's desk basics, "Branch cash basics" (`CashManage`, `ApprovalsDecide`),
 /// `SignedIn` and the rest of §11.3 rule 5, proposal A's five, and §11.9's nine approval kinds (AP-0).
-const NO_MODULE: [Permission; 25] = [
+const NO_MODULE: [Permission; 26] = [
     P::SignedIn,
     P::AttendanceClock,
     P::CompatRead,
@@ -313,6 +316,8 @@ const NO_MODULE: [Permission; 25] = [
     P::ApproveExchangeTransaction,
     P::ApproveTransactionReversal,
     P::ApproveLoyaltyRuleVersion,
+    // Staff corrections SC-D2.
+    P::AttendanceCloseFor,
 ];
 
 fn in_all_order(set: &[Permission]) -> Vec<Permission> {

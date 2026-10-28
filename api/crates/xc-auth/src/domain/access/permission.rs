@@ -88,11 +88,15 @@ pub enum Permission {
     ApproveTransactionReversal,
     /// RBAC §11.9: decide a `LOYALTY_RULE_VERSION`, any row. Seeded on EXECUTIVE.
     ApproveLoyaltyRuleVersion,
+    /// Staff corrections SC-D2 (`docs/design/staff-corrections.md`): close another employee's forgotten clock-in
+    /// from an earlier day (`attendanceCloseFor`, view `open_attendance`), on a row covering the branch. Seeded on
+    /// BRANCH_MANAGER, EXECUTIVE and ADMIN.
+    AttendanceCloseFor,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 61] = [
+    pub const ALL: [Permission; 62] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -154,5 +158,6 @@ impl Permission {
         Permission::ApproveExchangeTransaction,
         Permission::ApproveTransactionReversal,
         Permission::ApproveLoyaltyRuleVersion,
+        Permission::AttendanceCloseFor,
     ];
 }

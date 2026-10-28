@@ -57,6 +57,7 @@ fn str_to_event_kind(table: &str, field: &str, s: &str) -> AppResult<EventKind> 
         "ENABLE" => Ok(EventKind::Enable),
         "CLOCK_IN" => Ok(EventKind::ClockIn),
         "CLOCK_OUT" => Ok(EventKind::ClockOut),
+        "CLOCK_OUT_FOR" => Ok(EventKind::ClockOutFor),
         "CASH_TARGET" => Ok(EventKind::CashTarget),
         "SERVICE_OPEN" => Ok(EventKind::ServiceOpen),
         "CUT_OFF" => Ok(EventKind::CutOff),
@@ -436,6 +437,14 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
 }
 
 impl CustodyRepository for PgCustodyRepository {
+    fn branch_timezone_in<'a>(
+        &'a self,
+        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<chrono_tz::Tz>> {
+        todo!("SC-A2: the timezone of branch {branch:?}")
+    }
+
     fn branch_exists<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<bool>> {
         Box::pin(async move {
             let exists: bool =

@@ -25,6 +25,7 @@ use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::repositories::custody_ports::CustodyPorts;
 use crate::domain::custody::repositories::custody_repository::CustodyRepository;
 use crate::domain::custody::value_objects::cash_target::CashTarget;
+use crate::domain::custody::value_objects::close_for::{CloseFor, CloseForError};
 use crate::domain::custody::value_objects::custody_error::CustodyError;
 use crate::domain::custody::value_objects::custody_event::EventKind;
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
@@ -372,6 +373,23 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
             .store_state_in(tx, branch, &before, &after)
             .await?;
         Ok(())
+    }
+
+    /// Staff corrections §4 A (SC-A2): a manager closes another employee's open clock-in `cmd.attendance_id`
+    /// at the entered `cmd.clock_out`. Checks `AttendanceCloseFor` on `branch` (A1), finds the row (A2), runs
+    /// [`CloseFor::check`] in the branch timezone (A3–A10), sets the row's clock-out, appends one `CLOCK_OUT_FOR`
+    /// event (`details`: `attendanceId`, `employeeId`, `clockIn`, `clockOut`, `reason`) and stores the state.
+    /// Answers the closed row.
+    pub async fn close_for(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        who: &Actor,
+        branch: &BranchId,
+        cmd: CloseFor,
+        now: DateTime<Utc>,
+    ) -> Result<Attendance, CloseForError> {
+        let _ = (&tx, who, branch, now);
+        todo!("SC-A2: close {} for someone else", cmd.attendance_id)
     }
 
     pub async fn hold(

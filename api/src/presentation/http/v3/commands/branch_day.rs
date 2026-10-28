@@ -42,6 +42,7 @@ use crate::presentation::dto::v3::branch_day::{
     DayStartServiceInput, DayStartServiceOutput, DayTargetInput, DayTargetOutput, DraftBeginInput,
     DraftBeginOutput,
 };
+use crate::presentation::dto::v3::staff_corrections::{AttendanceClosed, CloseForInput};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -519,6 +520,46 @@ impl CommandAction for DraftBeginCommand {
     }
 }
 
+// ------------------------------------------------------------ 4b. attendanceCloseFor
+
+/// Staff corrections §4 A (SC-A3): `attendanceCloseFor` `POST /api/attendance/{id}/close`, beside `clock`.
+/// A manager closes another employee's open clock-in from an earlier day, with the real time and a reason.
+pub struct AttendanceCloseForCommand {
+    service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
+}
+
+impl AttendanceCloseForCommand {
+    pub fn new(service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>) -> Self {
+        Self { service }
+    }
+}
+
+impl CommandAction for AttendanceCloseForCommand {
+    const NAME: &'static str = "attendanceCloseFor";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, Self::NAME);
+    type Input = CloseForInput;
+    type Output = AttendanceClosed;
+    const ROUTE: &'static str = "/api/attendance/{id}/close";
+    const METHOD: Method = Method::POST;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        who: &Actor,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let _ = (&tx, branch, who, &self.service);
+        todo!(
+            "SC-A3: close {} at {}: {}",
+            input.id,
+            input.clock_out,
+            input.reason
+        )
+    }
+}
+
 // ------------------------------------------------------------ register & export
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -545,6 +586,10 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(DayCutoffCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(DayTargetCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(AttendanceClockCommand::new(service.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(AttendanceCloseForCommand::new(service.clone())),
+    );
     CommandEndpoint::register(
         cfg,
         Arc::new(CustomerHoldCreateCommand::new(service.clone())),

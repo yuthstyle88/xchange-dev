@@ -124,14 +124,12 @@ classDiagram
         <<api/crates/xc-cash/src/application/count/count_service.rs>>
         submit_in(…) AppResult~CashCount~
         verify_in(…) AppResult~CountVerified~  +refuses a rejected count: NotWaiting
-        +reject_in(tx, actor, count_id, reason, now) AppResult~CashCount~
+        +reject_in(tx, actor, count_id, reason, now) Result~CashCount, RejectError~
     }
     class CashCount {
         <<api/crates/xc-cash/src/domain/count/cash_count.rs>>
         verified_by / verified_at
-        +rejected_by: Option~String~
-        +rejected_at: Option~DateTime~Utc~~
-        +reject_reason: Option~String~
+        +rejection: Option~CountRejection~  by, at, reason
         +status() CountStatus
     }
     class CountStatus {
@@ -190,7 +188,7 @@ Checked in this order. The first fault wins.
 
 | # | Case | Answer |
 |---|---|---|
-| A1 | Caller lacks `AttendanceCloseFor` on the row's branch | 403 `roleNotAllowed` (or `outOfScope` for another branch), from the seam's `Policy::authorize` and from the service's `Authorizer::check` |
+| A1 | Caller lacks `AttendanceCloseFor` | 400 `roleNotAllowedHere` from the seam (`Policy::authorize`, as every refused command route answers, `command.rs:132-139`). The service's own `Authorizer::check` on the request's branch is the second guard: 403 `roleNotAllowed` / `outOfScope`. |
 | A2 | No attendance row `{id}` at this branch | 404 `notFound` |
 | A3 | The row is the caller's own | 409 `selfClose` |
 | A4 | The row already has a clock-out | 409 `notOpen` |
@@ -207,7 +205,7 @@ Checked in this order. The first fault wins.
 
 | # | Case | Answer |
 |---|---|---|
-| B1 | Caller lacks `ShiftCloseCertify` on the count's branch | 403 `roleNotAllowed` / `outOfScope`. The service maps the `Authorizer` refusal to its own code, not to `validationFailed` (see §8, gap 1). |
+| B1 | Caller lacks `ShiftCloseCertify` | 400 `roleNotAllowedHere` from the seam, as for `countVerify`. A caller holding it only on another branch passes the seam on that branch and gets 403 `outOfScope` from the service, which checks the **count's** branch. The service maps the `Authorizer` refusal to its own code, not to `validationFailed` (see §8, gap 1). |
 | B2 | No count `{id}` | 404 `notFound` |
 | B3 | `HANDOVER_OUT` count | 400 `onlyThroughHandover` (as verify, `count_service.rs:1049-1053`) |
 | B4 | Caller counted it | 409 `sameCounter` (`verifier_is_not_counter`) |
@@ -222,7 +220,8 @@ Checked in this order. The first fault wins.
 
 | Code | Status | Field | Command |
 |---|---|---|---|
-| `roleNotAllowed` / `outOfScope` | 403 | — | both. **These replace the brief's `notManager`**: the permission is configurable (SC-D2), so the screen shows the existing "not allowed" text. |
+| `roleNotAllowedHere` | 400 | — | both, from the seam when the caller lacks the permission. **This and the two below replace the brief's `notManager`**: the permission is configurable (SC-D2), so the screen shows the existing "not allowed" text. |
+| `roleNotAllowed` / `outOfScope` | 403 | — | both, from the service's own check (another branch's row or count) |
 | `notFound` | 404 | — | both |
 | `selfClose` | 409 | — | A |
 | `notOpen` | 409 | — | A |
@@ -289,6 +288,13 @@ Count before deploy (expect 0 rows that would violate anything, and see how many
 
 ## 9. Tickets
 
+> **Written with SC-0 (2026-10-28).** SC-0 settled three internal shapes that §3 had only sketched. These are [proposed]-level and are pinned by the up-front tests:
+> - `reject_in` answers `Result<CashCount, RejectError>` (`xc-cash/src/domain/count/reject_error.rs`), with one variant per §4 B row and `code()`, so SC-B2 maps by type, not by message.
+> - `CashCount` carries one `rejection: Option<CountRejection>` instead of three loose fields.
+> - `close_for` answers `Result<Attendance, CloseForError>` (`NotAllowed`, `NotFound`, `Refused(CloseForRefusal)`, `Other`).
+>
+> The `CLOCK_OUT_FOR` details carry `clockIn`/`clockOut` as RFC 3339 with milliseconds in UTC, and `reason` trimmed.
+
 | Ticket | Class | Does | File scope | Needs first |
 |---|---|---|---|---|
 | **SC-0** (sub-controller, not dispatched) | — | `Permission::AttendanceCloseFor` (+ `ALL`, module/level, the next free seed version, `SEED_ADDITIONS`); the two `AreaRow`s; `EventKind::ClockOutFor` ("CLOCK_OUT_FOR"); `close_for.rs` with types and `todo!()` `check`; `close_for` and `branch_timezone_in` signatures (`todo!()`); M-SC1; the `CashCount` fields, `CountStatus` and `status()`; the `reject_in` / `reject_count` signatures (`todo!()`); the DTO file; the empty command/view structs; and every up-front test below. | the files of the tickets below, plus `permission.rs`, `permission_module.rs`, `role_grants.rs`, `areas/branch_day.rs`, `areas/cash.rs`, `custody_event.rs`, `cash_count.rs`, `xc-cash/src/domain/error.rs` (`NotWaiting`, `RejectReasonRequired`), `dto/v3/staff_corrections.rs`, `dto/v3/mod.rs`, the migration | this doc merged; owner approved M-SC1 (#564, 2026-10-28); **`feat/binding-quote` merged into main first**, because SC-0 edits the same `permission.rs` / `role_grants.rs` / `permission_module.rs` and the seed version must follow binding quote's 6 |
@@ -298,7 +304,7 @@ Count before deploy (expect 0 rows that would violate anything, and see how many
 | **SC-A4** | mechanical → Flash | `open_attendance` view | `api/src/presentation/http/v3/views/open_attendance.rs` | SC-0 |
 | **SC-B1** | logic → Argon | `reject_in` (B1–B7), verify refuses rejected (B8), `reject_count` | `api/crates/xc-cash/src/application/count/count_service.rs`<br>`api/crates/xc-cash/src/infrastructure/repository.rs` | SC-0 |
 | **SC-B2** | mechanical → Flash | `countReject` command + its error mapping | `api/src/presentation/http/v3/commands/cash.rs` | SC-0 (B1 for green) |
-| **SC-B3** | mechanical → Flash | `cash_counts` view: `REJECTED` filter, `status` and the three fields on the row | `api/src/presentation/http/v3/views/cash_counts.rs`<br>`api/src/presentation/dto/v3/cash.rs` | SC-0 |
+| **SC-B3** | mechanical → Flash | `cash_counts` view: `REJECTED` filter, `status` and the three fields on the row (`#[ts(optional)]` on each omitted key, #5303); regenerate the committed TS type and its fixture | `api/src/presentation/http/v3/views/cash_counts.rs`<br>`api/src/presentation/dto/v3/cash.rs`<br>`web/src/shared/api/generated/cash_counts.ts`<br>`web/src/shared/testing/fixtures/cash_counts.ts` | SC-0 |
 
 Count: **7 dispatched tickets** (3 Argon, 4 Flash), all released together once SC-0 is on the branch.
 
