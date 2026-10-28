@@ -43,7 +43,7 @@ use chrono::{Duration, Utc};
 use compat_common::{Fixture, Index, Person};
 use rpc_common::{
     Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY, Family,
-    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, RETIRED, ROLE_NOT_ALLOWED_RPC,
+    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, REFUSED_AT, RETIRED, ROLE_NOT_ALLOWED_RPC,
     ROLE_NOT_ALLOWED_STAFF, RPC, Replay, Rule, SERVER_ERROR, SIGN_IN, STAFF_RPC, USE_CUSTODY,
     V2_HEADERS_FAULT, one_of_each_role, retired_by_ca10, route_rule, sign_in, unknown_name_for,
 };
@@ -405,19 +405,6 @@ async fn a_database_failure_is_the_server_error_sentence() {
 
 // ── rpc/engine_actions.json ──────────────────────────────────────────────────
 
-/// RF-D9: the `reserveCustomer` refusals of `engine_actions.json` (#68–#76) and the key each names (RF-D5, RF-D6).
-const REFUSED_AT: [(usize, &str); 9] = [
-    (68, "name"),
-    (69, "name"),
-    (70, "passportNo"),
-    (71, "nationality"),
-    (72, "mode"),
-    (73, "mode"),
-    (74, "birthDate"),
-    (75, "birthDate"),
-    (76, "passportExpiry"),
-];
-
 /// `rpc/engine_actions.json` through HTTP, step by step: every step of the ten
 /// actions equals v2's answer (ids made by the server paired; `row`,
 /// `startRow`, `endRow`, `rawStatus` left out), every refusal in status and
@@ -446,11 +433,6 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
         // re-expected for CA-10 #626 (design §6 retires the direct shift actions): #151 asks after
         // the id of #40, a direct shift open, which v3 no longer applies under that id
         .rule(151, Rule::ResolvedAs("CANCELLED"));
-    // RF-D9 (`docs/design/rpc-refusal-field.md`, owner 2026-10-27 Q1): v2's refusal of a customer's details,
-    // plus the payload key at fault
-    for (n, field) in REFUSED_AT {
-        replay = replay.rule(n, Rule::RefusedAt(field));
-    }
     replay.run().await;
 
     assert_eq!(fixture.steps().len(), 184);

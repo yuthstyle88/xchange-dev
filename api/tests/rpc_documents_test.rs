@@ -93,10 +93,12 @@ async fn documents(replay: &Replay<'_>, who: &str, payload: Value) -> Answer {
 }
 
 /// v2's own text of an accepted step, with the keys of the uploaded files
-/// replaced by the ones this run made.
+/// replaced by the ones this run made. Re-expected for #5368 by the ticket author: a receipt #5315 changed on
+/// purpose reads v3's address (`snapshot_common::DAY_SETTLED_RECEIPTS`).
 fn v2_text(replay: &Replay<'_>, n: usize) -> String {
     let fixture = replay.fixture;
     let text = fixture.body_text(n).expect("an accepted step has a body");
+    let text = snapshot_common::with_settled_receipts(&fixture.name, &text);
     text_with_ids(&replay.ids, fixture.step(n).json(), &text)
 }
 
