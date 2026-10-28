@@ -165,7 +165,7 @@ impl KioskService {
                 )
                 .await?;
             if !admitted {
-                return Err(refuse(KioskError::AmountOrCurrencyInvalid));
+                return Err(refuse(KioskError::RateChangedOrClosed));
             }
         }
 
@@ -210,6 +210,9 @@ impl KioskService {
             )
             .await
             .map_err(|err| match err {
+                pos_error::AppError::Domain(msg) if msg.starts_with("rateUnavailable") => {
+                    refuse(KioskError::RateChangedOrClosed)
+                }
                 pos_error::AppError::Domain(_) => refuse(KioskError::AmountOrCurrencyInvalid),
                 other => other,
             })?

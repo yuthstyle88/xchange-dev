@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::public_branches::{PublicBranchDto, PublicBranchesData};
+use crate::presentation::http::public::etag::if_none_match_hits;
 use crate::presentation::http::public::not_found_response;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -60,12 +61,7 @@ async fn handle(
     });
     let etag = format!("\"c{count}-v{sum_version}-t{max_ts}\"");
 
-    if let Some(if_none_match) = req
-        .headers()
-        .get(header::IF_NONE_MATCH)
-        .and_then(|v| v.to_str().ok())
-        && (if_none_match == etag || if_none_match.trim() == etag.trim())
-    {
+    if if_none_match_hits(req.headers(), &etag) {
         return HttpResponse::NotModified()
             .insert_header((header::ETAG, etag))
             .finish();

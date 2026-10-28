@@ -10,6 +10,7 @@ use xc_rate::domain::pricing::display_settings::DisplaySettings;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::published_rates::PublishedRatesData;
+use crate::presentation::http::public::etag::if_none_match_hits;
 use crate::presentation::http::public::not_found_response;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::published_rates::published_rates_data;
@@ -54,12 +55,7 @@ async fn handle(
             let etag = compute_etag(&data);
             data.lines.retain(|l| !l.hidden);
 
-            if let Some(if_none_match) = req
-                .headers()
-                .get(header::IF_NONE_MATCH)
-                .and_then(|v| v.to_str().ok())
-                && (if_none_match == etag || if_none_match.trim() == etag.trim())
-            {
+            if if_none_match_hits(req.headers(), &etag) {
                 return HttpResponse::NotModified()
                     .insert_header((header::ETAG, etag))
                     .finish();

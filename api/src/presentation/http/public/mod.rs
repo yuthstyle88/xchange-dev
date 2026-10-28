@@ -6,6 +6,7 @@ pub mod branch_rates;
 pub mod branches;
 pub mod consent_texts;
 pub mod copy_link;
+pub mod etag;
 pub mod host;
 pub mod queue_display;
 pub mod queue_rates;
