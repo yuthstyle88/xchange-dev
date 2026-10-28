@@ -15,6 +15,7 @@ import {
   makeDeskConfig,
   makeDeskPaymentMethod,
   makeDeskRate,
+  makeQueueTicketDto,
   makeQuoteDto,
   makeQuoteLineDto,
   makeQuotePublicationDto,
@@ -116,6 +117,7 @@ function fakeServer() {
       if (method === "POST" && path === "/api/transactions") return json(200, tx("DRAFT"));
       if (method === "POST" && path === "/api/transactions/tx-1/confirm") return json(200, tx("CONFIRMED"));
       if (method === "POST" && path === "/api/transactions/tx-1/complete") return json(200, tx("COMPLETED", DOC));
+      if (method === "POST" && path === "/api/queue/tickets/serve") return json(200, makeQueueTicketDto({ displayNumber: "W001", status: "SERVING" }));
       return json(404, { error: { code: "notFound", message: `unexpected ${method} ${path}` } });
     }),
   );
@@ -208,7 +210,7 @@ describe("the desk page reaches steps 2–4 (#543)", () => {
     // step 4: the server's answer
     await waitHeading(HEAD.receipt, "step 4 (receipt) is reached");
     await vi.waitFor(() => expect(q("#panel")?.textContent ?? "").toContain(DOC), { timeout: 4000 });
-    for (const call of ["POST /api/transactions", "POST /api/transactions/tx-1/confirm", "POST /api/transactions/tx-1/complete"]) {
+    for (const call of ["POST /api/queue/tickets/serve", "POST /api/transactions", "POST /api/transactions/tx-1/confirm", "POST /api/transactions/tx-1/complete"]) {
       expect(server.calls, call).toContain(call);
     }
   }, 15000);
