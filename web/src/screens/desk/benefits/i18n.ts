@@ -3,10 +3,12 @@ export const th = {
   benefit: 'สิทธิประโยชน์',
   coupon: 'คูปอง',
   capped: 'จำกัดขั้นต่ำ',
+  indicative: 'ประมาณการ',
 };
 
 export const en: typeof th = {
   benefit: 'Benefit',
   coupon: 'Coupon',
   capped: 'capped',
+  indicative: 'ประมาณการ',
 };
