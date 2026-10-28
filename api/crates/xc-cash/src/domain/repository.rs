@@ -60,4 +60,15 @@ pub trait CashRepository: Send + Sync {
         shift_id: Option<&'a str>,
         totals: &'a [CountTotal],
     ) -> BoxFuture<'a, AppResult<()>>;
+
+    /// Staff-corrections SC-B1: write the rejection on a waiting count (`rejected_by`, `rejected_at`,
+    /// `reject_reason`). Refuses nothing itself; `reject_in` decides.
+    fn reject_count<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        count_id: &'a str,
+        rejected_by: &'a str,
+        rejected_at: DateTime<Utc>,
+        reason: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>>;
 }

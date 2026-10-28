@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SecondsFormat, Utc};
 use pos_infra::transactions::Transactor;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -28,6 +28,9 @@ use xc_shift::application::branch_day::service::{
 };
 use xc_shift::application::shift::service::ShiftService;
 use xc_shift::domain::custody::repositories::custody_ports::CustodyPorts;
+use xc_shift::domain::custody::value_objects::close_for::{
+    CloseFor, CloseForError, CloseForRefusal,
+};
 use xc_shift::domain::custody::value_objects::custody_error::CustodyError;
 use xc_shift::domain::shift::value_objects::balances::Balances;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
@@ -42,6 +45,7 @@ use crate::presentation::dto::v3::branch_day::{
     DayStartServiceInput, DayStartServiceOutput, DayTargetInput, DayTargetOutput, DraftBeginInput,
     DraftBeginOutput,
 };
+use crate::presentation::dto::v3::staff_corrections::{AttendanceClosed, CloseForInput};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -519,6 +523,117 @@ impl CommandAction for DraftBeginCommand {
     }
 }
 
+// ------------------------------------------------------------ 4b. attendanceCloseFor
+
+/// Staff corrections §4 A (SC-A3): `attendanceCloseFor` `POST /api/attendance/{id}/close`, beside `clock`.
+/// A manager closes another employee's open clock-in from an earlier day, with the real time and a reason.
+pub struct AttendanceCloseForCommand {
+    service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
+}
+
+impl AttendanceCloseForCommand {
+    pub fn new(service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>) -> Self {
+        Self { service }
+    }
+}
+
+fn refusal_message(r: CloseForRefusal) -> &'static str {
+    match r {
+        CloseForRefusal::SelfClose => "Cannot close your own attendance row",
+        CloseForRefusal::NotOpen => "Attendance row is not open",
+        CloseForRefusal::ReasonRequired => "A reason is required to close attendance",
+        CloseForRefusal::ReasonTooLong => "Reason must not exceed 500 characters",
+        CloseForRefusal::BeforeClockIn => "Clock-out time cannot be before clock-in time",
+        CloseForRefusal::InFuture => "Clock-out time cannot be in the future",
+        CloseForRefusal::NotEarlierDay => "Attendance can only be closed for an earlier day",
+    }
+}
+
+impl CommandAction for AttendanceCloseForCommand {
+    const NAME: &'static str = "attendanceCloseFor";
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, Self::NAME);
+    type Input = CloseForInput;
+    type Output = AttendanceClosed;
+    const ROUTE: &'static str = "/api/attendance/{id}/close";
+    const METHOD: Method = Method::POST;
+
+    async fn run(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        who: &Actor,
+        input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        let clock_out = DateTime::parse_from_rfc3339(&input.clock_out)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|_| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("clockOut"),
+                    "clockOut must be a valid RFC 3339 date-time",
+                    StatusCode::BAD_REQUEST,
+                )
+            })?;
+
+        let cmd = CloseFor {
+            attendance_id: input.id,
+            clock_out,
+            reason: input.reason,
+        };
+
+        let row = self
+            .service
+            .close_for(tx, who, branch, cmd, Utc::now())
+            .await
+            .map_err(|e| match e {
+                CloseForError::NotAllowed(r) => V3Error::new(
+                    r.code(),
+                    None,
+                    "Role not allowed for this branch",
+                    StatusCode::FORBIDDEN,
+                ),
+                CloseForError::NotFound => V3Error::new(
+                    "notFound",
+                    None,
+                    "Attendance row not found",
+                    StatusCode::NOT_FOUND,
+                ),
+                CloseForError::Refused(
+                    r @ (CloseForRefusal::SelfClose | CloseForRefusal::NotOpen),
+                ) => V3Error::new(
+                    r.code(),
+                    r.field(),
+                    refusal_message(r),
+                    StatusCode::CONFLICT,
+                ),
+                CloseForError::Refused(r) => V3Error::new(
+                    r.code(),
+                    r.field(),
+                    refusal_message(r),
+                    StatusCode::BAD_REQUEST,
+                ),
+                CloseForError::Other(e) => map_service_error(e),
+            })?;
+
+        let clock_in = DateTime::from_timestamp_millis(row.clock_in.epoch_millis())
+            .map(|t| t.to_rfc3339_opts(SecondsFormat::Millis, true))
+            .unwrap_or_default();
+        let clock_out = row
+            .clock_out
+            .and_then(|ct| DateTime::from_timestamp_millis(ct.epoch_millis()))
+            .map(|t| t.to_rfc3339_opts(SecondsFormat::Millis, true))
+            .unwrap_or_else(|| clock_out.to_rfc3339_opts(SecondsFormat::Millis, true));
+
+        Ok(AttendanceClosed {
+            id: row.id,
+            employee_id: row.employee_id,
+            clock_in,
+            clock_out,
+        })
+    }
+}
+
 // ------------------------------------------------------------ register & export
 
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
@@ -545,6 +660,10 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(DayCutoffCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(DayTargetCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(AttendanceClockCommand::new(service.clone())));
+    CommandEndpoint::register(
+        cfg,
+        Arc::new(AttendanceCloseForCommand::new(service.clone())),
+    );
     CommandEndpoint::register(
         cfg,
         Arc::new(CustomerHoldCreateCommand::new(service.clone())),

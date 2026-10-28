@@ -25,6 +25,7 @@ use crate::domain::custody::entities::tx_draft::{DraftStatus, TxDraft};
 use crate::domain::custody::repositories::custody_ports::CustodyPorts;
 use crate::domain::custody::repositories::custody_repository::CustodyRepository;
 use crate::domain::custody::value_objects::cash_target::CashTarget;
+use crate::domain::custody::value_objects::close_for::{CloseFor, CloseForError};
 use crate::domain::custody::value_objects::custody_error::CustodyError;
 use crate::domain::custody::value_objects::custody_event::EventKind;
 use crate::domain::custody::value_objects::custody_role::CustodyRole;
@@ -372,6 +373,64 @@ impl<R: CustodyRepository, S: ShiftRepository> BranchDayService<R, S> {
             .store_state_in(tx, branch, &before, &after)
             .await?;
         Ok(())
+    }
+
+    /// Staff corrections §4 A (SC-A2): a manager closes another employee's open clock-in `cmd.attendance_id`
+    /// at the entered `cmd.clock_out`. Checks `AttendanceCloseFor` on `branch` (A1), finds the row (A2), runs
+    /// [`CloseFor::check`] in the branch timezone (A3–A10), sets the row's clock-out, appends one `CLOCK_OUT_FOR`
+    /// event (`details`: `attendanceId`, `employeeId`, `clockIn`, `clockOut`, `reason`) and stores the state.
+    /// Answers the closed row.
+    pub async fn close_for(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        who: &Actor,
+        branch: &BranchId,
+        cmd: CloseFor,
+        now: DateTime<Utc>,
+    ) -> Result<Attendance, CloseForError> {
+        let target = Target::new(&who.organization_id, Some(branch.clone()), None);
+        Authorizer::check(Some(who), Permission::AttendanceCloseFor, &target, now)
+            .map_err(CloseForError::NotAllowed)?;
+
+        let tz = self.repo.branch_timezone_in(tx, branch).await?;
+        let before = self.repo.load_state_in(tx, branch).await?;
+        let mut after = before.clone();
+
+        let row = after
+            .attendance
+            .iter_mut()
+            .find(|a| a.id == cmd.attendance_id)
+            .ok_or(CloseForError::NotFound)?;
+
+        cmd.check(row, &who.user_id, now, tz)
+            .map_err(CloseForError::Refused)?;
+
+        row.clock_out = Some(CustodyTime::from_epoch_millis(
+            cmd.clock_out.timestamp_millis(),
+        ));
+        let closed = row.clone();
+
+        self.append_event(
+            tx,
+            branch,
+            who,
+            EventKind::ClockOutFor,
+            now,
+            json!({
+                "attendanceId": closed.id,
+                "employeeId": closed.employee_id,
+                "clockIn": iso_time(closed.clock_in),
+                "clockOut": cmd.clock_out.to_rfc3339_opts(SecondsFormat::Millis, true),
+                "reason": cmd.reason.trim(),
+            }),
+        )
+        .await?;
+
+        self.repo
+            .store_state_in(tx, branch, &before, &after)
+            .await?;
+
+        Ok(closed)
     }
 
     pub async fn hold(

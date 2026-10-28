@@ -6,6 +6,8 @@ pub enum EventKind {
     Enable,
     ClockIn,
     ClockOut,
+    /// Staff-corrections SC-D5: a manager closed another employee's open clock-in (`attendanceCloseFor`).
+    ClockOutFor,
     CashTarget,
     ServiceOpen,
     CutOff,
@@ -26,6 +28,7 @@ impl EventKind {
             EventKind::Enable => "ENABLE",
             EventKind::ClockIn => "CLOCK_IN",
             EventKind::ClockOut => "CLOCK_OUT",
+            EventKind::ClockOutFor => "CLOCK_OUT_FOR",
             EventKind::CashTarget => "CASH_TARGET",
             EventKind::ServiceOpen => "SERVICE_OPEN",
             EventKind::CutOff => "CUT_OFF",

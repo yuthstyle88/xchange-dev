@@ -1,10 +1,10 @@
 import { createEffect, createSignal, onCleanup, onMount, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
-import { wordedError } from '../../../shared/i18n/worded-error';
+import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
-import { ApiClient } from '../../../shared/api/client';
+import { ApiClient, ApiError } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
   HandoverStartInput,
@@ -14,6 +14,7 @@ import type {
   CashLineInput,
 } from '../../../shared/api/generated/cash';
 import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generated/cash_counts';
+import type { CountRejectInput, CountRejected } from '../../../shared/api/generated/staff_corrections';
 import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
@@ -90,9 +91,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [selectedReceiver, setSelectedReceiver] = createSignal<string>('');
   const [handoverQuantities, setHandoverQuantities] = createSignal<Record<number, string>>({});
   const [handoverLineErrors, setHandoverLineErrors] = createSignal<Record<number, string>>({});
+  const [rejectingId, setRejectingId] = createSignal<string | null>(null);
+  const [rejectReason, setRejectReason] = createSignal<string>('');
+  const [rejectReasonError, setRejectReasonError] = createSignal<string | null>(null);
+  const [rejectRowErrors, setRejectRowErrors] = createSignal<Record<string, string>>({});
 
   createEffect(() => {
-    if (countKind() !== null || showHandover()) {
+    if (countKind() !== null || showHandover() || rejectingId() !== null) {
       const release = yieldQueueCard();
       onCleanup(release);
     }
@@ -493,11 +498,96 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     }
   };
 
+  const handleOpenRejectCount = (id: string) => {
+    if (busy()) return;
+    setRejectingId(id);
+    setRejectReason('');
+    setRejectReasonError(null);
+    setRejectRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const handleCancelRejectCount = () => {
+    if (busy()) return;
+    setRejectingId(null);
+    setRejectReason('');
+    setRejectReasonError(null);
+  };
+
+  const handleConfirmRejectCount = async (id: string) => {
+    if (busy()) return;
+    const trimmed = rejectReason().trim();
+    if (!trimmed) {
+      setRejectReasonError(t('reasonRequired'));
+      return;
+    }
+    if (trimmed.length > 500) {
+      setRejectReasonError(t('reasonTooLong'));
+      return;
+    }
+    setRejectReasonError(null);
+    setBusy(true);
+    const cmd = getCmd<Pick<CountRejectInput, 'reason'>, CountRejected>(
+      'count-reject-' + id,
+      'POST',
+      '/api/cash-counts/' + id + '/reject'
+    );
+    try {
+      await cmd.send({ reason: trimmed });
+      setNotice(t('saved'));
+      errorFrom = null;
+      setError(null);
+      setRejectingId(null);
+      setRejectReason('');
+      setRejectReasonError(null);
+      setRejectRowErrors((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      await props.ctx.refresh();
+      await loadCashCounts();
+    } catch (err: unknown) {
+      setNotice(null);
+      errorFrom = null;
+      const fe = fieldError(err, { reason: t('reason') });
+      if (err instanceof ApiError && !isServerFailure(err)) {
+        if (err.code === 'reasonRequired' || err.code === 'reasonTooLong') {
+          setRejectReasonError(t(err.code));
+          return;
+        }
+        if (fe.field === 'reason') {
+          setRejectReasonError(fe.message);
+          return;
+        }
+        const rowMsg =
+          err.code === 'notWaiting' ||
+          err.code === 'sameCounter' ||
+          err.code === 'onlyThroughHandover'
+            ? t(err.code)
+            : fe.message;
+        setRejectRowErrors((prev) => ({ ...prev, [id]: rowMsg }));
+        if (err.code === 'notWaiting') {
+          await loadCashCounts();
+        }
+      } else {
+        setRejectRowErrors((prev) => ({ ...prev, [id]: fe.message }));
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const isWaitingCount = (c: CashCountRow) => c.status === 'WAITING' && c.verifiedBy === null;
+
   const countsToVerify = () => {
     if (!canCertify()) return [];
     return cashCounts().filter(
       (c) =>
-        c.verifiedBy === null &&
+        isWaitingCount(c) &&
         (c.kind === 'OPEN' || c.kind === 'CLOSE') &&
         c.countedBy !== props.ctx.me.userId
     );
@@ -510,7 +600,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       (c) =>
         c.kind === 'CLOSE' &&
         c.countedBy === props.ctx.me.userId &&
-        c.verifiedBy === null &&
+        isWaitingCount(c) &&
         c.shiftId === shiftId
     );
   };
@@ -719,17 +809,86 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                         {(tot) => <> · {tot.currency} {tot.counted}</>}
                       </For>
                     </span>
+                    <Show when={rejectRowErrors()[c.id]}>
+                      {(msg) => (
+                        <span data-testid="shift-count-error" class="xc-shift-count-error">
+                          {msg()}
+                        </span>
+                      )}
+                    </Show>
                   </div>
                   <div class="xc-shift-item-actions">
-                    <button
-                      type="button"
-                      data-testid="shift-verify"
-                      class="xc-shift-btn"
-                      disabled={busy()}
-                      onClick={() => handleVerifyCount(c.id)}
+                    <Show
+                      when={rejectingId() === c.id}
+                      fallback={
+                        <>
+                          <button
+                            type="button"
+                            data-testid="shift-verify"
+                            class="xc-shift-btn"
+                            disabled={busy()}
+                            onClick={() => handleVerifyCount(c.id)}
+                          >
+                            {t('verify')}
+                          </button>
+                          <Show when={c.status === 'WAITING'}>
+                            <button
+                              type="button"
+                              data-testid="shift-count-reject"
+                              class="xc-shift-btn xc-shift-btn-danger"
+                              disabled={busy()}
+                              onClick={() => handleOpenRejectCount(c.id)}
+                            >
+                              {t('reject')}
+                            </button>
+                          </Show>
+                        </>
+                      }
                     >
-                      {t('verify')}
-                    </button>
+                      <div class="xc-shift-reject-inline">
+                        <div class="xc-shift-reject-field">
+                          <input
+                            type="text"
+                            data-testid="shift-count-reject-reason"
+                            class="xc-shift-reject-input"
+                            maxLength={500}
+                            placeholder={t('reason')}
+                            aria-label={t('reason')}
+                            value={rejectReason()}
+                            onInput={(e) => {
+                              setRejectReason(e.currentTarget.value);
+                              if (rejectReasonError()) setRejectReasonError(null);
+                            }}
+                            onChange={(e) => setRejectReason(e.currentTarget.value)}
+                          />
+                          <Show when={rejectReasonError()}>
+                            {(msg) => (
+                              <span data-field-error="reason" class="xc-shift-field-error">
+                                {msg()}
+                              </span>
+                            )}
+                          </Show>
+                        </div>
+                        <button
+                          type="button"
+                          data-testid="shift-count-reject-confirm"
+                          class="xc-shift-btn xc-shift-btn-danger"
+                          disabled={busy()}
+                          onClick={() => handleConfirmRejectCount(c.id)}
+                        >
+                          {t('reject')}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="shift-count-reject-cancel"
+                          class="xc-shift-cancel-btn"
+                          disabled={busy()}
+                          onClick={handleCancelRejectCount}
+                        >
+                          {t('cancel')}
+                        </button>
+                      </div>
+                    </Show>
                   </div>
                 </div>
               )}

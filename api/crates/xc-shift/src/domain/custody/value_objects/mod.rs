@@ -1,6 +1,7 @@
 //! Value objects for custody.
 
 pub mod cash_target;
+pub mod close_for;
 pub mod count_sheet;
 pub mod custody_actor;
 pub mod custody_error;
