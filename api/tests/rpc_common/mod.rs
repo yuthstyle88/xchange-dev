@@ -1056,6 +1056,19 @@ pub enum Rule {
     RefusedAt(&'static str),
 }
 
+/// RF-D9: the `reserveCustomer` refusals of `engine_actions.json` (#68–#76) and the key each names (RF-D5, RF-D6).
+pub const REFUSED_AT: [(usize, &str); 9] = [
+    (68, "name"),
+    (69, "name"),
+    (70, "passportNo"),
+    (71, "nationality"),
+    (72, "mode"),
+    (73, "mode"),
+    (74, "birthDate"),
+    (75, "birthDate"),
+    (76, "passportExpiry"),
+];
+
 /// RF-D9: the (route, action) pairs whose refusals may name the payload key at fault. A `field` on any
 /// other refusal fails the replay; every other refusal is still held byte for byte.
 pub const V3_REFUSAL_FIELDS: &[(&str, &str)] =
@@ -1260,6 +1273,12 @@ impl<'f> Replay<'f> {
         // opening or IN move just in time instead (`Replay::step`).
         sweep_safe(&desk.db.pool, &BranchId::new(MAIN.to_string())).await;
         let cookies = sign_in(&app, &fixture.origin, &fixture.people).await;
+        let mut rules = BTreeMap::new();
+        if fixture.name == "rpc/engine_actions.json" {
+            for (n, field) in REFUSED_AT {
+                rules.insert(n, Rule::RefusedAt(field));
+            }
+        }
         Replay {
             desk,
             app,
@@ -1268,7 +1287,7 @@ impl<'f> Replay<'f> {
             ids: IdMap::new(),
             tally: Tally::default(),
             answers: BTreeMap::new(),
-            rules: BTreeMap::new(),
+            rules,
         }
     }
 
@@ -2071,7 +2090,9 @@ impl<'f> Replay<'f> {
         }
 
         if let Some(text) = &step.text {
-            assert_eq!(&answer.text, text, "{label}");
+            // #5368: a receipt #5315 changed on purpose reads v3's address (snapshot_common::DAY_SETTLED_RECEIPTS)
+            let text = super::snapshot_common::with_settled_receipts(&self.fixture.name, text);
+            assert_eq!(answer.text, text, "{label}");
             return false;
         }
         if let Some(sentence) = step.error() {
@@ -2225,12 +2246,39 @@ impl<'f> Replay<'f> {
         {
             expected["operations"]["safe"] = actual["operations"]["safe"].clone();
         }
+        // #5368 (as #5349): a receipt #5315 changed on purpose (snapshot_common::DAY_SETTLED_RECEIPTS). Its save
+        // stored the decided receipt, and every recorded address of it reads v3's; every other key stays held to v2.
+        expected =
+            super::snapshot_common::with_settled_receipts_json(&self.fixture.name, &expected);
+        if let Some(entry) = super::snapshot_common::settled_day_receipt(&self.fixture.name, step.n)
+        {
+            let url = text_of(&actual, "receiptUrl");
+            let stored = self.stored_receipt(&url, &label).await;
+            super::snapshot_common::hold_settled_day_receipt(entry, &url, &stored, &label);
+        }
         // OR-7.m S-D6 (#3730, #3734): one name per user (`users.name`) and v2 roles merged into
         // one Blueprint role (`test_callers.rs:9-16`) on `$.employee` and `$.employees[]`.
         let one_name_or_merged_role = restate_employee_name_and_role(self.fixture, &mut expected);
         self.ids.learn(&expected, &actual);
         assert_same(&self.ids.to_actual(&expected), &actual, &label);
         one_name_or_merged_role
+    }
+
+    /// #5368: the bytes stored for the receipt at `url` (`/files/…` or `/api/staff/file/…`).
+    async fn stored_receipt(&self, url: &str, label: &str) -> Vec<u8> {
+        let key = url.rsplit('/').next().unwrap_or_default().to_owned();
+        let (branch_id,): (String,) = sqlx::query_as("SELECT branch_id FROM files WHERE key = $1")
+            .bind(&key)
+            .fetch_one(&self.desk.db.pool)
+            .await
+            .unwrap_or_else(|e| panic!("{label}: the receipt {key}: {e}"));
+        self.desk
+            .files
+            .open_in_branch(&key, &BranchId::new(branch_id))
+            .await
+            .expect("open the receipt")
+            .unwrap_or_else(|| panic!("{label}: the receipt {key} is not stored"))
+            .bytes
     }
 
     /// CA-10 #626: whether `branch` has a verified OPEN count, i.e. a shift opened the Blueprint way
