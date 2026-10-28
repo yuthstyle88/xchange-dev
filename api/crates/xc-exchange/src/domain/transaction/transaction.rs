@@ -72,6 +72,10 @@ pub struct ExchangeTransaction {
     pub approval_request_id: Option<Uuid>,
     pub passport_file_key: String,
     pub kiosk_request_id: Option<String>,
+    /// The desk walk-in queue ticket this sale is served under (`docs/design/walkin-queue.md` §4, W8): set by
+    /// `CreateTransaction` from `queueTicketId`, finished by `CompleteExchange`. Persisted by WQ-3; the skeleton
+    /// carries `None` everywhere.
+    pub queue_ticket_id: Option<String>,
     pub staff_draft_id: Option<String>,
     pub count_confirmed: bool,
     pub lines: Vec<TransactionLine>,

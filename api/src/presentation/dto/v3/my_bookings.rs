@@ -26,6 +26,13 @@ pub struct MyBookingItemDto {
     pub estimate_high_seconds: Option<i32>,
     pub estimate_as_of: Option<String>,
     pub readiness: String,
+    /// The booking's `requested_currency` (§6.4 E-10).
+    pub currency: String,
+    /// The booking's `shop_side` seen from the customer, through `CustomerSide::from_shop` (§6.4 E-10).
+    #[ts(type = "\"CUSTOMER_BUY\" | \"CUSTOMER_SELL\"")]
+    pub customer_side: String,
+    /// The booking's `requested_quantity`, as stored (§6.4 E-10).
+    pub quantity: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]

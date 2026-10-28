@@ -1,8 +1,6 @@
 //! QuoteService workflow (§4.3, §7).
 
 use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -27,8 +25,8 @@ use xc_kernel::money::{
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
 use xc_marketing::domain::coupon::benefit_error::BenefitError;
 use xc_marketing::domain::coupon::code_hasher::CouponCodeHasher;
-use xc_marketing::domain::engine::active_rules::{ActiveRule, ActiveRules};
-use xc_marketing::domain::engine::engine::{BenefitEngine, EvalContext, QuoteLineInput};
+use xc_marketing::domain::engine::active_rules::ActiveRule;
+use xc_marketing::domain::engine::engine::BenefitEngine;
 use xc_marketing::domain::engine::snapshot::{AppliedBenefit, SkippedRule};
 use xc_marketing::infrastructure::pg_budget_ledger::{
     BudgetLedger, ReserveOutcome, ReserveRequest,
@@ -38,10 +36,10 @@ use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
+use super::benefit_pricing::{
+    BenefitPricing, BenefitPricingInput, CouponMatch, MemoryActiveRules, PricingLine,
+};
 use crate::application::workflows::save_step::SaveActor;
-use crate::infrastructure::marketing::consent_gate::MarketingConsentGate;
-use crate::infrastructure::marketing::referral_source::MarketingReferralSource;
-use crate::infrastructure::marketing::tier_source::MarketingTierSource;
 
 fn thb_or_refuse(q: ForeignAmount, r: Rate, u: UnitSize) -> AppResult<Money> {
     ExchangeArithmetic::try_thb(q, r, u).map_err(|_| {
@@ -112,86 +110,22 @@ pub fn reserves_benefits(channel: QuoteChannel) -> bool {
     channel != QuoteChannel::Booking
 }
 
-type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-struct MemoryActiveRules(Vec<ActiveRule>);
-
-impl ActiveRules for MemoryActiveRules {
-    fn active_for<'a>(
-        &'a self,
-        _tx: &'a mut Transaction<'_, Postgres>,
-        _organization_id: Uuid,
-        _branch: &'a str,
-        _now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<Vec<ActiveRule>>> {
-        Box::pin(async move { Ok(self.0.clone()) })
-    }
-}
-
-struct AvailableActiveRules(Arc<dyn ActiveRules>);
-
-impl ActiveRules for AvailableActiveRules {
-    fn active_for<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        organization_id: Uuid,
-        branch: &'a str,
-        now: DateTime<Utc>,
-    ) -> BoxFuture<'a, AppResult<Vec<ActiveRule>>> {
-        Box::pin(async move {
-            let rules = self.0.active_for(tx, organization_id, branch, now).await?;
-            if rules.is_empty() {
-                return Ok(rules);
-            }
-
-            let has_budgets: bool =
-                sqlx::query_scalar("SELECT to_regclass('campaign_budgets') IS NOT NULL")
-                    .fetch_one(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-
-            if !has_budgets {
-                return Ok(rules);
-            }
-
-            let exhausted_versions: Vec<Uuid> = sqlx::query_scalar(
-                "SELECT v.id \
-                 FROM campaign_versions v \
-                 JOIN campaign_budgets b ON b.campaign_version_id = v.id \
-                 WHERE v.organization_id = $1 AND b.consumed_thb >= v.budget_thb",
-            )
-            .bind(organization_id)
-            .fetch_all(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-
-            if exhausted_versions.is_empty() {
-                Ok(rules)
-            } else {
-                Ok(rules
-                    .into_iter()
-                    .filter(|r| !exhausted_versions.contains(&r.version_id))
-                    .collect())
-            }
-        })
-    }
-}
-
 pub struct QuoteService {
     published_rates: PgPublishedRates,
     quote_repo: PgQuoteRepository,
     settings_repo: PgSettingsRepository,
-    campaign_repo: Arc<PgCampaignRepository>,
+    benefit_pricing: BenefitPricing,
     budget_ledger: Arc<BudgetLedger>,
 }
 
 impl QuoteService {
     pub fn new(pool: PgPool) -> Self {
+        let campaign_repo = Arc::new(PgCampaignRepository::new());
         Self {
             published_rates: PgPublishedRates::new(pool.clone()),
             quote_repo: PgQuoteRepository::new(pool.clone()),
             settings_repo: PgSettingsRepository::new(pool.clone()),
-            campaign_repo: Arc::new(PgCampaignRepository::new()),
+            benefit_pricing: BenefitPricing::new(campaign_repo),
             budget_ledger: Arc::new(BudgetLedger::new(pool)),
         }
     }
@@ -355,77 +289,6 @@ impl QuoteService {
         let line_id = Uuid::new_v4();
 
         // Step 7: Benefit evaluation and reservation (MK-5)
-        let rate_row: Option<(Option<Decimal>, Option<Decimal>)> =
-            sqlx::query_as("SELECT buy_rate, sell_rate FROM published_rate_lines WHERE id = $1")
-                .bind(published_side.line_id.as_uuid())
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-
-        let (pub_buy, pub_sell) = match rate_row {
-            Some((Some(b), Some(s))) => (
-                Rate::parse(&b.to_string())
-                    .map_err(|e| AppError::Domain(format!("invalid published buy rate: {e}")))?,
-                Rate::parse(&s.to_string())
-                    .map_err(|e| AppError::Domain(format!("invalid published sell rate: {e}")))?,
-            ),
-            _ => (published_side.rate, published_side.rate),
-        };
-
-        let has_margin_guards: bool =
-            sqlx::query_scalar("SELECT to_regclass('margin_guards') IS NOT NULL")
-                .fetch_one(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-
-        let max_spread_share: Option<Decimal> = if has_margin_guards {
-            sqlx::query_scalar(
-                "SELECT max_spread_share FROM margin_guards WHERE organization_id = $1",
-            )
-            .bind(org_id)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(AppError::Database)?
-            .flatten()
-        } else {
-            None
-        };
-
-        let segment_memberships: Vec<Uuid> = match req.customer_id.as_deref() {
-            Some(cid) => {
-                // stopgap: MK-6 removes this
-                let has_segment_table: bool = sqlx::query_scalar(
-                    "SELECT to_regclass('segment_snapshot_members') IS NOT NULL",
-                )
-                .fetch_one(&mut **tx)
-                .await
-                .map_err(AppError::Database)?;
-
-                if has_segment_table {
-                    sqlx::query_scalar(
-                        "SELECT snapshot_id FROM segment_snapshot_members WHERE customer_id = $1",
-                    )
-                    .bind(cid)
-                    .fetch_all(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?
-                } else {
-                    Vec::new()
-                }
-            }
-            None => Vec::new(),
-        };
-
-        let tier_source = MarketingTierSource::new();
-        let consent_gate = match req.customer_id.as_deref() {
-            Some(cid) => MarketingConsentGate::prefetch_in(tx, cid).await?,
-            None => MarketingConsentGate::new(),
-        };
-        let referral_source = match req.customer_id.as_deref() {
-            Some(cid) => MarketingReferralSource::prefetch_in(tx, cid, now).await?,
-            None => MarketingReferralSource::new(),
-        };
-
         let coupon_info: Option<(Uuid, Uuid)> = if let Some(code) = coupon_code {
             let keys =
                 xc_customer::get_pii_keys().map_err(|e| AppError::Internal(e.to_string()))?;
@@ -469,62 +332,35 @@ impl QuoteService {
             None
         };
 
-        let eval_ctx = EvalContext {
-            organization_id: org_id,
-            branch: req.branch_id.as_str().to_string(),
-            channel: benefit_channel(req.channel).as_str().to_string(),
-            customer_id: req.customer_id.clone(),
-            coupon_code: coupon_code.map(str::to_string),
-            now,
-            max_spread_share,
-            segment_memberships,
-        };
-
-        let line_input = QuoteLineInput {
-            currency: line_req.currency,
-            shop_side: line_req.shop_side,
-            quantity: line_req.quantity,
-            unit_size: published_side.unit_size,
-            base_rate: published_side.rate,
-            fee_thb,
-            published_buy_rate: pub_buy,
-            published_sell_rate: pub_sell,
-        };
-
-        let active_rules = AvailableActiveRules(self.campaign_repo.clone())
-            .active_for(tx, org_id, req.branch_id.as_str(), now)
-            .await?;
-
-        let active_rules: Vec<ActiveRule> = active_rules
-            .into_iter()
-            .filter(|r| {
-                if r.rule.requires_coupon {
-                    match coupon_info {
-                        Some((_, coupon_rule_id)) => r.rule.id == coupon_rule_id,
-                        None => false,
-                    }
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        let engine = BenefitEngine::new(
-            Arc::new(MemoryActiveRules(active_rules.clone())),
-            Arc::new(CalculatorRegistry::new()),
-            Arc::new(tier_source),
-            Arc::new(consent_gate.clone()),
-            Arc::new(referral_source.clone()),
-        );
-
-        let mut eval = engine
-            .evaluate(tx, &eval_ctx, std::slice::from_ref(&line_input))
+        let mut priced = self
+            .benefit_pricing
+            .evaluate_in(
+                tx,
+                BenefitPricingInput {
+                    organization_id: org_id,
+                    branch: &req.branch_id,
+                    eligibility_channel: benefit_channel(req.channel),
+                    also_admitted_on: None,
+                    customer_id: req.customer_id.as_deref(),
+                    coupon: coupon_info
+                        .map(|(coupon_id, rule_id)| CouponMatch { coupon_id, rule_id }),
+                    coupon_code,
+                    line: PricingLine {
+                        currency: line_req.currency,
+                        shop_side: line_req.shop_side,
+                        quantity: line_req.quantity,
+                        fee_thb,
+                        published: published_side.clone(),
+                    },
+                    now,
+                },
+            )
             .await?;
 
         let cash_settlement = req.payment_method.is_some_and(|m| m.is_cash());
 
-        let mut final_rate = eval.lines[0].final_rate;
-        let mut final_fee_thb = eval.lines[0].fee_thb;
+        let mut final_rate = priced.evaluation.lines[0].final_rate;
+        let mut final_fee_thb = priced.evaluation.lines[0].fee_thb;
         let mut final_thb_amount =
             thb_or_refuse(line_req.quantity, final_rate, published_side.unit_size)?;
         let mut final_settle_thb = {
@@ -583,8 +419,8 @@ impl QuoteService {
             updated_at: now,
         };
 
-        let initial_snapshot =
-            serde_json::to_value(&eval.snapshot).map_err(|e| AppError::Domain(e.to_string()))?;
+        let initial_snapshot = serde_json::to_value(&priced.evaluation.snapshot)
+            .map_err(|e| AppError::Domain(e.to_string()))?;
 
         let mut quote = Quote {
             id: quote_id,
@@ -609,11 +445,11 @@ impl QuoteService {
         // Write quote to DB first so benefit_reservations FK (quote_id -> quotes.id) is satisfied
         self.quote_repo.insert_in(tx, &quote).await?;
 
-        if reserves_benefits(req.channel) && !eval.snapshot.applied.is_empty() {
+        if reserves_benefits(req.channel) && !priced.evaluation.snapshot.applied.is_empty() {
             let mut reserved_applied = Vec::new();
             let mut recompute_needed = false;
 
-            for mut applied in eval.snapshot.applied {
+            for mut applied in priced.evaluation.snapshot.applied {
                 let amount_thb = reserved_amount(&applied)?;
                 let reserve_coupon_id = if let Some((cid, crule_id)) = coupon_info {
                     if crule_id == applied.rule_id {
@@ -643,7 +479,7 @@ impl QuoteService {
                         reserved_applied.push(applied);
                     }
                     Ok(ReserveOutcome::Skipped(reason)) => {
-                        eval.snapshot.skipped.push(SkippedRule {
+                        priced.evaluation.snapshot.skipped.push(SkippedRule {
                             rule_id: applied.rule_id,
                             reason: reason.as_str().to_string(),
                         });
@@ -661,18 +497,21 @@ impl QuoteService {
                 } else {
                     let reserved_rule_ids: HashSet<Uuid> =
                         reserved_applied.iter().map(|a| a.rule_id).collect();
-                    let remaining_rules: Vec<ActiveRule> = active_rules
+                    let remaining_rules: Vec<ActiveRule> = priced
+                        .active_rules
                         .into_iter()
                         .filter(|r| reserved_rule_ids.contains(&r.rule.id))
                         .collect();
                     let re_engine = BenefitEngine::new(
                         Arc::new(MemoryActiveRules(remaining_rules)),
                         Arc::new(CalculatorRegistry::new()),
-                        Arc::new(tier_source),
-                        Arc::new(consent_gate),
-                        Arc::new(referral_source),
+                        Arc::new(priced.sources.tier),
+                        Arc::new(priced.sources.consent),
+                        Arc::new(priced.sources.referral),
                     );
-                    let re_eval = re_engine.evaluate(tx, &eval_ctx, &[line_input]).await?;
+                    let re_eval = re_engine
+                        .evaluate(tx, &priced.context, &[priced.line_input])
+                        .await?;
                     final_rate = re_eval.lines[0].final_rate;
                     final_fee_thb = re_eval.lines[0].fee_thb;
                 }
@@ -740,8 +579,8 @@ impl QuoteService {
                 quote.lines[0].settle_thb = final_settle_thb;
             }
 
-            eval.snapshot.applied = reserved_applied;
-            let snapshot_json = serde_json::to_value(&eval.snapshot)
+            priced.evaluation.snapshot.applied = reserved_applied;
+            let snapshot_json = serde_json::to_value(&priced.evaluation.snapshot)
                 .map_err(|e| AppError::Domain(e.to_string()))?;
 
             sqlx::query("UPDATE quotes SET benefit_snapshot = $1 WHERE id = $2")

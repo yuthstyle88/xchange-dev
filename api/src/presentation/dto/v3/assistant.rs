@@ -10,7 +10,6 @@ use xc_app::domain::assistant::conversation::{
 };
 use xc_app::domain::assistant::intent::{Intent, IntentKind};
 
-use crate::presentation::dto::v3::planner::PlannerPreviewAnswer;
 use crate::presentation::http::v3::view::ViewFilter;
 
 // ------------------------------------------------------------ assistantAsk
@@ -72,8 +71,21 @@ impl AssistantIntentDto {
     }
 }
 
-fn preview_of(estimate: &PlannerEstimate) -> PlannerPreviewAnswer {
-    PlannerPreviewAnswer {
+/// The assistant's rate-only preview of a plan: the published-rate fields of `planner_preview`, without its
+/// indicative `benefit` (`marketing-campaigns.md` §6.4 E-1 adds that to `planner_preview` only).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "assistant_ask.ts")]
+pub struct AssistantPreviewDto {
+    pub thb: String,
+    pub rate: String,
+    pub unit_size: String,
+    pub stale: bool,
+    pub source_date: Option<String>,
+}
+
+fn preview_of(estimate: &PlannerEstimate) -> AssistantPreviewDto {
+    AssistantPreviewDto {
         thb: estimate.thb.to_string(),
         rate: estimate.rate.to_string(),
         unit_size: estimate.unit_size.to_string(),
@@ -90,7 +102,7 @@ pub struct AssistantAskAnswerDto {
     pub customer_message: AssistantMessageDto,
     pub assistant_reply: AssistantMessageDto,
     pub intent: AssistantIntentDto,
-    pub preview: Option<PlannerPreviewAnswer>,
+    pub preview: Option<AssistantPreviewDto>,
 }
 
 impl AssistantAskAnswerDto {

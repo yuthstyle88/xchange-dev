@@ -30,6 +30,7 @@ const fn branch_day(action: &'static str) -> AreaRow {
 
 pub const ROWS: &[AreaRow] = &[
     queue_operate("ticketIssueWalkIn"),
+    queue_operate("ticketServeWalkIn"),
     queue_operate("ticketCallNext"),
     queue_operate("ticketCall"),
     queue_operate("ticketRecall"),

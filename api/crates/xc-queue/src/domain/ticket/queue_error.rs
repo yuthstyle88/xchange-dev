@@ -29,6 +29,10 @@ pub enum QueueError {
     /// QU-A2: no such ticket in the branch.
     #[error("notFound")]
     NotFound,
+    /// XC-WALKIN-QUEUE W6 (`docs/design/walkin-queue.md`): a desk sale's new entry outside
+    /// `[open, close − 10 min)`, outside hours, or with no hours set.
+    #[error("outsideServiceHours")]
+    OutsideServiceHours,
 }
 
 impl QueueError {
@@ -43,6 +47,7 @@ impl QueueError {
             Self::NotYourTicket => "notYourTicket",
             Self::NothingWaiting => "nothingWaiting",
             Self::NotFound => "notFound",
+            Self::OutsideServiceHours => "outsideServiceHours",
         }
     }
 }

@@ -7,6 +7,7 @@ import {
   makeDeskBookingsData,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
@@ -103,6 +104,9 @@ describe('DeskBookingsScreen (B02) — New booking quantity validation (#2198 §
               qrToken: null,
             }),
           );
+        }
+        if (method === 'POST' && u.pathname === '/api/quotes') {
+          return jsonResponse(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
         }
         return jsonResponse(404, { error: { code: 'notFound', message: u.pathname } });
       }),
@@ -220,6 +224,7 @@ describe('DeskBookingsScreen (B02) — New booking quantity validation (#2198 §
       quantity: 250,
       displayName: 'Charlie Customer',
       phone: '+66812345678',
+      quoteId: 'q-booking',
     });
   });
 

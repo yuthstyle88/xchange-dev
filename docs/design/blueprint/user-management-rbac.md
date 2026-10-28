@@ -630,7 +630,7 @@ Checked on every save:
 2. `USER_MANAGEMENT` and `SYSTEM_SETTINGS` go **above VIEW** only for groups whose base is EXECUTIVE or ADMIN (V.9 :62). Any group may hold their VIEW-level permissions.
 3. A group whose base is ADMIN holds, outside those two modules, at most VIEW-level permissions.
 4. **The built-in EXECUTIVE group is fixed**, so the owner can't be locked out.
-5. The no-module permissions (§11.2: `ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`, `DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline`, `DrawerPassport`, `ProofUpload`, `AttendanceClock`, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix. Since §11.9, this rule does not cover the nine approval-kind permissions or `ApprovalsDecide`.
+5. The no-module permissions (§11.2: `ShiftOperate`, `BranchDayOperate`, `ShiftCloseCertify`, `DeviceQueue`, `DeviceProcess`, `DevicePrinterOnline`, `DrawerPassport`, `ProofUpload`, `AttendanceClock`, plus `SignedIn`, `CompatRead`, `RequestAbandon`, `DocumentsList`, `CustomerSelf`) are not edited in the matrix. Since §11.9, this rule does not cover the approval-kind permissions (`APPROVAL_KINDS`, ten since `ledger-inventory.md` §13.3) or `ApprovalsDecide`.
 
 **Only EXECUTIVE adds groups and edits permissions** (V.9 :66). Every add, edit or delete writes one `AccountAuditor` row, `PERMISSION_CHANGE` / `GROUP_ADD` / `GROUP_DELETE`, with before and after.
 
@@ -828,11 +828,11 @@ It narrows the 2026-10-19 ruling in §11.2 ("`ApprovalsDecide` … the matrix do
 `ApprovalsDecide` is the only approval permission today (`permission.rs:11`). It opens `approvalDecide` / `approvalRead` (`policy.rs:92`) and the transfer flow (`transfer_flow.rs:173-176`). It does not say *which* kinds a group decides.
 
 **The rule:**
-- **One permission per decision, nine in all** (the cash transfer has two, because the limit already splits who decides it).
+- **One permission per decision, ten in all** (the cash transfer has two, because the limit already splits who decides it). The tenth, `ApproveLedgerAdjustment`, is `ledger-inventory.md` §13.3's, entered at seed version 8.
 - Each `may_decide` keeps every rule that is not about the role and replaces its role test with the shared core `ApprovalDecider` (below). Proposer ≠ decider, the organisation check, the transfer's limit split and `allows_self_decision` all stay.
 - **Seeded so that ship day changes nothing.** The seed gives each permission to exactly the base role that decides it today.
 - **Scope stays per kind.** *Branch* kinds need a row that `covers` the request's branch, which is `ScopedRole::covers`, `scoped_role.rs:58-63`. *Organisation* kinds accept any row, as today. A BRANCH_MANAGER row always has a branch (`scope_rule.rs:33-36`), so for the branch kinds `covers` is exactly today's "row on the request branch".
-- **`ApprovalsDecide` follows the kinds.** A group holds it iff it holds at least one of the nine. The seed already satisfies this. The matrix save sets it, and it is never edited on its own.
+- **`ApprovalsDecide` follows the kinds.** A group holds it iff it holds at least one of the ten. The seed already satisfies this. The matrix save sets it, and it is never edited on its own.
 
 | Permission | Approval type | Scope | Seeded on | Kept rules |
 |---|---|---|---|---|
@@ -845,6 +845,7 @@ It narrows the 2026-10-19 ruling in §11.2 ("`ApprovalsDecide` … the matrix do
 | `ApproveExchangeTransaction` | `EXCHANGE_TRANSACTION` | branch | BRANCH_MANAGER | no self decision |
 | `ApproveTransactionReversal` | `TRANSACTION_REVERSAL` | branch | FINANCE | no self decision |
 | `ApproveLoyaltyRuleVersion` | `LOYALTY_RULE_VERSION` | organisation | EXECUTIVE | no self decision |
+| `ApproveLedgerAdjustment` | `LEDGER_ADJUSTMENT` | branch: the payload's `branch`, not `request.branch_id` (`ledger-inventory.md` §13.3) | FINANCE | proposer never decides (AP-1); no self decision |
 
 Self decision: every kind except `RATE_PUBLICATION` refuses it today. `allows_self_decision` defaults to false (`xc-approval/src/domain/policy.rs:41`), and `approval_service.rs:467` enforces it. That stays.
 
@@ -855,18 +856,19 @@ Self decision: every kind except `RATE_PUBLICATION` refuses it today. `allows_se
   - "… only for their own branch": `holds_anywhere && !holds_on`.
 - `CAMPAIGN_VERSION` checks `proposerCannotDecide` first, then `outOfScope`.
 - `RATE_PUBLICATION`, `EXCHANGE_TRANSACTION`, `TRANSACTION_REVERSAL` and `LOYALTY_RULE_VERSION` each keep their one `outOfScope`.
+- `LEDGER_ADJUSTMENT` (new with the kind) answers `outOfScope` only, with three messages: a payload with no `branch`; "only finance staff …" (`!holds_anywhere`); "… only … their own branch" (`holds_anywhere && !holds_on`).
 
 **Why the above-limit transfer is a branch kind (review FAIL on this PR, must-fix 1).** The transfer flow checks scope before the policy runs. `transfer_flow.rs:173` calls `require(who, ApprovalsDecide, &t.from_branch, now)`, and `:176` calls `policy_actor`, which accepts only a row that holds the permission and is org-wide or on the source branch (`transfer.rs:35-40`). Both kinds of transfer decision therefore use `holds_on(who, p, from_branch)`, which agrees with that pre-check, and `transfer_flow.rs` does not change. Nothing changes for the seed, because EXECUTIVE rows are always org-wide (`scope_rule.rs:28-31`). A branch-scoped group granted the above-limit kind decides only transfers from its own branch.
 
-**Outside the nine, on purpose:** `RATE_FEED_PUBLICATION` (`rate_feed_publication.rs:79-90`) is a registered approval type that nobody decides by hand. Its `may_decide` always refuses, and its self-decision rule stays as it is.
+**Outside the ten, on purpose:** `RATE_FEED_PUBLICATION` (`rate_feed_publication.rs:79-90`) is a registered approval type that nobody decides by hand. Its `may_decide` always refuses, and its self-decision rule stays as it is.
 
 **The decision record keeps the base role.** `approval_service.rs:51-67` `approver_role` writes the decider's base role, picked by priority, into the decision row and the audit `actor_role` (`:331`, `:342`, `:493`, `:504`). That stays: a decision by `NIGHT_FIN` (base TELLER) is recorded as `TELLER`. The group code is not added to the record in this change.
 
 **`covers` widens the branch kinds on purpose.** Today `CASH_TRANSFER` within the limit, `NEGATIVE_STOCK` and `EXCHANGE_TRANSACTION` need a row whose branch equals the request's branch, so an org-wide row is refused. (The above-limit transfer already accepts an org-wide row today: the policy tests only the role, `transfer.rs:137-144`, and the flow's pre-check admits org-wide rows.) With `covers`, an org-wide row of a group that holds the kind decides any branch. Nothing changes for the seed, because a BRANCH_MANAGER row always has a branch (`scope_rule.rs:33-36`). It matters only when the customer grants a branch kind to an org-wide group, and that is intended: the customer chose it.
 
 **Guardrails (§11.3), changed:**
-- Rule 5 no longer covers the nine, nor `ApprovalsDecide`. The other no-module permissions still equal the base's seed.
-- **New rule 6: a group whose base is ADMIN holds none of the nine.** This follows rule 3: an ADMIN base is at most VIEW outside USER_MANAGEMENT and SYSTEM_SETTINGS, and deciding an approval is above VIEW.
+- Rule 5 no longer covers the ten, nor `ApprovalsDecide`. The other no-module permissions still equal the base's seed.
+- **New rule 6: a group whose base is ADMIN holds none of the ten.** This follows rule 3: an ADMIN base is at most VIEW outside USER_MANAGEMENT and SYSTEM_SETTINGS, and deciding an approval is above VIEW.
 - Rule 4 is unchanged. The built-in EXECUTIVE group is fixed, so it keeps its five organisation kinds.
 
 **Classes:**

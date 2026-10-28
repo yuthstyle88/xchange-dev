@@ -9,6 +9,12 @@ export const th = {
   back: '← แก้ไขข้อมูลลูกค้า',
   submit: 'ยืนยันการจอง →',
   needNameStaff: 'กรุณาระบุชื่อลูกค้าและรหัสพนักงาน',
+  ticket: 'คิว {number}',
+  'error.outsideServiceHours': 'ปิดรับรายการใหม่แล้ว',
+  'error.queueClosed': 'คิวสาขาปิดอยู่',
+  'error.noOpenShift': 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อน',
+  'error.counterPaused': 'เคาน์เตอร์พักอยู่ กรุณาเปิดรับคิวก่อน',
+  'error.alreadyServing': 'เคาน์เตอร์กำลังให้บริการคิวอื่นอยู่',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -21,4 +27,10 @@ export const en: Record<keyof typeof th, string> = {
   back: '← Edit customer details',
   submit: 'Confirm booking →',
   needNameStaff: 'Please enter the customer name and the staff code',
+  ticket: 'คิว {number}',
+  'error.outsideServiceHours': 'ปิดรับรายการใหม่แล้ว',
+  'error.queueClosed': 'คิวสาขาปิดอยู่',
+  'error.noOpenShift': 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อน',
+  'error.counterPaused': 'เคาน์เตอร์พักอยู่ กรุณาเปิดรับคิวก่อน',
+  'error.alreadyServing': 'เคาน์เตอร์กำลังให้บริการคิวอื่นอยู่',
 };

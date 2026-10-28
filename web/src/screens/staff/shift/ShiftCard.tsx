@@ -593,6 +593,15 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     );
   };
 
+  const waitingOpenCount = () => {
+    return cashCounts().find(
+      (c) =>
+        c.kind === 'OPEN' &&
+        c.countedBy === props.ctx.me.userId &&
+        isWaitingCount(c)
+    );
+  };
+
   const waitingCloseCount = () => {
     const shiftId = props.ctx.floor?.myShift?.id;
     if (!shiftId) return undefined;
@@ -639,14 +648,23 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       <Show when={canOperate() && isClockedIn()}>
         <div class="xc-shift-actions">
           <Show when={!hasOpenShift()}>
-            <button
-              type="button"
-              data-testid="shift-open-count"
-              class="xc-shift-action-btn"
-              onClick={() => handleOpenCount('OPEN')}
+            <Show
+              when={!waitingOpenCount()}
+              fallback={
+                <div role="status" class="xc-shift-close-waiting" data-testid="shift-open-waiting">
+                  {t('openWaiting')} ({formatCountTime(waitingOpenCount()!.countedAt)})
+                </div>
+              }
             >
-              {t('openCount')}
-            </button>
+              <button
+                type="button"
+                data-testid="shift-open-count"
+                class="xc-shift-action-btn"
+                onClick={() => handleOpenCount('OPEN')}
+              >
+                {t('openCount')}
+              </button>
+            </Show>
           </Show>
           <Show when={hasOpenShift()}>
             <Show

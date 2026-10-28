@@ -10,6 +10,7 @@ import {
   makeDeskBookingsData,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
@@ -154,6 +155,9 @@ describe('DeskBookingsScreen (B02) — modal error display & empty cancel reason
         }
         if (method === 'GET' && u.pathname === '/api/v3/views/desk_bookings') {
           return jsonResponse(200, { version: 1, changed: true, data: INITIAL_DESK_BOOKINGS });
+        }
+        if (method === 'POST' && u.pathname === '/api/quotes') {
+          return jsonResponse(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
         }
         if (method === 'POST') {
           return writeResponder(rec);

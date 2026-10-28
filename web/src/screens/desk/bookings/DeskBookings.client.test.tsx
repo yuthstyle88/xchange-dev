@@ -9,6 +9,7 @@ import {
   makeDeskBookingsData,
   makeMe,
   makeMeRole,
+  makeQuoteDto,
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { en as sharedEn } from '../../../shared/i18n/en';
@@ -168,6 +169,9 @@ describe('B02 DeskBookingsScreen shared ApiClient & wordedError (#1891 §9)', ()
         }
         if (u.pathname === '/api/v3/views/desk_bookings') {
           return deskBookingsResponder();
+        }
+        if (method === 'POST' && u.pathname === '/api/quotes') {
+          return json(200, makeQuoteDto({ id: 'q-booking', channel: 'BOOKING' }));
         }
         if (method === 'POST') {
           return writeResponder(rec);

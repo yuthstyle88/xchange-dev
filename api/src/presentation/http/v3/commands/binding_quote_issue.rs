@@ -389,8 +389,16 @@ impl CommandAction for BindingQuoteIssueCommand {
             })
             .collect();
 
+        let quote = QuoteDto::from_domain(issued.quote, pub_version).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
         Ok(BindingQuoteIssueOutput {
-            quote: QuoteDto::from_domain(issued.quote, pub_version),
+            quote,
             reserved_lines,
         })
     }

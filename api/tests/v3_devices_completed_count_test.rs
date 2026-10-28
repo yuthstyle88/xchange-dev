@@ -188,6 +188,7 @@ impl DeviceTestRoom {
             None
         };
         ExchangeTransaction {
+            queue_ticket_id: None,
             id,
             organization_id: self.org,
             branch_id: BranchId::new(branch),

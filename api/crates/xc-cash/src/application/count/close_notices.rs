@@ -12,6 +12,8 @@ use xc_kernel::notifications::{NotificationObject, NotificationRequest, Notifica
 use crate::domain::count::CashCount;
 use crate::domain::repository::CountTotal;
 
+static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub struct CloseNotices {
     notifications: Arc<dyn Notifications>,
 }
@@ -87,7 +89,32 @@ impl CloseNotices {
             params,
         )
         .map_err(|e| AppError::Internal(e.to_string()))?;
-        self.notifications.notify_in(tx, &request).await?;
+        self.send_notice_in(tx, &request).await
+    }
+
+    async fn send_notice_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        request: &NotificationRequest,
+    ) -> AppResult<()> {
+        let sp_id = SAVEPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let sp_name = format!("sp_count_notice_{sp_id}");
+        sqlx::query(AssertSqlSafe(format!("SAVEPOINT {sp_name}")))
+            .execute(&mut **tx)
+            .await?;
+
+        match self.notifications.notify_in(tx, request).await {
+            Ok(_) => {
+                sqlx::query(AssertSqlSafe(format!("RELEASE SAVEPOINT {sp_name}")))
+                    .execute(&mut **tx)
+                    .await?;
+            }
+            Err(_) => {
+                sqlx::query(AssertSqlSafe(format!("ROLLBACK TO SAVEPOINT {sp_name}")))
+                    .execute(&mut **tx)
+                    .await?;
+            }
+        }
         Ok(())
     }
 
@@ -143,7 +170,6 @@ impl CloseNotices {
             .unwrap_or_else(|| actor_id.to_string());
         let safe_by = xc_kernel::pii::redact_text(&raw_by);
 
-        static SAVEPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
         let mut params = NotificationParams::new()
             .display(
                 "branch",
@@ -168,7 +194,7 @@ impl CloseNotices {
             }
         }
 
-        for (rec_idx, recipient_id) in recipients.iter().enumerate() {
+        for recipient_id in &recipients {
             let request = match NotificationRequest::with_params(
                 recipient_id.to_string(),
                 event_id.to_string(),
@@ -191,24 +217,7 @@ impl CloseNotices {
                 }
             };
 
-            let sp_id = SAVEPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
-            let sp_name = format!("sp_close_notice_{sp_id}_{rec_idx}");
-            sqlx::query(AssertSqlSafe(format!("SAVEPOINT {sp_name}")))
-                .execute(&mut **tx)
-                .await?;
-
-            match self.notifications.notify_in(tx, &request).await {
-                Ok(_) => {
-                    sqlx::query(AssertSqlSafe(format!("RELEASE SAVEPOINT {sp_name}")))
-                        .execute(&mut **tx)
-                        .await?;
-                }
-                Err(_) => {
-                    sqlx::query(AssertSqlSafe(format!("ROLLBACK TO SAVEPOINT {sp_name}")))
-                        .execute(&mut **tx)
-                        .await?;
-                }
-            }
+            self.send_notice_in(tx, &request).await?;
         }
 
         Ok(())
