@@ -155,7 +155,9 @@ impl PermissionModule {
             | P::ApproveTransactionReversal
             | P::ApproveLoyaltyRuleVersion
             // binding-quote.md D-13: no module, so Customers at Create (EXECUTIVE included) never implies it.
-            | P::BindingQuoteIssue => None,
+            | P::BindingQuoteIssue
+            // ledger-inventory.md §13.3: an approval kind, so no module.
+            | P::ApproveLedgerAdjustment => None,
         }
     }
 }

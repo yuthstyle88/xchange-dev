@@ -91,6 +91,10 @@ pub enum Permission {
     /// `binding-quote.md` D-13 (O-1 A): issue a binding quote (`bindingQuoteIssue`). No module; seeded on TELLER and
     /// BRANCH_MANAGER only. BQ-7 adds it to `ALL`, `RoleGrants::seed` and `SEED_ADDITIONS` (version 6).
     BindingQuoteIssue,
+    /// `ledger-inventory.md` §13.3: decide a `LEDGER_ADJUSTMENT` on a row covering the adjustment's branch (the
+    /// payload's, not the requester's). Seeded on FINANCE only. LA-1 adds it to `ALL`, `APPROVAL_KINDS`,
+    /// `RoleGrants::seed` and `SEED_ADDITIONS` (version 8).
+    ApproveLedgerAdjustment,
 }
 
 impl Permission {

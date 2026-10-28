@@ -159,7 +159,8 @@ fn p3_it_enters_the_seed_in_version_6() {
         vec![6],
         "SEED_ADDITIONS has (6, BindingQuoteIssue) once"
     );
-    assert_eq!(RoleGrants::SEED_VERSION, 6, "SEED_VERSION is 6 (D-18)");
+    // LA-1 (ledger adjustment) raised it to 8 after D-18's 6; (6, BindingQuoteIssue) is unchanged.
+    assert_eq!(RoleGrants::SEED_VERSION, 8, "SEED_VERSION is 8 (D-18: 6, then LA-1: 8)");
 }
 
 #[tokio::test]
@@ -198,8 +199,8 @@ async fn q28_a_version_5_database_grants_it_to_teller_and_branch_manager_only() 
         );
         assert_eq!(
             seed_version(&db, role.as_str()).await,
-            6,
-            "{role:?} ends at seed version 6"
+            8,
+            "{role:?} ends at the current seed version (6 at BQ-7, 8 since LA-1)"
         );
     }
     assert_eq!(
@@ -293,7 +294,8 @@ async fn q30_a_fresh_database_seeds_it_on_teller_and_branch_manager_at_version_6
         "TELLER and BRANCH_MANAGER hold it, once each"
     );
     for role in HOLDERS {
-        assert_eq!(seed_version(&db, role.as_str()).await, 6, "{role:?}");
+        // LA-1 (ledger adjustment) raised the current seed version 6 -> 8.
+        assert_eq!(seed_version(&db, role.as_str()).await, 8, "{role:?}");
     }
     db.drop_schema().await;
 }
