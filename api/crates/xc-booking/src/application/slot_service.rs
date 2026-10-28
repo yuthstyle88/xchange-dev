@@ -12,6 +12,7 @@ use xc_rate::domain::branch::branch_hours::BranchHours;
 
 use crate::domain::slot::booking_slot::{BookingSlot, SlotStatus};
 use crate::domain::slot::branch_closure::BranchClosure;
+use crate::domain::slot::closed_by::ClosedBy;
 use crate::domain::slot::repository::SlotRepository;
 use crate::domain::slot::slot_error::SlotError;
 use crate::domain::slot::slot_generator::SlotGenerator;
@@ -260,11 +261,12 @@ impl SlotService {
 
         let row: SlotDbRow = sqlx::query_as(
             "UPDATE booking_slots \
-             SET status = 'CLOSED', updated_at = now() \
+             SET status = 'CLOSED', closed_by = $2, updated_at = now() \
              WHERE id = $1 \
              RETURNING id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status",
         )
         .bind(slot)
+        .bind(ClosedBy::Slot.as_str())
         .fetch_one(&mut **tx)
         .await
         .map_err(|e| SlotError::Store(AppError::Database(e)))?;
@@ -309,7 +311,7 @@ impl SlotService {
     ) -> Result<BookingSlot, SlotError> {
         let row: Option<SlotDbRow> = sqlx::query_as(
             "UPDATE booking_slots \
-             SET status = 'OPEN', updated_at = now() \
+             SET status = 'OPEN', closed_by = NULL, updated_at = now() \
              WHERE id = $1 \
              RETURNING id, organization_id, branch_id, service_date, start_at, end_at, capacity, reserved, status",
         )
