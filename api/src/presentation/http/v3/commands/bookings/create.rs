@@ -48,7 +48,7 @@ pub struct BookingCreateInput {
     pub currency: String,
     #[ts(type = "string | number")]
     pub quantity: Value,
-    #[ts(type = "string")]
+    #[ts(type = "string | null")]
     pub quote_id: Option<Uuid>,
     pub referral_code: Option<String>,
     pub customer_id: Option<String>,

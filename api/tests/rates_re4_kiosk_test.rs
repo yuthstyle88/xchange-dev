@@ -16,7 +16,7 @@
 //!   JSON `rate` stays per 1, through `CompatRate::per_one`), R4 (confirm refuses when the current
 //!   line is not the stored one, with the existing "the rate changed" refusal, and writes
 //!   nothing), R5 (stale: the policy version the line was published under; a refusal is the
-//!   reader's existing "no rate for this currency" answer);
+//!   kiosk's rate refusal `RateChangedOrClosed`, #5418);
 //! - §8 migration 5 (`kiosk_requests.published_rate_line_id`, merged `d6ce058`), D-3 (the current
 //!   rate is the line of `branches.current_publication_id`; a currency without a line is
 //!   unavailable);
@@ -648,7 +648,7 @@ async fn a_currency_without_a_published_line_is_not_quoted() {
 
 /// R5, §9 RE-4b "a stale line under STOP gets the existing 'no rate' answer": USD is AUTO
 /// against a reference fetched 30 h ago, under a policy whose references go stale after 24 h
-/// with `on_stale = STOP`. Both sides are refused with the "no rate" sentence and nothing is
+/// with `on_stale = STOP`. Both sides are refused with the rate refusal (#5418) and nothing is
 /// written. JPY, MANUAL in the same publication, is never stale and is quoted.
 #[actix_web::test]
 async fn a_stale_line_under_stop_gets_the_no_rate_answer() {
@@ -661,7 +661,7 @@ async fn a_stale_line_under_stop_gets_the_no_rate_answer() {
         "BUY",
         "USD",
         json!(1),
-        AMOUNT_OR_CURRENCY,
+        RATE_CHANGED,
         "USD BUY is stale under STOP",
     )
     .await;
@@ -670,7 +670,7 @@ async fn a_stale_line_under_stop_gets_the_no_rate_answer() {
         "SELL",
         "USD",
         json!(100),
-        AMOUNT_OR_CURRENCY,
+        RATE_CHANGED,
         "USD SELL is stale under STOP",
     )
     .await;
@@ -708,7 +708,7 @@ async fn a_fresh_auto_line_under_stop_is_quoted() {
 
 /// R5 with `on_stale = LIMIT`, `stale_limit_thb = 1,000.00` (A7): `StalePolicy::admits(side,
 /// thb)` is asked with the quote's THB. 31 USD at 32.1 is 995.10 THB, quoted; 32 USD is
-/// 1,027.20 THB, refused with the "no rate" sentence, and nothing is written.
+/// 1,027.20 THB, refused with the rate refusal (#5418), and nothing is written.
 #[actix_web::test]
 async fn a_stale_line_under_limit_is_quoted_only_up_to_the_limit() {
     let counter = Counter::open(&[]).await;
@@ -726,7 +726,7 @@ async fn a_stale_line_under_limit_is_quoted_only_up_to_the_limit() {
         "BUY",
         "USD",
         json!(32),
-        AMOUNT_OR_CURRENCY,
+        RATE_CHANGED,
         "32 × 32.1 = 1,027.20 is above the stale limit",
     )
     .await;

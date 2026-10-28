@@ -3,15 +3,21 @@
 //!
 //! Without `#[ts(optional)]`, ts-rs generates `T | null`, but the server omits the field
 //! on `None`, producing `undefined` on the wire.
+//!
+//! Ticket #5389: gate ensuring every `Option<...>` field with a `#[ts(type = "X")]`
+//! override includes `null` or is `unknown` / `any`. Otherwise ts-rs drops null
+//! and generates a required type for an optional field.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Documented exceptions to the ts(optional) requirement.
+/// Documented exceptions to the ts(optional) requirement (#5303) or the
+/// ts(type) null requirement (#5389).
 /// Any new entry requires a documented reason.
 const ALLOWED: &[&str] = &[
     // Entries require a documented reason explaining why the DTO field
-    // skips serialization when None without being marked #[ts(optional)].
+    // skips serialization when None without being marked #[ts(optional)],
+    // or why an Option field's #[ts(type = "...")] override excludes null.
 ];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -81,7 +87,53 @@ fn has_ts_optional(attr_block: &str) -> bool {
     false
 }
 
-fn extract_field_name(line: &str) -> Option<&str> {
+fn extract_ts_type(attr_block: &str) -> Option<String> {
+    let mut rest = attr_block;
+    while let Some(start) = rest.find("#[ts(") {
+        let inside = &rest[start + 5..];
+        if let Some(end) = inside.find(']') {
+            let ts_inner = &inside[..end];
+            let mut search = ts_inner;
+            while let Some(t_idx) = search.find("type") {
+                let before_ok = t_idx == 0 || {
+                    let prev = search.as_bytes()[t_idx - 1];
+                    prev == b' ' || prev == b',' || prev == b'('
+                };
+                let after = &search[t_idx + 4..].trim_start();
+                if before_ok && after.starts_with('=') {
+                    let after_eq = after[1..].trim_start();
+                    if let Some(after_quote) = after_eq.strip_prefix('"') {
+                        let mut val = String::new();
+                        let mut chars = after_quote.chars();
+                        while let Some(ch) = chars.next() {
+                            if ch == '\\' {
+                                if let Some(escaped) = chars.next() {
+                                    val.push(escaped);
+                                }
+                            } else if ch == '"' {
+                                return Some(val);
+                            } else {
+                                val.push(ch);
+                            }
+                        }
+                    }
+                }
+                search = &search[t_idx + 4..];
+            }
+            rest = &inside[end..];
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+fn ts_type_satisfies_null(ts_type: &str) -> bool {
+    let trimmed = ts_type.trim();
+    trimmed == "unknown" || trimmed == "any" || trimmed.split('|').any(|p| p.trim() == "null")
+}
+
+fn extract_field(line: &str) -> Option<(&str, &str)> {
     let trimmed = line.trim();
     let rest = if let Some(stripped) = trimmed.strip_prefix("pub ") {
         stripped.trim_start()
@@ -90,13 +142,23 @@ fn extract_field_name(line: &str) -> Option<&str> {
     } else {
         trimmed
     };
-    let (ident, _) = rest.split_once(':')?;
+    let (ident, ty) = rest.split_once(':')?;
     let ident = ident.trim();
     if !ident.is_empty() && ident.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        Some(ident)
+        Some((ident, ty.trim()))
     } else {
         None
     }
+}
+
+fn is_option_type(ty: &str) -> bool {
+    let ty = ty.strip_prefix("core::option::").unwrap_or(ty);
+    let ty = ty.strip_prefix("std::option::").unwrap_or(ty);
+    ty.starts_with("Option<") || ty.starts_with("Option <")
+}
+
+fn extract_field_name(line: &str) -> Option<&str> {
+    extract_field(line).map(|(name, _)| name)
 }
 
 fn check_file(rel_path: &str, content: &str) -> Vec<String> {
@@ -165,6 +227,73 @@ fn check_file(rel_path: &str, content: &str) -> Vec<String> {
     hits
 }
 
+fn check_file_ts_types(rel_path: &str, content: &str) -> Vec<String> {
+    let mut hits = Vec::new();
+    let mut in_struct = 0;
+    let mut struct_has_ts = false;
+    let mut attr_lines = Vec::new();
+
+    for (line_idx, raw_line) in content.lines().enumerate() {
+        let line_no = line_idx + 1;
+        let line = raw_line.trim();
+
+        if line.is_empty() || line.starts_with("//") {
+            continue;
+        }
+
+        if line.starts_with("#[")
+            || (!attr_lines.is_empty()
+                && (line.ends_with(']')
+                    || (!line.starts_with("pub")
+                        && !line.contains(':')
+                        && !line.starts_with("struct ")
+                        && !line.starts_with("enum "))))
+        {
+            attr_lines.push(line);
+            continue;
+        }
+
+        let attr_block = attr_lines.join(" ");
+
+        if line.contains("struct ") {
+            let has_ts = has_derive_ts(&attr_block);
+            struct_has_ts = has_ts;
+            let open_count = line.matches('{').count();
+            let close_count = line.matches('}').count();
+            in_struct += open_count as isize - close_count as isize;
+            attr_lines.clear();
+            continue;
+        }
+
+        if in_struct > 0 {
+            let open_count = line.matches('{').count();
+            let close_count = line.matches('}').count();
+            in_struct += open_count as isize - close_count as isize;
+
+            if struct_has_ts
+                && let Some((field_name, field_type)) = extract_field(line)
+                && is_option_type(field_type)
+                && !has_ts_optional(&attr_block)
+                && let Some(ts_type) = extract_ts_type(&attr_block)
+                && !ts_type_satisfies_null(&ts_type)
+            {
+                let site = format!("{rel_path}:{line_no} {field_name}");
+                if !ALLOWED.contains(&site.as_str()) {
+                    hits.push(site);
+                }
+            }
+            attr_lines.clear();
+            if in_struct <= 0 {
+                in_struct = 0;
+                struct_has_ts = false;
+            }
+        } else {
+            attr_lines.clear();
+        }
+    }
+    hits
+}
+
 #[test]
 fn every_skipped_option_is_ts_optional() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -191,6 +320,36 @@ fn every_skipped_option_is_ts_optional() {
     assert!(
         violations.is_empty(),
         "every_skipped_option_is_ts_optional failed:\n{}",
+        violations.join("\n")
+    );
+}
+
+#[test]
+fn every_option_ts_type_includes_null() {
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repo_root = manifest_dir.parent().unwrap_or(manifest_dir);
+
+    let mut files = Vec::new();
+    for root in scan_roots(manifest_dir) {
+        rust_files(&root, &mut files);
+    }
+    files.sort();
+    files.dedup();
+
+    let mut violations = Vec::new();
+    for file in files {
+        let rel = file
+            .strip_prefix(repo_root)
+            .unwrap_or(&file)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let content = fs::read_to_string(&file).expect("readable rust source file");
+        violations.extend(check_file_ts_types(&rel, &content));
+    }
+
+    assert!(
+        violations.is_empty(),
+        "every_option_ts_type_includes_null failed:\n{}",
         violations.join("\n")
     );
 }

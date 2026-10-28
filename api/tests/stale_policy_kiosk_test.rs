@@ -31,8 +31,8 @@
 //! - [required] `KioskPorts::check_stale_in` has no default body (#769 §3; pinned by
 //!   `kiosk_check_stale_has_no_default_test.rs`);
 //! - the kiosk's `quote` payload and answer as `rates_re4_kiosk_test.rs` names them (RE-4b,
-//!   merged); `kiosk_requests.published_rate_line_id` and `thb`; the refusal sentence is today's
-//!   `KioskError::AmountOrCurrencyInvalid` text.
+//!   merged); `kiosk_requests.published_rate_line_id` and `thb`; the refusal sentence is the rate
+//!   refusal (#5418).
 
 mod common;
 mod compat_common;
@@ -52,7 +52,7 @@ use stale_policy_769_common::{
 use std::str::FromStr;
 
 const MAIN: &str = "MAIN";
-const AMOUNT_OR_CURRENCY: &str = "Please enter a valid amount and currency.";
+const RATE_CHANGED: &str = "Rate changed or counter closed. Please start again.";
 /// USD per 1: BUY 32.1, SELL 32.6 (the counter's dollar).
 const USD: (&str, &str, &str, &str) = ("USD", "1", "32.1", "32.6");
 
@@ -115,7 +115,7 @@ async fn not_written(counter: &Counter, side: &str, amount: Value, status: u16, 
         .await;
     assert_eq!(answer.status, status, "{what}: {:.300}", answer.text);
     if status == 400 {
-        answer.assert_refused(400, AMOUNT_OR_CURRENCY, what);
+        answer.assert_refused(400, RATE_CHANGED, what);
     }
     assert_eq!(
         requests(counter).await,
@@ -158,7 +158,7 @@ async fn a_stale_line_whose_policy_cannot_be_found_is_a_server_error_and_writes_
 }
 
 /// §9 "Stale, `LIMIT` at exactly the limit": 32 × 32.1 = 1,027.20 is quoted under a 1,027.20
-/// limit and refused with the "no rate" answer under 1,027.19 (one satang over).
+/// limit and refused with the rate refusal (#5418) under 1,027.19 (one satang over).
 #[actix_web::test]
 async fn a_stale_line_under_limit_is_quoted_at_exactly_the_limit_and_refused_one_satang_over() {
     let counter = Counter::open(&[]).await;
