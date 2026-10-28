@@ -58,6 +58,7 @@ pub struct QueueServices {
     pub counters: CounterService,
     pub status: StatusService,
     pub issuer: TicketIssuer,
+    pub repo: Arc<dyn QueueRepository>,
 }
 
 impl QueueServices {
@@ -79,8 +80,9 @@ impl QueueServices {
                 .with_kiosk_events(kiosk_events)
                 .with_notifications(notifications),
             counters: CounterService::new(branch_tx.clone(), repo.clone(), status.clone()),
-            issuer: TicketIssuer::new(branch_tx, repo).with_booking_events(booking_events),
+            issuer: TicketIssuer::new(branch_tx, repo.clone()).with_booking_events(booking_events),
             status,
+            repo,
         }
     }
 }
@@ -118,6 +120,7 @@ pub fn refusal(err: AppError) -> V3Error {
             "noOpenShift" => ("noOpenShift", StatusCode::CONFLICT),
             "notYourTicket" => ("notYourTicket", StatusCode::CONFLICT),
             "nothingWaiting" => ("nothingWaiting", StatusCode::CONFLICT),
+            "outsideServiceHours" => ("outsideServiceHours", StatusCode::CONFLICT),
             _ => return unexpected(err),
         },
         _ => return unexpected(err),
