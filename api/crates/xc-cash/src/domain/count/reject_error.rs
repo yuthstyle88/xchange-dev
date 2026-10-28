@@ -38,6 +38,11 @@ impl RejectError {
             RejectError::Other(_) => "internal",
         }
     }
+
+    /// The sentence the client shows for this refusal (§5). Until the follow-up ticket writes the sentences, the code.
+    pub fn message(&self) -> String {
+        self.code().to_owned()
+    }
 }
 
 impl From<AppError> for RejectError {

@@ -402,16 +402,16 @@ impl CountReject {
 
 fn from_reject_error(e: RejectError) -> V3Error {
     match e {
-        RejectError::Refused(_) => V3Error::new(e.code(), None, e.code(), StatusCode::FORBIDDEN),
-        RejectError::NotFound => V3Error::new(e.code(), None, e.code(), StatusCode::NOT_FOUND),
+        RejectError::Refused(_) => V3Error::new(e.code(), None, e.message(), StatusCode::FORBIDDEN),
+        RejectError::NotFound => V3Error::new(e.code(), None, e.message(), StatusCode::NOT_FOUND),
         RejectError::OnlyThroughHandover => {
-            V3Error::new(e.code(), None, e.code(), StatusCode::BAD_REQUEST)
+            V3Error::new(e.code(), None, e.message(), StatusCode::BAD_REQUEST)
         }
         RejectError::SameCounter | RejectError::NotWaiting => {
-            V3Error::new(e.code(), None, e.code(), StatusCode::CONFLICT)
+            V3Error::new(e.code(), None, e.message(), StatusCode::CONFLICT)
         }
         RejectError::ReasonRequired | RejectError::ReasonTooLong => {
-            V3Error::new(e.code(), Some("reason"), e.code(), StatusCode::BAD_REQUEST)
+            V3Error::new(e.code(), Some("reason"), e.message(), StatusCode::BAD_REQUEST)
         }
         RejectError::Other(e) => from_cash_error(e),
     }
