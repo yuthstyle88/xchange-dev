@@ -220,6 +220,7 @@ async fn completed_exchange(room: &Room, branch: &str, side: Side, thb: &str) ->
     let money = |s: &str| Money::parse(s).expect("money");
     let id = Uuid::new_v4();
     let t = ExchangeTransaction {
+        queue_ticket_id: None,
         id: TransactionId(id),
         organization_id: Uuid::parse_str(ORG).expect("org"),
         branch_id: BranchId::new(branch),

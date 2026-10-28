@@ -350,6 +350,7 @@ fn make_exchange(
     let thb_str = format!("{:.2}", thb_dec);
 
     ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org_id,
         branch_id: BranchId::new(branch.to_owned()),

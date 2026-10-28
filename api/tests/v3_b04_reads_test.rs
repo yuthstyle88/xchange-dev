@@ -277,6 +277,7 @@ impl Room {
     fn draft(&self, branch: &str) -> ExchangeTransaction {
         let id = TransactionId(Uuid::new_v4());
         ExchangeTransaction {
+            queue_ticket_id: None,
             id,
             organization_id: Uuid::parse_str(quote_common::ORG_1).unwrap(),
             branch_id: BranchId::new(branch.to_owned()),

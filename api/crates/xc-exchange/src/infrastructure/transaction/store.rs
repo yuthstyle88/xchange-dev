@@ -411,6 +411,8 @@ impl TransactionStore for PgTransactionStore {
             kiosk_request_id: row
                 .try_get("kiosk_request_id")
                 .map_err(AppError::Database)?,
+            // skeleton: WQ-3 reads `transactions.queue_ticket_id` (the column is WQ-3's migration)
+            queue_ticket_id: None,
             staff_draft_id: row.try_get("staff_draft_id").map_err(AppError::Database)?,
             count_confirmed: row.try_get("count_confirmed").map_err(AppError::Database)?,
             lines,

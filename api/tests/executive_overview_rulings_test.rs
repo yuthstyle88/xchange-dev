@@ -383,6 +383,7 @@ async fn completed_exchange(room: &Room) -> (Uuid, Uuid) {
     let money = |s: &str| Money::parse(s).expect("money");
     let id = Uuid::new_v4();
     let t = ExchangeTransaction {
+        queue_ticket_id: None,
         id: TransactionId(id),
         organization_id: Uuid::parse_str(ORG).expect("org"),
         branch_id: BranchId::new(B1),

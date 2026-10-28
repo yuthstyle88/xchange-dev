@@ -352,6 +352,7 @@ impl CreateTransaction {
         let id = TransactionId(Uuid::new_v4());
         let quote_line_id = Some(line.id);
         let t = ExchangeTransaction {
+            queue_ticket_id: None,
             id,
             organization_id: q.organization_id,
             branch_id: req.branch_id.clone(),

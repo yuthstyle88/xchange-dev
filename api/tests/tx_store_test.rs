@@ -106,6 +106,7 @@ fn draft(
 ) -> ExchangeTransaction {
     let id = TransactionId(Uuid::new_v4());
     ExchangeTransaction {
+        queue_ticket_id: None,
         id,
         organization_id: org(organization),
         branch_id: BranchId::new(branch.to_owned()),

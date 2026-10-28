@@ -233,6 +233,7 @@ impl Room {
         let id = TransactionId(Uuid::new_v4());
         let settle: Decimal = lines.iter().map(|l| dec(&l.settle().to_string())).sum();
         let entity = ExchangeTransaction {
+            queue_ticket_id: None,
             id,
             organization_id: Uuid::parse_str(ORG).expect("org"),
             branch_id: BranchId::new(MAIN),

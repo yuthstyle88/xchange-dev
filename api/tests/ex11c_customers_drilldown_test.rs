@@ -291,6 +291,7 @@ impl Room {
         };
         let id = Uuid::new_v4();
         let t = ExchangeTransaction {
+            queue_ticket_id: None,
             id: TransactionId(id),
             organization_id: Uuid::parse_str(org).expect("org"),
             branch_id: BranchId::new(x.branch),
