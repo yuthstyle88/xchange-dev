@@ -1070,7 +1070,13 @@ impl CashCountService {
 
         self.repo
             .reject_count(&mut *tx, count_id, &actor.user_id, now, trimmed)
-            .await?;
+            .await
+            .map_err(|e| match e {
+                AppError::Domain(m) if m == CashError::NotWaiting.to_string() => {
+                    RejectError::NotWaiting
+                }
+                other => RejectError::Other(other),
+            })?;
 
         count.updated_at = now;
         count.rejection = Some(CountRejection {
