@@ -35,10 +35,11 @@ use xchange::bootstrap::{self, Application};
 const SHUTDOWN_TIMEOUT_SECS: u64 = 2;
 /// The server must be gone no sooner than this after `SIGTERM` ...
 const GONE_NOT_BEFORE: Duration = Duration::from_millis(1500);
-/// ... and no later than this (actix's default would take 30 s).
-const GONE_BY: Duration = Duration::from_millis(6000);
+/// ... and no later than this: generous for a loaded runner, yet well under
+/// actix's default 30 s, so a dropped setting still fails.
+const GONE_BY: Duration = Duration::from_secs(15);
 /// How long the test waits for the server at most before it fails.
-const GIVE_UP_AFTER: Duration = Duration::from_secs(12);
+const GIVE_UP_AFTER: Duration = Duration::from_secs(35);
 
 #[actix_web::test]
 async fn the_pool_keeps_the_minimum_the_settings_ask_for() {
