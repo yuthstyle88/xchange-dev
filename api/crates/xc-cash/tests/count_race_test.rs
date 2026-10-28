@@ -323,7 +323,6 @@ async fn floor() -> Floor {
     }
 }
 
-
 /// Waits until a backend of this database is blocked by `pid` (the first operation's connection).
 async fn until_blocked_by(pool: &PgPool, pid: i32) {
     for _ in 0..400 {
@@ -339,7 +338,9 @@ async fn until_blocked_by(pool: &PgPool, pid: i32) {
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-    panic!("the second operation never waited on the first: it did not read the count before the commit");
+    panic!(
+        "the second operation never waited on the first: it did not read the count before the commit"
+    );
 }
 
 async fn backend_pid(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> i32 {

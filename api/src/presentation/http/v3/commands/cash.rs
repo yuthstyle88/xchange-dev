@@ -410,9 +410,12 @@ fn from_reject_error(e: RejectError) -> V3Error {
         RejectError::SameCounter | RejectError::NotWaiting => {
             V3Error::new(e.code(), None, e.message(), StatusCode::CONFLICT)
         }
-        RejectError::ReasonRequired | RejectError::ReasonTooLong => {
-            V3Error::new(e.code(), Some("reason"), e.message(), StatusCode::BAD_REQUEST)
-        }
+        RejectError::ReasonRequired | RejectError::ReasonTooLong => V3Error::new(
+            e.code(),
+            Some("reason"),
+            e.message(),
+            StatusCode::BAD_REQUEST,
+        ),
         RejectError::Other(e) => from_cash_error(e),
     }
 }

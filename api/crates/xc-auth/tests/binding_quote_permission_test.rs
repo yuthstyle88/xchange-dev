@@ -160,7 +160,11 @@ fn p3_it_enters_the_seed_in_version_6() {
         "SEED_ADDITIONS has (6, BindingQuoteIssue) once"
     );
     // Staff corrections SC-D2 raised it to 7 after D-18 set 6.
-    assert_eq!(RoleGrants::SEED_VERSION, 7, "SEED_VERSION is 7 (D-18 set 6; SC-D2 7)");
+    assert_eq!(
+        RoleGrants::SEED_VERSION,
+        7,
+        "SEED_VERSION is 7 (D-18 set 6; SC-D2 7)"
+    );
 }
 
 #[tokio::test]
