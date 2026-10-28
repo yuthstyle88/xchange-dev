@@ -121,6 +121,12 @@ ol.steps li[aria-current="step"] {
   margin: 0;
 }
 
+/* FE-4 #5384: marks a benefit that is only an estimate (`benefitBasis: INDICATIVE`). */
+.desk-badge {
+  color: #6b5b00;
+  font-size: 0.85em;
+}
+
 .desk-warning {
   color: #b00020;
   margin: 0;
