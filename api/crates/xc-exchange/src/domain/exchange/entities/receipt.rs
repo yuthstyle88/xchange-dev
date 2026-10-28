@@ -18,7 +18,14 @@ pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &st
     };
     let currency_val = escape_html(&form.currency);
     let rows_val = build_rows(form, document_ref, branch_name);
-    let total_val = format_total(form.quote.principal);
+    let settled = match form.side {
+        Side::Buy => form.quote.paid,
+        Side::Sell => form.quote.received,
+    };
+    let total_val = format_total(match form.cash_rounding {
+        Some(_) => settled,
+        None => form.quote.principal,
+    });
 
     // Single-pass replacement over the template
     let mut result = String::with_capacity(TEMPLATE.len() + rows_val.len() + 256);
@@ -59,6 +66,13 @@ fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> 
 
     let amount_str = format_amount(form.amount);
     let booked_rate = format_booked_rate(form.client_rate);
+    let rounding_str = form.cash_rounding.filter(|r| !r.is_zero()).map(|r| {
+        if r.is_negative() {
+            r.to_string()
+        } else {
+            format!("+{r}")
+        }
+    });
 
     let rows: [(&str, &str, &str); 19] = [
         (" receipt-number", "Receipt No", document_ref),
@@ -91,6 +105,13 @@ fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> 
         out.push_str("</dt><dd>");
         out.push_str(&escape_html(value));
         out.push_str("</dd></div>");
+        if label == "THB Paid"
+            && let Some(r) = &rounding_str
+        {
+            out.push_str("<div class=\"row\"><dt>ปัดเศษเงินสด / Cash rounding</dt><dd>");
+            out.push_str(r);
+            out.push_str("</dd></div>");
+        }
     }
     out
 }
