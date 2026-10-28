@@ -7,7 +7,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use pos_error::AppResult;
+use chrono::{DateTime, SecondsFormat, Utc};
+use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -20,6 +21,14 @@ use crate::presentation::http::v3::view::{PagedView, RowId, ViewEndpoint};
 
 pub struct OpenAttendanceView {
     pool: PgPool,
+}
+
+#[derive(sqlx::FromRow)]
+struct SqlRow {
+    id: String,
+    employee_id: String,
+    name: String,
+    clock_in_ms: i64,
 }
 
 impl PagedView for OpenAttendanceView {
@@ -37,11 +46,44 @@ impl PagedView for OpenAttendanceView {
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
-        let branch = branch.clone();
+        let branch = branch.as_str().to_owned();
         let caller = who.user_id.clone();
         async move {
-            let _ = (&pool, &before);
-            todo!("SC-A4: open clock-ins of {branch:?} not {caller}, limit {limit}")
+            let rows: Vec<SqlRow> = sqlx::query_as(
+                "SELECT a.id, a.employee_id, COALESCE(u.name, '') AS name, \
+                        (a.data->>'clockIn')::bigint AS clock_in_ms \
+                 FROM attendance a \
+                 JOIN branches b ON b.id = a.branch_id \
+                 LEFT JOIN users u ON u.id::text = a.employee_id \
+                 WHERE a.branch_id = $1 \
+                   AND a.employee_id <> $2 \
+                   AND a.data->>'clockOut' IS NULL \
+                   AND (to_timestamp((a.data->>'clockIn')::bigint / 1000.0) AT TIME ZONE b.timezone)::date \
+                       < (now() AT TIME ZONE b.timezone)::date \
+                   AND ($3::text IS NULL OR a.position < \
+                        (SELECT p.position FROM attendance p WHERE p.branch_id = $1 AND p.id = $3)) \
+                 ORDER BY a.position DESC \
+                 LIMIT $4",
+            )
+            .bind(&branch)
+            .bind(&caller)
+            .bind(before.as_deref())
+            .bind(i64::from(limit))
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
+
+            Ok(rows
+                .into_iter()
+                .map(|r| OpenAttendanceRow {
+                    id: r.id,
+                    employee_id: r.employee_id,
+                    name: r.name,
+                    clock_in: DateTime::<Utc>::from_timestamp_millis(r.clock_in_ms)
+                        .unwrap_or_default()
+                        .to_rfc3339_opts(SecondsFormat::Millis, true),
+                })
+                .collect())
         }
     }
 }
