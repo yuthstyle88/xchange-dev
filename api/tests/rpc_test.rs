@@ -43,7 +43,7 @@ use chrono::{Duration, Utc};
 use compat_common::{Fixture, Index, Person};
 use rpc_common::{
     Answer, App, BAD_BRANCH, Call, Cookies, Desk, EMPLOYEE_AUTH_REQUIRED, FRONT_ONLY, Family,
-    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, RETIRED, ROLE_NOT_ALLOWED_RPC,
+    INVALID_REQUEST, MAIN, NO_SUCH_BRANCH, PART_ONE, REFUSED_AT, RETIRED, ROLE_NOT_ALLOWED_RPC,
     ROLE_NOT_ALLOWED_STAFF, RPC, Replay, Rule, SERVER_ERROR, SIGN_IN, STAFF_RPC, USE_CUSTODY,
     V2_HEADERS_FAULT, one_of_each_role, retired_by_ca10, route_rule, sign_in, unknown_name_for,
 };
@@ -444,6 +444,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     // SameCustomerAs rule.
     let mut differences: Vec<usize> = [124, 150, 151, 159].to_vec();
     differences.extend(&retired);
+    differences.extend(REFUSED_AT.map(|(n, _)| n));
     // re-expected for CA-10 #626: the 49 direct shift steps (#32–#67, #132–#143, #149)
     let ca10: Vec<usize> = (32..=67).chain(132..=143).chain([149]).collect();
     assert_eq!(ca10.len(), 49);
@@ -482,7 +483,7 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
     );
     assert_eq!(
         replay.tally.replayed.len(),
-        107 - 50 - 1 + (43 - part_two.len())
+        107 - 50 - 1 - REFUSED_AT.len() + (43 - part_two.len())
             - owners_c2_c3.len()
             - replay.tally.widened.len()
             - replay.tally.owner_no_open_shift.len()
@@ -510,6 +511,8 @@ async fn engine_actions_json_is_answered_as_v2_answered_it() {
             assert!(
                 replay.tally.replayed.contains(&step.n)
                     || [124, 150, 151, 159].contains(&step.n)
+                    // RF-D9: held to v2's refusal plus the field it names
+                    || REFUSED_AT.iter().any(|(n, _)| *n == step.n)
                     || retired.contains(&step.n)
                     // CA-10 #626: held to the unknown-name answer instead
                     || ca10.contains(&step.n)

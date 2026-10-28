@@ -3,10 +3,13 @@
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{HttpRequest, HttpResponse, ResponseError, web};
+use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Row};
 use xc_kernel::ids::BranchId;
+use xc_rate::domain::pricing::display_settings::DisplaySettings;
 
 use crate::bootstrap::AppState;
+use crate::presentation::dto::v3::published_rates::PublishedRatesData;
 use crate::presentation::http::public::not_found_response;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::published_rates::published_rates_data;
@@ -47,11 +50,9 @@ async fn handle(
 
     let branch_id = BranchId::new(branch_id_str);
     match published_rates_data(pool.get_ref(), &branch_id).await {
-        Ok(data) => {
-            let etag = match data.publication {
-                Some(ref pub_dto) => format!("\"p{}-s{}\"", pub_dto.id, u8::from(data.stale)),
-                None => "\"none\"".to_string(),
-            };
+        Ok(mut data) => {
+            let etag = compute_etag(&data);
+            data.lines.retain(|l| !l.hidden);
 
             if let Some(if_none_match) = req
                 .headers()
@@ -76,5 +77,52 @@ async fn handle(
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .error_response(),
+    }
+}
+
+fn compute_etag(data: &PublishedRatesData) -> String {
+    let default = DisplaySettings::v9_default();
+    let mut priced = Vec::new();
+    for line in &data.lines {
+        if !priced.contains(&line.currency) {
+            priced.push(line.currency.clone());
+        }
+    }
+    let default_order = default.order(&priced, &[]);
+    let is_default = data.lines.iter().all(|l| !l.hidden)
+        && data.display.tiers == default.tiers
+        && data.display.featured == default.featured
+        && data.display.highlight == default.highlight
+        && data.display.order == default_order.ordered
+        && data.display.more.is_empty();
+
+    if is_default {
+        return match data.publication {
+            Some(ref pub_dto) => format!("\"p{}-s{}\"", pub_dto.id, u8::from(data.stale)),
+            None => "\"none\"".to_string(),
+        };
+    }
+
+    let mut hasher = Sha256::new();
+    if let Some(ref pub_dto) = data.publication {
+        hasher.update(pub_dto.id.as_bytes());
+    }
+    hasher.update([u8::from(data.stale)]);
+    for line in data.lines.iter().filter(|l| l.hidden) {
+        hasher.update(line.line_id.as_bytes());
+        hasher.update(b":");
+        if let Some(ref reason) = line.hidden_reason {
+            hasher.update(reason.as_bytes());
+        }
+        hasher.update(b";");
+    }
+    if let Ok(bytes) = serde_json::to_vec(&data.display) {
+        hasher.update(&bytes);
+    }
+    let digest = format!("{:x}", hasher.finalize());
+    let short = &digest[..16];
+    match data.publication {
+        Some(ref pub_dto) => format!("\"p{}-s{}-{short}\"", pub_dto.id, u8::from(data.stale)),
+        None => format!("\"none-{short}\""),
     }
 }

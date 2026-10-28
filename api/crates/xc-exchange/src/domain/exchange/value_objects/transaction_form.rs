@@ -4,8 +4,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use xc_kernel::input;
 use xc_kernel::money::{
-    CompatRate, CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, NumberError, Quote,
-    Rate, Side, UnitSize,
+    CompatRate, CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, MoneyDelta,
+    NumberError, Quote, Rate, Side, UnitSize,
 };
 
 use rust_decimal::Decimal;
@@ -51,6 +51,11 @@ pub struct TransactionForm {
     pub reference_rate: Option<Rate>,
     pub client_reference_rate: Option<Decimal>,
     pub quote: Quote,
+    /// #5315: the cash rounding of a stored (v3) exchange, `settle_thb − (thb_amount ∓ fee_thb)`
+    /// (`TransactionLine::rounding_thb`), signed. `None` on a form v2 saves (`parse`): v2 has no
+    /// rounding, and its receipt stays byte for byte the one v2 wrote. `Some` makes the receipt's
+    /// total the settled figure and, when not zero, adds the cash-rounding row.
+    pub cash_rounding: Option<MoneyDelta>,
 }
 
 impl TransactionForm {
@@ -110,7 +115,17 @@ impl TransactionForm {
                 .transpose()?,
             client_reference_rate,
             quote,
+            cash_rounding: Some(MoneyDelta::from_minor(line.rounding_thb().mantissa())),
         })
+    }
+
+    /// #5315 R4: the form with `staff` set to the staff member's display name (`users.name`). `None`,
+    /// or a name that is blank once trimmed, keeps the id already there, so `staff` is never empty.
+    pub fn with_staff_name(mut self, name: Option<&str>) -> Self {
+        if let Some(n) = name.map(str::trim).filter(|n| !n.is_empty()) {
+            self.staff = n.to_owned();
+        }
+        self
     }
 
     pub fn parse(cmd: &SaveTransaction) -> AppResult<Self> {
@@ -295,6 +310,7 @@ impl TransactionForm {
             reference_rate,
             client_reference_rate,
             quote,
+            cash_rounding: None,
         })
     }
 }

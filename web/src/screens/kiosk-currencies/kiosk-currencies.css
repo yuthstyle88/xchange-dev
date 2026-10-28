@@ -57,6 +57,12 @@
   font-size: 14px;
 }
 
+.xc-kiosk .xc-shell-main .kiosk-quote-off {
+  font-size: 14px;
+  color: var(--muted);
+  margin: 4px 0 8px;
+}
+
 .xc-kiosk .xc-shell-main label {
   display: block;
   font-size: 17px;

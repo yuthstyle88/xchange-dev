@@ -28,6 +28,10 @@ pub struct QuoteLineDto {
     pub rounding_thb: String,
     pub settle_thb: String,
     pub published_rate_line_id: String,
+    /// Whether the board hides this line (`pricing-tiers.md` §15.7); the desk still quotes it and warns the teller.
+    pub pricing_hidden: bool,
+    /// `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+    pub pricing_hidden_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -52,7 +56,7 @@ impl QuoteDto {
     pub fn from_domain(quote: Quote, pub_version: i32) -> Self {
         Self {
             id: quote.id.to_string(),
-            quote_type: quote.quote_type,
+            quote_type: quote.quote_type.as_str().to_string(),
             channel: quote.channel.as_str().to_string(),
             expires_at: quote.expires_at.to_rfc3339(),
             publication: QuotePublicationDto {
@@ -79,6 +83,8 @@ impl QuoteDto {
                         rounding_thb,
                         settle_thb: line.settle_thb.to_string(),
                         published_rate_line_id: line.published_rate_line_id.to_string(),
+                        pricing_hidden: false,
+                        pricing_hidden_reason: None,
                     }
                 })
                 .collect(),

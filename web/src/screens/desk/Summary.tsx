@@ -16,6 +16,12 @@ const STATE_KEYS: Record<TransactionState, 'stateDraft' | 'statePending' | 'stat
   CANCELLED: 'stateCancelled',
 };
 
+const HIDDEN_REASON_KEYS = {
+  STALE: 'pricingHiddenSTALE',
+  BLOCKED: 'pricingHiddenBLOCKED',
+  MISMATCH: 'pricingHiddenMISMATCH',
+} as const;
+
 export function Summary(props: { store: DeskStore }): JSX.Element {
   const t = screenT('desk', screenI18n);
   const line = () => props.store.quote()?.lines[0];
@@ -24,6 +30,19 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
       ? t('customerSells', { currency: props.store.currency() })
       : t('customerBuys', { currency: props.store.currency() });
   const direction = () => (props.store.type() === 'SELL' ? t('shopReceives') : t('shopPays'));
+
+  const hiddenReason = () => {
+    const r = line()?.pricingHiddenReason;
+    if (r === 'STALE' || r === 'BLOCKED' || r === 'MISMATCH') {
+      return t(HIDDEN_REASON_KEYS[r]);
+    }
+    return null;
+  };
+
+  const hiddenWarningText = () => {
+    const reason = hiddenReason();
+    return reason ? `${t('pricingHiddenWarning')}: ${reason}` : t('pricingHiddenWarning');
+  };
 
   return (
     <div class="desk-summary">
@@ -61,6 +80,11 @@ export function Summary(props: { store: DeskStore }): JSX.Element {
           <dd>{props.store.customerId()}</dd>
         </Show>
       </dl>
+      <Show when={line()?.pricingHidden}>
+        <p class="desk-warning" data-row="pricing-hidden" role="status">
+          {hiddenWarningText()}
+        </p>
+      </Show>
       <CouponField store={props.store} />
       <CustomerLoyalty store={props.store} />
       <Show when={props.store.quoting()}>

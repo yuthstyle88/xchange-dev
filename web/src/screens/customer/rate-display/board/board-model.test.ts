@@ -12,7 +12,7 @@ const HEADINGS: BandHeadingIn[] = [
 ];
 
 function line(currency: string, over: Partial<BoardRatesData['lines'][number]> = {}): BoardRatesData['lines'][number] {
-  return { currency, group: 'ALL', unitSize: '1', buyRate: '35.10000000', sellRate: '35.40000000', lineId: `l-${currency}`, ...over };
+  return { currency, group: 'ALL', unitSize: '1', buyRate: '35.10000000', sellRate: '35.40000000', lineId: `l-${currency}`, pricingSource: 'AUTO', hidden: false, hiddenReason: null, ...over };
 }
 
 function data(over: Partial<BoardRatesData> = {}): BoardRatesData {
@@ -22,6 +22,7 @@ function data(over: Partial<BoardRatesData> = {}): BoardRatesData {
     stale: false,
     lines: [],
     bandHeadings: HEADINGS,
+    display: { tiers: [1, 2, 3, 4], featured: [], highlight: true, order: [], more: [] },
     ...over,
   };
 }

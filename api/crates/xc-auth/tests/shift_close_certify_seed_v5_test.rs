@@ -146,7 +146,8 @@ async fn v1_a_version_4_database_gains_shift_close_certify_for_executive_and_adm
             "{role:?} holds ShiftCloseCertify after boot"
         );
     }
-    assert_eq!(RoleGrants::SEED_VERSION, 5);
+    // BQ-7 (binding quote) raised it to 6.
+    assert_eq!(RoleGrants::SEED_VERSION, 6);
     for role in RoleGrants::BUILT_IN {
         assert_eq!(
             stored_set(&db, role.as_str()).await,

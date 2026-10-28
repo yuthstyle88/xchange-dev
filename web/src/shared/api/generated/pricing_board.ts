@@ -17,7 +17,51 @@ anchorSource: string, bands: Array<PricingBandDto>, sources: Array<PricingSource
 /**
  * V.9's `recommend` (pricing-tiers.md §5.2).
  */
-recommendations: Array<PricingRecommendationDto>, };
+recommendations: Array<PricingRecommendationDto>, 
+/**
+ * The branch's `'*'` bp row, or 0/0 (pricing-tiers.md §15.8a).
+ */
+branchDefault: PricingBpDto, 
+/**
+ * The effective display settings (§15.8): this is also the display-settings read.
+ */
+display: PricingDisplayDto, isMain: boolean, };
+
+/**
+ * A bp pair (`H:` §7: 1 bp = 0.01 %).
+ */
+export type PricingBpDto = { buyBp: number, sellBp: number, };
+
+/**
+ * The branch's policy for one currency (§15.4).
+ */
+export type PricingBranchPolicyDto = { buyBp: number, sellBp: number, own: boolean, follow: boolean, 
+/**
+ * `currency` · `*` · `default`.
+ */
+from: string, };
+
+/**
+ * The effective display settings (§15.8).
+ */
+export type PricingDisplayDto = { tiers: Array<number>, featured: Array<string>, highlight: boolean, allMarket: boolean, 
+/**
+ * `branch` · `MAIN` · `default`.
+ */
+from: string, };
+
+/**
+ * MAIN's latest FOLLOW plan for a currency (§15.5).
+ */
+export type PricingFollowResultDto = { currency: string, 
+/**
+ * `CANDIDATE` · `BLOCKED` · `PUBLISHED`.
+ */
+status: string, 
+/**
+ * `NO_ANCHOR` · `STALE_SOURCE` · `PRECISION` · `BELOW_COST` · `LARGE_MOVE` · `INVALID_TIERS`.
+ */
+reasons: Array<string>, plannedAt: string, };
 
 export type PricingQuoteDto = { source: string, buy: string | null, sell: string | null, fetchedAt: string, stale: boolean, };
 
@@ -63,7 +107,19 @@ selectable: boolean,
 /**
  * `Current` · `Pending` · `Unpriced` · `Tiers` · `Review` · `Manual` · `Reference`.
  */
-status: string, };
+status: string, 
+/**
+ * The effective pricing mode at this branch (pricing-tiers.md §15.1): `AUTO` · `MANUAL` · `FOLLOW`.
+ */
+mode: string, 
+/**
+ * The latest tier set for (branch, currency); `null` for AUTO.
+ */
+tierSet: PricingTierSetDto | null, 
+/**
+ * MAIN's latest FOLLOW plan, for FOLLOW currencies; else `null`.
+ */
+followResult: PricingFollowResultDto | null, branchPolicy: PricingBranchPolicyDto, };
 
 /**
  * One market source's state: `TT` · `SR` · `BOT`.
@@ -73,3 +129,16 @@ export type PricingSourceDto = { source: string, fetchedAt: string | null, stale
 export type PricingTierMarginDto = { tierNo: number, buyMarginPct: string, sellMarginPct: string, };
 
 export type PricingTierRateDto = { tierNo: number, buy: string | null, sell: string | null, };
+
+/**
+ * One approved or followed tier set (§15.2): the price itself, per the unit size.
+ */
+export type PricingTierSetDto = { id: string, 
+/**
+ * `MANUAL` · `MAIN_PUSH` · `FOLLOW`.
+ */
+source: string, 
+/**
+ * Four tiers 1..=4, decimal strings.
+ */
+tiers: Array<PricingTierRateDto>, approvedBy: string, approvedAt: string, };

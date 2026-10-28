@@ -27,6 +27,11 @@ pub struct AdminCustomerRow {
     pub completed: i64,
     pub volume: String,
     pub last_at: Option<String>,
+    // E-4 (`executive-finance.md` §3 `rfm`): the same three figures over the 12 rolling months before the read.
+    #[ts(type = "number")]
+    pub rfm_completed: i64,
+    pub rfm_volume: String,
+    pub rfm_last_at: Option<String>,
 }
 
 /// Filter for the `admin_customers` view.

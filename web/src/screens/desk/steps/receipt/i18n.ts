@@ -16,6 +16,11 @@ export const th = {
   backToEdit: '← กลับไปแก้ไขรายการ',
   newExchange: 'ทำรายการใหม่',
   print: 'พิมพ์ใบเสร็จ NEOCAL 80 มม.',
+  printing: 'กำลังพิมพ์ใบเสร็จ…',
+  printed: 'ส่งใบเสร็จไปพิมพ์แล้ว',
+  printAgain: 'พิมพ์อีกครั้ง',
+  printFailed: 'บันทึกรายการแล้ว แต่พิมพ์ใบเสร็จไม่สำเร็จ — {reason}',
+  receiptMissing: 'ไม่พบใบเสร็จของรายการนี้ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -34,4 +39,9 @@ export const en: Record<keyof typeof th, string> = {
   backToEdit: '← Back to edit the transaction',
   newExchange: 'New transaction',
   print: 'Print receipt (NEOCAL 80 mm)',
+  printing: 'กำลังพิมพ์ใบเสร็จ…',
+  printed: 'ส่งใบเสร็จไปพิมพ์แล้ว',
+  printAgain: 'พิมพ์อีกครั้ง',
+  printFailed: 'บันทึกรายการแล้ว แต่พิมพ์ใบเสร็จไม่สำเร็จ — {reason}',
+  receiptMissing: 'ไม่พบใบเสร็จของรายการนี้ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
 };

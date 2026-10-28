@@ -15,6 +15,9 @@ export function makeAdminCustomerRow(o: Partial<AdminCustomerRow> = {}): AdminCu
     completed: 0,
     volume: 'volume',
     lastAt: null,
+    rfmCompleted: 0,
+    rfmVolume: 'rfmVolume',
+    rfmLastAt: null,
     ...o,
   };
 }

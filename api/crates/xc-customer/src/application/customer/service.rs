@@ -3,6 +3,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::Transaction;
+use uuid::Uuid;
 use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
@@ -17,6 +18,7 @@ use crate::domain::customer::entities::customer_identity::CustomerIdentity;
 use crate::domain::customer::entities::reservation::Reservation;
 use crate::domain::customer::repositories::customer_repository::CustomerRepository;
 use crate::domain::customer::value_objects::customer_details::CustomerDetails;
+use crate::domain::customer::value_objects::customer_field::{CustomerField, CustomerRefusal};
 use crate::infrastructure::customer::customer_repository::PgCustomerRepository;
 use crate::pii_keys::get_pii_keys;
 
@@ -27,6 +29,22 @@ pub const NOT_THIS_PASSPORT: &str = "รหัสลูกค้าไม่ต�
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 pub const BAD_DATE: &str = "วันที่ไม่ถูกต้อง";
 pub const BAD_MODE: &str = "กรุณาเลือกประเภทรายการ";
+
+/// Why a reserve was refused: a fault in a named field, or anything else (`rpc-refusal-field.md` RF-D3).
+#[derive(Debug)]
+pub enum ReserveError {
+    Input(CustomerRefusal),
+    Other(AppError),
+}
+
+impl From<ReserveError> for AppError {
+    fn from(error: ReserveError) -> Self {
+        match error {
+            ReserveError::Input(refusal) => refusal.into(),
+            ReserveError::Other(other) => other,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReservedCustomerNumber {
@@ -95,30 +113,48 @@ impl CustomerService {
         })
     }
 
-    pub async fn reserve(
+    /// `reserve`, with a refusal of the customer's details naming its field (RF-D3).
+    pub async fn reserve_checked(
         &self,
         branch: &BranchId,
         cmd: ReserveCustomer,
         now: DateTime<Utc>,
-    ) -> AppResult<Reservation> {
-        if !self.repo.branch_exists(branch).await? {
-            return Err(AppError::Domain(NO_SUCH_BRANCH.to_owned()));
+    ) -> Result<Reservation, ReserveError> {
+        if !self
+            .repo
+            .branch_exists(branch)
+            .await
+            .map_err(ReserveError::Other)?
+        {
+            return Err(ReserveError::Other(AppError::Domain(
+                NO_SUCH_BRANCH.to_owned(),
+            )));
         }
 
-        let details = CustomerDetails::parse(&cmd)?;
-        let org_id = self.repo.organization_of_branch(branch).await?;
+        let details = CustomerDetails::check(&cmd).map_err(ReserveError::Input)?;
+        let org_id = self
+            .repo
+            .organization_of_branch(branch)
+            .await
+            .map_err(ReserveError::Other)?;
 
-        let keys = get_pii_keys()?;
+        let keys = get_pii_keys().map_err(ReserveError::Other)?;
         let normalized = xc_kernel::pii::normalize(
             IdentityType::Passport,
             &details.passport_no,
             Some(&details.nationality),
         )
-        .map_err(|e| match e {
-            xc_kernel::pii::PiiError::InvalidNationality => {
-                AppError::Domain(INVALID_NATIONALITY.to_owned())
-            }
-            _ => AppError::Domain(BAD_TEXT.to_owned()),
+        .map_err(|e| {
+            ReserveError::Input(match e {
+                xc_kernel::pii::PiiError::InvalidNationality => CustomerRefusal {
+                    field: CustomerField::Nationality,
+                    sentence: INVALID_NATIONALITY,
+                },
+                _ => CustomerRefusal {
+                    field: CustomerField::PassportNo,
+                    sentence: BAD_TEXT,
+                },
+            })
         })?;
 
         let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
@@ -194,6 +230,18 @@ impl CustomerService {
                 })
             })
             .await
+            .map_err(ReserveError::Other)
+    }
+
+    pub async fn reserve(
+        &self,
+        branch: &BranchId,
+        cmd: ReserveCustomer,
+        now: DateTime<Utc>,
+    ) -> AppResult<Reservation> {
+        self.reserve_checked(branch, cmd, now)
+            .await
+            .map_err(AppError::from)
     }
 
     pub async fn find(&self, branch: &BranchId, id: &str) -> AppResult<Option<Customer>> {
@@ -282,39 +330,50 @@ impl CustomerService {
             .await
     }
 
-    pub async fn reveal(
+    /// K8 (`customer-identity-consent.md` §4.3, §4.4): the plain value of one ACTIVE identity of `customer_id`, for
+    /// `reason`. Needs `IdentityDocumentRead` at `branch`; writes one `audit_events` row (`identityReveal`) in `tx`
+    /// holding the actor, customer id, identity id, identity type and reason, never the value, its last 4 or its hash.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn reveal_in(
         &self,
+        tx: &mut Transaction<'_, sqlx::Postgres>,
         actor: &Actor,
         branch: &BranchId,
         customer_id: &str,
+        identity_id: Uuid,
         reason: &str,
         now: DateTime<Utc>,
-    ) -> AppResult<String> {
+    ) -> AppResult<RevealedIdentity> {
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Err(AppError::Validation("reason is required".to_string()));
+        }
+
         let org_id = self.repo.organization_of_branch(branch).await?;
 
         let target = Target::new(&org_id.to_string(), Some(branch.clone()), None);
         let grant = Authorizer::check(Some(actor), Permission::IdentityDocumentRead, &target, now)
             .map_err(|_| AppError::Forbidden)?;
 
-        let row: Option<(Vec<u8>, String)> = sqlx::query_as(
-            "SELECT encrypted_value, key_id FROM customer_identities \
-             WHERE organization_id = $1 AND customer_id = $2 AND type = 'PASSPORT' AND status = 'ACTIVE' \
-             LIMIT 1",
+        let row: Option<(String, Vec<u8>, String)> = sqlx::query_as(
+            "SELECT type, encrypted_value, key_id FROM customer_identities \
+             WHERE id = $1 AND organization_id = $2 AND customer_id = $3 AND status = 'ACTIVE'",
         )
+        .bind(identity_id)
         .bind(org_id)
         .bind(customer_id)
-        .fetch_optional(self.repo.pool())
+        .fetch_optional(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
-        let (encrypted_value, key_id) = row.ok_or_else(|| AppError::NotFound {
+        let (identity_type, encrypted_value, key_id) = row.ok_or_else(|| AppError::NotFound {
             entity: "customer_identity",
-            id: customer_id.to_string(),
+            id: identity_id.to_string(),
         })?;
 
         let keys = get_pii_keys()?;
         let cipher = PiiCipher::new(keys);
-        let aad = format!("{customer_id}PASSPORT");
+        let aad = format!("{customer_id}{identity_type}");
         let sealed = Sealed {
             key_id,
             bytes: encrypted_value,
@@ -323,16 +382,22 @@ impl CustomerService {
             .decrypt(aad.as_bytes(), &sealed)
             .map_err(|e| AppError::Internal(format!("decrypt failed: {e}")))?;
 
-        let val: serde_json::Value = serde_json::from_slice(&decrypted)
-            .map_err(|e| AppError::Internal(format!("invalid JSON payload: {e}")))?;
-
-        let passport_number = val
-            .get("number")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                AppError::Internal("missing passport number in decrypted payload".to_string())
-            })?
-            .to_string();
+        let value = match identity_type.as_str() {
+            "PASSPORT" | "NATIONAL_ID" => {
+                let val: serde_json::Value = serde_json::from_slice(&decrypted)
+                    .map_err(|e| AppError::Internal(format!("invalid JSON payload: {e}")))?;
+                val.get("number")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        AppError::Internal(
+                            "missing document number in decrypted payload".to_string(),
+                        )
+                    })?
+                    .to_string()
+            }
+            _ => String::from_utf8(decrypted)
+                .map_err(|e| AppError::Internal(format!("invalid UTF-8 payload: {e}")))?,
+        };
 
         let role_str = grant
             .roles_used
@@ -353,14 +418,32 @@ impl CustomerService {
         .bind("identityReveal")
         .bind(customer_id)
         .bind(Option::<serde_json::Value>::None)
-        .bind(Some(serde_json::json!({ "reason": reason })))
+        .bind(Some(serde_json::json!({
+            "customerId": customer_id,
+            "identityId": identity_id.to_string(),
+            "identityType": &identity_type,
+            "reason": reason,
+        })))
         .bind(now)
-        .execute(self.repo.pool())
+        .execute(&mut **tx)
         .await
         .map_err(AppError::Database)?;
 
-        Ok(passport_number)
+        Ok(RevealedIdentity {
+            identity_id,
+            identity_type,
+            value,
+        })
     }
+}
+
+/// K8: what `reveal_in` answers. `identity_type` is the stored `customer_identities.type` (`PASSPORT`,
+/// `NATIONAL_ID`, `PHONE`, `EMAIL`); `value` is the plain document number, phone or e-mail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevealedIdentity {
+    pub identity_id: Uuid,
+    pub identity_type: String,
+    pub value: String,
 }
 
 /// TX-4 #672 Q1 = B: what create needs of a customer.

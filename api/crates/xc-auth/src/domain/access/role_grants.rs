@@ -107,8 +107,8 @@ impl RoleGrants {
         Role::VerificationReviewer,
     ];
 
-    /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN).
-    pub const SEED_VERSION: i32 = 5;
+    /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN; 6, BindingQuoteIssue (binding quote)).
+    pub const SEED_VERSION: i32 = 6;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
@@ -123,6 +123,7 @@ impl RoleGrants {
         (4, Permission::ApproveExchangeTransaction),
         (4, Permission::ApproveTransactionReversal),
         (4, Permission::ApproveLoyaltyRuleVersion),
+        (6, Permission::BindingQuoteIssue),
     ];
 
     /// Existing permissions seeded on one more built-in role after version 1 (#5108).
@@ -258,6 +259,7 @@ impl RoleGrants {
                 P::DevicePrinterOnline,
                 P::DrawerPassport,
                 P::SignedIn,
+                P::BindingQuoteIssue,
             ],
             Role::Teller => &[
                 P::ShiftOperate,
@@ -269,6 +271,7 @@ impl RoleGrants {
                 P::DeviceProcess,
                 P::DrawerPassport,
                 P::SignedIn,
+                P::BindingQuoteIssue,
             ],
             Role::Finance => &[
                 P::ApprovalsDecide,

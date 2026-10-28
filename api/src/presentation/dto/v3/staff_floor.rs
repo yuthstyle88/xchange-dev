@@ -44,16 +44,22 @@ pub struct StaffFloorTarget {
 pub struct StaffFloorView {
     pub phase: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub hours: Option<StaffFloorHours>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub my_clock_in: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub my_shift: Option<StaffFloorMyShift>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub cutoff: Option<StaffFloorCutoff>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub target: Option<StaffFloorTarget>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub safe: Option<HashMap<String, String>>,
 }
 

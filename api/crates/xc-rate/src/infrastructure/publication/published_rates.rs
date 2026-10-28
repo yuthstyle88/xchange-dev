@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::{CurrencyCode, ExchangeArithmetic, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{CurrencyCode, Money, Rate, Side, UnitSize};
 
 use crate::domain::policy::stale_policy::{OnStale, StalePolicy};
 use crate::domain::publication::freshness::Freshness;
@@ -14,7 +14,7 @@ use crate::domain::publication::publication::{Publication, PublicationId};
 use crate::domain::publication::published_rates::{
     LineSelector, PublicationRef, PublishedRateLineId, PublishedRates, PublishedSide,
 };
-use crate::domain::publication::value_tier::{TierBand, TierCode, TierTable};
+use crate::domain::publication::value_tier::TierCode;
 
 pub struct PgPublishedRates {
     pool: PgPool,
@@ -205,95 +205,20 @@ impl PublishedRates for PgPublishedRates {
                 }
             }
 
-            // Case 2: Otherwise, tiered:
-            // 1. No quantity -> None.
-            let quantity = match sel.quantity {
-                Some(q) => q,
-                None => return Ok(None),
-            };
-
-            // 2. The base rate of the side is base_buy_rate for BUY and base_sell_rate for SELL.
-            // It must be present and the same on every tier line of (code, group); otherwise -> None.
-            let mut common_base: Option<Decimal> = None;
-            for r in &rows {
-                let base_dec: Option<Decimal> = match sel.side {
-                    Side::Buy => r.get(10),
-                    Side::Sell => r.get(11),
-                };
-                let base_dec = match base_dec {
-                    Some(d) => d,
-                    None => return Ok(None),
-                };
-                match common_base {
-                    Some(prev) => {
-                        if prev != base_dec {
-                            return Ok(None);
-                        }
-                    }
-                    None => common_base = Some(base_dec),
-                }
-            }
-            let base_dec = match common_base {
-                Some(d) => d,
-                None => return Ok(None),
-            };
-
-            // 3. base_value = ExchangeArithmetic::try_thb(quantity, base_rate, unit_size).
-            let unit_size_dec: Decimal = rows[0].get(3);
-            let unit_size = UnitSize::parse(&unit_size_dec.to_string())
-                .map_err(|e| pos_error::AppError::Internal(format!("invalid unit size: {e}")))?;
-            let base_rate = Rate::parse(&base_dec.to_string())
-                .map_err(|e| pos_error::AppError::Internal(format!("invalid base rate: {e}")))?;
-            let base_value =
-                ExchangeArithmetic::try_thb(quantity, base_rate, unit_size).map_err(|_| {
-                    pos_error::AppError::Domain(
-                        "validationFailed: quantity overflows thb amount".to_string(),
-                    )
-                })?;
-
-            // 4. TierTable is built from the lines' bands. TierTable::pick(base_value) -> the line of that tier.
-            let mut bands = Vec::with_capacity(rows.len());
-            for r in &rows {
-                let tier_str: String = r.get(7);
-                let tier_code = TierCode::new(tier_str).map_err(|e| {
-                    pos_error::AppError::Internal(format!("invalid tier code: {e}"))
-                })?;
-                let lower_dec: Option<Decimal> = r.get(8);
-                let upper_dec: Option<Decimal> = r.get(9);
-                let lower_exclusive_thb = match lower_dec {
-                    Some(d) => Some(Money::parse(&d.to_string()).map_err(|e| {
-                        pos_error::AppError::Internal(format!("invalid lower bound: {e}"))
-                    })?),
-                    None => None,
-                };
-                let upper_inclusive_thb = match upper_dec {
-                    Some(d) => Some(Money::parse(&d.to_string()).map_err(|e| {
-                        pos_error::AppError::Internal(format!("invalid upper bound: {e}"))
-                    })?),
-                    None => None,
-                };
-                bands.push(TierBand {
-                    code: tier_code,
-                    lower_exclusive_thb,
-                    upper_inclusive_thb,
-                });
-            }
-
-            let table = TierTable::new(bands);
-            let picked_tier = match table.pick(base_value) {
-                Some(t) => t,
-                None => return Ok(None),
-            };
-
-            let picked_row = match rows.iter().find(|r| {
-                let t: String = r.get(7);
-                t == picked_tier.as_str()
-            }) {
+            // Case 2: Otherwise, tiered: tier 1 (tier_lower_exclusive_thb IS NULL), whatever the quantity (B4).
+            let picked_row = match rows
+                .iter()
+                .find(|r| r.get::<Option<Decimal>, _>(8).is_none())
+            {
                 Some(r) => r,
                 None => return Ok(None),
             };
 
-            // 5. The answer is that line's side. If that side is NULL -> None. Never fall back to another tier.
+            let tier_str: String = picked_row.get(7);
+            let picked_tier = TierCode::new(tier_str)
+                .map_err(|e| pos_error::AppError::Internal(format!("invalid tier code: {e}")))?;
+
+            // The answer is that line's side. If that side is NULL -> None. Never fall back to another tier.
             let line_id: Uuid = picked_row.get(0);
             let buy_rate: Option<Decimal> = picked_row.get(1);
             let sell_rate: Option<Decimal> = picked_row.get(2);

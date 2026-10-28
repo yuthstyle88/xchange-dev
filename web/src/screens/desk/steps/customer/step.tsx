@@ -6,6 +6,7 @@ import { Dynamic } from 'solid-js/web';
 import type { DraftBeginInput } from '../../../../shared/api/generated/branch_day';
 import { keyedWrite } from '../../../../shared/api/keyed-write';
 import { screenT } from '../../../../shared/i18n';
+import { fieldError } from '../../../../shared/i18n/field-error';
 import { wordedError } from '../../../../shared/i18n/worded-error';
 import type { DeskStore, PassportFields } from '../../desk-store';
 import type { DeskStep } from '../../steps';
@@ -106,6 +107,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   async function reserve(prefix?: (reason: string) => string): Promise<void> {
     setSending(true);
     setError(undefined);
+    setFieldErrors({});
     try {
       if (store.path.usesDraft && store.staffDraftId() === '') {
         const draft = await draftWrite.send({
@@ -143,8 +145,22 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       store.go(2);
     } catch (e) {
       if (!alive) return;
-      const reason = wordedError(e);
-      setError(prefix ? prefix(reason) : reason);
+      if (prefix) {
+        setError(prefix(wordedError(e)));
+        return;
+      }
+      const m = fieldError(e, {
+        name: t('name'),
+        passportNo: t('passportNo'),
+        nationality: t('nationality'),
+        birthDate: t('birthDate'),
+        passportExpiry: t('passportExpiry'),
+      });
+      if (m.field) {
+        setFieldErrors({ [m.field]: m.message });
+      } else {
+        setError(m.message);
+      }
     } finally {
       if (alive) setSending(false);
     }
@@ -259,6 +275,11 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           <option value="">{t('nationalityPick')}</option>
           <For each={NATIONALITIES}>{(code) => <option value={code}>{code}</option>}</For>
         </select>
+        <Show when={fieldErrors().nationality}>
+          <span class="desk-error" role="alert">
+            {fieldErrors().nationality}
+          </span>
+        </Show>
       </label>
       <label class="desk-field">
         <span>{t('birthDate')}</span>

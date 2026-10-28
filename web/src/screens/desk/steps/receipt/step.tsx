@@ -1,14 +1,17 @@
 // Step 4, the save result (design xchange-v3-wave3-desk.md D-2, D-3, §3.2 rows 4, §3.9 DK-1, §5.4; #543 Part 2).
 // D-2: nothing receipt-like before the exchange is saved. The printed receipt is the server's stored one, read through
-// TD-2's `receipt_document` (#1294) and printed by TD-3's `ReceiptFrame` (#1291); until they merge, Print prints the page.
-import { Match, Show, Switch, type JSX } from 'solid-js';
+// TD-2's `receipt_document` (#1294) and printed by TD-3's `ReceiptFrame` (#1291).
+import { createEffect, createSignal, Match, Show, Switch, type JSX } from 'solid-js';
 import { screenT } from '../../../../shared/i18n';
 import type { DeskStore } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import { ReferralCodeField } from '../../referral/ReferralCodeField';
 import * as texts from './i18n';
+import { printSaved } from './print';
 
 const t = screenT('desk.steps.receipt', texts);
+
+export type PrintState = 'idle' | 'printing' | 'printed' | 'failed';
 
 function ReceiptStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
@@ -16,6 +19,41 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
   const adminHref = () => `${store.config()?.adminUrl ?? '/'}#transactions`;
   const devicesHref = () => `/devices?branch=${encodeURIComponent(store.branch())}`;
   const newEnabled = () => store.outcome() === 'saved' || store.outcome() === 'refused';
+
+  const [printState, setPrintState] = createSignal<PrintState>('idle');
+  const [printReason, setPrintReason] = createSignal('');
+  let printSeq = 0;
+
+  createEffect(() => {
+    if (store.outcome() !== 'saved') {
+      printSeq += 1;
+      setPrintState('idle');
+      setPrintReason('');
+    }
+  });
+
+  function onStartNew(): void {
+    printSeq += 1;
+    setPrintState('idle');
+    setPrintReason('');
+    store.startNew();
+  }
+
+  async function onPrint(): Promise<void> {
+    const answer = saved();
+    if (!answer || printState() === 'printing') return;
+    const seq = ++printSeq;
+    setPrintState('printing');
+    setPrintReason('');
+    const res = await printSaved(store.api, answer.documentRef ?? answer.id);
+    if (seq !== printSeq) return;
+    if (res === 'printed') {
+      setPrintState('printed');
+    } else {
+      setPrintReason(res.failed);
+      setPrintState('failed');
+    }
+  }
 
   return (
     <section class="desk-form">
@@ -38,6 +76,17 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
                 <a href={devicesHref()}>{t('devicesLink')}</a>
               </Show>
               <ReferralCodeField transactionId={answer().id} api={store.api} />
+              <Show when={printState() === 'printing'}>
+                <p class="desk-notice">{t('printing')}</p>
+              </Show>
+              <Show when={printState() === 'printed'}>
+                <p class="desk-notice">{t('printed')}</p>
+              </Show>
+              <Show when={printState() === 'failed'}>
+                <p class="desk-error" role="alert">
+                  {t('printFailed', { reason: printReason() })}
+                </p>
+              </Show>
             </div>
           )}
         </Match>
@@ -64,11 +113,17 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
         </Match>
       </Switch>
       <div class="desk-actions">
-        <button type="button" disabled={!newEnabled()} onClick={() => store.startNew()}>
+        <button type="button" disabled={!newEnabled()} onClick={onStartNew}>
           {t('newExchange')}
         </button>
-        <button type="button" disabled={!saved()} onClick={() => window.print()}>
-          {t('print')}
+        <button
+          type="button"
+          disabled={!saved() || printState() === 'printing'}
+          onClick={() => void onPrint()}
+        >
+          {saved() && (printState() === 'printed' || printState() === 'failed')
+            ? t('printAgain')
+            : t('print')}
         </button>
       </div>
     </section>
