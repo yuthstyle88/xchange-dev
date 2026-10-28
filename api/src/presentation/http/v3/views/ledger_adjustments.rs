@@ -119,7 +119,9 @@ impl BranchView for LedgerAdjustmentsView {
             );
 
             if !status_filter.is_empty() {
-                sql.push_str(" AND (CASE WHEN p.id IS NOT NULL THEN 'POSTED' ELSE r.status END) = $3");
+                sql.push_str(
+                    " AND (CASE WHEN p.id IS NOT NULL THEN 'POSTED' ELSE r.status END) = $3",
+                );
             }
             sql.push_str(" ORDER BY r.requested_at DESC, r.id DESC");
 
@@ -213,9 +215,7 @@ impl BranchView for LedgerAdjustmentsView {
                                     .unwrap_or_default()
                                     .normalize()
                                     .to_string();
-                                let val = Decimal::from_str(val_str)
-                                    .unwrap_or_default()
-                                    .abs();
+                                let val = Decimal::from_str(val_str).unwrap_or_default().abs();
                                 LedgerAdjustmentPostedLine {
                                     currency,
                                     quantity: qty,
