@@ -439,10 +439,17 @@ async fn fetch_state(conn: &mut PgConnection, branch: &BranchId) -> AppResult<Cu
 impl CustodyRepository for PgCustodyRepository {
     fn branch_timezone_in<'a>(
         &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
     ) -> BoxFuture<'a, AppResult<chrono_tz::Tz>> {
-        todo!("SC-A2: the timezone of branch {branch:?}")
+        Box::pin(async move {
+            let tz: String = sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                .bind(branch.as_str())
+                .fetch_one(&mut **tx)
+                .await?;
+            tz.parse()
+                .map_err(|e| AppError::Internal(format!("invalid timezone {tz}: {e}")))
+        })
     }
 
     fn branch_exists<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<bool>> {
