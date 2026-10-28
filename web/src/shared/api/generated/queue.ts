@@ -20,6 +20,11 @@ status: string, };
 export type QueueNoInput = Record<symbol, never>;
 
 /**
+ * `ticketServeWalkIn`'s body: the sale's customer, when the desk already knows them (W4 (3)).
+ */
+export type QueueServeWalkInInput = { customerId: string | null, };
+
+/**
  * The queue's state after open or close.
  */
 export type QueueStateDto = { queueOpen: boolean, activeCounters: number, };
