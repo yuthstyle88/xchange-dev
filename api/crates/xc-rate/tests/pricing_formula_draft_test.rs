@@ -7,6 +7,9 @@
 //! `FormulaResolver::resolve(tx, branch, <the draft's policy version>)` and prices through `RateProposal::of_with`,
 //! `TierProposal::of_with` and `DraftEvaluation::of_tiered_with`; `submit` then records the source on every line
 //! with an AUTO side (`FormulaRecord::draft_line`). A MANUAL-only line keeps NULL.
+//!
+//! Restated at review (#5530) by the test author: the proposals are compared in currency order, since a draft's
+//! line order is its random line ids' (`evaluate` reads `ORDER BY id`).
 
 mod pricing_formula_db;
 mod rate_engine_common;
@@ -38,7 +41,7 @@ fn d(s: &str) -> Decimal {
 }
 
 /// Creates and submits a draft at MAIN as the owner; answers its id, the submit result and the evaluation's
-/// proposals as `(buy, sell)` values.
+/// proposals as `(buy, sell)` values, in currency order (the draft's line order is its line ids', which are random).
 async fn draft(
     db: &TestDb,
     lines: Vec<DraftLine>,
@@ -54,7 +57,16 @@ async fn draft(
     let mut tx = db.begin().await;
     let evaluated = e.drafts.evaluate(&mut tx, &main_branch(), &created.id).await;
     let proposals = match &evaluated {
-        Ok(o) => o.proposals.iter().map(|p| (p.buy.map(|r| r.value()), p.sell.map(|r| r.value()))).collect(),
+        Ok(o) => {
+            let mut by_currency: Vec<_> = o
+                .lines
+                .iter()
+                .zip(&o.proposals)
+                .map(|(l, p)| (l.currency.as_str().to_owned(), (p.buy.map(|r| r.value()), p.sell.map(|r| r.value()))))
+                .collect();
+            by_currency.sort_by(|a, b| a.0.cmp(&b.0));
+            by_currency.into_iter().map(|(_, p)| p).collect()
+        }
         Err(_) => Vec::new(),
     };
     tx.rollback().await.expect("rollback");
@@ -110,9 +122,10 @@ async fn b15_a_line_priced_by_the_organisation_formula_names_its_version() {
     assert_eq!(
         proposals,
         vec![
-            (Some(d("33.75765")), Some(d("33.85765"))),
             (Some(d("38.10")), Some(d("38.50"))),
-        ]
+            (Some(d("33.75765")), Some(d("33.85765"))),
+        ],
+        "EUR (MANUAL) then USD (organisation formula)"
     );
     assert_eq!(
         sources(&db, &id).await,

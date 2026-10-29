@@ -181,9 +181,7 @@ impl RateDraftService {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let mut line_ids: Vec<Uuid> = (0..lines.len()).map(|_| Uuid::new_v4()).collect();
-        line_ids.sort();
-        for (line, line_id) in lines.iter().zip(line_ids) {
+        for line in &lines {
             // The newest 'BOT' line of this currency is the AUTO base; a 'PARTNER' line is
             // reference data for `source_snapshot.partner` only (rates.md §4.1 "Partner cost")
             let ref_id = ReferenceBase::newest_in(tx, branch, &line.currency).await?;
@@ -197,6 +195,7 @@ impl RateDraftService {
                 LineSide::Manual(rate) => ("MANUAL", Some(rate.value())),
             };
 
+            let line_id = Uuid::new_v4();
             sqlx::query(
                 "INSERT INTO rate_draft_lines \
                  (id, draft_id, branch_id, currency_code, denomination_group, reference_line_id, \
