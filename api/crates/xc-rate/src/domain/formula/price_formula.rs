@@ -1,5 +1,6 @@
 //! One formula per side, and the built-in default that reproduces today's AUTO price (pricing-formula.md §2, §6).
 
+use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{Rate, Side};
 
 use crate::domain::formula::error::FormulaError;
@@ -23,7 +24,10 @@ impl PriceFormula {
 
     /// `DEFAULT_BUY` / `DEFAULT_SELL`, parsed.
     pub fn default_formula() -> PriceFormula {
-        todo!("pricing-formula wave 1: PriceFormula::default_formula")
+        PriceFormula::new(
+            FormulaText::parse(DEFAULT_BUY).expect("DEFAULT_BUY parses"),
+            FormulaText::parse(DEFAULT_SELL).expect("DEFAULT_SELL parses"),
+        )
     }
 
     pub fn is_default(&self) -> bool {
@@ -33,14 +37,26 @@ impl PriceFormula {
     /// One side's price: evaluate, round to 8 places half away from zero (`rate_proposal.rs:49-52`), then a result
     /// ≤ 0 ⇒ `NotPositive`. Evaluation errors pass through unchanged.
     pub fn side(&self, side: Side, inputs: &FormulaInputs) -> Result<Rate, FormulaError> {
-        let _ = (side, inputs);
-        todo!("pricing-formula wave 1: PriceFormula::side")
+        let text = match side {
+            Side::Buy => &self.buy,
+            Side::Sell => &self.sell,
+        };
+        let rounded = text
+            .expr()
+            .eval(inputs)?
+            .round_dp_with_strategy(8, RoundingStrategy::MidpointAwayFromZero);
+        if rounded <= Decimal::ZERO {
+            return Err(FormulaError::NotPositive);
+        }
+        Rate::parse(&rounded.to_string()).map_err(|_| FormulaError::Overflow)
     }
 
     /// Both sides (`side(Buy)`, then `side(Sell)`); the first error wins. No buy ≤ sell check here.
     pub fn price(&self, inputs: &FormulaInputs) -> Result<(Rate, Rate), FormulaError> {
-        let _ = inputs;
-        todo!("pricing-formula wave 1: PriceFormula::price")
+        Ok((
+            self.side(Side::Buy, inputs)?,
+            self.side(Side::Sell, inputs)?,
+        ))
     }
 }
 
