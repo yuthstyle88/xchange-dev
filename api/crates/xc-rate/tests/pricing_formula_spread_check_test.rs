@@ -275,3 +275,24 @@ async fn b19_the_check_holds_the_organisation_row_until_the_transaction_ends() {
         .expect_err("locked by the branch check");
     assert_eq!(blocked.as_database_error().and_then(|e| e.code()).as_deref(), Some("55P03"));
 }
+
+/// Added by the test author at review (#5528): a reference line with one side is priced on that side only, as the
+/// draft path prices it (`RateProposal::of_with`: `MissingInput` ⇒ that side `None`); it is never a failure.
+#[tokio::test]
+async fn a_one_sided_reference_line_is_checked_on_its_side_only() {
+    let db = TestDb::start().await;
+    db.seed_batch(
+        chrono::Utc::now() - chrono::Duration::hours(1),
+        &[("USD", "1", Some("33.6482"), None)],
+    )
+    .await;
+    policy(&db, "MAIN", "0", "0", guards("-1.0000", "1.0000")).await;
+    let r = run(&db, &branch("MAIN", None, rate_policy("0.3000", "-0.3000", guards("-1.0000", "1.0000")))).await;
+    assert!(r.is_ok(), "{:?}", described(&r));
+    let usd: Vec<_> = r.priced.iter().filter(|p| p.currency.as_str() == "USD").collect();
+    assert_eq!(usd.len(), 1);
+    assert_eq!((usd[0].buy, usd[0].sell), (Some(d("33.7491446")), None));
+    // the priced side is still guarded
+    let out = run(&db, &branch("MAIN", None, rate_policy("1.2000", "0", guards("-1.0000", "1.0000")))).await;
+    assert_eq!(described(&out), vec!["MAIN USD buy 34.0519784 outside guard [-1, 1] (+1.2 %)".to_owned()]);
+}
