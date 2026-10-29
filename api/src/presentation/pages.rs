@@ -35,6 +35,18 @@ impl Callers {
             .and_then(|user| xc_auth::domain::access::Standing::of(user, chrono::Utc::now()))
             .filter(|standing| !standing.is_owner())
     }
+
+    /// Whether the request carries a signed-in staff caller (§11.8).
+    pub fn signed_in(&self) -> bool {
+        let now = chrono::Utc::now();
+        self.user
+            .as_ref()
+            .is_some_and(|user| xc_auth::domain::access::is_staff_caller(user, now))
+            || self
+                .staff_user
+                .as_ref()
+                .is_some_and(|user| xc_auth::domain::access::is_staff_caller(user, now))
+    }
 }
 
 /// Organization ID seeded in migration 20261011100000_organizations.sql:9-10.
@@ -301,11 +313,11 @@ async fn devices_receipt_handler(req: HttpRequest) -> HttpResponse {
     }
 
     let callers = get_callers(&req).await;
-    let owner = callers.owner_standing();
-    let staff = callers.staff_standing();
-    if owner.is_none() && staff.is_none() {
+    if !callers.signed_in() {
         return to_login(&req);
     }
+    let owner = callers.owner_standing();
+    let staff = callers.staff_standing();
 
     let query = match parse_receipt_query(req.query_string()) {
         Ok(q) => q,
@@ -530,7 +542,7 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
 
     if spec.who_signed_in {
         let c = callers.as_ref().unwrap();
-        if c.owner_standing().is_none() && c.staff_standing().is_none() {
+        if !c.signed_in() {
             return to_login(&req);
         }
     }
