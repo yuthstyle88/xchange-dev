@@ -98,13 +98,14 @@ system then applies V.9's own steps, unchanged: `floor_d` buy / `ceil_d` sell at
 decimals, the min-spread widening (step 2), equal-or-better across tiers (step 3), and the flags. So a database with no
 formula rows publishes the same FOLLOW tiers as today (B21).
 
-**Margins out of a suggestion.** Today `pricing_suggestion.rs:175-200` turns suggested prices back into policy margins
-by inverting the default formula, for `pricingApprove`. An arbitrary formula has no general inverse, so:
-- resolved formula = the default ⇒ unchanged: the inverse, `Precision` on a non-reproducible margin, and
-  `pricingApprove` writing a policy version;
-- any other formula ⇒ no margins are derived (the board shows "—" in the margin columns with the formula's source),
-  and `pricingApprove` submits the suggested tier prices as a MANUAL tier line through `TierSetPublisher`, the same way
-  FOLLOW publishes, writing no policy version.
+**Margins out of a suggestion.** `pricing_suggestion.rs:175-200` turns suggested prices back into policy margins by
+inverting the default formula. An arbitrary formula has no general inverse, so:
+- resolved formula = the default ⇒ unchanged: the inverse and `Precision` on a non-reproducible margin;
+- any other formula ⇒ no margins are derived (the board shows "—" in the margin columns with the formula's source).
+
+`pricingApprove` needs no change: since #5164 it publishes the approved tier prices as a MANUAL tier set through
+`TierSetPublisher` and writes no policy version, whatever the formula (corrected in §11; the first draft of this section
+assumed it wrote the suggestion's margins as a policy version).
 
 ## 4. The save check (F-5)
 
@@ -365,3 +366,25 @@ the `lane-controllers` playbook; BE waves run under a BE sub-controller agreed w
 | Q-F1 | Approve the §8 migration (one new table, two columns on `rate_policy_versions`, two on `rate_draft_lines`, no backfill)? | **Approved.** The owner typed *"ทำตามที่เสนอ"* in session claude/e92db6 at 2026-10-29 16:2x ICT, answering a proposal that asked to approve it, with the migration ticket held until this design merges. Deploy stays a separate order |
 | Q-F3 | Approve the two `pricing_tier_sets` columns (`formula_source`, `formula_version_id`) that F-7 adds to §8? | **Approved:** "อนุมัติ (Recommended)", AskUserQuestion in session claude/e92db6, 2026-10-29 17:0x ICT. Nullable, no backfill |
 | Q-F2 (answered, F-7) | A currency in FOLLOW mode (`market_pricing_loop.rs`) is priced by the V.9 suggestion engine (market anchor ± `better`, min spread, equal-or-better), not by the AUTO formula, and publishes every 5 min. Does the owner's formula also govern FOLLOW? | **Answered:** "ใช้สูตรเดียวกันทั้งหมด (Recommended)", AskUserQuestion in session claude/e92db6, 2026-10-29 16:4x ICT. Proposed and taken: yes, one formula for both, with the suggestion's min-spread and equal-or-better kept as system rules after it, FOLLOW storing prices (no inverse margins), and the default FOLLOW text reproducing V.9 exactly. If no: FOLLOW keeps V.9's formula, configured only by `better`, and F-1 then covers AUTO (BoT) prices only |
+
+## 11. As built (BE waves 1-3)
+
+Decided by the BE sub-controller (claude/studio-claude-16) while cutting the skeleton and the tickets
+(#564 issuecomment-6493161382, issuecomment-6495523161). Each point is pinned by an up-front test on
+`feat/pricing-formula`.
+
+| # | Where | As built | Why |
+|---|---|---|---|
+| A-1 | §6 | `RateProposal::of_with`, `TierProposal::of_with`, `DraftEvaluation::of_tiered_with`, `PricingSuggestion::of_with`, `FollowPlan::plan_with` take the `PriceFormula`; the old functions keep their signatures and call them with `PriceFormula::default()` | 30+ existing tests call the old signatures and pin today's prices (B1, B21); provided tests are never edited |
+| A-2 | §6a | `draft_evaluation.rs:140` re-proposes tiers for the guard check; it takes the resolved formula too | otherwise the guard sees default prices under a custom formula |
+| A-3 | §3 | `PolicyVersionWriter::next_with_formula(.., FormulaChange::{Keep, Set, Clear})`; `next` = `Keep` | `pricingConfigure` / `pricingApprove` write versions through `next` and would drop a branch formula |
+| A-4 | §3, §3a | `FormulaRecord::{draft_line, tier_set}` writes `formula_source` / `formula_version_id`; `submit` records every line with an AUTO side; publish puts `source_snapshot.formula = {source, formula_version_id, buy, sell}` on lines with an AUTO side | §9 had no ticket for B15 / B20 |
+| A-5 | §2 | `FormulaError` gains `MissingInput` and `Overflow`; `ref_buy` / `ref_sell` are optional. A side whose formula names a missing reference side is unpriced, as today; the §4 check prices a one-sided line on its side only | BoT lines can carry one side |
+| A-6 | §4 | A refused save answers one `SpreadFailure::describe()` per line in `message` (e.g. `MAIN USD buy 33.8837374 > sell 33.7293303`); `pricingFormulaPreview` answers the full table | `V3Error` has no details field |
+| A-7 | §4 | Field of a refusal: `pricingFormulaSave` ⇒ `buyFormula`; `ratePolicySave` ⇒ `buyFormula` when formula texts are sent, else `buyAdjustPct`; `pricingConfigure` ⇒ `margins.buy-N` / `margins.sell-N` of the first failing tier (`PricingPolicy.tsx:67-68`), `tiers` for the single line | the screens map these fields |
+| A-8 | §4 | The guard's percentage is rounded to 4 places (half away from zero) before it is compared | guards have 4 places; the price's 8-place rounding must not push a value on the guard over it |
+| A-9 | §4 | The currencies checked are those with a line in `rate_reference_lines`; a FOLLOW currency is checked at MAIN on its market anchor with MAIN's `better`, not with the AUTO binding, and without the guard | FOLLOW prices are not guarded by the policy |
+| A-10 | §5 | `pricingFormulaSave` (and `pricingFormulaPreview` with scope `ORGANISATION`) requires an organisation-wide EXECUTIVE; a refused role answers `roleNotAllowedHere` as `ratePolicySave` does | the organisation formula prices every branch; an EXECUTIVE scoped to one branch covers only that branch (confirmation asked on #564) |
+| A-11 | §6 | `ratePolicySave` input `buyFormula` / `sellFormula` (absent = keep, `null` = follow the organisation, text = own; both or neither); answers `notChecked` on `ratePolicySave` and `pricingConfigure`; `formulaSource` on the pricing board — all optional in the TS types | the FE fixtures build these types |
+| A-12 | §9 | Waves as cut: W1 #5493 #5494 #5495; W2 #5498-#5504; W3 #5516-#5524 (view, save, preview, `ratePolicySave`, `pricingConfigure`, draft, publish, FOLLOW, board). No `pricingApprove` ticket (§3a correction) | — |
+

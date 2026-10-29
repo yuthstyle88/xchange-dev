@@ -263,3 +263,96 @@ Answered by the owner on 2026-10-28 at 11:3x ICT, through the BE lane controller
 | O-2 | A closed queue refuses the walk-in entry (W7), so the desk cannot sell while the queue is closed and the branch is open. Keep that, or issue the entry anyway? | **Keep the refusal** (`queueClosed`), as booking check-in does. The desk opens the queue (`queueOpen`) at the start of the day. |
 
 Out of scope: finishing a booking's or a kiosk request's ticket when its sale completes. Today the teller finishes it from the board. W8's step could serve them too later, through the same `finish_for_sale_in`.
+
+## 11. Starting the branch day opens the queue (#5540)
+
+> Design delta by claude/2ca5874b (BE lane, under claude/553782), 2026-10-29 ICT. Measured on `origin/main` `6d573093`.
+> Owner's decision, 2026-10-29 19:0x ICT, in claude/553782's session (label verbatim): **"เปิดวัน = เปิดคิวด้วย (Recommended)"** (#5540 §2). It answers desk check round 4's P2.
+
+### 11.1 The gap
+
+- O-2 (§10) assumed someone opens the queue at the start of the day. In round 4 nobody did: MAIN's day was OPEN while `branch_service_status.queue_open = false`. The teller's walk-in then stopped at `POST /api/queue/tickets/serve` with 409 `queueClosed`.
+- The teller cannot open it: `queueOpen` needs `BranchDayOperate` (`api/crates/xc-auth/src/domain/policy/areas/queue.rs:44`), which only BRANCH_MANAGER holds.
+- `queue-tickets.md` Q8 already says "the queue opens with the branch day's start service (PR 590 C9)". No code does it: the day start (`v3/commands/branch_day.rs:158-172` → `BranchDayService::start_service`, `xc-shift/src/application/branch_day/service.rs:168` → `BranchDay::start_service`, `domain/custody/branch_day.rs:24-40`) never touches `branch_service_status`.
+
+### 11.2 Where the two writes meet
+
+**The v3 command, `DayStartServiceCommand::run`** (`api/src/presentation/http/v3/commands/branch_day.rs`). After `start_service` returns, it calls `StatusService::open_in(tx, who, branch, now)` (`xc-queue/src/application/status/status_service.rs:268-299`) in the same transaction.
+- `xc-shift` must not depend on `xc-queue`, and the command is the only production path from READY to OPEN. The sweep `git grep -n "start_service(" -- api` at `6d573093` finds one production caller (`branch_day.rs:160`); the other `ops_state` OPEN writer, `shift_balances.rs:355`, is test code. So the root package composes the two writes, the way `cash.rs:247-252` already composes the queue's `StatusService` for the shift hooks.
+- The CM-1 seam runs every command inside `BranchTx` on the request's branch (`v3/command.rs:559-578`), so `open_in`'s precondition (the caller holds the branch's lock, `status_service.rs:265-266`) holds.
+- `open_in` checks `BranchDayOperate` on `Target::new(org, Some(branch))`. `BranchDay::start_service` already checked the same permission on the same target (`branch_day.rs:32`, `may_operate`), so the queue step adds no new refusal.
+- An error from `open_in` rolls the day start back, and it reaches the caller through the command's own `map_service_error` (`branch_day.rs:52`).
+- **Ruled out:** a `ShiftLifecycleHook::on_day_started` (the `queue-day-close.md` §3.1 pattern). It needs four files in four crates (`xc-kernel`, `xc-shift`, `xc-queue`, `api`) for a link that has one caller.
+
+### 11.3 Class diagram
+
+```mermaid
+classDiagram
+    class DayStartServiceCommand {
+        -service: Arc~BranchDayService~
+        -ports: Arc~dyn CustodyPorts~
+        -queue: StatusService
+        +new(service, ports, queue: StatusService) Self
+        +run(tx, branch, who, input, key) Result~DayStartServiceOutput, V3Error~
+    }
+    class BranchDayService {
+        +start_service(tx, who, branch, StartService, now) AppResult~Phase~
+    }
+    class StatusService {
+        +open_in(tx, actor, branch, now) AppResult~BranchServiceStatus~
+    }
+    DayStartServiceCommand --> BranchDayService : 1. READY → OPEN
+    DayStartServiceCommand --> StatusService : 2. queue_open = true, refresh
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `DayStartServiceCommand.queue`, `new(service, ports, queue)`, the `register` wiring | `api/src/presentation/http/v3/commands/branch_day.rs` | skeleton on `test/5540` | `register`; `tests/role_refusal_400_branch_day_test.rs:307` (adapted on `test/5540`) |
+| the `open_in` call in `run` | same file | **T1** | — |
+| `StatusService::open_in` | `xc-queue/src/application/status/status_service.rs` | exists, unchanged | T1 |
+
+`[required]` `DayStartServiceCommand::new(service, ports, queue: StatusService)`: the skeleton and the adapted test call it. `StatusService` is built in `register` from the same `BranchTx` and a `PgQueueRepository`, as at `cash.rs:247-249`.
+
+### 11.4 Behaviour table
+
+| # | Before the start | Action | After | Up-front test (`api/tests/day_start_opens_queue_test.rs`) |
+|---|---|---|---|---|
+| D-1 | day READY, `queue_open = false` | BRANCH_MANAGER `dayStartService` | day OPEN, `queue_open = true`, `queue_version` moved; a teller's walk-in `serve` answers 200 SERVING | `starting_the_day_opens_a_closed_queue_and_the_walk_in_is_served` (red today) |
+| D-2 | day READY, `queue_open = true` | the same | still open; the upsert is a no-op on `queue_open`, but `refresh_in` still bumps `queue_version` (`status_service.rs:188-197`) and recomputes the estimate | `starting_the_day_on_an_already_open_queue_keeps_it_open_and_still_moves_its_version` (red today) |
+| D-3 | day READY, no `branch_service_status` row | the same | a row is created with `queue_open = true` (`open_in`'s upsert, ruling 5 on #879) | `starting_the_day_of_a_branch_with_no_status_row_creates_it_open` (red today) |
+| D-4 | day READY, queue closed | `dayStartService` refused (`ratesVerified = false`) | day still READY, queue still closed, version unchanged (one transaction) | `a_refused_day_start_leaves_the_day_ready_and_the_queue_closed` |
+| D-5 | day OPEN after the start | BRANCH_MANAGER `queueClose` | the queue closes and a walk-in is refused `queueClosed`; closing stays the manager's choice | `closing_the_queue_after_the_day_started_still_refuses_a_walk_in` |
+
+Kept as they are: who may open or close the queue (`queue.rs:44`); the walk-in refusal on a closed queue (O-2); cut-off and day close (out of scope, §11.7).
+
+### 11.5 Up-front tests and the sweep
+
+Branch **`test/5540`** at `24166e62`, off `origin/main` `6d573093`:
+- the skeleton: the `queue` field, the `new` parameter and the `register` wiring in `branch_day.rs`. `run` reads the field with `let _ = &self.queue;` and does not call it yet;
+- `tests/role_refusal_400_branch_day_test.rs:307` passes a `StatusService` to the new constructor. That is the only change to an existing test, and it is a compile fix: the asserts are untouched;
+- `tests/day_start_opens_queue_test.rs`, 5 tests (harness copied from `walkin_serve_command_test.rs`).
+
+Measured on the Mac Studio, private PG17:
+- on `test/5540`: D-1, D-2 and D-3 fail on the result (`queue_open` or `queue_version`), and D-4 and D-5 pass;
+- with a throwaway T1 (the `open_in` call): 72/72 across `day_start_opens_queue_test`, `v3_branch_day_commands_test`, `v3_branch_day_rate_version_test`, `role_refusal_400_branch_day_test`, `start_service_window_test`, `service_not_ready_message_test`, `walkin_serve_command_test`, `queue_commands_views_test` and `v3_cash_commands_test`;
+- clippy `-p xchange --all-targets -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` all clean.
+
+**Tests that pin "day open, queue closed":** the sweep found none. `git grep -l "queue_open\|queueClosed\|queue_version\|queueVersion" -- api/tests` at `6d573093`, intersected with files that start the day (`branch-day/start`, `dayStartService`, `rpc_common`, `shift_holder_common`), gives one file, `kiosk_http_common/mod.rs`, which never posts the start route. The shared fixtures write `ops_state` straight to OPEN (`shift_holder_common/mod.rs:130`, `rpc_common/mod.rs:1559`), so they never reach the command. The crate tests (`xc-shift`, `xc-queue`) call `BranchDayService` or `StatusService` directly, below the command, so they are unchanged too.
+
+### 11.6 Function ticket
+
+| Ticket | File scope | Done line (`cd api`, `TEST_DATABASE_URL` set) |
+|---|---|---|
+| **T1** day start opens the queue | `api/src/presentation/http/v3/commands/branch_day.rs` | `cargo nextest run -p xchange -E 'test(/^(day_start_opens_queue_test\|role_refusal_400_branch_day_test\|v3_branch_day_commands_test\|v3_branch_day_rate_version_test\|start_service_window_test\|walkin_serve_command_test)::/)'` all green; clippy `-p xchange --all-targets -D warnings`; `bash scripts/fmt-included.sh origin/main` rc 0 from the clone root |
+
+`class:logic`, Gemini 4 Argon, base `main`, branched from `test/5540`. The provided test file must not be edited.
+
+### 11.7 Out of scope
+
+- Cut-off or day close closing the queue (not decided; #5540 §5).
+- Who may open or close the queue.
+- `queue-tickets.md` Q8 already states the rule and needs no edit.
+
+### 11.8 Data migration
+
+None. `branch_service_status` and its columns exist (`20261101100000_queue.sql`). The start writes the row through the existing `open_in` upsert.

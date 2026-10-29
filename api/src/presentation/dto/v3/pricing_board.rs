@@ -26,6 +26,11 @@ pub struct PricingBoardData {
     /// The effective display settings (§15.8): this is also the display-settings read.
     pub display: PricingDisplayDto,
     pub is_main: bool,
+    /// Which formula prices this branch (pricing-formula.md §3a): `BRANCH` · `ORGANISATION` · `DEFAULT`. Under any
+    /// but the default the suggestion has no margins and the board shows "—" in the margin columns (B23).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub formula_source: Option<String>,
 }
 
 /// A bp pair (`H:` §7: 1 bp = 0.01 %).
