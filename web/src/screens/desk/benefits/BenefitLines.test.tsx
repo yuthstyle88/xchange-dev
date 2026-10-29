@@ -155,7 +155,7 @@ describe('FE-desk F7 (B03): BenefitLines component (#3341)', () => {
     const badge = host.querySelector('[data-row="benefit-indicative"]');
     expect(badge).not.toBeNull();
     expect(badge?.className).toBe('desk-badge');
-    expect(badge?.textContent).toBe('ประมาณการ');
+    expect(badge?.textContent).toBe('Estimate');
   });
 
   it('row 8: the same benefit, basis: "RESERVED" -> the line as today, no [data-row="benefit-indicative"]', () => {
@@ -220,7 +220,7 @@ describe('FE-desk F7 (B03): BenefitLines component (#3341)', () => {
     expect(badges.length).toBe(2);
     badges.forEach((b) => {
       expect(b.className).toBe('desk-badge');
-      expect(b.textContent).toBe('ประมาณการ');
+      expect(b.textContent).toBe('Estimate');
     });
     const dds = host.querySelectorAll('dd');
     expect(dds.length).toBe(2);
