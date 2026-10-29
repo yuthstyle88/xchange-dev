@@ -6,6 +6,7 @@ use xc_kernel::money::{CurrencyUnits, Rate, Side};
 use crate::domain::draft::rate_draft::{DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::ProposedLine;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::publication::value_tier::{TierBand, TierCode};
@@ -25,6 +26,22 @@ pub struct TierLine {
 pub struct TierProposal;
 
 impl TierProposal {
+    /// As `of`, with each AUTO tier side priced by `formula`: `tier_buy_pct` / `tier_sell_pct` = the tier's margin
+    /// (`PolicyTiers::margin`), the rest as `RateProposal::of_with`. With `PriceFormula::default()` the answer
+    /// equals `of`'s (B1); `of` becomes `of_with(.., &PriceFormula::default())`.
+    pub fn of_with(
+        proposed: &ProposedLine,
+        line: &DraftLine,
+        reference: Option<&ReferenceLine>,
+        policy: Option<&RatePolicy>,
+        tiers: &PolicyTiers,
+        units: &CurrencyUnits,
+        formula: &PriceFormula,
+    ) -> Result<Vec<TierLine>, RateEngineError> {
+        let _ = (proposed, line, reference, policy, tiers, units, formula);
+        todo!("pricing-formula wave 2: TierProposal::of_with")
+    }
+
     /// Computes the four tier lines for a draft line using additive margin formula.
     pub fn of(
         proposed: &ProposedLine,

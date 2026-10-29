@@ -6,6 +6,7 @@ use xc_kernel::money::{CurrencyCode, Side};
 use crate::domain::draft::rate_draft::{DraftLine, LineSide};
 use crate::domain::draft::rate_proposal::ProposedLine;
 use crate::domain::draft::tier_proposal::TierProposal;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::reference::reference_batch::ReferenceLine;
@@ -41,6 +42,21 @@ fn currency_unit_size(code: CurrencyCode) -> Decimal {
 
 impl DraftEvaluation {
     /// Evaluates draft lines with per-currency resolved policy value tiers (`tiers[i]` for `lines[i]`) against policy guards.
+    /// As `of_tiered`, with line `i`'s tiers re-proposed through `formulas[i]` (`TierProposal::of_with`) instead of
+    /// the default, so the guard check sees the prices the draft will publish. `formulas.len() == lines.len()`.
+    /// `of_tiered` becomes `of_tiered_with(.., &[PriceFormula::default(); n])`.
+    pub fn of_tiered_with(
+        lines: &[DraftLine],
+        proposals: &[ProposedLine],
+        references: &[ReferenceLine],
+        policy: Option<&RatePolicy>,
+        tiers: &[Option<PolicyTiers>],
+        formulas: &[PriceFormula],
+    ) -> Evaluation {
+        let _ = (lines, proposals, references, policy, tiers, formulas);
+        todo!("pricing-formula wave 2: DraftEvaluation::of_tiered_with")
+    }
+
     pub fn of_tiered(
         lines: &[DraftLine],
         proposals: &[ProposedLine],

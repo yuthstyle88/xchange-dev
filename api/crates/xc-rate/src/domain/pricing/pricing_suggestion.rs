@@ -6,6 +6,7 @@
 use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::currency_tier_override::TierMargin;
 use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use crate::domain::pricing::pricing_flag::PricingFlag;
@@ -92,6 +93,18 @@ pub struct SuggestionInput {
 pub struct PricingSuggestion;
 
 impl PricingSuggestion {
+    /// As `of`, with V.9's step 1 priced by `formula` through the FOLLOW binding (pricing-formula.md §3a):
+    /// `ref_buy` / `ref_sell` = the anchor's buy / sell × `unit_size`, `buy_pct` = `sell_pct` = 0, and for tier `n`
+    /// `tier_buy_pct` = `+better[n]`, `tier_sell_pct` = `−better[n]`; the result ÷ `unit_size` is the per-unit
+    /// price that `floor_d` / `ceil_d`, the min-spread widening, equal-or-better and the flags then take unchanged.
+    /// `margins` (and the `Precision` check that reproduces them) only when `formula.is_default()`; otherwise
+    /// `margins` is `None`. A `FormulaError` on any tier ⇒ `tiers` and `margins` `None`, flag `NoAnchor`.
+    /// With the default formula the answer equals `of`'s (B21); `of` becomes `of_with(input, &PriceFormula::default())`.
+    pub fn of_with(input: &SuggestionInput, formula: &PriceFormula) -> Suggestion {
+        let _ = (input, formula);
+        todo!("pricing-formula wave 2: PricingSuggestion::of_with")
+    }
+
     pub fn of(input: &SuggestionInput) -> Suggestion {
         let (Some(anchor), mut flags) = MarketQuote::anchor_for(&input.quotes) else {
             return Suggestion {

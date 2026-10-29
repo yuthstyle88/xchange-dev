@@ -5,6 +5,7 @@ use xc_kernel::money::{CurrencyUnits, Rate};
 
 use crate::domain::draft::rate_draft::{DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::rate_policy::RatePolicy;
 use crate::domain::reference::reference_batch::ReferenceLine;
 
@@ -17,6 +18,24 @@ pub struct ProposedLine {
 pub struct RateProposal;
 
 impl RateProposal {
+    /// The AUTO sides priced by `formula` (pricing-formula.md §2, §6a): inputs `ref_buy` / `ref_sell` = the
+    /// reference side at `units`' unit size (as today's `base`), `buy_pct` / `sell_pct` = the policy's,
+    /// `tier_buy_pct` = `tier_sell_pct` = 0. A side whose formula names a missing reference side
+    /// (`FormulaError::MissingInput`) is `None`, as today when the reference has no such side; any other
+    /// `FormulaError` ⇒ `RateEngineError::ValidationFailed`. MANUAL sides, the reason rule and the buy ≤ sell check
+    /// are unchanged. With `PriceFormula::default()` the answer equals `of`'s to the 8th place (B1); `of` becomes
+    /// `of_with(.., &PriceFormula::default())`.
+    pub fn of_with(
+        line: &DraftLine,
+        reference: Option<&ReferenceLine>,
+        policy: Option<&RatePolicy>,
+        units: &CurrencyUnits,
+        formula: &PriceFormula,
+    ) -> Result<ProposedLine, RateEngineError> {
+        let _ = (line, reference, policy, units, formula);
+        todo!("pricing-formula wave 2: RateProposal::of_with")
+    }
+
     pub fn of(
         line: &DraftLine,
         reference: Option<&ReferenceLine>,

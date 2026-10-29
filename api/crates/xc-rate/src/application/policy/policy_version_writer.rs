@@ -13,6 +13,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::anchor_source::AnchorSource;
 use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTier;
@@ -49,9 +50,34 @@ pub struct WrittenVersion {
     pub version: i32,
 }
 
+/// The branch formula of the new version (pricing-formula.md §3: `rate_policy_versions.buy_formula` /
+/// `sell_formula`, both or neither).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum FormulaChange {
+    /// Carry the current version's formula (or none) forward, as `anchor_source: None` does.
+    #[default]
+    Keep,
+    Set(PriceFormula),
+    /// Back to following the organisation (both columns NULL).
+    Clear,
+}
+
 pub struct PolicyVersionWriter;
 
 impl PolicyVersionWriter {
+    /// `next`, plus the branch formula columns per `formula`. `next` becomes
+    /// `next_with_formula(tx, branch, change, FormulaChange::Keep)`, so `pricingConfigure` and `pricingApprove`
+    /// never drop a branch's formula.
+    pub async fn next_with_formula(
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        change: PolicyVersionChange,
+        formula: FormulaChange,
+    ) -> Result<WrittenVersion, RateEngineError> {
+        let _ = (tx, branch, change, formula);
+        todo!("pricing-formula wave 2: PolicyVersionWriter::next_with_formula")
+    }
+
     /// Writes the branch's next policy version: number = max + 1, the current version's `valid_to` set to now, the
     /// new row with `source_version` = the current one, its value tiers, its anchor and its overrides.
     pub async fn next(
