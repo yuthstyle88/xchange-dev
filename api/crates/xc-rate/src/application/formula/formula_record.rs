@@ -17,8 +17,16 @@ impl FormulaRecord {
         line_id: Uuid,
         source: FormulaSource,
     ) -> Result<(), RateEngineError> {
-        let _ = (tx, line_id, source);
-        todo!("pricing-formula wave 2: FormulaRecord::draft_line")
+        sqlx::query(
+            "UPDATE rate_draft_lines SET formula_source = $2, formula_version_id = $3 WHERE id = $1",
+        )
+        .bind(line_id)
+        .bind(source.as_db())
+        .bind(source.formula_version_id())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        Ok(())
     }
 
     /// `UPDATE pricing_tier_sets SET formula_source, formula_version_id WHERE id = tier_set_id`.
@@ -27,7 +35,15 @@ impl FormulaRecord {
         tier_set_id: Uuid,
         source: FormulaSource,
     ) -> Result<(), RateEngineError> {
-        let _ = (tx, tier_set_id, source);
-        todo!("pricing-formula wave 2: FormulaRecord::tier_set")
+        sqlx::query(
+            "UPDATE pricing_tier_sets SET formula_source = $2, formula_version_id = $3 WHERE id = $1",
+        )
+        .bind(tier_set_id)
+        .bind(source.as_db())
+        .bind(source.formula_version_id())
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        Ok(())
     }
 }
