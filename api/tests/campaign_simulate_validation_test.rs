@@ -126,12 +126,15 @@ fn user_of(spec: &str) -> Option<Actor> {
         None
     };
     let user_id = format!("user-{}", role.as_str());
-    Some(Actor::new(
-        &user_id,
-        ORG,
-        vec![ScopedRole::new(role, branch, from, None)],
-        None,
-    ))
+    Some(
+        Actor::new(
+            &user_id,
+            ORG,
+            vec![ScopedRole::new(role, branch, from, None)],
+            None,
+        )
+        .with_branch(Some(BranchId::new(MAIN))),
+    )
 }
 
 struct HeaderCallers;

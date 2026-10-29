@@ -155,6 +155,7 @@ fn customer(user_id: &str) -> Actor {
         vec![ScopedRole::new(Role::Customer, None, since(), None)],
         Some(CUSTOMER_ID),
     )
+    .with_branch(Some(BranchId::new("MAIN")))
 }
 
 /// A TELLER of B1.
@@ -170,6 +171,7 @@ fn teller() -> Actor {
         )],
         None,
     )
+    .with_branch(Some(BranchId::new(B1)))
 }
 
 /// The user named by the `x-test-as` header: `customer` (or `customer:<id>`), `teller`, or none.

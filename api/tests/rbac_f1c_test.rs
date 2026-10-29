@@ -139,6 +139,21 @@ fn user_id(spec: &str) -> String {
     }
 }
 
+fn session_branch(rows: &[ScopedRole]) -> Option<BranchId> {
+    if rows.is_empty() {
+        return None;
+    }
+    if rows.iter().any(|r| r.branch.is_none()) {
+        return Some(BranchId::new("MAIN"));
+    }
+    let first = rows.first().and_then(|r| r.branch.as_ref())?;
+    if rows.iter().all(|r| r.branch.as_ref() == Some(first)) {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 fn user_of(spec: &str) -> Option<User> {
     let roles_part = spec.split_once('#').map_or(spec, |(r, _)| r);
     let mut roles = Vec::new();
@@ -160,12 +175,16 @@ fn user_of(spec: &str) -> Option<User> {
             None,
         ));
     }
-    Some(User::new(
-        &user_id(spec),
-        xchange::presentation::pages::SEEDED_XC_ORG_ID,
-        roles,
-        None,
-    ))
+    let branch = session_branch(&roles);
+    Some(
+        User::new(
+            &user_id(spec),
+            xchange::presentation::pages::SEEDED_XC_ORG_ID,
+            roles,
+            None,
+        )
+        .with_branch(branch),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> String {

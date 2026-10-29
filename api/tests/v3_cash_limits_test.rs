@@ -149,17 +149,21 @@ fn user_of(spec: &str) -> Option<User> {
         other => panic!("unknown role {other}"),
     };
     let branch = (branch != "*").then(|| BranchId::new(branch));
-    Some(User::new(
-        &user_id(spec),
-        "XC",
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let session_branch = Some(branch.clone().unwrap_or_else(|| BranchId::new("MAIN")));
+    Some(
+        User::new(
+            &user_id(spec),
+            "XC",
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session_branch),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> String {

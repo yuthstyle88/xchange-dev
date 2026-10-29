@@ -33,6 +33,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -142,12 +143,15 @@ fn user_of(spec: &str) -> Option<Actor> {
         _ => return None,
     };
     let user_id = format!("user-{}", role.as_str());
-    Some(Actor::new(
-        &user_id,
-        ORG,
-        vec![ScopedRole::new(role, None, from, None)],
-        None,
-    ))
+    Some(
+        Actor::new(
+            &user_id,
+            ORG,
+            vec![ScopedRole::new(role, None, from, None)],
+            None,
+        )
+        .with_branch(Some(BranchId::new("MAIN"))),
+    )
 }
 
 struct HeaderCallers;

@@ -141,9 +141,9 @@ impl SessionReader for HeaderUsers {
                 Role::parse(parts[1]).map(|r| {
                     let from = Utc::now() - ChronoDuration::days(30);
                     let scoped = ScopedRole::new(r, branch.clone(), from, None);
-                    let mut actor = User::new(parts[0], parts[4], vec![scoped], customer_id);
-                    actor.branch = branch;
-                    actor
+                    let session_branch = Some(branch.unwrap_or_else(|| BranchId::new("MAIN")));
+                    User::new(parts[0], parts[4], vec![scoped], customer_id)
+                        .with_branch(session_branch)
                 })
             };
 
