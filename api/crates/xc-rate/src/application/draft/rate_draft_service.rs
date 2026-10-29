@@ -14,6 +14,8 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, UnitSize};
 
 use super::reference_base::ReferenceBase;
+use crate::application::formula::formula_record::FormulaRecord;
+use crate::application::formula::formula_resolver::{FormulaResolver, FormulaSource};
 use crate::domain::draft::draft_evaluation::DraftEvaluation;
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, DraftStatus, LineSide, RateDraft};
 use crate::domain::draft::rate_engine_error::RateEngineError;
@@ -45,6 +47,7 @@ pub struct DraftEvaluationOutcome {
     pub references: Vec<ReferenceLine>,
     pub tiers: Vec<Option<PolicyTiers>>,
     pub tier_lines: Vec<Option<Vec<TierLine>>>,
+    pub formula_source: FormulaSource,
 }
 
 pub struct RateDraftService {
@@ -477,6 +480,9 @@ impl RateDraftService {
             None
         };
 
+        let (formula, formula_source) =
+            FormulaResolver::resolve(tx, branch, policy_version_id).await?;
+
         // Load references
         let ref_rows = sqlx::query(
             "SELECT id, currency_code, unit_size, buy, sell FROM rate_reference_lines WHERE id = ANY($1)",
@@ -548,7 +554,7 @@ impl RateDraftService {
             );
 
             let ref_line = references.iter().find(|r| r.currency == line.currency);
-            let prop = RateProposal::of(line, ref_line, policy.as_ref(), &units)?;
+            let prop = RateProposal::of_with(line, ref_line, policy.as_ref(), &units, &formula)?;
             proposals.push(prop.clone());
 
             if line.tiers.is_some() {
@@ -580,7 +586,15 @@ impl RateDraftService {
             };
 
             if let Some(ref pt) = pt_opt {
-                let tlines = TierProposal::of(&prop, line, ref_line, policy.as_ref(), pt, &units)?;
+                let tlines = TierProposal::of_with(
+                    &prop,
+                    line,
+                    ref_line,
+                    policy.as_ref(),
+                    pt,
+                    &units,
+                    &formula,
+                )?;
                 tier_lines_vec.push(Some(tlines));
             } else {
                 tier_lines_vec.push(None);
@@ -588,8 +602,15 @@ impl RateDraftService {
             tiers.push(pt_opt);
         }
 
-        let evaluation =
-            DraftEvaluation::of_tiered(&lines, &proposals, &references, policy.as_ref(), &tiers);
+        let formulas = vec![formula; lines.len()];
+        let evaluation = DraftEvaluation::of_tiered_with(
+            &lines,
+            &proposals,
+            &references,
+            policy.as_ref(),
+            &tiers,
+            &formulas,
+        );
 
         Ok(DraftEvaluationOutcome {
             version,
@@ -602,6 +623,7 @@ impl RateDraftService {
             references,
             tiers,
             tier_lines: tier_lines_vec,
+            formula_source,
         })
     }
 
@@ -632,6 +654,19 @@ impl RateDraftService {
         }
 
         let eval_res = self.evaluate(tx, branch, id).await?;
+
+        let auto_line_ids: Vec<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM rate_draft_lines \
+             WHERE draft_id = $1 AND (buy_mode = 'AUTO' OR sell_mode = 'AUTO') \
+             ORDER BY id",
+        )
+        .bind(id.as_uuid())
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        for line_id in auto_line_ids {
+            FormulaRecord::draft_line(tx, line_id, eval_res.formula_source).await?;
+        }
 
         let out_of_bound = eval_res
             .evaluation
