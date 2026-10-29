@@ -163,8 +163,9 @@ impl CommandAction for LedgerAdjustmentPostCommand {
             .collect();
         roles.dedup();
         PgAuditLog::new(self.pool.clone())
-            .append(
+            .append_in(
                 tx,
+                &who.organization_id,
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
                     actor_role: roles.join(","),

@@ -20,6 +20,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xc_loyalty::application::rule_publisher::{
     LoyaltyRuleError, LoyaltyRuleWriter, RuleKind, RuleVersion,
 };
@@ -253,12 +254,15 @@ fn user_of(spec: &str) -> Option<Actor> {
         "EXECUTIVE" => ("user-EXECUTIVE", Role::Executive),
         _ => return None,
     };
-    Some(Actor::new(
-        user_id,
-        ORG_ID,
-        vec![ScopedRole::new(role, None, from, None)],
-        None,
-    ))
+    Some(
+        Actor::new(
+            user_id,
+            ORG_ID,
+            vec![ScopedRole::new(role, None, from, None)],
+            None,
+        )
+        .with_branch(Some(BranchId::new("MAIN"))),
+    )
 }
 
 struct HeaderCallers;

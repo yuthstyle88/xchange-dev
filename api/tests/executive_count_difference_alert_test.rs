@@ -34,6 +34,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
 
@@ -241,7 +242,8 @@ impl SessionReader for Executive {
                 ORG,
                 vec![ScopedRole::new(Role::Executive, None, from, None)],
                 None,
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             Callers {
                 user: Some(user.clone()),
                 staff_user: Some(user),

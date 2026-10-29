@@ -152,17 +152,21 @@ fn user_of(spec: &str) -> Option<User> {
     let (role, branch) = spec.split_once('@')?;
     let role = Role::parse(role).unwrap_or_else(|| panic!("unknown role {role}"));
     let branch = (branch != "*").then(|| BranchId::new(branch));
-    Some(User::new(
-        &format!("user-{}", spec.replace(['@', '*'], "-")),
-        SEEDED_XC_ORG_ID,
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let session_branch = Some(branch.clone().unwrap_or_else(|| BranchId::new("MAIN")));
+    Some(
+        User::new(
+            &format!("user-{}", spec.replace(['@', '*'], "-")),
+            SEEDED_XC_ORG_ID,
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session_branch),
+    )
 }
 
 impl SessionReader for HeaderUsers {

@@ -18,10 +18,27 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { hasAccount, posted, shot, signIn, users } from './helpers';
 
-// Date in Asia/Bangkok offset by `daysAhead` days (yyyy-mm-dd), matching flow-booking.spec.ts:7-10.
+const HORIZON_DAYS = 14; // deploy/server/seed-test-booking.sh:147
+
+// Date in Asia/Bangkok offset by `daysAhead` days (yyyy-mm-dd), matching flow-booking.spec.ts.
 function bangkokDate(daysAhead: number): string {
   const now = new Date(Date.now() + 7 * 3600_000 + daysAhead * 24 * 3600_000);
   return now.toISOString().slice(0, 10);
+}
+
+// Reads slots for `date` on users.branch from /api/v3/views/booking_slots.
+async function slotsForDate(
+  page: Page,
+  date: string,
+): Promise<Array<{ id: string; start: string; available: number }>> {
+  const res = await page.request.get(
+    `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&date=${encodeURIComponent(date)}`,
+  );
+  if (!res.ok()) return [];
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: { slots?: Array<{ id: string; start: string; available: number }> } | null;
+  };
+  return body.data?.slots ?? [];
 }
 
 // Cancels the booking card on /app/bookings and waits for POST /api/bookings/<id>/cancel + CANCELLED badge.
@@ -116,48 +133,43 @@ test.describe.serial('F21 booking reschedule', () => {
       const cancelCutoffMinutes = await readCancelCutoffMinutes(page, browser);
       console.log(`[F21] cancel cutoff: ${cancelCutoffMinutes} min`);
 
-      let bookedDayOffset = 1;
+      let bookedDayOffset = 0;
       let bookedDate = '';
       let bookedSlotId = '';
 
-      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+      for (let dayOffset = 1; dayOffset <= HORIZON_DAYS; dayOffset++) {
         const candidateDate = bangkokDate(dayOffset);
-        const slotsPromise = page
-          .waitForResponse(
-            (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${candidateDate}`),
-            { timeout: 15_000 },
-          )
-          .catch(() => null);
-        await page.getByTestId('date-input').fill(candidateDate);
-        const slotsRes = await slotsPromise;
-        await expect(page.locator('.xc-book-slots-loading')).toBeHidden({ timeout: 15_000 });
+        const slots = await slotsForDate(page, candidateDate);
+        const now = Date.now();
+        const qualifying = slots.find((s) => {
+          if (s.available <= 0) return false;
+          const startMs = new Date(s.start).getTime();
+          return startMs - cancelCutoffMinutes * 60_000 > now + 10 * 60_000;
+        });
 
-        if (slotsRes && slotsRes.ok()) {
-          const data = (await slotsRes.json().catch(() => ({}))) as {
-            data?: { slots?: Array<{ id: string; start: string; available: number }> } | null;
-          };
-          const slots = data.data?.slots ?? [];
-          const now = Date.now();
-          const qualifying = slots.find((s) => {
-            if (s.available <= 0) return false;
-            const startMs = new Date(s.start).getTime();
-            return startMs - cancelCutoffMinutes * 60_000 > now + 10 * 60_000;
-          });
-
-          if (qualifying) {
-            bookedDayOffset = dayOffset;
-            bookedDate = candidateDate;
-            bookedSlotId = qualifying.id;
-            break;
-          }
+        if (qualifying) {
+          bookedDayOffset = dayOffset;
+          bookedDate = candidateDate;
+          bookedSlotId = qualifying.id;
+          break;
         }
       }
 
       if (!bookedSlotId) {
-        const reason = `no qualifying open slot within 7 days (cutoff ${cancelCutoffMinutes} min)`;
+        const reason = `no qualifying open ${users.branch} slot within ${HORIZON_DAYS} days (cutoff ${cancelCutoffMinutes} min)`;
         console.log(`[F21] skip: ${reason}`);
         test.skip(true, reason);
       }
+
+      const slotsLoaded = page
+        .waitForResponse(
+          (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${bookedDate}`),
+          { timeout: 15_000 },
+        )
+        .catch(() => null);
+      await page.getByTestId('date-input').fill(bookedDate);
+      await slotsLoaded;
+      await expect(page.locator('.xc-book-slots-loading')).toBeHidden({ timeout: 15_000 });
 
       await page.getByTestId('slot-select').selectOption(bookedSlotId);
       await page.getByTestId('currency-select').selectOption(users.currency ?? 'USD');
@@ -242,41 +254,40 @@ test.describe.serial('F21 booking reschedule', () => {
       await initialSlotsLoaded;
       await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
 
-      // Step 3: change the date control to a subsequent date and pick an open slot.
-      let rescheduleDate = bangkokDate(bookedDayOffset + 1);
-      const dayAfterSlotsLoaded = page
+      // Step 3: pick the next subsequent day in the horizon with an open slot from /api/v3/views/booking_slots.
+      let rescheduleDate = '';
+      for (let nextOffset = bookedDayOffset + 1; nextOffset <= HORIZON_DAYS; nextOffset++) {
+        const tryDate = bangkokDate(nextOffset);
+        const slots = await slotsForDate(page, tryDate);
+        if (slots.some((s) => s.available > 0)) {
+          rescheduleDate = tryDate;
+          break;
+        }
+      }
+
+      if (!rescheduleDate) {
+        const reason = `no open ${users.branch} reschedule slot after ${bookedDate} within ${HORIZON_DAYS} days`;
+        console.log(`[F21] skip: ${reason}`);
+        await dialog.locator('button.xc-btn-secondary').click();
+        await expect(dialog, 'reschedule dialog closed before skip').toBeHidden({ timeout: 15_000 });
+        await cancelBookingCard(page, bookingId);
+        cancelled = true;
+        test.skip(true, reason);
+      }
+
+      const rescheduleSlotsLoaded = page
         .waitForResponse(
           (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${rescheduleDate}`),
           { timeout: 15_000 },
         )
         .catch(() => null);
       await dateInput.fill(rescheduleDate);
-      await dayAfterSlotsLoaded;
+      await rescheduleSlotsLoaded;
       await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
 
-      let openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
+      const openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
       if ((await openRescheduleSlots.count()) === 0) {
-        for (let nextOffset = bookedDayOffset + 2; nextOffset <= bookedDayOffset + 7; nextOffset++) {
-          const tryDate = bangkokDate(nextOffset);
-          const nextLoaded = page
-            .waitForResponse(
-              (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${tryDate}`),
-              { timeout: 15_000 },
-            )
-            .catch(() => null);
-          await dateInput.fill(tryDate);
-          await nextLoaded;
-          await expect(dialog.locator('.xc-slots-loading')).toBeHidden({ timeout: 15_000 });
-          openRescheduleSlots = dialog.locator('input[name="rescheduleSlot"]:not([disabled])');
-          if ((await openRescheduleSlots.count()) > 0) {
-            rescheduleDate = tryDate;
-            break;
-          }
-        }
-      }
-
-      if ((await openRescheduleSlots.count()) === 0) {
-        const reason = `no open slot on ${rescheduleDate} (seed)`;
+        const reason = `no open ${users.branch} reschedule slot on ${rescheduleDate} (seed)`;
         console.log(`[F21] skip: ${reason}`);
         await dialog.locator('button.xc-btn-secondary').click();
         await expect(dialog, 'reschedule dialog closed before skip').toBeHidden({ timeout: 15_000 });

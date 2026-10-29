@@ -364,7 +364,7 @@ impl BranchIntake {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &cust_org_id.to_string(), &event)
             .await
             .map_err(BranchIntakeError::Store)?;
 

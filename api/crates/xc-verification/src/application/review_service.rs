@@ -200,7 +200,7 @@ impl ReviewService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(ReviewError::Store)?;
 
@@ -292,7 +292,7 @@ impl ReviewService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(ReviewError::Store)?;
 
@@ -358,7 +358,7 @@ impl ReviewService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(ReviewError::Store)?;
 
@@ -422,7 +422,7 @@ impl ReviewService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(ReviewError::Store)?;
 
@@ -488,7 +488,7 @@ impl ReviewService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(ReviewError::Store)?;
 

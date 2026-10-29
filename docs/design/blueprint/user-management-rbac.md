@@ -806,6 +806,42 @@ The owner, verbatim, in the FE controller claude/e8020026's session (relayed on 
 
 **Data migration:** none. No table, column or stored value changes.
 
+#### 11.8a The page gates and `/api/rpc` use the same rule (#5446, fix #5480)
+
+**The gap, measured on main `bd4331ff` and on xc-v3 2026-10-29 12:14 ICT:** a session holding only an org-wide EXECUTIVE gets 200 from `/api/auth/session`, then 303 `/login?next=%2F` from `GET /`, and the sign-in page sends it back to `/`, forever (#5446). The page gates still ask `Standing::of` whether anyone is signed in, after ST-1 moved the reader to `is_staff_caller`:
+- `pages.rs` `who_signed_in` gate and `devices_receipt_handler`;
+- `screens.rs` `Gate::SignedIn` and `Gate::Branch`;
+- `/api/rpc`'s `caller_of_rpc`, which answers 401 "กรุณาเข้าสู่ระบบ". The admin shell posts its writes there.
+
+**The rule:** each of these sign-in checks answers "signed in" exactly when `is_staff_caller` is true, the rule above. What each one does next is unchanged:
+- `page_branch` and `devices_receipt_handler` still read `owner_standing()` / `staff_standing()` for the branch. A caller with neither, which is now only EXECUTIVE alone, takes the owner path (`?branch=`, else `MAIN`).
+- `caller_of_rpc` gives such a caller the owner's `/api/rpc` standing, `Standing { kind: Owner, branch: None }`. That is the same B1 reading `caller_of_staff_rpc` uses. Each action is still decided by `CompatRpc::authorize` against the permission rows.
+- `Gate::Front` (TELLER pages) and every `is_owner()` reader are unchanged. **`Standing::of` is still not changed.**
+
+| What | File | Ticket |
+|---|---|---|
+| `pub fn signed_in(&self) -> bool` on `Callers`: true iff `user` or `staff_user` passes `is_staff_caller(actor, now)` | `api/src/presentation/pages.rs` | #5480 |
+| the `who_signed_in` gate and `devices_receipt_handler`'s gate call `signed_in()` | `api/src/presentation/pages.rs` | #5480 |
+| `Gate::SignedIn` and `Gate::Branch` call `callers.signed_in()` | `api/src/presentation/screens.rs` | #5480 |
+| `caller_of_rpc`: `Standing::of` none but `is_staff_caller` ⇒ owner standing, branch none | `api/src/presentation/http/rpc.rs` | #5480 |
+
+**Behaviour** (#5480's up-front tests, `api/tests/executive_only_sign_in_test.rs`):
+
+| # | Caller | Request | Result |
+|---|---|---|---|
+| E1 | EXECUTIVE org-wide only | `GET /` | 200 admin shell at `MAIN` |
+| E2 | same | `GET /?branch=B2` | 200 at `B2` |
+| E3 | same | `GET /`, switched screens | 200 |
+| E4 | same | `GET /devices/receipt` | past the sign-in check |
+| E5 | same | `POST /api/rpc adminSnapshot` | 200, as the owner |
+| E6 | CUSTOMER only | `GET /`; `/api/rpc` | 303 `/login?next=`; 401 (unchanged) |
+| E7 | no session | `GET /` | 303 (unchanged) |
+| E8 | EXECUTIVE expired, nothing else | `GET /` | 303 (unchanged) |
+| E9 | ADMIN org-wide only; the owner | `GET /` | 200 (unchanged) |
+| E10 | EXECUTIVE org-wide only | `GET /staff/desk` | not 200, TELLER only (unchanged) |
+
+**Data migration:** none.
+
 ### 11.9 Who decides each kind of approval: a permission per kind, seeded to today's roles (owner, 2026-10-22)
 
 The owner, verbatim, in the BE controller claude/7ca80c's session, choosing between two ways to make approvals editable: *"ทำ B"*. This follows the same principle as §11.8: *"งานผม ต้องให้คอนฟิกได้เอง … งาน เริ่มต้นให้ ตรงพิมพ์เขียว"*. The customer configures who decides, and the defaults are the Blueprint's.

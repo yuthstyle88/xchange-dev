@@ -58,6 +58,7 @@ fn customer_actor(org: &str, customer: &str) -> xc_auth::domain::access::Actor {
         )],
         Some(customer),
     )
+    .with_branch(Some(BranchId::new("MAIN")))
 }
 
 fn callers_of(spec: &str) -> Callers {

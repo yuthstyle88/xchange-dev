@@ -129,7 +129,8 @@ impl SessionReader for Executive {
                 ORG,
                 vec![ScopedRole::new(Role::Executive, None, from, None)],
                 None,
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             Callers {
                 user: Some(user.clone()),
                 staff_user: Some(user),

@@ -587,7 +587,7 @@ impl PhoneVerificationService {
         };
 
         audit_log
-            .append(tx, &event)
+            .append_in(tx, &actor.organization_id, &event)
             .await
             .map_err(|e| PhoneVerificationError::Internal(e.to_string()))?;
         Ok(())

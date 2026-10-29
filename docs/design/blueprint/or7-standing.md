@@ -68,8 +68,10 @@ classDiagram
 - **The owner:** org-wide EXECUTIVE **and** org-wide ADMIN, both valid at `now`.
 - **Staff:** otherwise, the first valid role in the order TELLER > BRANCH_MANAGER > RATE_MANAGER > FINANCE > ADMIN >
   VERIFICATION_REVIEWER, at that role's branch, else `MAIN`.
-- **No standing:** anything else (EXECUTIVE alone, MARKETING, CUSTOMER, nothing valid). Today's readers treat that as "not
-  signed in" or `roleNotAllowedHere`, and keep doing so.
+- **No standing:** anything else (EXECUTIVE alone, CUSTOMER, nothing valid; MARKETING got a staff standing in #3929).
+  Readers that use it for a role decision answer `roleNotAllowedHere`. Whether anyone is *signed in* is no longer read
+  from it: the session reader, `/api/staff/rpc`, the page gates and `/api/rpc` use `is_staff_caller`
+  (`user-management-rbac.md` §11.8 and §11.8a).
 - **Audit text keeps v3's spelling.** OWNER, FRONT, MANAGER, RATES, FINANCE, SYSTEM and DOCUMENT_REVIEW are pinned by
   `or7_5_save_actor_test.rs:458` and ruling 5 on #1020.
 - **Front-only pages stay "staff role TELLER".** They do not become `ExchangeTransact`, which would let BRANCH_MANAGER in.

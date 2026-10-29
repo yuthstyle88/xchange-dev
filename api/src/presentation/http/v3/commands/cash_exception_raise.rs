@@ -202,8 +202,9 @@ impl CommandAction for CashExceptionRaiseCommand {
             .map_err(|_| server_error())?;
 
         PgAuditLog::new(self.pool.clone())
-            .append(
+            .append_in(
                 tx,
+                &who.organization_id,
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
                     actor_role: audit_actor_role(who),

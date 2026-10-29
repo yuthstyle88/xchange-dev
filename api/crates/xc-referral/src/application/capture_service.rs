@@ -237,7 +237,7 @@ impl ReferralCaptureService {
             })),
         };
         self.audit
-            .append(tx, &event)
+            .append_in(tx, &old.organization_id.to_string(), &event)
             .await
             .map_err(CaptureError::from)?;
 

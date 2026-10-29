@@ -100,14 +100,14 @@ impl SessionReader for HeaderUsers {
                     let branch = (!parts[2].is_empty()).then(|| BranchId::new(parts[2]));
                     let customer = (!parts[3].is_empty()).then_some(parts[3]);
                     let from = Utc::now() - ChronoDuration::days(30);
-                    let mut actor = User::new(
+                    let session_branch = branch.clone().or_else(|| Some(BranchId::new("MAIN")));
+                    User::new(
                         parts[0],
                         ORG_1,
-                        vec![ScopedRole::new(role, branch.clone(), from, None)],
+                        vec![ScopedRole::new(role, branch, from, None)],
                         customer,
-                    );
-                    actor.branch = branch;
-                    actor
+                    )
+                    .with_branch(session_branch)
                 });
             Callers {
                 user: user.clone(),

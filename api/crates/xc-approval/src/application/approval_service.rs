@@ -351,7 +351,7 @@ impl ApprovalService {
             })),
         };
         self.audit_log
-            .append(tx, &event)
+            .append_in(tx, &request.organization_id, &event)
             .await
             .map_err(|e| ApprovalError::Internal(format!("audit log failed: {e}")))?;
 
@@ -424,7 +424,7 @@ impl ApprovalService {
             })),
         };
         self.audit_log
-            .append(tx, &event)
+            .append_in(tx, &request.organization_id, &event)
             .await
             .map_err(|e| ApprovalError::Internal(format!("audit log failed: {e}")))?;
 
@@ -513,7 +513,7 @@ impl ApprovalService {
             })),
         };
         self.audit_log
-            .append(tx, &event)
+            .append_in(tx, &request.organization_id, &event)
             .await
             .map_err(|e| ApprovalError::Internal(format!("audit log failed: {e}")))?;
 

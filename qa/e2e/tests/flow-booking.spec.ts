@@ -3,10 +3,43 @@
 import { test, expect, type Page } from '@playwright/test';
 import { signIn, shot, users } from './helpers';
 
-// Tomorrow in Asia/Bangkok, as the date input wants it (yyyy-mm-dd).
-function tomorrowBangkok(): string {
-  const now = new Date(Date.now() + 7 * 3600_000 + 24 * 3600_000);
+const HORIZON_DAYS = 14; // deploy/server/seed-test-booking.sh:147
+
+// Date in Asia/Bangkok offset by `daysAhead` days, as the date input wants it (yyyy-mm-dd).
+function bangkokDate(daysAhead: number): string {
+  const now = new Date(Date.now() + 7 * 3600_000 + daysAhead * 24 * 3600_000);
   return now.toISOString().slice(0, 10);
+}
+
+// Picks the next day in the horizon with an open slot on users.branch from /api/v3/views/booking_slots, or skips.
+async function nextOpenDate(page: Page): Promise<string> {
+  for (let d = 1; d <= HORIZON_DAYS; d++) {
+    const date = bangkokDate(d);
+    const res = await page.request.get(
+      `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&date=${encodeURIComponent(date)}`,
+    );
+    if (!res.ok()) continue;
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: { slots?: Array<{ available?: number }> } | null;
+    };
+    if ((body.data?.slots ?? []).some((s) => (s.available ?? 0) > 0)) return date;
+  }
+  const reason = `no open ${users.branch} slot within ${HORIZON_DAYS} days`;
+  console.log(`[booking] skip: ${reason}`);
+  test.skip(true, reason);
+  return '';
+}
+
+// Reads the count of OPEN slots on `date` for users.branch from /api/v3/views/admin_booking_slots.
+async function openCountOn(page: Page, date: string): Promise<number> {
+  const res = await page.request.get(
+    `/api/v3/views/admin_booking_slots?branch=${encodeURIComponent(users.branch)}`,
+  );
+  expect(res.ok(), `GET /api/v3/views/admin_booking_slots: ${res.status()}`).toBeTruthy();
+  const body = (await res.json()) as {
+    data?: { slots?: Array<{ serviceDate?: string; status?: string }> } | null;
+  };
+  return (body.data?.slots ?? []).filter((s) => s.serviceDate === date && s.status === 'OPEN').length;
 }
 
 
@@ -30,15 +63,24 @@ async function setSlotCapacity(page: Page, slot: ReturnType<Page['locator']>, va
   return `${res.status()} ${(await res.text().catch(() => '')).slice(0, 200)}`;
 }
 
-// Books the first open slot tomorrow; returns the booking id the success panel shows.
+// Books the first open slot on the next open day; returns the booking id the success panel shows.
 async function bookOnce(page: Page, step: string, withRef: boolean): Promise<string> {
+  const serviceDate = await nextOpenDate(page);
   await page.goto(withRef ? `/app/book?ref=${users.referralCode ?? 'TEST1234'}` : '/app/book');
   await expect(page.getByTestId('book-screen')).toBeVisible();
   if (withRef) {
     await expect(page.getByTestId('referral-code')).toHaveValue(users.referralCode ?? 'TEST1234');
   }
   await page.getByTestId('branch-select').selectOption(users.branch);
-  await page.getByTestId('date-input').fill(tomorrowBangkok());
+  const slotsLoaded = page
+    .waitForResponse(
+      (r) => r.url().includes('/api/v3/views/booking_slots') && r.url().includes(`date=${serviceDate}`),
+      { timeout: 15_000 },
+    )
+    .catch(() => null);
+  await page.getByTestId('date-input').fill(serviceDate);
+  await slotsLoaded;
+  await expect(page.locator('.xc-book-slots-loading')).toBeHidden({ timeout: 15_000 });
   await shot(page, 'booking', `${step}-1-branch-date`);
   // A full slot is shown disabled (capacity reached by earlier runs); take the first one still open.
   const firstSlot = page.locator('[data-testid="slot-option"]:not([disabled])').first();
@@ -139,8 +181,8 @@ test.describe.serial('#1683 booking', () => {
     }
     await shot(page, 'booking', 'admin-1b-booking-slots-xcb');
 
-    const day = new Date(Date.now() + 7 * 3600_000 + 2 * 24 * 3600_000).toISOString().slice(0, 10);
-    const closed = new Date(Date.now() + 7 * 3600_000 + 5 * 24 * 3600_000).toISOString().slice(0, 10);
+    const day = bangkokDate(2);
+    const closed = bangkokDate(5);
     const slotOn = () => page.locator('.slot-item').filter({ has: page.locator('.slot-date', { hasText: day }) }).first();
     const SEED_CAPACITY = '4'; // deploy/server/seed-test-booking.sh
 
@@ -156,6 +198,9 @@ test.describe.serial('#1683 booking', () => {
       await page.reload();
       await expect(slotOn().locator('input[name="slotCapacity"]'), 'leftover capacity reset').toHaveValue(SEED_CAPACITY, { timeout: 15_000 });
     }
+
+    const openBefore = await openCountOn(page, closed);
+    console.log(`[admin] open slots on ${closed} before closure: ${openBefore}`);
 
     try {
       // Capacity: a slot two days ahead at 09:00 has no bookings from this suite.
@@ -198,15 +243,17 @@ test.describe.serial('#1683 booking', () => {
       await page.reload();
       const cap = await slotOn().locator('input[name="slotCapacity"]').inputValue().catch(() => '?');
       const left = await page.locator('.closure-item', { hasText: 'e2e closure' }).count();
-      console.log(`[admin] restore: capacity on ${day} = ${cap}, e2e closures left = ${left}`);
-      expect(cap, `capacity on ${day} restored to ${SEED_CAPACITY}`).toBe(SEED_CAPACITY);
-      expect(left, 'no e2e closure left').toBe(0);
+      const openAfter = await openCountOn(page, closed);
+      console.log(`[admin] restore: capacity on ${day} = ${cap}, e2e closures left = ${left}, open on ${closed} = ${openAfter} (before = ${openBefore})`);
       const original = startBranch.replace(/^สาขา\s*|^Branch\s*/i, '').trim();
       if (original && !/XC-B/.test(startBranch)) {
         await page.locator('.account-bar button[aria-haspopup="menu"]').click().catch(() => {});
         await page.getByRole('menuitemradio', { name: original }).click().catch(() => {});
         console.log(`[admin] session branch back to "${original}"`);
       }
+      expect(cap, `capacity on ${day} restored to ${SEED_CAPACITY}`).toBe(SEED_CAPACITY);
+      expect(left, 'no e2e closure left').toBe(0);
+      expect(openAfter, `open slots on ${closed} restored to ${openBefore}`).toBe(openBefore);
     }
   });
 });

@@ -32,6 +32,7 @@ use xc_auth::domain::access::{Actor, Authorizer, Permission, Refusal, Role, Scop
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_kernel::ids::BranchId;
 
 fn api_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -321,7 +322,8 @@ fn a_target_that_names_no_customer_never_passes_customer_self() {
         "XC",
         vec![ScopedRole::new(Role::Customer, None, since, None)],
         Some("customer-a"),
-    );
+    )
+    .with_branch(Some(BranchId::new("MAIN")));
     let no_one = Target::new("XC", None, None);
     assert_eq!(
         Authorizer::check(Some(&customer), Permission::CustomerSelf, &no_one, now),

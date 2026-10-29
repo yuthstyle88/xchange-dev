@@ -78,7 +78,7 @@ impl DenominationGroupService {
             })),
         };
         self.audit
-            .append(tx, &event)
+            .append_in(tx, &who.organization_id, &event)
             .await
             .map_err(|e| RateEngineError::Internal(e.to_string()))?;
 
@@ -186,7 +186,7 @@ impl DenominationGroupService {
             })),
         };
         self.audit
-            .append(tx, &event)
+            .append_in(tx, &who.organization_id, &event)
             .await
             .map_err(|e| RateEngineError::Internal(e.to_string()))?;
 
@@ -300,7 +300,7 @@ impl DenominationGroupService {
             })),
         };
         self.audit
-            .append(tx, &event)
+            .append_in(tx, &who.organization_id, &event)
             .await
             .map_err(|e| RateEngineError::Internal(e.to_string()))?;
 

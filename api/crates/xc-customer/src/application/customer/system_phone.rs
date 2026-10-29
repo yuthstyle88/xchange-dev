@@ -128,7 +128,8 @@ impl CustomerService {
         };
 
         let audit_log = PgAuditLog::new(self.branch_tx().pool().clone());
-        audit_log.append(&mut tx, &event).await?;
+        let org_id_str = organization_id.to_string();
+        audit_log.append_in(&mut tx, &org_id_str, &event).await?;
 
         tx.commit().await.map_err(AppError::Database)?;
 

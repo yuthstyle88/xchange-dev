@@ -29,8 +29,9 @@ Production actors built without a session, swept by `git grep -n -E "(Actor|Acce
 | `SaveStep::access_actor_at` (`save_step.rs:72-89`) | the owner org-wide, or staff at the branch | no: it is only the requester of an approval (confirm, reversal, binding quote) |
 | `handover_service::may_receive` (`handover_service.rs:299`) | the candidate's rows | no: its target names the branch (`:300`) |
 | custody saver (`xc-shift/.../custody/service.rs:139`) | no rows | no qualifying row, so the arm is not reached |
+| **cash commands' `caller_in`** (`api/src/presentation/http/v3/commands/cash.rs:89-133`), used by 12 commands in `cash.rs`, `cash/handovers.rs` and `cash/transfers.rs` | the caller's rows re-read from `user_roles`, rebuilt with `User::new(..)` and **no branch** | **yes:** transfer `reconcile` (`transfer_flow.rs:794`) by an org-wide FINANCE. **#5279 fixes it**: `caller_in` keeps the session's branch (`.with_branch(who.branch.clone())`). The sweep above matched `Actor::new` only. This row was found by `v3_cash_commands_test::a_branch_transfer_walks_create_submit_dispatch_receive_reconcile_over_http`, red on the trial tree with its fixtures fixed (wave 2, #5458). A `User::new(` sweep outside `#[cfg(test)]` at `88221498` finds no other. |
 
-The only production checks with a branchless target are `appSettingsSave` (`xc-app/.../app_settings_service.rs:44`) and transfer `reconcile` (`transfer_flow.rs:794`). Both are given session actors. They are unchanged here. Whether organisation-level business should require an org-wide row is a separate question; this design does not decide it.
+Apart from `caller_in`, the only production checks with a branchless target are `appSettingsSave` (`xc-app/.../app_settings_service.rs:44`) and transfer `reconcile` (`transfer_flow.rs:794`). Both are given session actors. They are unchanged here. Whether organisation-level business should require an org-wide row is a separate question; this design does not decide it.
 
 **The cost is in test fixtures.** About 245 files build org-wide actors with no session branch. Waves 1 and 2 of #5279 fix them, behaviour-neutral, before this lands: #5454 / PR #5455 merged as `28e1fead`, and the `all_1` … `all_4` tickets #5456–#5459. Two tests pin the `MAIN` stand-in itself; they are restated in §5.
 
@@ -145,3 +146,34 @@ api/crates/xc-approval/src/application/approval_service.rs
 
 - Whether organisation-level business (`appSettingsSave`, transfer `reconcile`) should require an org-wide row instead of any row covering the session branch.
 - Rewriting the branch of approval requests already stored (§4.2).
+
+## 8. AP-1's audit row carries the request's organisation (lane controller's ruling A on #5279, 2026-10-29)
+
+Found while writing the #5279 up-front tests.
+- **The defect:** `PgAuditLog::append` (`api/crates/xc-approval/src/infrastructure/audit_log.rs:31-36`) writes no `organization_id`, so every audit row takes the seeded organisation (`20261011100000_organizations.sql:47`). The same migration adds `(organization_id, branch_id) → branches` to `audit_events` (`:66`).
+- **The effect:** deciding a branch-bound request of a second organisation writes `(seeded organisation, B's branch)`, which breaks that FK. `decide`, `decide_self` and `decide_by_policy` then answer `internalError`.
+- This is independent of sites 1 and 2.
+
+```mermaid
+classDiagram
+  class AuditLog {
+    <<xc-approval domain/audit_log.rs  CHANGED: one method added>>
+    +append(tx, event) BoxFuture~AppResult~i64~~
+    +append_in(tx, organization_id: &str, event) BoxFuture~AppResult~i64~~
+  }
+  note for AuditLog "append_in has a default body that calls append, so existing fakes compile unchanged"
+  class PgAuditLog {
+    <<xc-approval infrastructure/audit_log.rs  CHANGED>>
+    +append_in(..) writes organization_id = $org::uuid
+  }
+  class ApprovalService {
+    <<xc-approval application/approval_service.rs  CHANGED>>
+    decide / decide_by_policy / decide_self call append_in(tx, &request.organization_id, &event)
+  }
+  ApprovalService --> AuditLog : append_in
+  PgAuditLog ..|> AuditLog
+```
+
+- `[required]`: the three AP-1 audit writes (`approval_service.rs:354`, `:427`, `:516`) pass `request.organization_id` (`domain/request.rs:79`). `append` itself is unchanged.
+- **Out of scope:** the other `AuditEvent` writers (`git grep -l "AuditEvent {" -- api`, 23 production files at `88221498`) still write the seeded organisation. Each one moving to `append_in` is a follow-up.
+- **No migration:** `audit_events.organization_id` already exists.

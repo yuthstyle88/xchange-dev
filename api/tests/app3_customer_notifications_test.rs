@@ -27,6 +27,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_app::domain::app_session::{APP_SESSION_COOKIE, AppSessionId};
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
 
@@ -116,6 +117,7 @@ fn customer(user_id: &str) -> Actor {
         vec![ScopedRole::new(Role::Customer, None, epoch(), None)],
         Some(user_id),
     )
+    .with_branch(Some(BranchId::new("MAIN")))
 }
 
 struct HeaderCallers;

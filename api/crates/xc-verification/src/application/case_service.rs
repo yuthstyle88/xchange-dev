@@ -156,7 +156,7 @@ impl CaseService {
                     })),
                 };
                 self.audit
-                    .append(&mut tx, &event)
+                    .append_in(&mut tx, &org_id.to_string(), &event)
                     .await
                     .map_err(CaseError::Store)?;
                 tx.commit()
@@ -316,7 +316,7 @@ impl CaseService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(CaseError::Store)?;
 
@@ -415,7 +415,7 @@ impl CaseService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(CaseError::Store)?;
 
@@ -511,7 +511,7 @@ impl CaseService {
             })),
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case.organization_id.to_string(), &event)
             .await
             .map_err(CaseError::Store)?;
 

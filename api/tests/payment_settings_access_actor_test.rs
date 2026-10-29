@@ -205,12 +205,27 @@ fn spec(id: &str, roles: &[Held]) -> String {
     s
 }
 
+fn session_branch(rows: &[ScopedRole]) -> Option<BranchId> {
+    if rows.is_empty() {
+        return None;
+    }
+    if rows.iter().any(|r| r.branch.is_none()) {
+        return Some(BranchId::new("MAIN"));
+    }
+    let first = rows.first().and_then(|r| r.branch.as_ref())?;
+    if rows.iter().all(|r| r.branch.as_ref() == Some(first)) {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 fn user_of(spec: &str) -> Option<User> {
     let mut parts = spec.split(';');
     let id = parts.next().filter(|s| !s.is_empty())?;
     let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
     let ended: DateTime<Utc> = Utc.with_ymd_and_hms(2026, 2, 1, 0, 0, 0).unwrap();
-    let roles = parts
+    let roles: Vec<ScopedRole> = parts
         .map(|p| {
             let mut f = p.split(',');
             let role = Role::parse(f.next().expect("a role")).expect("a known role");
@@ -219,7 +234,8 @@ fn user_of(spec: &str) -> Option<User> {
             ScopedRole::new(role, branch, from, to)
         })
         .collect();
-    Some(User::new(id, ORG, roles, None))
+    let branch = session_branch(&roles);
+    Some(User::new(id, ORG, roles, None).with_branch(branch))
 }
 
 struct HeaderUsers;

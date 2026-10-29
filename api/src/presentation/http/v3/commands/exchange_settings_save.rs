@@ -79,12 +79,16 @@ async fn organization_of(
 async fn audit(
     log: &PgAuditLog,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    organization_id: &str,
     event: AuditEvent,
 ) -> Result<(), V3Error> {
-    log.append(tx, &event).await.map(|_| ()).map_err(|e| {
-        tracing::error!(error = %e, "exchange settings audit failed");
-        server_error()
-    })
+    log.append_in(tx, organization_id, &event)
+        .await
+        .map(|_| ())
+        .map_err(|e| {
+            tracing::error!(error = %e, "exchange settings audit failed");
+            server_error()
+        })
 }
 
 // ------------------------------------------------------------ PUT /api/exchange-settings
@@ -133,6 +137,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         audit(
             &self.audit,
             tx,
+            &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
                 actor_role: standing.kind.audit_text().to_owned(),
@@ -220,6 +225,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
         audit(
             &self.audit,
             tx,
+            &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
                 actor_role: standing.kind.audit_text().to_owned(),

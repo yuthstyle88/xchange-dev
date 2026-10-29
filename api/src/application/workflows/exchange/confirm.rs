@@ -179,8 +179,9 @@ impl ConfirmTransaction {
                 )
                 .await?;
             self.audit
-                .append(
+                .append_in(
                     tx,
+                    &t.organization_id.to_string(),
                     &AuditEvent {
                         actor_id: who.id.clone(),
                         actor_role: who.audit_role().to_string(),
@@ -213,8 +214,9 @@ impl ConfirmTransaction {
             )
             .await?;
         self.audit
-            .append(
+            .append_in(
                 tx,
+                &t.organization_id.to_string(),
                 &AuditEvent {
                     actor_id: who.id.clone(),
                     actor_role: who.audit_role().to_string(),

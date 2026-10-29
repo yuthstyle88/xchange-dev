@@ -125,12 +125,15 @@ fn user_of(spec: &str) -> Option<Actor> {
     }
     let from = chrono::DateTime::<Utc>::UNIX_EPOCH;
     if let Some(cust) = spec.strip_prefix("CUSTOMER:") {
-        return Some(Actor::new(
-            "user-cust",
-            ORG,
-            vec![ScopedRole::new(Role::Customer, None, from, None)],
-            Some(cust),
-        ));
+        return Some(
+            Actor::new(
+                "user-cust",
+                ORG,
+                vec![ScopedRole::new(Role::Customer, None, from, None)],
+                Some(cust),
+            )
+            .with_branch(Some(BranchId::new(MAIN))),
+        );
     }
     let role = match spec {
         "ADMIN" => Role::Admin,
@@ -145,12 +148,15 @@ fn user_of(spec: &str) -> Option<Actor> {
         None
     };
     let user_id = format!("user-{}", role.as_str());
-    Some(Actor::new(
-        &user_id,
-        ORG,
-        vec![ScopedRole::new(role, branch, from, None)],
-        None,
-    ))
+    Some(
+        Actor::new(
+            &user_id,
+            ORG,
+            vec![ScopedRole::new(role, branch, from, None)],
+            None,
+        )
+        .with_branch(Some(BranchId::new(MAIN))),
+    )
 }
 
 struct HeaderCallers;

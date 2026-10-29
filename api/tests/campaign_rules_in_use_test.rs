@@ -156,6 +156,7 @@ fn marketing() -> Actor {
         )],
         None,
     )
+    .with_branch(Some(BranchId::new("MAIN")))
 }
 
 struct HeaderCallers;

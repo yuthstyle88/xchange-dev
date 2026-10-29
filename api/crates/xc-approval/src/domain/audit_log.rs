@@ -38,6 +38,17 @@ pub trait AuditLog: Send + Sync {
         event: &'a AuditEvent,
     ) -> BoxFuture<'a, AppResult<i64>>;
 
+    /// Appends an audit event for `organization_id` in the caller's transaction, returning the new id.
+    fn append_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
+        event: &'a AuditEvent,
+    ) -> BoxFuture<'a, AppResult<i64>> {
+        let _ = organization_id;
+        self.append(tx, event)
+    }
+
     /// Reads a page of audit entries strictly ascending by id (keyset pagination).
     fn page<'a>(
         &'a self,
