@@ -220,32 +220,43 @@ fn user_of(spec: &str) -> Option<User> {
         } else {
             Uuid::new_v4().to_string()
         };
-        return Some(User::new(
-            &uid,
-            ORG,
-            vec![ScopedRole::new(
-                Role::Customer,
-                None,
-                DateTime::<Utc>::UNIX_EPOCH,
-                None,
-            )],
-            Some(target_part),
-        ));
+        return Some(
+            User::new(
+                &uid,
+                ORG,
+                vec![ScopedRole::new(
+                    Role::Customer,
+                    None,
+                    DateTime::<Utc>::UNIX_EPOCH,
+                    None,
+                )],
+                Some(target_part),
+            )
+            .with_branch(Some(BranchId::new("MAIN"))),
+        );
     }
 
     let uid = user_id_for_role(role_part);
     let branch = (target_part != "*").then(|| BranchId::new(target_part));
-    Some(User::new(
-        &uid,
-        ORG,
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let session_branch = if target_part == "*" {
+        Some(BranchId::new("MAIN"))
+    } else {
+        Some(BranchId::new(target_part))
+    };
+    Some(
+        User::new(
+            &uid,
+            ORG,
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session_branch),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> Option<String> {

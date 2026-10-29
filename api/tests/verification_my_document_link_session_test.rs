@@ -31,6 +31,7 @@ use uuid::Uuid;
 use xc_auth::application::session::sha256_hex;
 use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_kernel::document_store::DocumentStore;
+use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{PiiCipher, PiiKeys};
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::document_store::FsDocumentStore;
@@ -81,6 +82,7 @@ impl SessionReader for HeaderUsers {
                         vec![ScopedRole::new(r, None, from, None)],
                         Some(customer_id),
                     )
+                    .with_branch(Some(BranchId::new("MAIN")))
                 })
             } else {
                 None

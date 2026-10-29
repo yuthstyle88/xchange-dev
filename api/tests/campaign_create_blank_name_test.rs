@@ -18,6 +18,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -118,6 +119,7 @@ fn marketing_of_org_a() -> Actor {
         )],
         None,
     )
+    .with_branch(Some(BranchId::new(MAIN)))
 }
 
 struct HeaderCallers;

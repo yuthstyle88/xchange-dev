@@ -20,6 +20,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -116,18 +117,24 @@ fn user_of(spec: &str) -> Option<Actor> {
     }
     let from = DateTime::<Utc>::UNIX_EPOCH;
     match spec {
-        "EXECUTIVE" => Some(Actor::new(
-            EXEC_USER_ID,
-            ORG,
-            vec![ScopedRole::new(Role::Executive, None, from, None)],
-            None,
-        )),
-        "MARKETING" => Some(Actor::new(
-            "user-MARKETING",
-            ORG,
-            vec![ScopedRole::new(Role::Marketing, None, from, None)],
-            None,
-        )),
+        "EXECUTIVE" => Some(
+            Actor::new(
+                EXEC_USER_ID,
+                ORG,
+                vec![ScopedRole::new(Role::Executive, None, from, None)],
+                None,
+            )
+            .with_branch(Some(BranchId::new("MAIN"))),
+        ),
+        "MARKETING" => Some(
+            Actor::new(
+                "user-MARKETING",
+                ORG,
+                vec![ScopedRole::new(Role::Marketing, None, from, None)],
+                None,
+            )
+            .with_branch(Some(BranchId::new("MAIN"))),
+        ),
         _ => None,
     }
 }

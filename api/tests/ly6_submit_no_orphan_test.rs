@@ -37,6 +37,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Row};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -445,12 +446,15 @@ fn user_of(spec: &str) -> Option<Actor> {
         "EXECUTIVE_2" => ("user-EXECUTIVE-2", Role::Executive),
         _ => return None,
     };
-    Some(Actor::new(
-        user_id,
-        ORG,
-        vec![ScopedRole::new(role, None, from, None)],
-        None,
-    ))
+    Some(
+        Actor::new(
+            user_id,
+            ORG,
+            vec![ScopedRole::new(role, None, from, None)],
+            None,
+        )
+        .with_branch(Some(BranchId::new("MAIN"))),
+    )
 }
 
 struct HeaderCallers;
