@@ -28,7 +28,28 @@ impl FormulaExpr {
     /// `Overflow`, an input with no value ⇒ `MissingInput`. No rounding and no sign check here: `PriceFormula` rounds
     /// the result and refuses one ≤ 0.
     pub fn eval(&self, inputs: &FormulaInputs) -> Result<Decimal, FormulaError> {
-        let _ = inputs;
-        todo!("pricing-formula wave 1: FormulaExpr::eval")
+        match self {
+            FormulaExpr::Num(n) => Ok(*n),
+            FormulaExpr::Input(i) => inputs.get(*i).ok_or(FormulaError::MissingInput(*i)),
+            FormulaExpr::Neg(e) => Ok(-e.eval(inputs)?),
+            FormulaExpr::Bin(op, lhs, rhs) => {
+                let l = lhs.eval(inputs)?;
+                let r = rhs.eval(inputs)?;
+                match op {
+                    Op::Add => l.checked_add(r).ok_or(FormulaError::Overflow),
+                    Op::Sub => l.checked_sub(r).ok_or(FormulaError::Overflow),
+                    Op::Mul => l.checked_mul(r).ok_or(FormulaError::Overflow),
+                    Op::Div => {
+                        if r.is_zero() {
+                            Err(FormulaError::DivideByZero)
+                        } else {
+                            l.checked_div(r).ok_or(FormulaError::Overflow)
+                        }
+                    }
+                }
+            }
+            FormulaExpr::Min(a, b) => Ok(a.eval(inputs)?.min(b.eval(inputs)?)),
+            FormulaExpr::Max(a, b) => Ok(a.eval(inputs)?.max(b.eval(inputs)?)),
+        }
     }
 }
