@@ -783,7 +783,7 @@ impl TransferFlow {
         if organization_id != who.organization_id {
             return Err(not_found(id));
         }
-        locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
+        let sent = locked(parts.repo.as_ref(), tx, id, TransferStep::Reconcile).await?;
 
         let (creator_uuid, receiver_uuid): (Uuid, Option<Uuid>) =
             sqlx::query_as("SELECT created_by, received_by FROM cash_transfers WHERE id = $1")
@@ -799,7 +799,7 @@ impl TransferFlow {
             ));
         }
 
-        let target = Target::new(&organization_id, None, None);
+        let target = Target::at_branch(&organization_id, sent.from_branch.clone());
         Authorizer::check(Some(who), Permission::FinanceReconcile, &target, now)
             .map_err(|e| AppError::Domain(e.code().to_string()))?;
 
