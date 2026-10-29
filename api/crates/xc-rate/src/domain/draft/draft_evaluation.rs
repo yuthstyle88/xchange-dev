@@ -53,18 +53,8 @@ impl DraftEvaluation {
         tiers: &[Option<PolicyTiers>],
         formulas: &[PriceFormula],
     ) -> Evaluation {
-        let _ = (lines, proposals, references, policy, tiers, formulas);
-        todo!("pricing-formula wave 2: DraftEvaluation::of_tiered_with")
-    }
-
-    pub fn of_tiered(
-        lines: &[DraftLine],
-        proposals: &[ProposedLine],
-        references: &[ReferenceLine],
-        policy: Option<&RatePolicy>,
-        tiers: &[Option<PolicyTiers>],
-    ) -> Evaluation {
         let mut out_of_bound = Vec::new();
+        let default_formula = PriceFormula::default();
 
         for (i, line) in lines.iter().enumerate() {
             if line.tiers.is_some() {
@@ -152,8 +142,17 @@ impl DraftEvaluation {
                     let m_unit = xc_kernel::money::MinorUnit::new(2)
                         .unwrap_or(xc_kernel::money::MinorUnit::ZERO);
                     let units = xc_kernel::money::CurrencyUnits::new(line.currency, u_size, m_unit);
+                    let formula = formulas.get(i).unwrap_or(&default_formula);
 
-                    match TierProposal::of(proposal, line, ref_line, Some(pol), pt, &units) {
+                    match TierProposal::of_with(
+                        proposal,
+                        line,
+                        ref_line,
+                        Some(pol),
+                        pt,
+                        &units,
+                        formula,
+                    ) {
                         Ok(tier_lines) => {
                             for tl in tier_lines {
                                 // Tier Buy check
@@ -243,6 +242,23 @@ impl DraftEvaluation {
         }
 
         Evaluation::new(out_of_bound)
+    }
+
+    pub fn of_tiered(
+        lines: &[DraftLine],
+        proposals: &[ProposedLine],
+        references: &[ReferenceLine],
+        policy: Option<&RatePolicy>,
+        tiers: &[Option<PolicyTiers>],
+    ) -> Evaluation {
+        Self::of_tiered_with(
+            lines,
+            proposals,
+            references,
+            policy,
+            tiers,
+            &vec![PriceFormula::default(); lines.len()],
+        )
     }
 
     pub fn of(
