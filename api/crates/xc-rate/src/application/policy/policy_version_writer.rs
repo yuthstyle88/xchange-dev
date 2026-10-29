@@ -74,20 +74,9 @@ impl PolicyVersionWriter {
         change: PolicyVersionChange,
         formula: FormulaChange,
     ) -> Result<WrittenVersion, RateEngineError> {
-        let _ = (tx, branch, change, formula);
-        todo!("pricing-formula wave 2: PolicyVersionWriter::next_with_formula")
-    }
-
-    /// Writes the branch's next policy version: number = max + 1, the current version's `valid_to` set to now, the
-    /// new row with `source_version` = the current one, its value tiers, its anchor and its overrides.
-    pub async fn next(
-        tx: &mut Transaction<'_, Postgres>,
-        branch: &BranchId,
-        change: PolicyVersionChange,
-    ) -> Result<WrittenVersion, RateEngineError> {
-        // 1. the current version = the branch's row with valid_to IS NULL (id, version, anchor_source), FOR UPDATE; may be none;
-        let cur: Option<(Uuid, i32, String)> = sqlx::query_as(
-            "SELECT id, version, anchor_source \
+        // 1. the current version = the branch's row with valid_to IS NULL (id, version, anchor_source, buy_formula, sell_formula), FOR UPDATE; may be none;
+        let cur: Option<(Uuid, i32, String, Option<String>, Option<String>)> = sqlx::query_as(
+            "SELECT id, version, anchor_source, buy_formula, sell_formula \
              FROM rate_policy_versions \
              WHERE branch_id = $1 AND valid_to IS NULL \
              FOR UPDATE",
@@ -120,21 +109,30 @@ impl PolicyVersionWriter {
         // 4. INSERT today's columns plus anchor_source = change.anchor_source if Some, else the current version's anchor_source, else 'BOT';
         // source_version = the current version's number (NULL for the first); approved_by / reason from change;
         let id = Uuid::new_v4();
-        let source_ver = cur.as_ref().map(|(_, v, _)| *v);
+        let source_ver = cur.as_ref().map(|(_, v, _, _, _)| *v);
         let anchor_str = match change.anchor_source {
             Some(a) => a.as_str().to_string(),
             None => match &cur {
-                Some((_, _, a)) => a.clone(),
+                Some((_, _, a, _, _)) => a.clone(),
                 None => "BOT".to_string(),
             },
+        };
+        let (buy_formula, sell_formula) = match &formula {
+            FormulaChange::Keep => match &cur {
+                Some((_, _, _, buy, sell)) => (buy.as_deref(), sell.as_deref()),
+                None => (None, None),
+            },
+            FormulaChange::Set(f) => (Some(f.buy.as_str()), Some(f.sell.as_str())),
+            FormulaChange::Clear => (None, None),
         };
 
         sqlx::query(
             "INSERT INTO rate_policy_versions \
              (id, branch_id, version, buy_adjust_pct, sell_adjust_pct, guards, \
               max_reference_age_hours, on_stale, stale_limit_thb, valid_from, \
-              approved_by, reason, source_version, value_tiers_on, sharp_move_alert_pct, anchor_source) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12, $13, $14, $15)",
+              approved_by, reason, source_version, value_tiers_on, sharp_move_alert_pct, \
+              anchor_source, buy_formula, sell_formula) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), $10, $11, $12, $13, $14, $15, $16, $17)",
         )
         .bind(id)
         .bind(branch.as_str())
@@ -151,6 +149,8 @@ impl PolicyVersionWriter {
         .bind(change.value_tiers_on)
         .bind(change.sharp_move_alert_pct)
         .bind(&anchor_str)
+        .bind(buy_formula)
+        .bind(sell_formula)
         .execute(&mut **tx)
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
@@ -187,13 +187,13 @@ impl PolicyVersionWriter {
         match change.overrides {
             Some(list) => {
                 CurrencyTierOverrideStore::insert(tx, &id, &list).await?;
-                if let Some((cur_id, _, _)) = cur {
+                if let Some((cur_id, _, _, _, _)) = cur {
                     let replaced: Vec<CurrencyCode> = list.iter().map(|o| o.currency).collect();
                     CurrencyTierOverrideStore::carry_forward(tx, &cur_id, &id, &replaced).await?;
                 }
             }
             None => {
-                if let Some((cur_id, _, _)) = cur {
+                if let Some((cur_id, _, _, _, _)) = cur {
                     CurrencyTierOverrideStore::carry_forward(tx, &cur_id, &id, &[]).await?;
                 }
             }
@@ -204,5 +204,15 @@ impl PolicyVersionWriter {
             id,
             version: next_ver,
         })
+    }
+
+    /// Writes the branch's next policy version: number = max + 1, the current version's `valid_to` set to now, the
+    /// new row with `source_version` = the current one, its value tiers, its anchor and its overrides.
+    pub async fn next(
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        change: PolicyVersionChange,
+    ) -> Result<WrittenVersion, RateEngineError> {
+        Self::next_with_formula(tx, branch, change, FormulaChange::Keep).await
     }
 }
