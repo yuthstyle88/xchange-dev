@@ -79,7 +79,7 @@ async fn m1_applies_on_a_fresh_database_and_creates_the_five_tables() {
 async fn m1_on_a_deployed_database_gives_every_branch_one_closed_status_row() {
     // The test database on do-sgp1 already ran every later migration; M1 is applied after them.
     let db = TestDb::empty().await;
-    db.migrate_all_but_m1().await;
+    db.migrate_before_m1().await;
     db.add_branch("B2", "Asia/Tokyo").await;
     db.migrate_all()
         .await
