@@ -41,7 +41,7 @@ impl AppSettingsService {
         Authorizer::check(
             Some(actor),
             Permission::SystemSettings,
-            &Target::new(&actor.organization_id, None, None),
+            &Target::organisation(&actor.organization_id),
             now,
         )
         .map_err(|_| CustomerAppError::OutOfScope)?;
