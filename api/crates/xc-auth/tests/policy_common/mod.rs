@@ -260,8 +260,24 @@ pub fn row(role: Role, branch_id: Option<&str>) -> ScopedRole {
     ScopedRole::new(role, branch_id.map(branch), since(), None)
 }
 
+fn session_branch(rows: &[ScopedRole]) -> Option<BranchId> {
+    if rows.is_empty() {
+        return None;
+    }
+    if rows.iter().any(|r| r.branch.is_none()) {
+        return Some(BranchId::new("MAIN"));
+    }
+    let first = rows.first().and_then(|r| r.branch.as_ref())?;
+    if rows.iter().all(|r| r.branch.as_ref() == Some(first)) {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 pub fn user(id: &str, rows: Vec<ScopedRole>) -> Actor {
-    Actor::new(id, ORG, rows, None)
+    let branch = session_branch(&rows);
+    Actor::new(id, ORG, rows, None).with_branch(branch)
 }
 
 /// The owner's user (B3): EXECUTIVE and ADMIN, both organisation-wide.

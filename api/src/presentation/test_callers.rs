@@ -38,11 +38,16 @@ pub fn staff(id: &str, roles: &[Role], branch: BranchId) -> Actor {
 }
 
 fn staff_or_owner(id: &str, roles: &[Role], branch: Option<BranchId>) -> Actor {
+    let session_branch = if roles.is_empty() {
+        None
+    } else {
+        branch.clone().or_else(|| Some(BranchId::new("MAIN")))
+    };
     let roles = roles
         .iter()
         .map(|&role| ScopedRole::new(role, branch.clone(), epoch(), None))
         .collect();
-    Actor::new(id, SEEDED_XC_ORG_ID, roles, None)
+    Actor::new(id, SEEDED_XC_ORG_ID, roles, None).with_branch(session_branch)
 }
 
 /// The callers a request with these sessions carries: `user` is the owner, else the staff member;

@@ -65,7 +65,8 @@ pub async fn publish(
             ),
         ],
         None,
-    );
+    )
+    .with_branch(Some(::xc_kernel::ids::BranchId::new("MAIN")));
     let b = ::xc_kernel::ids::BranchId::new(branch);
     let drafts = ::xc_rate::application::draft::rate_draft_service::RateDraftService::new(
         pool.clone(),

@@ -114,6 +114,7 @@ pub fn actor(user_id: &str, role: Role) -> Actor {
         vec![ScopedRole::new(role, None, at(-86_400), None)],
         None,
     )
+    .with_branch(Some(BranchId::new(MAIN)))
 }
 
 /// One `planner_drafts` row as stored.

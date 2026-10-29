@@ -372,7 +372,7 @@ fn user_of(spec: &str) -> Option<User> {
     if role == "EXECUTIVE" {
         roles.push(ScopedRole::new(Role::Admin, None::<BranchId>, from, None));
     }
-    Some(User::new(id, ORG, roles, None))
+    Some(User::new(id, ORG, roles, None).with_branch(Some(BranchId::new("MAIN"))))
 }
 
 struct HeaderUsers;

@@ -471,7 +471,7 @@ struct HeaderUsers;
 
 fn user_of(spec: &str) -> Option<User> {
     let (role, rest) = spec.split_once('@')?;
-    let (branch, _) = rest.split_once('#').expect("a spec ends in #n");
+    let (branch_str, _) = rest.split_once('#').expect("a spec ends in #n");
     let role = match role {
         "FINANCE" => Role::Finance,
         "TELLER" => Role::Teller,
@@ -479,18 +479,26 @@ fn user_of(spec: &str) -> Option<User> {
         "EXECUTIVE" => Role::Executive,
         other => panic!("unknown role {other}"),
     };
-    let branch = (branch != "*").then(|| BranchId::new(branch));
-    Some(User::new(
-        &user_id(spec),
-        ORG,
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let branch = (branch_str != "*").then(|| BranchId::new(branch_str));
+    let session_branch = if branch_str == "*" {
+        Some(BranchId::new("MAIN"))
+    } else {
+        Some(BranchId::new(branch_str))
+    };
+    Some(
+        User::new(
+            &user_id(spec),
+            ORG,
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session_branch),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> String {
