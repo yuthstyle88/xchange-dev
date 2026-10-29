@@ -185,7 +185,7 @@ impl DocumentAccess {
             after: None,
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case_org_id.to_string(), &event)
             .await
             .map_err(|e| AccessError::Internal(e.to_string()))?;
         tx.commit()
@@ -256,7 +256,7 @@ impl DocumentAccess {
             after: None,
         };
         self.audit
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &case_org_id.to_string(), &event)
             .await
             .map_err(|e| AccessError::Internal(e.to_string()))?;
         tx.commit()
