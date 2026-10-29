@@ -18,6 +18,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 use xc_rate::application::draft::reference_base::ReferenceBase;
+use xc_rate::application::formula::formula_resolver::FormulaResolver;
 use xc_rate::domain::policy::anchor_source::AnchorSource;
 use xc_rate::domain::pricing::branch_policy::BranchPolicyStore;
 use xc_rate::domain::pricing::display_settings::DisplaySettingsStore;
@@ -278,6 +279,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
 
     let (
         policy_version_id,
+        policy_version_uuid,
         value_tiers_on,
         branch_anchor,
         policy_tiers,
@@ -310,6 +312,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
                 .map_err(|e| AppError::Internal(e.to_string()))?;
             (
                 Some(id.to_string()),
+                Some(id),
                 tiers_on,
                 anchor,
                 pt,
@@ -319,6 +322,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             )
         }
         None => (
+            None,
             None,
             false,
             AnchorSource::Bot,
@@ -657,6 +661,11 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
     .map_err(AppError::Database)?;
     let volume_thb: HashMap<String, Decimal> = volume_rows.into_iter().collect();
 
+    let (formula, formula_source) =
+        FormulaResolver::resolve(&mut tx, &BranchId::new(branch_id), policy_version_uuid)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
     tx.commit().await.map_err(AppError::Database)?;
 
     let listed_by_both: Vec<String> = all_codes
@@ -753,24 +762,27 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             .unwrap_or((None, None));
 
         let suggestion_obj = match CurrencyCode::parse(&code) {
-            Ok(cur_code) => PricingSuggestion::of(&SuggestionInput {
-                currency: cur_code,
-                quotes: domain_quotes.clone(),
-                tt_decimals,
-                unit_size: cur_unit,
-                base_buy,
-                base_sell,
-                buy_adjust_pct,
-                sell_adjust_pct,
-                partner_cost: t1.and_then(|t| t.partner_cost),
-                published_tier1_buy: t1
-                    .and_then(|t| t.buy)
-                    .and_then(|d| Rate::parse(&d.to_string()).ok()),
-                published_tier1_sell: t1
-                    .and_then(|t| t.sell)
-                    .and_then(|d| Rate::parse(&d.to_string()).ok()),
-                config,
-            }),
+            Ok(cur_code) => PricingSuggestion::of_with(
+                &SuggestionInput {
+                    currency: cur_code,
+                    quotes: domain_quotes.clone(),
+                    tt_decimals,
+                    unit_size: cur_unit,
+                    base_buy,
+                    base_sell,
+                    buy_adjust_pct,
+                    sell_adjust_pct,
+                    partner_cost: t1.and_then(|t| t.partner_cost),
+                    published_tier1_buy: t1
+                        .and_then(|t| t.buy)
+                        .and_then(|d| Rate::parse(&d.to_string()).ok()),
+                    published_tier1_sell: t1
+                        .and_then(|t| t.sell)
+                        .and_then(|d| Rate::parse(&d.to_string()).ok()),
+                    config,
+                },
+                &formula,
+            ),
             Err(_) => {
                 let (_, domain_flags) = MarketQuote::anchor_for(&domain_quotes);
                 Suggestion {
@@ -966,6 +978,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             from: display_from.as_str().to_string(),
         },
         is_main: branch_id == "MAIN",
+        formula_source: Some(formula_source.as_db().to_string()),
     })
 }
 

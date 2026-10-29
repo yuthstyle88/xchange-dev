@@ -12,12 +12,14 @@ use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent
 use xc_notify::application::notification_service::NotificationService;
 use xc_notify::application::template_registry::TemplateRegistry;
 
+use crate::application::formula::formula_resolver::{FormulaResolver, FormulaSource};
 use crate::application::publication::sharp_move_notices::SharpMoveNotices;
 use crate::domain::currency::denomination_groups::GroupCode;
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::draft::rate_proposal::RateProposal;
 use crate::domain::draft::tier_proposal::TierProposal;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::currency_tier_override::CurrencyTierOverride;
 use crate::domain::policy::policy_tiers::PolicyTiers;
 use crate::domain::policy::rate_policy::RatePolicy;
@@ -237,6 +239,10 @@ impl PublishService {
         );
         let mut policy_cache: std::collections::HashMap<Uuid, Option<CachedPolicyRow>> =
             std::collections::HashMap::new();
+        let mut formula_cache: std::collections::HashMap<
+            Option<Uuid>,
+            (PriceFormula, FormulaSource),
+        > = std::collections::HashMap::new();
         let mut line_thresholds: std::collections::HashMap<CurrencyCode, Option<RatePercent>> =
             std::collections::HashMap::new();
 
@@ -441,7 +447,21 @@ impl PublishService {
                 MinorUnit::new(minor_val).map_err(|e| RateEngineError::Internal(e.to_string()))?;
             let units = CurrencyUnits::new(c, u_size, m_unit);
 
-            let prop = RateProposal::of(&line, reference.as_ref(), policy.as_ref(), &units)?;
+            let (formula, formula_source) = if let Some(cached) = formula_cache.get(&pol_id) {
+                cached.clone()
+            } else {
+                let resolved = FormulaResolver::resolve(tx, branch, pol_id).await?;
+                formula_cache.insert(pol_id, resolved.clone());
+                resolved
+            };
+
+            let prop = RateProposal::of_with(
+                &line,
+                reference.as_ref(),
+                policy.as_ref(),
+                &units,
+                &formula,
+            )?;
 
             // rates.md §4.1 "Partner cost": the newest 'PARTNER' reference line of the currency
             // (by its batch's `fetched_at`), copied as it stands; `null` when there is none.
@@ -539,6 +559,15 @@ impl PublishService {
                 snapshot["partner"] = serde_json::Value::Null;
             }
 
+            if matches!(line.buy, LineSide::Auto) || matches!(line.sell, LineSide::Auto) {
+                snapshot["formula"] = json!({
+                    "source": formula_source.as_db(),
+                    "formula_version_id": formula_source.formula_version_id().map(|u| u.to_string()),
+                    "buy": formula.buy.as_str(),
+                    "sell": formula.sell.as_str(),
+                });
+            }
+
             if let Some(tiers) = &line.tiers {
                 let tier_set_row: Option<(Uuid, String)> = sqlx::query_as(
                     "SELECT id, source FROM pricing_tier_sets \
@@ -602,13 +631,14 @@ impl PublishService {
                     .map_err(|e| RateEngineError::Database(e.to_string()))?;
                 }
             } else if let Some(pt) = policy_tiers {
-                let tier_lines = TierProposal::of(
+                let tier_lines = TierProposal::of_with(
                     &prop,
                     &line,
                     reference.as_ref(),
                     policy.as_ref(),
                     &pt,
                     &units,
+                    &formula,
                 )?;
 
                 for (idx, tl) in tier_lines.into_iter().enumerate() {

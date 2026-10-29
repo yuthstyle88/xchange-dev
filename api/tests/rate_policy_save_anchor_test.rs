@@ -208,9 +208,15 @@ async fn an_adjust_that_pushes_a_carried_override_outside_its_guard_is_refused()
 
 #[tokio::test]
 async fn a_carried_override_inside_the_guard_is_kept() {
+    const USD_INSIDE: [(&str, &str); 4] = [
+        ("0.0000", "0.0000"),
+        ("0.1000", "-0.1000"),
+        ("0.2000", "-0.2000"),
+        ("1.0000", "-0.3000"),
+    ];
     let room = Room::start().await;
     let v1 = room.worked_example().await;
-    room.override_margins(v1, "USD", USD_WIDE).await;
+    room.override_margins(v1, "USD", USD_INSIDE).await;
     command(
         &room,
         &rate_manager(),

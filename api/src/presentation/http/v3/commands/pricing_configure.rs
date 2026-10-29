@@ -18,14 +18,20 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Bound, CurrencyCode, Money, RatePercent, Side, Sign};
+use xc_rate::application::formula::spread_check::{
+    BranchCandidate, SpreadCandidate, SpreadCheck, SpreadReason,
+};
 use xc_rate::application::policy::policy_version_writer::{
     PolicyVersionChange, PolicyVersionWriter,
 };
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
+use xc_rate::domain::formula::price_formula::PriceFormula;
+use xc_rate::domain::formula::text::FormulaText;
 use xc_rate::domain::policy::anchor_source::AnchorSource;
 use xc_rate::domain::policy::currency_tier_override::{CurrencyTierOverride, TierMargin};
-use xc_rate::domain::policy::policy_tiers::PolicyTier;
+use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
 use xc_rate::domain::policy::rate_policy::RatePolicy;
+use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -33,6 +39,7 @@ use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::org_view::validation_failed;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 
 const BUY_MARGIN_FIELDS: [&str; 4] = [
     "margins.buy-1",
@@ -87,6 +94,10 @@ pub struct PricingConfigureInput {
 pub struct PricingConfigureOutput {
     pub id: String,
     pub version: i32,
+    /// Currencies saved without the §4 check (pricing-formula.md §4 step 4, B9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub not_checked: Option<Vec<FormulaNotCheckedDto>>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -100,6 +111,8 @@ struct CurrentPolicyRow {
     stale_limit_thb: Option<Decimal>,
     value_tiers_on: bool,
     sharp_move_alert_pct: Option<Decimal>,
+    buy_formula: Option<String>,
+    sell_formula: Option<String>,
 }
 
 pub struct PricingConfigureCommand;
@@ -207,7 +220,8 @@ impl CommandAction for PricingConfigureCommand {
 
         let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
             "SELECT id, buy_adjust_pct, sell_adjust_pct, guards, max_reference_age_hours, \
-                    on_stale, stale_limit_thb, value_tiers_on, sharp_move_alert_pct \
+                    on_stale, stale_limit_thb, value_tiers_on, sharp_move_alert_pct, \
+                    buy_formula, sell_formula \
              FROM rate_policy_versions \
              WHERE branch_id = $1 AND valid_to IS NULL \
              FOR UPDATE",
@@ -243,61 +257,6 @@ impl CommandAction for PricingConfigureCommand {
                 },
             )?;
 
-        if let Some(tiers) = &override_entry.tiers {
-            let rate_policy = RatePolicy::new(
-                "pricing-configure",
-                RatePercent::parse(&format!("{:.4}", cur.buy_adjust_pct))
-                    .map_err(|_| server_error())?,
-                RatePercent::parse(&format!("{:.4}", cur.sell_adjust_pct))
-                    .map_err(|_| server_error())?,
-                &cur.guards,
-            )
-            .map_err(|e| {
-                V3Error::new(
-                    "validationFailed",
-                    Some("tiers"),
-                    e.to_string(),
-                    StatusCode::BAD_REQUEST,
-                )
-            })?;
-
-            let code_str = currency.as_str();
-            if let Some(guard) = rate_policy.guard_for(code_str, Side::Buy) {
-                for tier in tiers {
-                    let eff = cur.buy_adjust_pct + tier.buy_margin_pct.value();
-                    if eff < guard.min_pct || eff > guard.max_pct {
-                        let idx = usize::from(tier.tier_no.saturating_sub(1)).min(3);
-                        return Err(V3Error::new(
-                            "validationFailed",
-                            Some(BUY_MARGIN_FIELDS[idx]),
-                            format!(
-                                "Tier {} buy margin is outside the {} guard [{}, {}].",
-                                tier.tier_no, code_str, guard.min_pct, guard.max_pct
-                            ),
-                            StatusCode::BAD_REQUEST,
-                        ));
-                    }
-                }
-            }
-            if let Some(guard) = rate_policy.guard_for(code_str, Side::Sell) {
-                for tier in tiers {
-                    let eff = cur.sell_adjust_pct + tier.sell_margin_pct.value();
-                    if eff < guard.min_pct || eff > guard.max_pct {
-                        let idx = usize::from(tier.tier_no.saturating_sub(1)).min(3);
-                        return Err(V3Error::new(
-                            "validationFailed",
-                            Some(SELL_MARGIN_FIELDS[idx]),
-                            format!(
-                                "Tier {} sell margin is outside the {} guard [{}, {}].",
-                                tier.tier_no, code_str, guard.min_pct, guard.max_pct
-                            ),
-                            StatusCode::BAD_REQUEST,
-                        ));
-                    }
-                }
-            }
-        }
-
         let rows = sqlx::query(
             "SELECT tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct \
              FROM rate_policy_value_tiers \
@@ -331,6 +290,82 @@ impl CommandAction for PricingConfigureCommand {
             ));
         }
 
+        let formula = match (&cur.buy_formula, &cur.sell_formula) {
+            (Some(buy), Some(sell)) => Some(PriceFormula::new(
+                FormulaText::parse(buy).map_err(|_| server_error())?,
+                FormulaText::parse(sell).map_err(|_| server_error())?,
+            )),
+            _ => None,
+        };
+        let policy = RatePolicy::new(
+            "pricing-configure",
+            RatePercent::parse(&format!("{:.4}", cur.buy_adjust_pct))
+                .map_err(|_| server_error())?,
+            RatePercent::parse(&format!("{:.4}", cur.sell_adjust_pct))
+                .map_err(|_| server_error())?,
+            &cur.guards,
+        )
+        .map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("tiers"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        let tiers = if cur.value_tiers_on {
+            Some(PolicyTiers::new(cur_tiers.clone()).map_err(|_| server_error())?)
+        } else {
+            None
+        };
+        let mut overrides = CurrencyTierOverrideStore::for_version(tx, &cur.id)
+            .await
+            .map_err(|_| server_error())?;
+        overrides.retain(|ov| ov.currency != currency);
+        overrides.push(override_entry.clone());
+
+        let report = SpreadCheck::run(
+            tx,
+            &SpreadCandidate::Branch {
+                branch: branch.clone(),
+                version: BranchCandidate {
+                    formula,
+                    policy,
+                    tiers,
+                    overrides,
+                },
+            },
+        )
+        .await
+        .map_err(|_| server_error())?;
+
+        if let Some(first) = report.failures.first() {
+            let field = match first.tier {
+                Some(n) => {
+                    let idx = usize::from(n.saturating_sub(1)).min(3);
+                    match &first.reason {
+                        SpreadReason::OutsideGuard {
+                            side: Side::Sell, ..
+                        } => SELL_MARGIN_FIELDS[idx],
+                        _ => BUY_MARGIN_FIELDS[idx],
+                    }
+                }
+                None => "tiers",
+            };
+            let message = report
+                .failures
+                .iter()
+                .map(|f| f.describe())
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(V3Error::new(
+                "validationFailed",
+                Some(field),
+                message,
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let written = PolicyVersionWriter::next(
             tx,
             branch,
@@ -358,9 +393,19 @@ impl CommandAction for PricingConfigureCommand {
             _ => server_error(),
         })?;
 
+        let not_checked = report
+            .not_checked
+            .into_iter()
+            .map(|(b, c)| FormulaNotCheckedDto {
+                branch: b.as_str().to_owned(),
+                currency: c.as_str().to_owned(),
+            })
+            .collect();
+
         Ok(PricingConfigureOutput {
             id: written.id.to_string(),
             version: written.version,
+            not_checked: Some(not_checked),
         })
     }
 }

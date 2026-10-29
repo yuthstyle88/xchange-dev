@@ -19,10 +19,13 @@ use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 use xc_rate::application::draft::reference_base::ReferenceBase;
+use xc_rate::application::formula::formula_record::FormulaRecord;
+use xc_rate::application::formula::formula_resolver::{FormulaResolver, FormulaSource};
 use xc_rate::application::market::market_refresh::MarketRefresh;
 use xc_rate::application::pricing::branch_push::{BranchPush, PushKind};
 use xc_rate::application::pricing::tier_publish::TierSetPublisher;
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
+use xc_rate::domain::formula::price_formula::PriceFormula;
 use xc_rate::domain::pricing::follow_plan::{
     FollowInput, FollowOutcome, FollowPlan, FollowResult, FollowResultStatus, FollowResultStore,
     SourceFreshness,
@@ -145,8 +148,8 @@ impl MarketPricingLoop {
         currency: CurrencyCode,
         now: DateTime<Utc>,
     ) -> Result<FollowResult, RateEngineError> {
-        let input = self.build_follow_input(currency).await?;
-        let outcome = FollowPlan::plan(&input, now);
+        let (input, formula, formula_source) = self.build_follow_input(currency).await?;
+        let outcome = FollowPlan::plan_with(&input, now, &formula);
 
         match outcome {
             FollowOutcome::Blocked(reasons) => {
@@ -223,7 +226,7 @@ impl MarketPricingLoop {
                     None,
                 );
 
-                let flags = PricingSuggestion::of(&input.suggestion)
+                let flags = PricingSuggestion::of_with(&input.suggestion, &formula)
                     .flags
                     .into_iter()
                     .map(|f| format!("{f:?}"))
@@ -245,6 +248,7 @@ impl MarketPricingLoop {
                 };
 
                 PgTierSetStore.insert_in(&mut tx, &set).await?;
+                FormulaRecord::tier_set(&mut tx, set.id, formula_source).await?;
 
                 match self
                     .publisher
@@ -293,7 +297,7 @@ impl MarketPricingLoop {
     async fn build_follow_input(
         &self,
         currency: CurrencyCode,
-    ) -> Result<FollowInput, RateEngineError> {
+    ) -> Result<(FollowInput, PriceFormula, FormulaSource), RateEngineError> {
         let mut tx = self
             .pool
             .begin()
@@ -318,7 +322,8 @@ impl MarketPricingLoop {
         .await
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let (buy_adjust_pct, sell_adjust_pct, ovr_min_spread) = match policy_row {
+        let (policy_version_id, buy_adjust_pct, sell_adjust_pct, ovr_min_spread) = match policy_row
+        {
             Some(r) => {
                 let id: Uuid = r.get("id");
                 let buy_adj: Decimal = r.get("buy_adjust_pct");
@@ -339,10 +344,14 @@ impl MarketPricingLoop {
                     .find(|o| o.currency == currency)
                     .and_then(|o| o.min_spread_pct)
                     .map(|p| p.value());
-                (buy_adjust_pct, sell_adjust_pct, ovr_ms)
+                (Some(id), buy_adjust_pct, sell_adjust_pct, ovr_ms)
             }
-            None => (RatePercent::ZERO, RatePercent::ZERO, None),
+            None => (None, RatePercent::ZERO, RatePercent::ZERO, None),
         };
+
+        let main_branch = BranchId::new("MAIN");
+        let (formula, formula_source) =
+            FormulaResolver::resolve(&mut tx, &main_branch, policy_version_id).await?;
 
         let suggestion_settings =
             PricingSuggestionSettingsStore::for_branch(&mut tx, "MAIN").await?;
@@ -419,7 +428,6 @@ impl MarketPricingLoop {
             None => SourceFreshness::of_feed(None, None, None),
         };
 
-        let main_branch = BranchId::new("MAIN");
         let mut base_buy = None;
         let mut base_sell = None;
         if let Some(ref_id) = ReferenceBase::newest_in(&mut tx, &main_branch, &currency).await?
@@ -483,25 +491,29 @@ impl MarketPricingLoop {
 
         let _ = tx.rollback().await;
 
-        Ok(FollowInput {
-            suggestion: SuggestionInput {
-                currency,
-                quotes,
-                tt_decimals,
-                unit_size,
-                base_buy,
-                base_sell,
-                buy_adjust_pct,
-                sell_adjust_pct,
-                partner_cost,
-                published_tier1_buy,
-                published_tier1_sell,
-                config,
+        Ok((
+            FollowInput {
+                suggestion: SuggestionInput {
+                    currency,
+                    quotes,
+                    tt_decimals,
+                    unit_size,
+                    base_buy,
+                    base_sell,
+                    buy_adjust_pct,
+                    sell_adjust_pct,
+                    partner_cost,
+                    published_tier1_buy,
+                    published_tier1_sell,
+                    config,
+                },
+                source,
+                anchor_batch_id,
+                last_tier1,
+                published_tier1,
             },
-            source,
-            anchor_batch_id,
-            last_tier1,
-            published_tier1,
-        })
+            formula,
+            formula_source,
+        ))
     }
 }

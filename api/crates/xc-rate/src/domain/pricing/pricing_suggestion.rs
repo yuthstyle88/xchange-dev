@@ -6,6 +6,8 @@
 use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 
+use crate::domain::formula::input::FormulaInputs;
+use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::currency_tier_override::TierMargin;
 use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use crate::domain::pricing::pricing_flag::PricingFlag;
@@ -92,7 +94,14 @@ pub struct SuggestionInput {
 pub struct PricingSuggestion;
 
 impl PricingSuggestion {
-    pub fn of(input: &SuggestionInput) -> Suggestion {
+    /// As `of`, with V.9's step 1 priced by `formula` through the FOLLOW binding (pricing-formula.md §3a):
+    /// `ref_buy` / `ref_sell` = the anchor's buy / sell × `unit_size`, `buy_pct` = `sell_pct` = 0, and for tier `n`
+    /// `tier_buy_pct` = `+better[n]`, `tier_sell_pct` = `−better[n]`; the result ÷ `unit_size` is the per-unit
+    /// price that `floor_d` / `ceil_d`, the min-spread widening, equal-or-better and the flags then take unchanged.
+    /// `margins` (and the `Precision` check that reproduces them) only when `formula.is_default()`; otherwise
+    /// `margins` is `None`. A `FormulaError` on any tier ⇒ `tiers` and `margins` `None`, flag `NoAnchor`.
+    /// With the default formula the answer equals `of`'s (B21); `of` becomes `of_with(input, &PriceFormula::default())`.
+    pub fn of_with(input: &SuggestionInput, formula: &PriceFormula) -> Suggestion {
         let (Some(anchor), mut flags) = MarketQuote::anchor_for(&input.quotes) else {
             return Suggestion {
                 tiers: None,
@@ -129,12 +138,38 @@ impl PricingSuggestion {
         let min_spread = mid * input.config.min_spread_pct / hundred;
 
         let mut unit_tiers = [(Decimal::ZERO, Decimal::ZERO); 4];
+        let mut unrounded_t1 = (Decimal::ZERO, Decimal::ZERO);
         let mut prev: Option<(Decimal, Decimal)> = None;
         let mut min_spread_hit = false;
 
+        let ref_buy = Some(anchor_buy * input.unit_size);
+        let ref_sell = Some(anchor_sell * input.unit_size);
+
         for (idx, &b) in input.config.better.iter().enumerate() {
-            let mut buy = floor_d(anchor_buy * (Decimal::ONE + b / hundred));
-            let mut sell = ceil_d(anchor_sell * (Decimal::ONE - b / hundred));
+            let fi = FormulaInputs {
+                ref_buy,
+                ref_sell,
+                buy_pct: Decimal::ZERO,
+                sell_pct: Decimal::ZERO,
+                tier_buy_pct: b,
+                tier_sell_pct: -b,
+            };
+            let (Ok(raw_buy), Ok(raw_sell)) =
+                (formula.buy.expr().eval(&fi), formula.sell.expr().eval(&fi))
+            else {
+                return Suggestion {
+                    tiers: None,
+                    margins: None,
+                    flags: vec![PricingFlag::NoAnchor],
+                };
+            };
+            let unrounded_buy = raw_buy / input.unit_size;
+            let unrounded_sell = raw_sell / input.unit_size;
+            if idx == 0 {
+                unrounded_t1 = (unrounded_buy, unrounded_sell);
+            }
+            let mut buy = floor_d(unrounded_buy);
+            let mut sell = ceil_d(unrounded_sell);
             if sell - buy < min_spread {
                 buy = floor_d(mid - min_spread / two);
                 sell = ceil_d(mid + min_spread / two);
@@ -152,8 +187,7 @@ impl PricingSuggestion {
             flags.push(PricingFlag::MinSpread);
         }
 
-        let unrounded_t1_buy = anchor_buy * (Decimal::ONE + input.config.better[0] / hundred);
-        let unrounded_t1_sell = anchor_sell * (Decimal::ONE - input.config.better[0] / hundred);
+        let (unrounded_t1_buy, unrounded_t1_sell) = unrounded_t1;
         let pct_diff = |a: Decimal, b: Decimal| ((a - b) / b * hundred).abs();
         let mut precision_hit = pct_diff(unit_tiers[0].0, unrounded_t1_buy) > Decimal::ONE
             || pct_diff(unit_tiers[0].1, unrounded_t1_sell) > Decimal::ONE;
@@ -169,7 +203,9 @@ impl PricingSuggestion {
             }
         });
 
-        let margins = if let (Some(base_buy), Some(base_sell)) = (input.base_buy, input.base_sell) {
+        let margins = if formula.is_default()
+            && let (Some(base_buy), Some(base_sell)) = (input.base_buy, input.base_sell)
+        {
             let base_buy_val = base_buy.value();
             let base_sell_val = base_sell.value();
             let buy_adj = input.buy_adjust_pct.value();
@@ -260,5 +296,9 @@ impl PricingSuggestion {
             margins,
             flags,
         }
+    }
+
+    pub fn of(input: &SuggestionInput) -> Suggestion {
+        Self::of_with(input, &PriceFormula::default())
     }
 }

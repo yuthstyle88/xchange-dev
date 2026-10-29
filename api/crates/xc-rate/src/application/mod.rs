@@ -3,6 +3,7 @@ pub mod approval;
 pub mod branch;
 pub mod currency;
 pub mod draft;
+pub mod formula;
 pub mod market;
 pub mod policy;
 pub mod pricing;

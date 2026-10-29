@@ -23,11 +23,17 @@ use crate::presentation::dto::v3::rate_policy::ValueTierDto;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use xc_kernel::money::{Bound, IntBound, Money, RatePercent, Side, Sign};
+use xc_rate::application::formula::spread_check::{
+    BranchCandidate, SpreadCandidate, SpreadCheck, SpreadFailure,
+};
 use xc_rate::application::policy::policy_version_writer::{
-    PolicyVersionChange, PolicyVersionWriter,
+    FormulaChange, PolicyVersionChange, PolicyVersionWriter,
 };
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
+use xc_rate::domain::formula::price_formula::PriceFormula;
+use xc_rate::domain::formula::text::FormulaText;
 use xc_rate::domain::policy::anchor_source::AnchorSource;
 use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
 use xc_rate::domain::policy::rate_policy::RatePolicy;
@@ -65,6 +71,15 @@ pub struct RatePolicySaveInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub anchor_source: Option<String>,
+    /// The branch's own formula (pricing-formula.md §3, F-3/F-4): absent = keep the current version's (or none);
+    /// `null` = follow the organisation again; text = this branch's own. `buyFormula` and `sellFormula` come
+    /// together (both absent, both `null`, or both text), else `400 validationFailed`, field `sellFormula` (B6).
+    #[serde(default, deserialize_with = "deserialize_some")]
+    #[ts(optional = nullable, type = "string | null")]
+    pub buy_formula: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_some")]
+    #[ts(optional = nullable, type = "string | null")]
+    pub sell_formula: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -73,6 +88,11 @@ pub struct RatePolicySaveInput {
 pub struct RatePolicySaveOutput {
     pub id: String,
     pub version: i32,
+    /// Currencies saved without the §4 check because they have no current reference line (pricing-formula.md §4
+    /// step 4, B9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub not_checked: Option<Vec<FormulaNotCheckedDto>>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -85,6 +105,8 @@ struct CurrentPolicyRow {
     value_tiers_on: bool,
     sharp_move_alert_pct: Option<Decimal>,
     anchor_source: String,
+    buy_formula: Option<String>,
+    sell_formula: Option<String>,
 }
 
 pub struct RatePolicySaveCommand;
@@ -267,10 +289,42 @@ impl CommandAction for RatePolicySaveCommand {
             None => None,
         };
 
+        let formula_change = match (&input.buy_formula, &input.sell_formula) {
+            (None, None) => FormulaChange::Keep,
+            (Some(None), Some(None)) => FormulaChange::Clear,
+            (Some(Some(buy)), Some(Some(sell))) => {
+                let buy = FormulaText::parse(buy).map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("buyFormula"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+                let sell = FormulaText::parse(sell).map_err(|e| {
+                    V3Error::new(
+                        "validationFailed",
+                        Some("sellFormula"),
+                        e.to_string(),
+                        StatusCode::BAD_REQUEST,
+                    )
+                })?;
+                FormulaChange::Set(PriceFormula::new(buy, sell))
+            }
+            _ => {
+                return Err(V3Error::new(
+                    "validationFailed",
+                    Some("sellFormula"),
+                    "buyFormula and sellFormula must both be provided or both be null",
+                    StatusCode::BAD_REQUEST,
+                ));
+            }
+        };
+
         // Query current version with valid_to IS NULL
         let cur_row: Option<CurrentPolicyRow> = sqlx::query_as(
             "SELECT id, guards, max_reference_age_hours, on_stale, stale_limit_thb, \
-                    value_tiers_on, sharp_move_alert_pct, anchor_source \
+                    value_tiers_on, sharp_move_alert_pct, anchor_source, buy_formula, sell_formula \
              FROM rate_policy_versions \
              WHERE branch_id = $1 AND valid_to IS NULL \
              FOR UPDATE",
@@ -411,6 +465,7 @@ impl CommandAction for RatePolicySaveCommand {
                 || resolved_sharp_move_alert_pct != cur.sharp_move_alert_pct
                 || resolved_tiers != cur_tiers
                 || input_anchor.is_some_and(|a| a.as_str() != cur.anchor_source)
+                || formula_change != FormulaChange::Keep
             {
                 return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
             }
@@ -434,65 +489,140 @@ impl CommandAction for RatePolicySaveCommand {
             }
         }
 
-        if let Some(cur) = &cur_row {
-            let overrides = CurrencyTierOverrideStore::for_version(tx, &cur.id)
+        let overrides = match &cur_row {
+            Some(cur) => CurrencyTierOverrideStore::for_version(tx, &cur.id)
                 .await
-                .map_err(|_| server_error())?;
-            if overrides.iter().any(|ov| ov.tiers.is_some()) {
-                let rate_policy = RatePolicy::new(
-                    "rate-policy-save",
-                    RatePercent::parse(&format!("{buy_pct:.4}")).map_err(|_| server_error())?,
-                    RatePercent::parse(&format!("{sell_pct:.4}")).map_err(|_| server_error())?,
-                    &input.guards,
+                .map_err(|_| server_error())?,
+            None => Vec::new(),
+        };
+        if overrides.iter().any(|ov| ov.tiers.is_some()) {
+            let rate_policy = RatePolicy::new(
+                "rate-policy-save",
+                RatePercent::parse(&format!("{buy_pct:.4}")).map_err(|_| server_error())?,
+                RatePercent::parse(&format!("{sell_pct:.4}")).map_err(|_| server_error())?,
+                &input.guards,
+            )
+            .map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("valueTiers"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
                 )
-                .map_err(|e| {
-                    V3Error::new(
-                        "validationFailed",
-                        Some("valueTiers"),
-                        e.to_string(),
-                        StatusCode::BAD_REQUEST,
-                    )
-                })?;
+            })?;
 
-                for ov in &overrides {
-                    let Some(tiers) = &ov.tiers else {
-                        continue;
-                    };
-                    let currency = ov.currency.as_str();
-                    if let Some(guard) = rate_policy.guard_for(currency, Side::Buy) {
-                        for tier in tiers {
-                            let eff = buy_pct + tier.buy_margin_pct.value();
-                            if eff < guard.min_pct || eff > guard.max_pct {
-                                return Err(V3Error::new(
-                                    "validationFailed",
-                                    Some("valueTiers"),
-                                    format!(
-                                        "override {} tier {} buy margin outside guard [{}, {}]",
-                                        currency, tier.tier_no, guard.min_pct, guard.max_pct
-                                    ),
-                                    StatusCode::BAD_REQUEST,
-                                ));
-                            }
+            for ov in &overrides {
+                let Some(tiers) = &ov.tiers else {
+                    continue;
+                };
+                let currency = ov.currency.as_str();
+                if let Some(guard) = rate_policy.guard_for(currency, Side::Buy) {
+                    for tier in tiers {
+                        let eff = buy_pct + tier.buy_margin_pct.value();
+                        if eff < guard.min_pct || eff > guard.max_pct {
+                            return Err(V3Error::new(
+                                "validationFailed",
+                                Some("valueTiers"),
+                                format!(
+                                    "override {} tier {} buy margin outside guard [{}, {}]",
+                                    currency, tier.tier_no, guard.min_pct, guard.max_pct
+                                ),
+                                StatusCode::BAD_REQUEST,
+                            ));
                         }
                     }
-                    if let Some(guard) = rate_policy.guard_for(currency, Side::Sell) {
-                        for tier in tiers {
-                            let eff = sell_pct + tier.sell_margin_pct.value();
-                            if eff < guard.min_pct || eff > guard.max_pct {
-                                return Err(V3Error::new(
-                                    "validationFailed",
-                                    Some("valueTiers"),
-                                    format!(
-                                        "override {} tier {} sell margin outside guard [{}, {}]",
-                                        currency, tier.tier_no, guard.min_pct, guard.max_pct
-                                    ),
-                                    StatusCode::BAD_REQUEST,
-                                ));
-                            }
+                }
+                if let Some(guard) = rate_policy.guard_for(currency, Side::Sell) {
+                    for tier in tiers {
+                        let eff = sell_pct + tier.sell_margin_pct.value();
+                        if eff < guard.min_pct || eff > guard.max_pct {
+                            return Err(V3Error::new(
+                                "validationFailed",
+                                Some("valueTiers"),
+                                format!(
+                                    "override {} tier {} sell margin outside guard [{}, {}]",
+                                    currency, tier.tier_no, guard.min_pct, guard.max_pct
+                                ),
+                                StatusCode::BAD_REQUEST,
+                            ));
                         }
                     }
                 }
             }
+        }
+
+        let candidate_formula = match &formula_change {
+            FormulaChange::Set(f) => Some(f.clone()),
+            FormulaChange::Clear => None,
+            FormulaChange::Keep => match cur_row
+                .as_ref()
+                .and_then(|c| c.buy_formula.as_deref().zip(c.sell_formula.as_deref()))
+            {
+                Some((buy, sell)) => {
+                    let buy = FormulaText::parse(buy).map_err(|_| server_error())?;
+                    let sell = FormulaText::parse(sell).map_err(|_| server_error())?;
+                    Some(PriceFormula::new(buy, sell))
+                }
+                None => None,
+            },
+        };
+        let candidate_policy = RatePolicy::new(
+            "rate-policy-save",
+            RatePercent::parse(&format!("{buy_pct:.4}")).map_err(|_| server_error())?,
+            RatePercent::parse(&format!("{sell_pct:.4}")).map_err(|_| server_error())?,
+            &input.guards,
+        )
+        .map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("guards"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        let candidate_tiers = if resolved_value_tiers_on {
+            Some(PolicyTiers::new(resolved_tiers.clone()).map_err(|e| {
+                V3Error::new(
+                    "validationFailed",
+                    Some("valueTiers"),
+                    e.to_string(),
+                    StatusCode::BAD_REQUEST,
+                )
+            })?)
+        } else {
+            None
+        };
+        let report = SpreadCheck::run(
+            tx,
+            &SpreadCandidate::Branch {
+                branch: branch.clone(),
+                version: BranchCandidate {
+                    formula: candidate_formula,
+                    policy: candidate_policy,
+                    tiers: candidate_tiers,
+                    overrides,
+                },
+            },
+        )
+        .await
+        .map_err(|_| server_error())?;
+        if !report.is_ok() {
+            let field = match &formula_change {
+                FormulaChange::Set(_) => "buyFormula",
+                _ => "buyAdjustPct",
+            };
+            let msg = report
+                .failures
+                .iter()
+                .map(SpreadFailure::describe)
+                .collect::<Vec<_>>()
+                .join("\n");
+            return Err(V3Error::new(
+                "validationFailed",
+                Some(field),
+                msg,
+                StatusCode::BAD_REQUEST,
+            ));
         }
 
         let change = PolicyVersionChange {
@@ -511,7 +641,7 @@ impl CommandAction for RatePolicySaveCommand {
             reason: input.reason,
         };
 
-        let written = PolicyVersionWriter::next(tx, branch, change)
+        let written = PolicyVersionWriter::next_with_formula(tx, branch, change, formula_change)
             .await
             .map_err(|e| match e {
                 RateEngineError::ValidationFailed(msg) => V3Error::new(
@@ -523,9 +653,19 @@ impl CommandAction for RatePolicySaveCommand {
                 _ => server_error(),
             })?;
 
+        let not_checked = report
+            .not_checked
+            .into_iter()
+            .map(|(b, c)| FormulaNotCheckedDto {
+                branch: b.as_str().to_owned(),
+                currency: c.as_str().to_owned(),
+            })
+            .collect();
+
         Ok(RatePolicySaveOutput {
             id: written.id.to_string(),
             version: written.version,
+            not_checked: Some(not_checked),
         })
     }
 }
