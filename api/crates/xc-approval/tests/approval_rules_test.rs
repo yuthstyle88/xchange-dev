@@ -735,14 +735,15 @@ async fn the_stored_payload_is_redacted() {
 
 // ── the audit log is append-only (§5.1) ─────────────────────────────────────
 
-/// Compiles only while `append` and `page` are the trait's only required
+/// Compiles only while `append_in` and `page` are the trait's only required
 /// methods: an `update` or `delete` added to the port breaks this file.
 struct AppendAndReadOnly;
 
 impl AuditLog for AppendAndReadOnly {
-    fn append<'a>(
+    fn append_in<'a>(
         &'a self,
         _tx: &'a mut Transaction<'_, Postgres>,
+        _organization_id: &'a str,
         _event: &'a AuditEvent,
     ) -> BoxFuture<'a, AppResult<i64>> {
         Box::pin(async { unreachable!("never called") })
@@ -780,7 +781,7 @@ async fn the_audit_log_appends_and_reads_pages_in_order() {
     let mut ids = Vec::new();
     for action in ["one", "two", "three"] {
         ids.push(
-            log.append(&mut tx, &event(action, None))
+            log.append_in(&mut tx, ORG, &event(action, None))
                 .await
                 .expect("append"),
         );
@@ -810,8 +811,9 @@ async fn an_appended_audit_row_is_redacted() {
     let log = PgAuditLog::new(db.pool.clone());
 
     let mut tx = db.begin().await;
-    log.append(
+    log.append_in(
         &mut tx,
+        ORG,
         &event(
             "customer.saved",
             Some(json!({ "passportNo": "XK9988776655", "otp": "564738", "currency": "USD" })),

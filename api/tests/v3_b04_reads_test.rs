@@ -442,12 +442,13 @@ impl Room {
         (number, html)
     }
 
-    /// TX-11's `transaction.created` row (`quote-transaction.md` §4.7), through `PgAuditLog::append`.
+    /// TX-11's `transaction.created` row (`quote-transaction.md` §4.7), through `PgAuditLog::append_in`.
     async fn created_event(&self, branch: &str, id: TransactionId) {
         let mut tx = self.db.pool.begin().await.unwrap();
         self.audit
-            .append(
+            .append_in(
                 &mut tx,
+                quote_common::ORG_1,
                 &AuditEvent {
                     actor_id: "employee-FRONT".to_owned(),
                     actor_role: "FRONT".to_owned(),

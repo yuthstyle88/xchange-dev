@@ -18,39 +18,6 @@ impl PgAuditLog {
 }
 
 impl AuditLog for PgAuditLog {
-    fn append<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        event: &'a AuditEvent,
-    ) -> BoxFuture<'a, AppResult<i64>> {
-        Box::pin(async move {
-            let before_redacted = event.before.as_ref().map(Redactor::redact);
-            let after_redacted = event.after.as_ref().map(Redactor::redact);
-
-            let id: i64 = sqlx::query_scalar(
-                "INSERT INTO audit_events ( \
-                     actor_id, actor_role, scope, branch_id, action, \
-                     object_ref, before_redacted, after_redacted, at \
-                 ) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now()) \
-                 RETURNING id",
-            )
-            .bind(&event.actor_id)
-            .bind(&event.actor_role)
-            .bind(&event.scope)
-            .bind(&event.branch_id)
-            .bind(&event.action)
-            .bind(&event.object_ref)
-            .bind(before_redacted)
-            .bind(after_redacted)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(|e| AppError::Internal(format!("append audit event failed: {e}")))?;
-
-            Ok(id)
-        })
-    }
-
     fn append_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
