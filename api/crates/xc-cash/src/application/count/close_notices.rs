@@ -109,7 +109,13 @@ impl CloseNotices {
                     .execute(&mut **tx)
                     .await?;
             }
-            Err(_) => {
+            Err(e) => {
+                tracing::warn!(
+                    template = %request.template_key(),
+                    recipient = %request.recipient_user_id(),
+                    error = %e,
+                    "count notice insert failed; rolled back to savepoint"
+                );
                 sqlx::query(AssertSqlSafe(format!("ROLLBACK TO SAVEPOINT {sp_name}")))
                     .execute(&mut **tx)
                     .await?;
