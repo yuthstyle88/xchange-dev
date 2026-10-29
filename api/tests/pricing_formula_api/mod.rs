@@ -39,7 +39,14 @@ pub fn wide() -> Value {
 }
 
 /// The current policy version of `branch` (version 1), with four zero-margin tiers when `tiers_on`.
-pub async fn policy(room: &Room, branch: &str, buy: &str, sell: &str, guards: Value, tiers_on: bool) -> Uuid {
+pub async fn policy(
+    room: &Room,
+    branch: &str,
+    buy: &str,
+    sell: &str,
+    guards: Value,
+    tiers_on: bool,
+) -> Uuid {
     room.create_branch(branch).await;
     let id: Uuid = sqlx::query_scalar(
         "INSERT INTO rate_policy_versions \
@@ -57,7 +64,12 @@ pub async fn policy(room: &Room, branch: &str, buy: &str, sell: &str, guards: Va
     .await
     .expect("insert a policy version");
     if tiers_on {
-        for (no, upper) in [(1i16, Some("20000.00")), (2, Some("100000.00")), (3, Some("500000.00")), (4, None)] {
+        for (no, upper) in [
+            (1i16, Some("20000.00")),
+            (2, Some("100000.00")),
+            (3, Some("500000.00")),
+            (4, None),
+        ] {
             sqlx::query(
                 "INSERT INTO rate_policy_value_tiers (policy_version_id, tier_no, upper_inclusive_thb, buy_margin_pct, sell_margin_pct) \
                  VALUES ($1, $2, $3::numeric, 0, 0)",
@@ -74,13 +86,15 @@ pub async fn policy(room: &Room, branch: &str, buy: &str, sell: &str, guards: Va
 }
 
 pub async fn set_branch_formula(room: &Room, version: Uuid, buy: &str, sell: &str) {
-    sqlx::query("UPDATE rate_policy_versions SET buy_formula = $2, sell_formula = $3 WHERE id = $1")
-        .bind(version)
-        .bind(buy)
-        .bind(sell)
-        .execute(&room.pool)
-        .await
-        .expect("set the branch formula");
+    sqlx::query(
+        "UPDATE rate_policy_versions SET buy_formula = $2, sell_formula = $3 WHERE id = $1",
+    )
+    .bind(version)
+    .bind(buy)
+    .bind(sell)
+    .execute(&room.pool)
+    .await
+    .expect("set the branch formula");
 }
 
 pub async fn org_formula(room: &Room, version: i32, buy: &str, sell: &str, current: bool) -> Uuid {
@@ -115,7 +129,11 @@ pub async fn follow(room: &Room, currency: &str) {
 
 /// The 10-28 BOT USD line and an EUR line.
 pub async fn bot_1028(room: &Room) {
-    room.bot_batch(&[("USD", "33.6482", "33.9671"), ("EUR", "38.0000", "38.6000")], 1).await;
+    room.bot_batch(
+        &[("USD", "33.6482", "33.9671"), ("EUR", "38.0000", "38.6000")],
+        1,
+    )
+    .await;
 }
 
 /// `(version, buy, sell, current, source_version)` of every organisation formula, by version.
@@ -131,7 +149,10 @@ pub async fn org_versions(room: &Room) -> Vec<(i32, String, String, bool, Option
 }
 
 /// `(version, buy_formula, sell_formula)` of every policy version of `branch`, by version.
-pub async fn branch_formulas(room: &Room, branch: &str) -> Vec<(i32, Option<String>, Option<String>)> {
+pub async fn branch_formulas(
+    room: &Room,
+    branch: &str,
+) -> Vec<(i32, Option<String>, Option<String>)> {
     sqlx::query_as(
         "SELECT version, buy_formula, sell_formula FROM rate_policy_versions WHERE branch_id = $1 ORDER BY version",
     )
@@ -146,14 +167,25 @@ pub fn save_body(buy: &str, sell: &str) -> Value {
 }
 
 pub async fn save(room: &Room, who: &Who, buy: &str, sell: &str) -> super::pricing_common::Answer {
-    command(room, who, SAVE, "MAIN", save_body(buy, sell), Some(&unique("key"))).await
+    command(
+        room,
+        who,
+        SAVE,
+        "MAIN",
+        save_body(buy, sell),
+        Some(&unique("key")),
+    )
+    .await
 }
 
 /// The error's `field` and `message`.
 pub fn error_of(a: &super::pricing_common::Answer) -> (Value, String) {
     (
         a.body["error"]["field"].clone(),
-        a.body["error"]["message"].as_str().unwrap_or_default().to_owned(),
+        a.body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned(),
     )
 }
 
@@ -177,5 +209,10 @@ pub fn refused_role(a: &super::pricing_common::Answer, what: &str) {
     use xchange::presentation::http::v3::error::V3Error;
     let err = PolicyError::RoleNotAllowedHere;
     assert_eq!(a.status.as_u16(), err.status(), "{what}: {}", a.text);
-    assert_eq!(a.body["error"]["code"], json!(V3Error::from(PolicyError::RoleNotAllowedHere).code), "{what}: {}", a.text);
+    assert_eq!(
+        a.body["error"]["code"],
+        json!(V3Error::from(PolicyError::RoleNotAllowedHere).code),
+        "{what}: {}",
+        a.text
+    );
 }

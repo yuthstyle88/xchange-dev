@@ -27,7 +27,12 @@ fn quote(source: MarketSource, buy: &str, sell: &str) -> MarketQuote {
     }
 }
 
-fn input(c: &str, quotes: Vec<MarketQuote>, tt_decimals: Option<u32>, unit_size: &str) -> SuggestionInput {
+fn input(
+    c: &str,
+    quotes: Vec<MarketQuote>,
+    tt_decimals: Option<u32>,
+    unit_size: &str,
+) -> SuggestionInput {
     SuggestionInput {
         currency: code(c),
         quotes,
@@ -61,7 +66,12 @@ fn usd() -> SuggestionInput {
 }
 
 fn jpy() -> SuggestionInput {
-    let mut i = input("JPY", vec![quote(MarketSource::Tt, "0.2154", "0.2220")], None, "100");
+    let mut i = input(
+        "JPY",
+        vec![quote(MarketSource::Tt, "0.2154", "0.2220")],
+        None,
+        "100",
+    );
     i.base_buy = Some(rate("21.5"));
     i.base_sell = Some(rate("22.2"));
     i
@@ -117,9 +127,15 @@ fn b22_an_organisation_formula_prices_step_1_then_v9s_steps_apply() {
 fn b23_no_margins_under_a_non_default_formula() {
     let s = PricingSuggestion::of_with(&usd(), &mid_formula());
     assert!(s.tiers.is_some());
-    assert_eq!(s.margins, None, "no inverse of a formula that is not the default");
+    assert_eq!(
+        s.margins, None,
+        "no inverse of a formula that is not the default"
+    );
     let default = PricingSuggestion::of_with(&usd(), &PriceFormula::default_formula());
-    assert!(default.margins.is_some(), "the default keeps today's margins");
+    assert!(
+        default.margins.is_some(),
+        "the default keeps today's margins"
+    );
 }
 
 #[test]
@@ -133,7 +149,10 @@ fn b26_follow_constants_are_per_the_currencys_unit() {
 #[test]
 fn the_follow_binding_is_zero_policy_percentages_and_plus_minus_better() {
     // buy_pct / sell_pct are 0 under FOLLOW even when the policy has percentages; tier n gets +better[n] / −better[n]
-    let f = formula("ref_buy * (1 + (buy_pct + tier_buy_pct) / 100)", "ref_sell * (1 + (sell_pct + tier_sell_pct) / 100)");
+    let f = formula(
+        "ref_buy * (1 + (buy_pct + tier_buy_pct) / 100)",
+        "ref_sell * (1 + (sell_pct + tier_sell_pct) / 100)",
+    );
     let mut adjusted = usd();
     adjusted.buy_adjust_pct = pct("0.3000");
     adjusted.sell_adjust_pct = pct("-0.3000");
@@ -146,7 +165,10 @@ fn the_follow_binding_is_zero_policy_percentages_and_plus_minus_better() {
 
 #[test]
 fn a_formula_error_gives_no_tiers_and_no_anchor() {
-    let s = PricingSuggestion::of_with(&usd(), &formula("ref_buy / (buy_pct - buy_pct)", "ref_sell"));
+    let s = PricingSuggestion::of_with(
+        &usd(),
+        &formula("ref_buy / (buy_pct - buy_pct)", "ref_sell"),
+    );
     assert_eq!(s.tiers, None);
     assert_eq!(s.margins, None);
     assert!(s.flags.contains(&PricingFlag::NoAnchor), "{:?}", s.flags);

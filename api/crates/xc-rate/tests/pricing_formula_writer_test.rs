@@ -51,38 +51,64 @@ async fn set_keep_clear_and_next_carries_the_formula_forward() {
     db.seed_branch("PFW").await;
     let branch = BranchId::new("PFW");
     let own = formula("ref_mid - 0.05", "ref_mid + 0.05");
-    let some = (Some("ref_mid - 0.05".to_owned()), Some("ref_mid + 0.05".to_owned()));
+    let some = (
+        Some("ref_mid - 0.05".to_owned()),
+        Some("ref_mid + 0.05".to_owned()),
+    );
 
     let mut tx = db.begin().await;
-    let v1 = PolicyVersionWriter::next_with_formula(&mut tx, &branch, change(), FormulaChange::Set(own.clone()))
-        .await
-        .expect("v1");
+    let v1 = PolicyVersionWriter::next_with_formula(
+        &mut tx,
+        &branch,
+        change(),
+        FormulaChange::Set(own.clone()),
+    )
+    .await
+    .expect("v1");
     tx.commit().await.expect("commit");
     assert_eq!(formulas(&db, v1.id).await, some, "Set writes both texts");
 
     let mut tx = db.begin().await;
-    let v2 = PolicyVersionWriter::next(&mut tx, &branch, change()).await.expect("v2");
+    let v2 = PolicyVersionWriter::next(&mut tx, &branch, change())
+        .await
+        .expect("v2");
     tx.commit().await.expect("commit");
-    assert_eq!(formulas(&db, v2.id).await, some, "next keeps the current formula");
+    assert_eq!(
+        formulas(&db, v2.id).await,
+        some,
+        "next keeps the current formula"
+    );
 
     let mut tx = db.begin().await;
-    let v3 = PolicyVersionWriter::next_with_formula(&mut tx, &branch, change(), FormulaChange::Keep)
-        .await
-        .expect("v3");
+    let v3 =
+        PolicyVersionWriter::next_with_formula(&mut tx, &branch, change(), FormulaChange::Keep)
+            .await
+            .expect("v3");
     tx.commit().await.expect("commit");
     assert_eq!(formulas(&db, v3.id).await, some, "Keep keeps it");
 
     let mut tx = db.begin().await;
-    let v4 = PolicyVersionWriter::next_with_formula(&mut tx, &branch, change(), FormulaChange::Clear)
-        .await
-        .expect("v4");
+    let v4 =
+        PolicyVersionWriter::next_with_formula(&mut tx, &branch, change(), FormulaChange::Clear)
+            .await
+            .expect("v4");
     tx.commit().await.expect("commit");
-    assert_eq!(formulas(&db, v4.id).await, (None, None), "Clear follows the organisation again");
+    assert_eq!(
+        formulas(&db, v4.id).await,
+        (None, None),
+        "Clear follows the organisation again"
+    );
 
     let mut tx = db.begin().await;
-    let v5 = PolicyVersionWriter::next(&mut tx, &branch, change()).await.expect("v5");
+    let v5 = PolicyVersionWriter::next(&mut tx, &branch, change())
+        .await
+        .expect("v5");
     tx.commit().await.expect("commit");
-    assert_eq!(formulas(&db, v5.id).await, (None, None), "and next keeps none");
+    assert_eq!(
+        formulas(&db, v5.id).await,
+        (None, None),
+        "and next keeps none"
+    );
     assert_eq!(v5.version, 5);
 }
 
@@ -91,9 +117,14 @@ async fn the_first_version_with_keep_has_no_formula() {
     let db = TestDb::start().await;
     db.seed_branch("PFW1").await;
     let mut tx = db.begin().await;
-    let v1 = PolicyVersionWriter::next_with_formula(&mut tx, &BranchId::new("PFW1"), change(), FormulaChange::Keep)
-        .await
-        .expect("v1");
+    let v1 = PolicyVersionWriter::next_with_formula(
+        &mut tx,
+        &BranchId::new("PFW1"),
+        change(),
+        FormulaChange::Keep,
+    )
+    .await
+    .expect("v1");
     tx.commit().await.expect("commit");
     assert_eq!(formulas(&db, v1.id).await, (None, None));
 }

@@ -64,15 +64,24 @@ async fn a_draft_line_records_each_source() {
     let v2 = org_formula(&db, 2, "ref_mid - 0.05", "ref_mid + 0.05", true).await;
     let pv = policy(&db, "MAIN", "0", "0", wide_guards()).await;
     for (source, want) in [
-        (FormulaSource::Organisation(v2), (Some("ORGANISATION".to_owned()), Some(v2))),
+        (
+            FormulaSource::Organisation(v2),
+            (Some("ORGANISATION".to_owned()), Some(v2)),
+        ),
         (FormulaSource::Branch(pv), (Some("BRANCH".to_owned()), None)),
         (FormulaSource::Default, (Some("DEFAULT".to_owned()), None)),
     ] {
         let line = draft_line(&db).await;
         let mut tx = db.begin().await;
-        FormulaRecord::draft_line(&mut tx, line, source).await.expect("recorded");
+        FormulaRecord::draft_line(&mut tx, line, source)
+            .await
+            .expect("recorded");
         tx.commit().await.expect("commit");
-        assert_eq!(recorded(&db, "rate_draft_lines", line).await, want, "{source:?}");
+        assert_eq!(
+            recorded(&db, "rate_draft_lines", line).await,
+            want,
+            "{source:?}"
+        );
     }
 }
 

@@ -23,7 +23,11 @@ use xc_rate::domain::formula::price_formula::{DEFAULT_BUY, DEFAULT_SELL};
 async fn publish(db: &TestDb, lines: Vec<DraftLine>) -> String {
     let e = db.engine();
     let mut tx = db.begin().await;
-    let created = e.drafts.create(&mut tx, &main_branch(), &owner_user(), lines).await.expect("create");
+    let created = e
+        .drafts
+        .create(&mut tx, &main_branch(), &owner_user(), lines)
+        .await
+        .expect("create");
     tx.commit().await.expect("commit");
     let mut tx = db.begin().await;
     let s = e
@@ -65,11 +69,19 @@ async fn b20_an_organisation_formula_is_in_the_snapshot() {
     let v2 = org_formula(&db, 2, "ref_mid - 0.05", "ref_mid + 0.05", true).await;
     let pubid = publish(
         &db,
-        vec![DraftLine::new(CurrencyCode::parse("USD").unwrap(), LineSide::Auto, LineSide::Auto, None)],
+        vec![DraftLine::new(
+            CurrencyCode::parse("USD").unwrap(),
+            LineSide::Auto,
+            LineSide::Auto,
+            None,
+        )],
     )
     .await;
     let (buy, sell, snap) = published(&db, &pubid, "USD").await;
-    assert_eq!((buy.as_str(), sell.as_str()), ("33.75765000", "33.85765000"));
+    assert_eq!(
+        (buy.as_str(), sell.as_str()),
+        ("33.75765000", "33.85765000")
+    );
     assert_eq!(
         snap["formula"],
         json!({
@@ -91,7 +103,12 @@ async fn b1_no_formula_rows_publish_todays_price_with_the_default_in_the_snapsho
     let pubid = publish(
         &db,
         vec![
-            DraftLine::new(CurrencyCode::parse("USD").unwrap(), LineSide::Auto, LineSide::Auto, None),
+            DraftLine::new(
+                CurrencyCode::parse("USD").unwrap(),
+                LineSide::Auto,
+                LineSide::Auto,
+                None,
+            ),
             DraftLine::new(
                 CurrencyCode::parse("EUR").unwrap(),
                 LineSide::Manual(Rate::parse("38.10").unwrap()),
@@ -102,11 +119,17 @@ async fn b1_no_formula_rows_publish_todays_price_with_the_default_in_the_snapsho
     )
     .await;
     let (buy, sell, snap) = published(&db, &pubid, "USD").await;
-    assert_eq!((buy.as_str(), sell.as_str()), ("33.74914460", "33.86519870"));
+    assert_eq!(
+        (buy.as_str(), sell.as_str()),
+        ("33.74914460", "33.86519870")
+    );
     assert_eq!(
         snap["formula"],
         json!({ "source": "DEFAULT", "formula_version_id": null, "buy": DEFAULT_BUY, "sell": DEFAULT_SELL })
     );
     let (_, _, eur) = published(&db, &pubid, "EUR").await;
-    assert!(eur.get("formula").is_none(), "a MANUAL-only line has no formula key: {eur}");
+    assert!(
+        eur.get("formula").is_none(),
+        "a MANUAL-only line has no formula key: {eur}"
+    );
 }

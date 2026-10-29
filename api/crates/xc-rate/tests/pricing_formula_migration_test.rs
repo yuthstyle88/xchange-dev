@@ -15,7 +15,9 @@ use serde_json::json;
 use sqlx::Row;
 use uuid::Uuid;
 use xc_kernel::ids::BranchId;
-use xc_rate::application::policy::policy_version_writer::{PolicyVersionChange, PolicyVersionWriter};
+use xc_rate::application::policy::policy_version_writer::{
+    PolicyVersionChange, PolicyVersionWriter,
+};
 
 const SEEDED_ORG: &str = "00000000-0000-0000-0000-000000000001";
 
@@ -138,19 +140,25 @@ async fn a_branch_formula_is_both_texts_or_neither() {
     .expect("a policy version");
     tx.commit().await.expect("commit");
 
-    let row = sqlx::query("SELECT buy_formula, sell_formula FROM rate_policy_versions WHERE id = $1")
-        .bind(written.id)
-        .fetch_one(&db.pool)
-        .await
-        .expect("the version");
+    let row =
+        sqlx::query("SELECT buy_formula, sell_formula FROM rate_policy_versions WHERE id = $1")
+            .bind(written.id)
+            .fetch_one(&db.pool)
+            .await
+            .expect("the version");
     let (buy, sell): (Option<String>, Option<String>) = (row.get(0), row.get(1));
-    assert_eq!((buy, sell), (None, None), "an existing-style version follows the organisation");
+    assert_eq!(
+        (buy, sell),
+        (None, None),
+        "an existing-style version follows the organisation"
+    );
 
-    let one_side = sqlx::query("UPDATE rate_policy_versions SET buy_formula = 'ref_buy' WHERE id = $1")
-        .bind(written.id)
-        .execute(&db.pool)
-        .await
-        .expect_err("one text alone is refused");
+    let one_side =
+        sqlx::query("UPDATE rate_policy_versions SET buy_formula = 'ref_buy' WHERE id = $1")
+            .bind(written.id)
+            .execute(&db.pool)
+            .await
+            .expect_err("one text alone is refused");
     assert_eq!(state(one_side), CHECK);
 
     sqlx::query(
@@ -213,8 +221,9 @@ async fn draft_lines_and_tier_sets_record_the_formula_source() {
             "{table}: a CHECK limits formula_source to BRANCH, ORGANISATION, DEFAULT: {defs:?}"
         );
         assert!(
-            defs.iter().any(|d| d.contains("FOREIGN KEY (formula_version_id)")
-                && d.contains("REFERENCES pricing_formula_versions(id)")),
+            defs.iter()
+                .any(|d| d.contains("FOREIGN KEY (formula_version_id)")
+                    && d.contains("REFERENCES pricing_formula_versions(id)")),
             "{table}: formula_version_id references pricing_formula_versions: {defs:?}"
         );
     }

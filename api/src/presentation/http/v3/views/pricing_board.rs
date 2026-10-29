@@ -661,13 +661,10 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
     .map_err(AppError::Database)?;
     let volume_thb: HashMap<String, Decimal> = volume_rows.into_iter().collect();
 
-    let (formula, formula_source) = FormulaResolver::resolve(
-        &mut tx,
-        &BranchId::new(branch_id),
-        policy_version_uuid,
-    )
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;
+    let (formula, formula_source) =
+        FormulaResolver::resolve(&mut tx, &BranchId::new(branch_id), policy_version_uuid)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
 
     tx.commit().await.map_err(AppError::Database)?;
 

@@ -30,7 +30,10 @@ async fn b7_a_formula_failing_at_one_branch_is_refused_and_nothing_is_written() 
     a.refused(400, "validationFailed", "B7");
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("buyFormula"));
-    for line in ["XC-PFB EUR buy 38.55 > sell 38.05", "XC-PFB USD buy 34.05765 > sell 33.55765"] {
+    for line in [
+        "XC-PFB EUR buy 38.55 > sell 38.05",
+        "XC-PFB USD buy 34.05765 > sell 33.55765",
+    ] {
         assert!(message.contains(line), "{line:?} in {message:?}");
     }
     assert!(!message.contains("MAIN "), "MAIN passes: {message:?}");
@@ -41,30 +44,43 @@ async fn b7_a_formula_failing_at_one_branch_is_refused_and_nothing_is_written() 
 #[actix_web::test]
 async fn b8_saved_when_the_failing_branch_has_its_own_formula() {
     let room = room().await;
-    let pfb = sqlx::query_scalar::<_, uuid::Uuid>("SELECT id FROM rate_policy_versions WHERE branch_id = $1")
-        .bind(PFB)
-        .fetch_one(&room.pool)
-        .await
-        .unwrap();
+    let pfb = sqlx::query_scalar::<_, uuid::Uuid>(
+        "SELECT id FROM rate_policy_versions WHERE branch_id = $1",
+    )
+    .bind(PFB)
+    .fetch_one(&room.pool)
+    .await
+    .unwrap();
     set_branch_formula(&room, pfb, "ref_buy", "ref_sell").await;
     let body = save(&room, &owner(), B7_BUY, B7_SELL).await.ok("B8");
     assert_eq!(body["version"], json!(1));
     assert!(body["id"].is_string());
     assert_eq!(body["notChecked"], json!([]));
-    assert_eq!(org_versions(&room).await, vec![(1, B7_BUY.into(), B7_SELL.into(), true, None)]);
+    assert_eq!(
+        org_versions(&room).await,
+        vec![(1, B7_BUY.into(), B7_SELL.into(), true, None)]
+    );
     room.finish().await;
 }
 
 #[actix_web::test]
 async fn each_save_is_the_next_version_and_closes_the_current_one() {
     let room = room().await;
-    save(&room, &owner(), "ref_mid - 0.05", "ref_mid + 0.05").await.ok("v1");
+    save(&room, &owner(), "ref_mid - 0.05", "ref_mid + 0.05")
+        .await
+        .ok("v1");
     let v2 = save(&room, &owner(), "ref_buy", "ref_sell").await.ok("v2");
     assert_eq!(v2["version"], json!(2));
     assert_eq!(
         org_versions(&room).await,
         vec![
-            (1, "ref_mid - 0.05".into(), "ref_mid + 0.05".into(), false, None),
+            (
+                1,
+                "ref_mid - 0.05".into(),
+                "ref_mid + 0.05".into(),
+                false,
+                None
+            ),
             (2, "ref_buy".into(), "ref_sell".into(), true, Some(1)),
         ]
     );
@@ -75,17 +91,29 @@ async fn each_save_is_the_next_version_and_closes_the_current_one() {
 async fn b9_a_currency_with_no_reference_line_is_saved_and_listed() {
     let room = room().await;
     room.tt_batch(&[("GBP", "44.10", "44.90")], 1).await;
-    let body = save(&room, &owner(), "ref_mid - 0.05", "ref_mid + 0.05").await.ok("B9");
+    let body = save(&room, &owner(), "ref_mid - 0.05", "ref_mid + 0.05")
+        .await
+        .ok("B9");
     let listed = body["notChecked"].as_array().expect("a list").clone();
-    assert!(listed.contains(&json!({ "branch": "MAIN", "currency": "GBP" })), "{listed:?}");
-    assert!(listed.contains(&json!({ "branch": PFB, "currency": "GBP" })), "{listed:?}");
+    assert!(
+        listed.contains(&json!({ "branch": "MAIN", "currency": "GBP" })),
+        "{listed:?}"
+    );
+    assert!(
+        listed.contains(&json!({ "branch": PFB, "currency": "GBP" })),
+        "{listed:?}"
+    );
     room.finish().await;
 }
 
 #[actix_web::test]
 async fn b13_only_an_organisation_wide_executive_saves() {
     let room = room().await;
-    for (name, who) in [("RATE_MANAGER", rate_manager()), ("FINANCE", finance()), ("BRANCH_MANAGER", branch_manager())] {
+    for (name, who) in [
+        ("RATE_MANAGER", rate_manager()),
+        ("FINANCE", finance()),
+        ("BRANCH_MANAGER", branch_manager()),
+    ] {
         let a = save(&room, &who, "ref_mid - 0.05", "ref_mid + 0.05").await;
         refused_role(&a, name);
     }

@@ -18,13 +18,24 @@ fn auto(c: &str) -> DraftLine {
 fn b1_the_default_formula_answers_exactly_what_of_answers() {
     for (c, size, r, p) in [
         ("USD", "1", usd_1028(), policy("0.1000", "-0.1000")),
-        ("USD", "1", reference("USD", "1", Some("32.4500"), Some("32.9000")), policy("-0.5000", "+0.4000")),
-        ("JPY", "100", reference("JPY", "1", Some("0.215432"), Some("0.221987")), policy("0", "0")),
+        (
+            "USD",
+            "1",
+            reference("USD", "1", Some("32.4500"), Some("32.9000")),
+            policy("-0.5000", "+0.4000"),
+        ),
+        (
+            "JPY",
+            "100",
+            reference("JPY", "1", Some("0.215432"), Some("0.221987")),
+            policy("0", "0"),
+        ),
     ] {
         let u = units(c, size);
         let line = auto(c);
         let prop = RateProposal::of(&line, Some(&r), Some(&p), &u).expect("proposal");
-        let today = TierProposal::of(&prop, &line, Some(&r), Some(&p), &example_tiers(), &u).expect("of");
+        let today =
+            TierProposal::of(&prop, &line, Some(&r), Some(&p), &example_tiers(), &u).expect("of");
         let with = TierProposal::of_with(
             &prop,
             &line,
@@ -42,7 +53,10 @@ fn b1_the_default_formula_answers_exactly_what_of_answers() {
 #[test]
 fn a_formula_sees_each_tiers_margin_as_tier_buy_pct_and_tier_sell_pct() {
     // buy = ref_buy × (1 + tier_buy_pct / 100), ignoring the policy's percentages
-    let f = formula("ref_buy * (1 + tier_buy_pct / 100)", "ref_sell * (1 + tier_sell_pct / 100)");
+    let f = formula(
+        "ref_buy * (1 + tier_buy_pct / 100)",
+        "ref_sell * (1 + tier_sell_pct / 100)",
+    );
     let r = usd_1028();
     let p = policy("0.3000", "-0.3000");
     let u = units("USD", "1");
@@ -61,7 +75,11 @@ fn a_formula_sees_each_tiers_margin_as_tier_buy_pct_and_tier_sell_pct() {
         ]
     );
     // base_* are the proposal's, as today
-    assert!(tiers.iter().all(|t| t.base_buy == prop.buy && t.base_sell == prop.sell));
+    assert!(
+        tiers
+            .iter()
+            .all(|t| t.base_buy == prop.buy && t.base_sell == prop.sell)
+    );
 }
 
 #[test]
@@ -73,7 +91,8 @@ fn b14_a_tier_that_inverts_is_refused_and_named() {
     let p = policy("0", "0");
     let u = units("USD", "1");
     let line = auto("USD");
-    let prop = RateProposal::of_with(&line, Some(&r), Some(&p), &u, &f).expect("the single line is fine");
+    let prop =
+        RateProposal::of_with(&line, Some(&r), Some(&p), &u, &f).expect("the single line is fine");
     let e = TierProposal::of_with(&prop, &line, Some(&r), Some(&p), &example_tiers(), &u, &f)
         .expect_err("tier 3 inverts");
     assert_eq!(e.code(), "validationFailed");

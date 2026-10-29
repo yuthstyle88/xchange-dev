@@ -168,20 +168,16 @@ impl CommandAction for PricingFormulaPreviewCommand {
                 formula,
             }
         } else {
-            let Some((ver_id, buy_dec, sell_dec, guards)): Option<(
-                Uuid,
-                Decimal,
-                Decimal,
-                Value,
-            )> = sqlx::query_as(
-                "SELECT id, buy_adjust_pct, sell_adjust_pct, guards \
+            let Some((ver_id, buy_dec, sell_dec, guards)): Option<(Uuid, Decimal, Decimal, Value)> =
+                sqlx::query_as(
+                    "SELECT id, buy_adjust_pct, sell_adjust_pct, guards \
                  FROM rate_policy_versions \
                  WHERE branch_id = $1 AND valid_to IS NULL",
-            )
-            .bind(branch.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(|_| server_error())?
+                )
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|_| server_error())?
             else {
                 return Ok(PricingFormulaPreviewOutput {
                     parse_error: None,
@@ -190,7 +186,8 @@ impl CommandAction for PricingFormulaPreviewCommand {
                     ok: true,
                 });
             };
-            let buy_pct = RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
+            let buy_pct =
+                RatePercent::parse(&format!("{buy_dec:.4}")).map_err(|_| server_error())?;
             let sell_pct =
                 RatePercent::parse(&format!("{sell_dec:.4}")).map_err(|_| server_error())?;
             let policy = RatePolicy::new(ver_id.to_string(), buy_pct, sell_pct, &guards)

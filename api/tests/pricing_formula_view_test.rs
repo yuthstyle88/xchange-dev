@@ -16,9 +16,15 @@ async fn with_no_formula_rows_every_branch_follows_the_default() {
     let room = Room::start().await;
     policy(&room, "MAIN", "0", "0", wide(), false).await;
     policy(&room, PFB, "0.3000", "-0.3000", wide(), false).await;
-    let data = view(&room, &owner(), "pricing_formula", "MAIN").await.ok("view")["data"].clone();
+    let data = view(&room, &owner(), "pricing_formula", "MAIN")
+        .await
+        .ok("view")["data"]
+        .clone();
     assert_eq!(data["organisation"], Value::Null);
-    assert_eq!(data["default"], json!({ "buyFormula": DEFAULT_BUY, "sellFormula": DEFAULT_SELL }));
+    assert_eq!(
+        data["default"],
+        json!({ "buyFormula": DEFAULT_BUY, "sellFormula": DEFAULT_SELL })
+    );
     assert_eq!(
         data["inputs"],
         json!([
@@ -44,11 +50,26 @@ async fn the_current_organisation_formula_and_each_branchs_source() {
     org_formula(&room, 1, "ref_buy", "ref_sell", false).await;
     let v2 = org_formula(&room, 2, "ref_mid - 0.05", "ref_mid + 0.05", true).await;
     set_branch_formula(&room, pfb, "ref_buy - 0.01", "ref_sell + 0.01").await;
-    let data = view(&room, &owner(), "pricing_formula", "MAIN").await.ok("view")["data"].clone();
+    let data = view(&room, &owner(), "pricing_formula", "MAIN")
+        .await
+        .ok("view")["data"]
+        .clone();
     let o = &data["organisation"];
     assert_eq!(
-        (o["id"].clone(), o["version"].clone(), o["buyFormula"].clone(), o["sellFormula"].clone(), o["approvedBy"].clone()),
-        (json!(v2.to_string()), json!(2), json!("ref_mid - 0.05"), json!("ref_mid + 0.05"), json!("owner-1"))
+        (
+            o["id"].clone(),
+            o["version"].clone(),
+            o["buyFormula"].clone(),
+            o["sellFormula"].clone(),
+            o["approvedBy"].clone()
+        ),
+        (
+            json!(v2.to_string()),
+            json!(2),
+            json!("ref_mid - 0.05"),
+            json!("ref_mid + 0.05"),
+            json!("owner-1")
+        )
     );
     assert_eq!(
         data["branches"],

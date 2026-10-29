@@ -38,8 +38,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use crate::presentation::http::v3::org_view::validation_failed;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 
 const BUY_MARGIN_FIELDS: [&str; 4] = [
     "margins.buy-1",

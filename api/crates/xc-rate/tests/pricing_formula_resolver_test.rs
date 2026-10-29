@@ -56,13 +56,21 @@ async fn b1_no_formula_rows_resolve_to_the_default() {
     let got = FormulaResolver::resolve(&mut tx, &BranchId::new("MAIN"), Some(pv))
         .await
         .expect("resolves");
-    assert_eq!(got, (PriceFormula::default_formula(), FormulaSource::Default));
+    assert_eq!(
+        got,
+        (PriceFormula::default_formula(), FormulaSource::Default)
+    );
     let none = FormulaResolver::resolve(&mut tx, &BranchId::new("MAIN"), None)
         .await
         .expect("resolves with no policy version");
-    assert_eq!(none, (PriceFormula::default_formula(), FormulaSource::Default));
     assert_eq!(
-        FormulaResolver::organisation_current(&mut tx, org()).await.expect("reads"),
+        none,
+        (PriceFormula::default_formula(), FormulaSource::Default)
+    );
+    assert_eq!(
+        FormulaResolver::organisation_current(&mut tx, org())
+            .await
+            .expect("reads"),
         None
     );
 }
@@ -99,7 +107,10 @@ async fn a_branch_formula_wins_over_the_organisations() {
         FormulaResolver::resolve(&mut tx, &BranchId::new("MAIN"), Some(pv))
             .await
             .expect("resolves"),
-        (formula("ref_buy - 0.01", "ref_sell + 0.01"), FormulaSource::Branch(pv))
+        (
+            formula("ref_buy - 0.01", "ref_sell + 0.01"),
+            FormulaSource::Branch(pv)
+        )
     );
 }
 

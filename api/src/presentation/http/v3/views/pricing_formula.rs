@@ -184,7 +184,11 @@ impl BranchView for PricingFormulaView {
                         _ if has_org_formula => ("ORGANISATION".to_string(), None),
                         _ => ("DEFAULT".to_string(), None),
                     };
-                    BranchFormulaDto { branch, source, own }
+                    BranchFormulaDto {
+                        branch,
+                        source,
+                        own,
+                    }
                 })
                 .collect();
 

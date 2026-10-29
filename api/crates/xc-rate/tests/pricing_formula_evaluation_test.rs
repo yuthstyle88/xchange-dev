@@ -19,7 +19,8 @@ fn the_default_formula_answers_exactly_what_of_tiered_answers() {
         policy_guarded("0", "0", "-1.0000", "1.0000"),
         policy_guarded("0", "0", "-0.1500", "0.1500"),
     ] {
-        let prop = RateProposal::of(&line, Some(&usd_1028()), Some(&p), &units("USD", "1")).expect("proposal");
+        let prop = RateProposal::of(&line, Some(&usd_1028()), Some(&p), &units("USD", "1"))
+            .expect("proposal");
         let lines = vec![line.clone()];
         let props = vec![prop];
         let refs = vec![usd_1028()];
@@ -42,7 +43,8 @@ fn the_guard_sees_the_resolved_formulas_tier_prices() {
     // guard ±1 %: the default tiers (margins up to ±0.3 %) are in bound; a formula 2 % above the reference is not
     let p = policy_guarded("0", "0", "-1.0000", "1.0000");
     let line = DraftLine::new(code("USD"), LineSide::Auto, LineSide::Auto, None);
-    let prop = RateProposal::of(&line, Some(&usd_1028()), Some(&p), &units("USD", "1")).expect("proposal");
+    let prop =
+        RateProposal::of(&line, Some(&usd_1028()), Some(&p), &units("USD", "1")).expect("proposal");
     let lines = vec![line];
     let props = vec![prop];
     let refs = vec![usd_1028()];

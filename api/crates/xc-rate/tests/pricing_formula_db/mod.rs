@@ -68,19 +68,23 @@ pub async fn market_line(db: &TestDb, currency: &str, reference_type: &str, buy:
 
 /// The branch's current policy version id (seeded through `TestDb::seed_policy`).
 pub async fn policy(db: &TestDb, branch: &str, buy: &str, sell: &str, guards: Value) -> Uuid {
-    let id = db.seed_policy(branch, buy, sell, guards, None, None, None).await;
+    let id = db
+        .seed_policy(branch, buy, sell, guards, None, None, None)
+        .await;
     Uuid::parse_str(&id).expect("a uuid")
 }
 
 /// Gives policy version `id` its own formula.
 pub async fn set_branch_formula(db: &TestDb, id: Uuid, buy: &str, sell: &str) {
-    sqlx::query("UPDATE rate_policy_versions SET buy_formula = $2, sell_formula = $3 WHERE id = $1")
-        .bind(id)
-        .bind(buy)
-        .bind(sell)
-        .execute(&db.pool)
-        .await
-        .expect("set the branch formula");
+    sqlx::query(
+        "UPDATE rate_policy_versions SET buy_formula = $2, sell_formula = $3 WHERE id = $1",
+    )
+    .bind(id)
+    .bind(buy)
+    .bind(sell)
+    .execute(&db.pool)
+    .await
+    .expect("set the branch formula");
 }
 
 /// An organisation formula version of the seeded organisation; `current` = `valid_to IS NULL`.

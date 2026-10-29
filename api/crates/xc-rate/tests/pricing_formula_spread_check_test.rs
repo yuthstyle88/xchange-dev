@@ -67,15 +67,29 @@ async fn b4_plus_minus_0_7_inverts_usd_on_the_10_28_line() {
     let db = TestDb::start().await;
     bot_usd_eur(&db).await;
     policy(&db, "MAIN", "0.3000", "-0.3000", wide_guards()).await;
-    let r = run(&db, &branch("MAIN", None, rate_policy("0.7000", "-0.7000", wide_guards()))).await;
+    let r = run(
+        &db,
+        &branch(
+            "MAIN",
+            None,
+            rate_policy("0.7000", "-0.7000", wide_guards()),
+        ),
+    )
+    .await;
     assert!(!r.is_ok());
-    assert_eq!(described(&r), vec!["MAIN USD buy 33.8837374 > sell 33.7293303".to_owned()]);
+    assert_eq!(
+        described(&r),
+        vec!["MAIN USD buy 33.8837374 > sell 33.7293303".to_owned()]
+    );
     let f = &r.failures[0];
     assert_eq!(
         (f.tier, f.mode, f.reason.clone()),
         (None, SpreadMode::Auto, SpreadReason::BuyAboveSell)
     );
-    assert_eq!((f.buy, f.sell), (Some(d("33.8837374")), Some(d("33.7293303"))));
+    assert_eq!(
+        (f.buy, f.sell),
+        (Some(d("33.8837374")), Some(d("33.7293303")))
+    );
 }
 
 #[tokio::test]
@@ -83,18 +97,46 @@ async fn b5_plus_minus_0_3_passes_and_every_row_is_priced() {
     let db = TestDb::start().await;
     bot_usd_eur(&db).await;
     policy(&db, "MAIN", "0.7000", "-0.7000", wide_guards()).await;
-    let r = run(&db, &branch("MAIN", None, rate_policy("0.3000", "-0.3000", wide_guards()))).await;
+    let r = run(
+        &db,
+        &branch(
+            "MAIN",
+            None,
+            rate_policy("0.3000", "-0.3000", wide_guards()),
+        ),
+    )
+    .await;
     assert!(r.is_ok(), "{:?}", described(&r));
     let priced: Vec<_> = r
         .priced
         .iter()
-        .map(|p| (p.branch.as_str().to_owned(), p.currency.as_str().to_owned(), p.tier, p.buy, p.sell))
+        .map(|p| {
+            (
+                p.branch.as_str().to_owned(),
+                p.currency.as_str().to_owned(),
+                p.tier,
+                p.buy,
+                p.sell,
+            )
+        })
         .collect();
     assert_eq!(
         priced,
         vec![
-            ("MAIN".into(), "EUR".into(), None, Some(d("38.114")), Some(d("38.4842"))),
-            ("MAIN".into(), "USD".into(), None, Some(d("33.7491446")), Some(d("33.8651987"))),
+            (
+                "MAIN".into(),
+                "EUR".into(),
+                None,
+                Some(d("38.114")),
+                Some(d("38.4842"))
+            ),
+            (
+                "MAIN".into(),
+                "USD".into(),
+                None,
+                Some(d("33.7491446")),
+                Some(d("33.8651987"))
+            ),
         ]
     );
 }
@@ -110,7 +152,11 @@ async fn b7_an_organisation_formula_failing_at_one_branch_names_it() {
     let f = formula("ref_mid - 0.05 + buy_pct", "ref_mid + 0.05 + sell_pct");
     let r = run(&db, &organisation(f)).await;
     assert!(!r.is_ok());
-    assert!(r.failures.iter().all(|f| f.branch.as_str() == "PFB"), "{:?}", described(&r));
+    assert!(
+        r.failures.iter().all(|f| f.branch.as_str() == "PFB"),
+        "{:?}",
+        described(&r)
+    );
     assert_eq!(
         described(&r),
         vec![
@@ -131,7 +177,10 @@ async fn b8_a_branch_with_its_own_formula_is_not_checked_against_the_organisatio
     let f = formula("ref_mid - 0.05 + buy_pct", "ref_mid + 0.05 + sell_pct");
     let r = run(&db, &organisation(f)).await;
     assert!(r.is_ok(), "{:?}", described(&r));
-    assert!(r.priced.iter().all(|p| p.branch.as_str() == "MAIN"), "PFB follows its own formula");
+    assert!(
+        r.priced.iter().all(|p| p.branch.as_str() == "MAIN"),
+        "PFB follows its own formula"
+    );
 }
 
 #[tokio::test]
@@ -161,7 +210,10 @@ async fn b14_a_tier_that_inverts_is_named() {
         branch: BranchId::new("MAIN"),
         version: BranchCandidate {
             // T2 (−0.1): sell = mid − 0.01 ≥ buy; T3 (−0.2): sell = mid − 0.07 < buy = mid − 0.05
-            formula: Some(formula("ref_mid - 0.05", "ref_mid + 0.05 + tier_sell_pct * 0.6")),
+            formula: Some(formula(
+                "ref_mid - 0.05",
+                "ref_mid + 0.05 + tier_sell_pct * 0.6",
+            )),
             policy: rate_policy("0", "0", wide_guards()),
             tiers: Some(example_tiers()),
             overrides: Vec::new(),
@@ -189,7 +241,11 @@ async fn b18_the_guard_is_checked_on_the_price() {
         rate_policy("0", "0", guards("-1.0000", "1.0000")),
     );
     let r = run(&db, &candidate).await;
-    let usd: Vec<_> = r.failures.iter().filter(|f| f.currency.as_str() == "USD").collect();
+    let usd: Vec<_> = r
+        .failures
+        .iter()
+        .filter(|f| f.currency.as_str() == "USD")
+        .collect();
     assert_eq!(usd.len(), 1, "{:?}", described(&r));
     assert_eq!(
         usd[0].reason,
@@ -200,7 +256,13 @@ async fn b18_the_guard_is_checked_on_the_price() {
             max: d("1"),
         }
     );
-    assert!(usd[0].describe().starts_with("MAIN USD buy 34.0519784 outside guard [-1, 1]"), "{}", usd[0].describe());
+    assert!(
+        usd[0]
+            .describe()
+            .starts_with("MAIN USD buy 34.0519784 outside guard [-1, 1]"),
+        "{}",
+        usd[0].describe()
+    );
 }
 
 #[tokio::test]
@@ -208,15 +270,28 @@ async fn a_formula_error_is_a_failure_not_an_error() {
     let db = TestDb::start().await;
     bot_usd_eur(&db).await;
     policy(&db, "MAIN", "0", "0", wide_guards()).await;
-    let r = run(&db, &organisation(formula("ref_buy / (buy_pct - buy_pct)", "ref_sell"))).await;
+    let r = run(
+        &db,
+        &organisation(formula("ref_buy / (buy_pct - buy_pct)", "ref_sell")),
+    )
+    .await;
     assert_eq!(
-        r.failures.iter().map(|f| f.reason.clone()).collect::<Vec<_>>(),
+        r.failures
+            .iter()
+            .map(|f| f.reason.clone())
+            .collect::<Vec<_>>(),
         vec![
             SpreadReason::Formula(FormulaError::DivideByZero),
             SpreadReason::Formula(FormulaError::DivideByZero),
         ]
     );
-    assert_eq!(described(&r), vec!["MAIN EUR divideByZero".to_owned(), "MAIN USD divideByZero".to_owned()]);
+    assert_eq!(
+        described(&r),
+        vec![
+            "MAIN EUR divideByZero".to_owned(),
+            "MAIN USD divideByZero".to_owned()
+        ]
+    );
 }
 
 #[tokio::test]
@@ -228,15 +303,34 @@ async fn b25_a_follow_currency_is_checked_with_the_follow_binding() {
     follow(&db, "USD").await;
     // FOLLOW USD: mid 33.55, tier n gets b = better[n] = 0.1, 0.14, 0.2, 0.3; sell − buy = 0.015 − 0.0671 × b,
     // negative only at tier 4. AUTO rows (EUR) have tier_* = 0 and pass.
-    let f = formula("ref_mid * (1 + tier_buy_pct / 1000)", "ref_mid * (1 + tier_sell_pct / 1000) + 0.015");
+    let f = formula(
+        "ref_mid * (1 + tier_buy_pct / 1000)",
+        "ref_mid * (1 + tier_sell_pct / 1000) + 0.015",
+    );
     let r = run(&db, &organisation(f)).await;
     assert_eq!(r.failures.len(), 1, "{:?}", described(&r));
     let fail = &r.failures[0];
     assert_eq!(
-        (fail.branch.as_str(), fail.currency.as_str(), fail.tier, fail.mode, fail.reason.clone()),
-        ("MAIN", "USD", Some(4), SpreadMode::Follow, SpreadReason::BuyAboveSell)
+        (
+            fail.branch.as_str(),
+            fail.currency.as_str(),
+            fail.tier,
+            fail.mode,
+            fail.reason.clone()
+        ),
+        (
+            "MAIN",
+            "USD",
+            Some(4),
+            SpreadMode::Follow,
+            SpreadReason::BuyAboveSell
+        )
     );
-    assert!(fail.describe().starts_with("MAIN USD tier 4 FOLLOW buy "), "{}", fail.describe());
+    assert!(
+        fail.describe().starts_with("MAIN USD tier 4 FOLLOW buy "),
+        "{}",
+        fail.describe()
+    );
 }
 
 #[tokio::test]
@@ -255,7 +349,10 @@ async fn b19_the_check_holds_the_organisation_row_until_the_transaction_ends() {
         .await
         .expect_err("the organisation row is locked by the check");
     assert_eq!(
-        blocked.as_database_error().and_then(|e| e.code()).as_deref(),
+        blocked
+            .as_database_error()
+            .and_then(|e| e.code())
+            .as_deref(),
         Some("55P03"),
         "lock_not_available"
     );
@@ -264,16 +361,25 @@ async fn b19_the_check_holds_the_organisation_row_until_the_transaction_ends() {
 
     // a branch candidate takes its organisation's row too
     let mut tx = db.begin().await;
-    SpreadCheck::run(&mut tx, &branch("MAIN", None, rate_policy("0", "0", wide_guards())))
-        .await
-        .expect("the check runs");
+    SpreadCheck::run(
+        &mut tx,
+        &branch("MAIN", None, rate_policy("0", "0", wide_guards())),
+    )
+    .await
+    .expect("the check runs");
     let mut other = db.begin().await;
     let blocked = sqlx::query("SELECT id FROM organizations WHERE id = $1 FOR UPDATE NOWAIT")
         .bind(org())
         .execute(&mut *other)
         .await
         .expect_err("locked by the branch check");
-    assert_eq!(blocked.as_database_error().and_then(|e| e.code()).as_deref(), Some("55P03"));
+    assert_eq!(
+        blocked
+            .as_database_error()
+            .and_then(|e| e.code())
+            .as_deref(),
+        Some("55P03")
+    );
 }
 
 /// Added by the test author at review (#5528): a reference line with one side is priced on that side only, as the
@@ -287,12 +393,35 @@ async fn a_one_sided_reference_line_is_checked_on_its_side_only() {
     )
     .await;
     policy(&db, "MAIN", "0", "0", guards("-1.0000", "1.0000")).await;
-    let r = run(&db, &branch("MAIN", None, rate_policy("0.3000", "-0.3000", guards("-1.0000", "1.0000")))).await;
+    let r = run(
+        &db,
+        &branch(
+            "MAIN",
+            None,
+            rate_policy("0.3000", "-0.3000", guards("-1.0000", "1.0000")),
+        ),
+    )
+    .await;
     assert!(r.is_ok(), "{:?}", described(&r));
-    let usd: Vec<_> = r.priced.iter().filter(|p| p.currency.as_str() == "USD").collect();
+    let usd: Vec<_> = r
+        .priced
+        .iter()
+        .filter(|p| p.currency.as_str() == "USD")
+        .collect();
     assert_eq!(usd.len(), 1);
     assert_eq!((usd[0].buy, usd[0].sell), (Some(d("33.7491446")), None));
     // the priced side is still guarded
-    let out = run(&db, &branch("MAIN", None, rate_policy("1.2000", "0", guards("-1.0000", "1.0000")))).await;
-    assert_eq!(described(&out), vec!["MAIN USD buy 34.0519784 outside guard [-1, 1] (+1.2 %)".to_owned()]);
+    let out = run(
+        &db,
+        &branch(
+            "MAIN",
+            None,
+            rate_policy("1.2000", "0", guards("-1.0000", "1.0000")),
+        ),
+    )
+    .await;
+    assert_eq!(
+        described(&out),
+        vec!["MAIN USD buy 34.0519784 outside guard [-1, 1] (+1.2 %)".to_owned()]
+    );
 }

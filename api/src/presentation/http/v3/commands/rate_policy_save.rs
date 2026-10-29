@@ -22,8 +22,8 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_policy::ValueTierDto;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use crate::presentation::http::v3::input;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use xc_kernel::money::{Bound, IntBound, Money, RatePercent, Side, Sign};
 use xc_rate::application::formula::spread_check::{
     BranchCandidate, SpreadCandidate, SpreadCheck, SpreadFailure,

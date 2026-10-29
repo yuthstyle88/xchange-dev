@@ -36,7 +36,11 @@ fn tiers(margins: [(&str, &str); 4]) -> Value {
     )
 }
 
-async fn configure(room: &Room, version: Uuid, margins: [(&str, &str); 4]) -> pricing_common::Answer {
+async fn configure(
+    room: &Room,
+    version: Uuid,
+    margins: [(&str, &str); 4],
+) -> pricing_common::Answer {
     command(
         room,
         &owner(),
@@ -56,7 +60,12 @@ async fn configure(room: &Room, version: Uuid, margins: [(&str, &str); 4]) -> pr
 }
 
 /// Tier 4 buys 1.2 % under the reference: outside a ±1 % guard, without inverting.
-const TIER4_BUY_1_2: [(&str, &str); 4] = [("0", "0"), ("0.1000", "-0.1000"), ("0.2000", "-0.2000"), ("-1.2000", "-0.3000")];
+const TIER4_BUY_1_2: [(&str, &str); 4] = [
+    ("0", "0"),
+    ("0.1000", "-0.1000"),
+    ("0.2000", "-0.2000"),
+    ("-1.2000", "-0.3000"),
+];
 
 #[actix_web::test]
 async fn b18_under_the_default_a_margin_past_the_guard_is_refused_by_price() {
@@ -65,7 +74,10 @@ async fn b18_under_the_default_a_margin_past_the_guard_is_refused_by_price() {
     a.refused(400, "validationFailed", "B18 default");
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("margins.buy-4"));
-    assert!(message.contains("MAIN USD tier 4 buy 33.2444216 outside guard [-1, 1] (-1.2 %)"), "{message}");
+    assert!(
+        message.contains("MAIN USD tier 4 buy 33.2444216 outside guard [-1, 1] (-1.2 %)"),
+        "{message}"
+    );
     room.finish().await;
 }
 
@@ -84,10 +96,23 @@ async fn b18_a_formula_that_ignores_the_margin_is_judged_on_its_price() {
 async fn b14_a_tier_that_inverts_is_refused_and_named() {
     let (room, v) = room().await;
     // tier 3: buy +0.5 %, sell −0.5 % inverts the 0.95 % USD spread
-    let a = configure(&room, v, [("0", "0"), ("0.1000", "-0.1000"), ("0.5000", "-0.5000"), ("0.5000", "-0.5000")]).await;
+    let a = configure(
+        &room,
+        v,
+        [
+            ("0", "0"),
+            ("0.1000", "-0.1000"),
+            ("0.5000", "-0.5000"),
+            ("0.5000", "-0.5000"),
+        ],
+    )
+    .await;
     a.refused(400, "validationFailed", "B14");
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("margins.buy-3"));
-    assert!(message.contains("MAIN USD tier 3 buy 33.816441 > sell 33.7972645"), "{message}");
+    assert!(
+        message.contains("MAIN USD tier 3 buy 33.816441 > sell 33.7972645"),
+        "{message}"
+    );
     room.finish().await;
 }

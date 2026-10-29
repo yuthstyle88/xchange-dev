@@ -24,7 +24,12 @@ use xc_kernel::money::{CurrencyCode, Rate};
 use xc_rate::domain::draft::rate_draft::{DraftId, DraftLine, DraftStatus, LineSide};
 
 fn line(c: &str) -> DraftLine {
-    DraftLine::new(CurrencyCode::parse(c).unwrap(), LineSide::Auto, LineSide::Auto, None)
+    DraftLine::new(
+        CurrencyCode::parse(c).unwrap(),
+        LineSide::Auto,
+        LineSide::Auto,
+        None,
+    )
 }
 
 fn manual(c: &str, buy: &str, sell: &str) -> DraftLine {
@@ -45,7 +50,11 @@ fn d(s: &str) -> Decimal {
 async fn draft(
     db: &TestDb,
     lines: Vec<DraftLine>,
-) -> (DraftId, Result<DraftStatus, String>, Vec<(Option<Decimal>, Option<Decimal>)>) {
+) -> (
+    DraftId,
+    Result<DraftStatus, String>,
+    Vec<(Option<Decimal>, Option<Decimal>)>,
+) {
     let e = db.engine();
     let mut tx = db.begin().await;
     let created = e
@@ -55,14 +64,22 @@ async fn draft(
         .expect("create");
     tx.commit().await.expect("commit");
     let mut tx = db.begin().await;
-    let evaluated = e.drafts.evaluate(&mut tx, &main_branch(), &created.id).await;
+    let evaluated = e
+        .drafts
+        .evaluate(&mut tx, &main_branch(), &created.id)
+        .await;
     let proposals = match &evaluated {
         Ok(o) => {
             let mut by_currency: Vec<_> = o
                 .lines
                 .iter()
                 .zip(&o.proposals)
-                .map(|(l, p)| (l.currency.as_str().to_owned(), (p.buy.map(|r| r.value()), p.sell.map(|r| r.value()))))
+                .map(|(l, p)| {
+                    (
+                        l.currency.as_str().to_owned(),
+                        (p.buy.map(|r| r.value()), p.sell.map(|r| r.value())),
+                    )
+                })
                 .collect();
             by_currency.sort_by(|a, b| a.0.cmp(&b.0));
             by_currency.into_iter().map(|(_, p)| p).collect()
@@ -106,8 +123,14 @@ async fn b1_no_formula_rows_price_as_today_and_record_default() {
     policy(&db, "MAIN", "0.3000", "-0.3000", wide_guards()).await;
     let (id, status, proposals) = draft(&db, vec![line("USD")]).await;
     assert_eq!(status, Ok(DraftStatus::Approved));
-    assert_eq!(proposals, vec![(Some(d("33.7491446")), Some(d("33.8651987")))]);
-    assert_eq!(sources(&db, &id).await, vec![("USD".into(), Some("DEFAULT".into()), None)]);
+    assert_eq!(
+        proposals,
+        vec![(Some(d("33.7491446")), Some(d("33.8651987")))]
+    );
+    assert_eq!(
+        sources(&db, &id).await,
+        vec![("USD".into(), Some("DEFAULT".into()), None)]
+    );
 }
 
 #[tokio::test]
@@ -117,7 +140,8 @@ async fn b15_a_line_priced_by_the_organisation_formula_names_its_version() {
     policy(&db, "MAIN", "0.3000", "-0.3000", wide_guards()).await;
     org_formula(&db, 1, "ref_buy", "ref_sell", false).await;
     let v2 = org_formula(&db, 2, "ref_mid - 0.05", "ref_mid + 0.05", true).await;
-    let (id, status, proposals) = draft(&db, vec![line("USD"), manual("EUR", "38.10", "38.50")]).await;
+    let (id, status, proposals) =
+        draft(&db, vec![line("USD"), manual("EUR", "38.10", "38.50")]).await;
     assert_eq!(status, Ok(DraftStatus::Approved));
     assert_eq!(
         proposals,
@@ -147,7 +171,10 @@ async fn a_branch_formula_prices_and_is_recorded_as_branch() {
     let (id, status, proposals) = draft(&db, vec![line("USD")]).await;
     assert_eq!(status, Ok(DraftStatus::Approved));
     assert_eq!(proposals, vec![(Some(d("33.6382")), Some(d("33.9771")))]);
-    assert_eq!(sources(&db, &id).await, vec![("USD".into(), Some("BRANCH".into()), None)]);
+    assert_eq!(
+        sources(&db, &id).await,
+        vec![("USD".into(), Some("BRANCH".into()), None)]
+    );
 }
 
 #[tokio::test]

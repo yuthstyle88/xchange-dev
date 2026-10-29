@@ -55,8 +55,9 @@ fn b1_no_policy_or_no_reference_still_gives_no_auto_price() {
     let none = RateProposal::of_with(&auto("USD"), None, Some(&policy("0", "0")), &u, &default)
         .expect("no reference");
     assert_eq!((none.buy, none.sell), (None, None));
-    let no_policy = RateProposal::of_with(&auto("USD"), Some(&usd_1028()), None, &u, &mid_formula())
-        .expect("no policy");
+    let no_policy =
+        RateProposal::of_with(&auto("USD"), Some(&usd_1028()), None, &u, &mid_formula())
+            .expect("no policy");
     assert_eq!((no_policy.buy, no_policy.sell), (None, None));
 }
 
@@ -85,8 +86,16 @@ fn b26_constants_are_per_the_currencys_unit() {
         &mid_formula(),
     )
     .expect("priced");
-    assert_eq!(p.buy, Some(rate("21.82095")), "0.05 THB below the mid per 100 JPY");
-    assert_eq!(p.sell, Some(rate("21.92095")), "0.05 THB above the mid per 100 JPY");
+    assert_eq!(
+        p.buy,
+        Some(rate("21.82095")),
+        "0.05 THB below the mid per 100 JPY"
+    );
+    assert_eq!(
+        p.sell,
+        Some(rate("21.92095")),
+        "0.05 THB above the mid per 100 JPY"
+    );
 }
 
 #[test]
@@ -148,7 +157,13 @@ fn any_other_formula_error_is_validation_failed() {
             &f,
         )
         .expect_err("refused");
-        assert_eq!(e.code(), "validationFailed", "{} / {}: {e}", f.buy.as_str(), f.sell.as_str());
+        assert_eq!(
+            e.code(),
+            "validationFailed",
+            "{} / {}: {e}",
+            f.buy.as_str(),
+            f.sell.as_str()
+        );
     }
 }
 
@@ -164,7 +179,8 @@ fn b16_buy_above_sell_is_still_refused() {
     .expect_err("inverted");
     assert_eq!(e.code(), "validationFailed");
     assert!(
-        e.to_string().contains("buy rate must be less than or equal to sell rate"),
+        e.to_string()
+            .contains("buy rate must be less than or equal to sell rate"),
         "{e}"
     );
 }

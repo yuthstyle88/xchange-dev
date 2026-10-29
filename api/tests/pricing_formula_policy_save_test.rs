@@ -36,14 +36,20 @@ async fn b4_plus_minus_0_7_on_the_10_28_line_is_refused_and_nothing_written() {
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("buyAdjustPct"));
     assert_eq!(message, "MAIN USD buy 33.8837374 > sell 33.7293303");
-    assert_eq!(branch_formulas(&room, "MAIN").await.len(), 1, "no new version");
+    assert_eq!(
+        branch_formulas(&room, "MAIN").await.len(),
+        1,
+        "no new version"
+    );
     room.finish().await;
 }
 
 #[actix_web::test]
 async fn b5_plus_minus_0_3_is_saved_with_an_empty_not_checked() {
     let room = room(wide()).await;
-    let body = post(&room, &owner(), policy_body("0.3000", "-0.3000", wide())).await.ok("B5");
+    let body = post(&room, &owner(), policy_body("0.3000", "-0.3000", wide()))
+        .await
+        .ok("B5");
     assert_eq!(body["version"], json!(2));
     assert_eq!(body["notChecked"], json!([]));
     room.finish().await;
@@ -53,8 +59,13 @@ async fn b5_plus_minus_0_3_is_saved_with_an_empty_not_checked() {
 async fn b9_a_currency_without_a_reference_line_is_listed() {
     let room = room(wide()).await;
     room.tt_batch(&[("GBP", "44.10", "44.90")], 1).await;
-    let body = post(&room, &owner(), policy_body("0.3000", "-0.3000", wide())).await.ok("B9");
-    assert_eq!(body["notChecked"], json!([{ "branch": "MAIN", "currency": "GBP" }]));
+    let body = post(&room, &owner(), policy_body("0.3000", "-0.3000", wide()))
+        .await
+        .ok("B9");
+    assert_eq!(
+        body["notChecked"],
+        json!([{ "branch": "MAIN", "currency": "GBP" }])
+    );
     room.finish().await;
 }
 
@@ -86,15 +97,25 @@ async fn a_branch_formula_is_set_kept_and_cleared() {
     set["buyFormula"] = json!("ref_mid - 0.05");
     set["sellFormula"] = json!("ref_mid + 0.05");
     post(&room, &owner(), set).await.ok("set");
-    post(&room, &owner(), policy_body("0.2000", "-0.2000", wide())).await.ok("keep");
+    post(&room, &owner(), policy_body("0.2000", "-0.2000", wide()))
+        .await
+        .ok("keep");
     let mut clear = policy_body("0.3000", "-0.3000", wide());
     clear["buyFormula"] = Value::Null;
     clear["sellFormula"] = Value::Null;
     post(&room, &owner(), clear).await.ok("clear");
-    let mid = (Some("ref_mid - 0.05".to_owned()), Some("ref_mid + 0.05".to_owned()));
+    let mid = (
+        Some("ref_mid - 0.05".to_owned()),
+        Some("ref_mid + 0.05".to_owned()),
+    );
     assert_eq!(
         branch_formulas(&room, "MAIN").await,
-        vec![(1, None, None), (2, mid.0.clone(), mid.1.clone()), (3, mid.0, mid.1), (4, None, None)]
+        vec![
+            (1, None, None),
+            (2, mid.0.clone(), mid.1.clone()),
+            (3, mid.0, mid.1),
+            (4, None, None)
+        ]
     );
     room.finish().await;
 }
@@ -109,7 +130,10 @@ async fn a_branch_formula_that_inverts_is_refused_on_buy_formula() {
     a.refused(400, "validationFailed", "inverting branch formula");
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("buyFormula"));
-    assert!(message.contains("MAIN USD buy 33.90765 > sell 33.70765"), "{message}");
+    assert!(
+        message.contains("MAIN USD buy 33.90765 > sell 33.70765"),
+        "{message}"
+    );
     room.finish().await;
 }
 
@@ -121,7 +145,13 @@ async fn b13_a_rate_manager_cannot_send_a_formula_but_still_saves_percentages() 
     body["sellFormula"] = json!("ref_mid + 0.05");
     let a = post(&room, &rate_manager(), body).await;
     refused_role(&a, "RATE_MANAGER with a formula");
-    post(&room, &rate_manager(), policy_body("0.2000", "-0.2000", wide())).await.ok("percentages only");
+    post(
+        &room,
+        &rate_manager(),
+        policy_body("0.2000", "-0.2000", wide()),
+    )
+    .await
+    .ok("percentages only");
     room.finish().await;
 }
 
@@ -136,6 +166,9 @@ async fn b18_the_guard_is_checked_on_the_formulas_price() {
     a.refused(400, "validationFailed", "B18");
     let (field, message) = error_of(&a);
     assert_eq!(field, json!("buyFormula"));
-    assert!(message.contains("MAIN USD buy 33.2444216 outside guard [-1, 1] (-1.2 %)"), "{message}");
+    assert!(
+        message.contains("MAIN USD buy 33.2444216 outside guard [-1, 1] (-1.2 %)"),
+        "{message}"
+    );
     room.finish().await;
 }

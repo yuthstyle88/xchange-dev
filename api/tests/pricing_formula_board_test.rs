@@ -37,7 +37,12 @@ fn prices(row: &Value) -> Vec<(String, String)> {
         .as_array()
         .expect("a suggestion")
         .iter()
-        .map(|t| (t["buy"].as_str().unwrap().to_owned(), t["sell"].as_str().unwrap().to_owned()))
+        .map(|t| {
+            (
+                t["buy"].as_str().unwrap().to_owned(),
+                t["sell"].as_str().unwrap().to_owned(),
+            )
+        })
         .collect()
 }
 
@@ -45,15 +50,24 @@ fn prices(row: &Value) -> Vec<(String, String)> {
 async fn b23_the_board_prices_through_the_organisation_formula() {
     let room = room().await;
     org_formula(&room, 1, "ref_mid - 0.05", "ref_mid + 0.05", true).await;
-    let data = view(&room, &owner(), "pricing_board", "MAIN").await.ok("board")["data"].clone();
+    let data = view(&room, &owner(), "pricing_board", "MAIN")
+        .await
+        .ok("board")["data"]
+        .clone();
     assert_eq!(data["formulaSource"], json!("ORGANISATION"));
     let row = usd(&data);
     let p: Vec<(String, String)> = prices(&row);
     assert_eq!(p.len(), 4);
     for (b, s) in &p {
         assert_eq!(
-            (rust_decimal::Decimal::from_str_exact(b).unwrap(), rust_decimal::Decimal::from_str_exact(s).unwrap()),
-            (rust_decimal::Decimal::new(3349, 2), rust_decimal::Decimal::new(3361, 2)),
+            (
+                rust_decimal::Decimal::from_str_exact(b).unwrap(),
+                rust_decimal::Decimal::from_str_exact(s).unwrap()
+            ),
+            (
+                rust_decimal::Decimal::new(3349, 2),
+                rust_decimal::Decimal::new(3361, 2)
+            ),
             "every tier is 33.49 / 33.61: {p:?}"
         );
     }
@@ -63,7 +77,10 @@ async fn b23_the_board_prices_through_the_organisation_formula() {
 #[actix_web::test]
 async fn with_no_formula_rows_the_board_is_todays_and_says_default() {
     let room = room().await;
-    let data = view(&room, &owner(), "pricing_board", "MAIN").await.ok("board")["data"].clone();
+    let data = view(&room, &owner(), "pricing_board", "MAIN")
+        .await
+        .ok("board")["data"]
+        .clone();
     assert_eq!(data["formulaSource"], json!("DEFAULT"));
     let p = prices(&usd(&data));
     let first = (
@@ -71,6 +88,12 @@ async fn with_no_formula_rows_the_board_is_todays_and_says_default() {
         rust_decimal::Decimal::from_str_exact(&p[0].1).unwrap(),
     );
     // V.9 tier 1 on TT 33.2 / 33.9 with better 0.1 %: floor(33.2332) / ceil(33.8661) at 2 places
-    assert_eq!(first, (rust_decimal::Decimal::new(3323, 2), rust_decimal::Decimal::new(3387, 2)));
+    assert_eq!(
+        first,
+        (
+            rust_decimal::Decimal::new(3323, 2),
+            rust_decimal::Decimal::new(3387, 2)
+        )
+    );
     room.finish().await;
 }

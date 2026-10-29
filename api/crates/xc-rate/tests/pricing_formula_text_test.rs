@@ -73,8 +73,16 @@ fn parse_builds_the_expected_tree() {
     assert_eq!(
         f.expr(),
         &FormulaExpr::Min(
-            Box::new(FormulaExpr::Bin(Op::Mul, input(FormulaInput::RefBuy), num("0.997"))),
-            Box::new(FormulaExpr::Bin(Op::Sub, input(FormulaInput::RefMid), num("0.03"))),
+            Box::new(FormulaExpr::Bin(
+                Op::Mul,
+                input(FormulaInput::RefBuy),
+                num("0.997")
+            )),
+            Box::new(FormulaExpr::Bin(
+                Op::Sub,
+                input(FormulaInput::RefMid),
+                num("0.03")
+            )),
         )
     );
     assert_eq!(

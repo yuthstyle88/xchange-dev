@@ -5,7 +5,9 @@
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::str::FromStr;
-use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Money, Rate, RatePercent, UnitSize};
+use xc_kernel::money::{
+    CurrencyCode, CurrencyUnits, MinorUnit, Money, Rate, RatePercent, UnitSize,
+};
 use xc_rate::domain::formula::price_formula::PriceFormula;
 use xc_rate::domain::formula::text::FormulaText;
 use xc_rate::domain::policy::policy_tiers::{PolicyTier, PolicyTiers};
@@ -36,7 +38,12 @@ pub fn units(currency: &str, size: &str) -> CurrencyUnits {
     )
 }
 
-pub fn reference(currency: &str, ref_unit: &str, buy: Option<&str>, sell: Option<&str>) -> ReferenceLine {
+pub fn reference(
+    currency: &str,
+    ref_unit: &str,
+    buy: Option<&str>,
+    sell: Option<&str>,
+) -> ReferenceLine {
     ReferenceLine::new(
         code(currency),
         UnitSize::parse(ref_unit).expect("a unit size"),
@@ -76,9 +83,24 @@ pub fn mid_formula() -> PriceFormula {
 /// rates.md §12.3's example tiers: T1 (0, 0), T2 (+0.1, −0.1), T3 (+0.2, −0.2), T4 (+0.3, −0.3).
 pub fn example_tiers() -> PolicyTiers {
     PolicyTiers::new(vec![
-        PolicyTier::new(1, Some(Money::parse("20000.00").unwrap()), pct("0.0000"), pct("0.0000")),
-        PolicyTier::new(2, Some(Money::parse("100000.00").unwrap()), pct("+0.1000"), pct("-0.1000")),
-        PolicyTier::new(3, Some(Money::parse("500000.00").unwrap()), pct("+0.2000"), pct("-0.2000")),
+        PolicyTier::new(
+            1,
+            Some(Money::parse("20000.00").unwrap()),
+            pct("0.0000"),
+            pct("0.0000"),
+        ),
+        PolicyTier::new(
+            2,
+            Some(Money::parse("100000.00").unwrap()),
+            pct("+0.1000"),
+            pct("-0.1000"),
+        ),
+        PolicyTier::new(
+            3,
+            Some(Money::parse("500000.00").unwrap()),
+            pct("+0.2000"),
+            pct("-0.2000"),
+        ),
         PolicyTier::new(4, None, pct("+0.3000"), pct("-0.3000")),
     ])
     .expect("valid example tiers")
