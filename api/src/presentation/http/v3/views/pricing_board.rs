@@ -966,6 +966,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             from: display_from.as_str().to_string(),
         },
         is_main: branch_id == "MAIN",
+        formula_source: None,
     })
 }
 

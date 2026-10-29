@@ -22,6 +22,7 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::rate_policy::ValueTierDto;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use crate::presentation::http::v3::input;
 use xc_kernel::money::{Bound, IntBound, Money, RatePercent, Side, Sign};
 use xc_rate::application::policy::policy_version_writer::{
@@ -65,6 +66,15 @@ pub struct RatePolicySaveInput {
     #[serde(default)]
     #[ts(optional = nullable)]
     pub anchor_source: Option<String>,
+    /// The branch's own formula (pricing-formula.md §3, F-3/F-4): absent = keep the current version's (or none);
+    /// `null` = follow the organisation again; text = this branch's own. `buyFormula` and `sellFormula` come
+    /// together (both absent, both `null`, or both text), else `400 validationFailed`, field `sellFormula` (B6).
+    #[serde(default, deserialize_with = "deserialize_some")]
+    #[ts(optional = nullable, type = "string | null")]
+    pub buy_formula: Option<Option<String>>,
+    #[serde(default, deserialize_with = "deserialize_some")]
+    #[ts(optional = nullable, type = "string | null")]
+    pub sell_formula: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -73,6 +83,11 @@ pub struct RatePolicySaveInput {
 pub struct RatePolicySaveOutput {
     pub id: String,
     pub version: i32,
+    /// Currencies saved without the §4 check because they have no current reference line (pricing-formula.md §4
+    /// step 4, B9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub not_checked: Option<Vec<FormulaNotCheckedDto>>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -526,6 +541,7 @@ impl CommandAction for RatePolicySaveCommand {
         Ok(RatePolicySaveOutput {
             id: written.id.to_string(),
             version: written.version,
+            not_checked: None,
         })
     }
 }

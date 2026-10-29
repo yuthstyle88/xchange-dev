@@ -32,6 +32,7 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::pricing_formula_preview::FormulaNotCheckedDto;
 use crate::presentation::http::v3::org_view::validation_failed;
 
 const BUY_MARGIN_FIELDS: [&str; 4] = [
@@ -87,6 +88,10 @@ pub struct PricingConfigureInput {
 pub struct PricingConfigureOutput {
     pub id: String,
     pub version: i32,
+    /// Currencies saved without the §4 check (pricing-formula.md §4 step 4, B9).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub not_checked: Option<Vec<FormulaNotCheckedDto>>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -361,6 +366,7 @@ impl CommandAction for PricingConfigureCommand {
         Ok(PricingConfigureOutput {
             id: written.id.to_string(),
             version: written.version,
+            not_checked: None,
         })
     }
 }
