@@ -17,6 +17,8 @@
 #   5e. A published MARKETING consent text in th, en and zh, so consent toggles do not answer consentTextMissing.
 #   6. A test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
 #   6a. A second test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
+#   6g. A test executive: an Identity account (password login) bound to an ACTIVE users row with EXECUTIVE org-wide.
+#   6h. A test admin: an Identity account (password login) bound to an ACTIVE users row with ADMIN org-wide.
 #   7. A test customer: an Identity account, then POST /api/app/register (creates the CUSTOMER user and customer).
 #
 # Passwords are generated here and printed once, on this terminal only. They are written to no file.
@@ -39,19 +41,21 @@ if [ "${1:-}" = "--json" ]; then
   JSON=1
   shift
   exec 3>&1 1>&2
-  rnd() { printf '%04d' $(( $(od -An -N2 -tu2 /dev/urandom) % 10000 )); }
-  TELLER_PHONE="${TELLER_PHONE:-+6680001$(rnd)}"
-  TELLER2_PHONE="${TELLER2_PHONE:-+6680011$(rnd)}"
-  MANAGER_PHONE="${MANAGER_PHONE:-+6680003$(rnd)}"
-  FINANCE_PHONE="${FINANCE_PHONE:-+6680004$(rnd)}"
-  MARKETING_PHONE="${MARKETING_PHONE:-+6680005$(rnd)}"
-  MANAGER2_PHONE="${MANAGER2_PHONE:-+6680006$(rnd)}"
-  FINANCE2_PHONE="${FINANCE2_PHONE:-+6680007$(rnd)}"
-  CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6680002$(rnd)}"
+  rnd() { printf '%07d' $(( $(od -An -N4 -tu4 /dev/urandom) % 10000000 )); }
+  TELLER_PHONE="${TELLER_PHONE:-+6681$(rnd)}"
+  TELLER2_PHONE="${TELLER2_PHONE:-+6680$(rnd)}"
+  MANAGER_PHONE="${MANAGER_PHONE:-+6683$(rnd)}"
+  FINANCE_PHONE="${FINANCE_PHONE:-+6684$(rnd)}"
+  MARKETING_PHONE="${MARKETING_PHONE:-+6685$(rnd)}"
+  MANAGER2_PHONE="${MANAGER2_PHONE:-+6686$(rnd)}"
+  FINANCE2_PHONE="${FINANCE2_PHONE:-+6687$(rnd)}"
+  EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+6688$(rnd)}"
+  ADMIN_PHONE="${ADMIN_PHONE:-+6689$(rnd)}"
+  CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6682$(rnd)}"
 fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=common.sh
+# shellcheck source=common.sh disable=SC1091
 . "$HERE/common.sh"
 
 if [ $# -ne 1 ] || ! [[ "$1" =~ ^https://[a-z0-9.-]+$ ]]; then
@@ -67,6 +71,8 @@ FINANCE_PHONE="${FINANCE_PHONE:-+66800000104}"
 MARKETING_PHONE="${MARKETING_PHONE:-+66800000105}"
 MANAGER2_PHONE="${MANAGER2_PHONE:-+66800000106}"
 FINANCE2_PHONE="${FINANCE2_PHONE:-+66800000107}"
+EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+66800000108}"
+ADMIN_PHONE="${ADMIN_PHONE:-+66800000109}"
 CUSTOMER_PHONE="${CUSTOMER_PHONE:-+66800000102}"
 SEED_DAYS="${SEED_DAYS:-7}"
 ORG_ID="00000000-0000-0000-0000-000000000001"   # org XC, seeded by 20261011100000_organizations.sql
@@ -227,6 +233,7 @@ if [ -n "$TELLER_SUB" ]; then
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    teller created: $TELLER_PHONE  password $TELLER_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($TELLER_PHONE), so its password is unknown; run again (new random phones)"
   TELLER_PW="(unchanged: $TELLER_PHONE was already registered)"
 fi
 
@@ -242,6 +249,7 @@ if [ -n "$TELLER2_SUB" ]; then
      SELECT id, 'TELLER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    teller 2 created: $TELLER2_PHONE  password $TELLER2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($TELLER2_PHONE), so its password is unknown; run again (new random phones)"
   TELLER2_PW="(unchanged: $TELLER2_PHONE was already registered)"
 fi
 
@@ -257,6 +265,7 @@ if [ -n "$MANAGER_SUB" ]; then
      SELECT id, 'BRANCH_MANAGER', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    branch manager created: $MANAGER_PHONE  password $MANAGER_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MANAGER_PHONE), so its password is unknown; run again (new random phones)"
   MANAGER_PW="(unchanged: $MANAGER_PHONE was already registered)"
 fi
 
@@ -275,6 +284,7 @@ if [ -n "$FINANCE_SUB" ]; then
      SELECT id, 'FINANCE', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    finance created: $FINANCE_PHONE  password $FINANCE_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($FINANCE_PHONE), so its password is unknown; run again (new random phones)"
   FINANCE_PW="(unchanged: $FINANCE_PHONE was already registered)"
 fi
 
@@ -290,6 +300,7 @@ if [ -n "$MARKETING_SUB" ]; then
      SELECT id, 'MARKETING', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    marketing created: $MARKETING_PHONE  password $MARKETING_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MARKETING_PHONE), so its password is unknown; run again (new random phones)"
   MARKETING_PW="(unchanged: $MARKETING_PHONE was already registered)"
 fi
 
@@ -305,6 +316,7 @@ if [ -n "$MANAGER2_SUB" ]; then
      SELECT id, 'BRANCH_MANAGER', '$ORG_ID', '$BRANCH2' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    branch manager 2 created: $MANAGER2_PHONE  password $MANAGER2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($MANAGER2_PHONE), so its password is unknown; run again (new random phones)"
   MANAGER2_PW="(unchanged: $MANAGER2_PHONE was already registered)"
 fi
 
@@ -320,12 +332,46 @@ if [ -n "$FINANCE2_SUB" ]; then
      SELECT id, 'FINANCE', '$ORG_ID', '$BRANCH2' FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    finance 2 created: $FINANCE2_PHONE  password $FINANCE2_PW"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($FINANCE2_PHONE), so its password is unknown; run again (new random phones)"
   FINANCE2_PW="(unchanged: $FINANCE2_PHONE was already registered)"
+fi
+
+say "6g. test executive $EXECUTIVE_PHONE (EXECUTIVE org-wide: drafts, approves and publishes rates)"
+EXECUTIVE_PW="$(new_password)"
+EXECUTIVE_SUB="$(identity_register "$EXECUTIVE_PHONE" "$EXECUTIVE_PW")"
+if [ -n "$EXECUTIVE_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$EXECUTIVE_SUB', 'Test Executive', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'EXECUTIVE', '$ORG_ID', NULL FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    executive created: $EXECUTIVE_PHONE  password $EXECUTIVE_PW"
+else
+  [ "$JSON" = 0 ] || die "an account already existed ($EXECUTIVE_PHONE), so its password is unknown; run again (new random phones)"
+  EXECUTIVE_PW="(unchanged: $EXECUTIVE_PHONE was already registered)"
+fi
+
+say "6h. test admin $ADMIN_PHONE (ADMIN org-wide)"
+ADMIN_PW="$(new_password)"
+ADMIN_SUB="$(identity_register "$ADMIN_PHONE" "$ADMIN_PW")"
+if [ -n "$ADMIN_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$ADMIN_SUB', 'Test Admin', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'ADMIN', '$ORG_ID', NULL FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    admin created: $ADMIN_PHONE  password $ADMIN_PW"
+else
+  [ "$JSON" = 0 ] || die "an account already existed ($ADMIN_PHONE), so its password is unknown; run again (new random phones)"
+  ADMIN_PW="(unchanged: $ADMIN_PHONE was already registered)"
 fi
 
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
-if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
+CUSTOMER_SUB="$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")"
+if [ -n "$CUSTOMER_SUB" ]; then
   [ "$JSON" = 1 ] || echo "    customer Identity account created: $CUSTOMER_PHONE  password $CUSTOMER_PW"
   resp=$({ cfg url "$BASE/api/app/register"; cfg header 'Content-Type: application/json'
             cfg header "Origin: $BASE"; cfg header 'X-Xchange-Request: 1'
@@ -335,11 +381,12 @@ if [ -n "$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")" ]; then
   # the answer never echoes the identifier, password or a token (customer_register.rs:14)
   [ "$code" = 200 ] || die "POST $BASE/api/app/register answered $code: $(sed '$d' <<<"$resp" | head -c 400)"
 else
+  [ "$JSON" = 0 ] || die "an account already existed ($CUSTOMER_PHONE), so its password is unknown; run again (new random phones)"
   CUSTOMER_PW="(unchanged: $CUSTOMER_PHONE was already registered)"
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$TELLER2_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$TELLER2_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW$EXECUTIVE_PW$ADMIN_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
@@ -351,7 +398,8 @@ if [ "$JSON" = 1 ]; then
   "marketing": { "phone": "$MARKETING_PHONE", "password": "$MARKETING_PW" },
   "branchManager2": { "phone": "$MANAGER2_PHONE", "password": "$MANAGER2_PW" },
   "finance2": { "phone": "$FINANCE2_PHONE", "password": "$FINANCE2_PW" },
-  "admin":    { "identifier": "<the owner's sign-in>", "password": "<the owner's password>" },
+  "executive": { "phone": "$EXECUTIVE_PHONE", "password": "$EXECUTIVE_PW" },
+  "admin":    { "identifier": "$ADMIN_PHONE", "password": "$ADMIN_PW" },
   "referralCode": "TEST1234",
   "branch": "$BRANCH",
   "branch2": "$BRANCH2",
@@ -366,5 +414,7 @@ fi
 echo
 echo "Done. Test accounts (shown once, not saved anywhere):"
 echo "  teller    $TELLER_PHONE   $TELLER_PW    sign in at $BASE/login"
+echo "  executive $EXECUTIVE_PHONE   $EXECUTIVE_PW    sign in at $BASE/login"
+echo "  admin     $ADMIN_PHONE   $ADMIN_PW    sign in at $BASE/login"
 echo "  customer  $CUSTOMER_PHONE   $CUSTOMER_PW    sign in at $BASE/login?next=/app/book (the /app sign-in page is OTP-only)"
 echo "  check:    curl -s $BASE/api/public/host   → {\"org\":\"XC\"}"
