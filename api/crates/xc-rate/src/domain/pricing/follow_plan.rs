@@ -141,24 +141,8 @@ impl FollowPlan {
         now: DateTime<Utc>,
         formula: &PriceFormula,
     ) -> FollowOutcome {
-        let _ = (input, now, formula);
-        todo!("pricing-formula wave 3: FollowPlan::plan_with")
-    }
-
-    /// `PricingSuggestion::of(&input.suggestion)`, then blocked (every reason found, in `FollowReason` order) when:
-    /// - `NoAnchor`: no **market** anchor (`MarketQuote::anchor_for`). The suggestion also flags `NoAnchor` when the
-    ///   draft path's BoT/START base is missing (`pricing_suggestion.rs:252-256`); FOLLOW never uses that base
-    ///   (§15.5, gap 7), so that flag alone does not block;
-    /// - `StaleSource`: `!input.source.is_current(now)`;
-    /// - `Precision` / `BelowCost` / `LargeMove`: that flag is in the suggestion's flags;
-    /// - `LargeMove`: tier 1 moves more than `config.large_move_pct` against `last_tier1` **or** `published_tier1`,
-    ///   on the buy **or** the sell side (`H:` §6: both sides, against both);
-    /// - `InvalidTiers`: `TierCheck::validate` refuses the tiers, or a price has more than 4 decimals.
-    ///
-    /// Otherwise `Candidate` with the suggested tiers and the anchor.
-    pub fn plan(input: &FollowInput, now: DateTime<Utc>) -> FollowOutcome {
         let (anchor_quote, _) = MarketQuote::anchor_for(&input.suggestion.quotes);
-        let suggestion = PricingSuggestion::of(&input.suggestion);
+        let suggestion = PricingSuggestion::of_with(&input.suggestion, formula);
         let mut reasons = Vec::new();
 
         if anchor_quote.is_none() {
@@ -238,6 +222,21 @@ impl FollowPlan {
                 batch_id: input.anchor_batch_id,
             },
         )
+    }
+
+    /// `PricingSuggestion::of(&input.suggestion)`, then blocked (every reason found, in `FollowReason` order) when:
+    /// - `NoAnchor`: no **market** anchor (`MarketQuote::anchor_for`). The suggestion also flags `NoAnchor` when the
+    ///   draft path's BoT/START base is missing (`pricing_suggestion.rs:252-256`); FOLLOW never uses that base
+    ///   (§15.5, gap 7), so that flag alone does not block;
+    /// - `StaleSource`: `!input.source.is_current(now)`;
+    /// - `Precision` / `BelowCost` / `LargeMove`: that flag is in the suggestion's flags;
+    /// - `LargeMove`: tier 1 moves more than `config.large_move_pct` against `last_tier1` **or** `published_tier1`,
+    ///   on the buy **or** the sell side (`H:` §6: both sides, against both);
+    /// - `InvalidTiers`: `TierCheck::validate` refuses the tiers, or a price has more than 4 decimals.
+    ///
+    /// Otherwise `Candidate` with the suggested tiers and the anchor.
+    pub fn plan(input: &FollowInput, now: DateTime<Utc>) -> FollowOutcome {
+        Self::plan_with(input, now, &PriceFormula::default())
     }
 }
 
