@@ -143,17 +143,21 @@ fn user_of(spec: &str, org: &str) -> Option<AccessActor> {
         other => panic!("unknown role {other}"),
     };
     let branch = (branch != "*").then(|| BranchId::new(branch));
-    Some(AccessActor::new(
-        &user_id(spec),
-        org,
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let session = Some(branch.clone().unwrap_or_else(|| BranchId::new("MAIN")));
+    Some(
+        AccessActor::new(
+            &user_id(spec),
+            org,
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> String {
