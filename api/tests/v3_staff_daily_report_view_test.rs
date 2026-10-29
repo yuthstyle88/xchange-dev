@@ -146,16 +146,24 @@ struct Who {
 /// `<user id>|<ROLE>|<branch or *>`, or `OWNER` for the owner's cookie alone.
 fn user_of(spec: &str) -> Option<User> {
     let mut parts = spec.splitn(3, '|');
-    let (id, role, branch) = (parts.next()?, parts.next()?, parts.next()?);
+    let (id, role, branch_str) = (parts.next()?, parts.next()?, parts.next()?);
     let role = Role::parse(role)?;
-    let branch = (branch != "*").then(|| BranchId::new(branch));
+    let branch = (branch_str != "*").then(|| BranchId::new(branch_str));
+    let session_branch = Some(if branch_str == "*" {
+        BranchId::new("MAIN")
+    } else {
+        BranchId::new(branch_str)
+    });
     let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    Some(User::new(
-        id,
-        ORG_1,
-        vec![ScopedRole::new(role, branch, from, None)],
-        None,
-    ))
+    Some(
+        User::new(
+            id,
+            ORG_1,
+            vec![ScopedRole::new(role, branch, from, None)],
+            None,
+        )
+        .with_branch(session_branch),
+    )
 }
 
 struct HeaderUsers;

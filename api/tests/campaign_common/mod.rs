@@ -63,6 +63,7 @@ pub fn marketing() -> AccessActor {
         )],
         None,
     )
+    .with_branch(Some(BranchId::new("MAIN")))
 }
 
 pub struct MarketingCallers;

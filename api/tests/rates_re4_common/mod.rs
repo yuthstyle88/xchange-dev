@@ -75,7 +75,8 @@ pub async fn publish(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) 
             ),
         ],
         None,
-    );
+    )
+    .with_branch(Some(BranchId::new("MAIN")));
     let b = BranchId::new(branch);
     let drafts = RateDraftService::new(pool.clone(), make_approval_service(pool.clone()));
     let publisher = PublishService::new(pool.clone());

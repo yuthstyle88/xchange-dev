@@ -286,19 +286,30 @@ fn user_of(spec: &str) -> Option<User> {
     match role_part {
         "TELLER_A" => {
             let branch = (target_part != "*").then(|| BranchId::new(target_part));
-            Some(User::new(
-                TELLER_A_ID,
-                ORG,
-                vec![ScopedRole::new(Role::Teller, branch, from, None)],
-                None,
-            ))
+            let session_branch = if target_part == "*" {
+                Some(BranchId::new("MAIN"))
+            } else {
+                Some(BranchId::new(target_part))
+            };
+            Some(
+                User::new(
+                    TELLER_A_ID,
+                    ORG,
+                    vec![ScopedRole::new(Role::Teller, branch, from, None)],
+                    None,
+                )
+                .with_branch(session_branch),
+            )
         }
-        "CUSTOMER" => Some(User::new(
-            MEMBER_ID,
-            ORG,
-            vec![ScopedRole::new(Role::Customer, None, from, None)],
-            Some(target_part),
-        )),
+        "CUSTOMER" => Some(
+            User::new(
+                MEMBER_ID,
+                ORG,
+                vec![ScopedRole::new(Role::Customer, None, from, None)],
+                Some(target_part),
+            )
+            .with_branch(Some(BranchId::new("MAIN"))),
+        ),
         other => panic!("unknown role {other}"),
     }
 }

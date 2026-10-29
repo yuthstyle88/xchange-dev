@@ -598,7 +598,8 @@ impl<'f> KioskReplay<'f> {
                         None,
                     )],
                     None,
-                );
+                )
+                .with_branch(Some(branch.clone()));
                 let issuer = TicketIssuer::new(
                     BranchTx::new(Transactor::new(pool.clone())),
                     Arc::new(PgQueueRepository::new(pool.clone())),

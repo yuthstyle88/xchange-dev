@@ -46,6 +46,7 @@ use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use uuid::Uuid;
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
+use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::extractors::app_session::AppSessionGuard;
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -465,6 +466,7 @@ impl SessionReader for HeaderCallers {
                 )],
                 None,
             )
+            .with_branch(Some(BranchId::new("MAIN")))
         });
         let staff_user = user.clone();
         Box::pin(async move { Callers { user, staff_user } })

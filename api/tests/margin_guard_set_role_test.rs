@@ -118,43 +118,55 @@ fn user_of(spec: &str) -> Option<Actor> {
     }
     let from = chrono::DateTime::<Utc>::UNIX_EPOCH;
     match spec {
-        "EXECUTIVE" => Some(Actor::new(
-            "user-EXECUTIVE",
-            ORG,
-            vec![ScopedRole::new(Role::Executive, None, from, None)],
-            None,
-        )),
-        "MARKETING" => Some(Actor::new(
-            "user-MARKETING",
-            ORG,
-            vec![ScopedRole::new(Role::Marketing, None, from, None)],
-            None,
-        )),
-        "RATE_MANAGER" => Some(Actor::new(
-            "user-RATE_MANAGER",
-            ORG,
-            vec![ScopedRole::new(
-                Role::RateManager,
-                Some(BranchId::new(MAIN)),
-                from,
+        "EXECUTIVE" => Some(
+            Actor::new(
+                "user-EXECUTIVE",
+                ORG,
+                vec![ScopedRole::new(Role::Executive, None, from, None)],
                 None,
-            )],
-            None,
-        )),
-        "EXPIRED_EXECUTIVE_AND_RATE_MANAGER" => Some(Actor::new(
-            "user-EXPIRED_EXEC_RM",
-            ORG,
-            vec![
-                ScopedRole::new(
-                    Role::Executive,
-                    None,
+            )
+            .with_branch(Some(BranchId::new(MAIN))),
+        ),
+        "MARKETING" => Some(
+            Actor::new(
+                "user-MARKETING",
+                ORG,
+                vec![ScopedRole::new(Role::Marketing, None, from, None)],
+                None,
+            )
+            .with_branch(Some(BranchId::new(MAIN))),
+        ),
+        "RATE_MANAGER" => Some(
+            Actor::new(
+                "user-RATE_MANAGER",
+                ORG,
+                vec![ScopedRole::new(
+                    Role::RateManager,
+                    Some(BranchId::new(MAIN)),
                     from,
-                    Some(from + chrono::Duration::seconds(1)),
-                ),
-                ScopedRole::new(Role::RateManager, Some(BranchId::new(MAIN)), from, None),
-            ],
-            None,
-        )),
+                    None,
+                )],
+                None,
+            )
+            .with_branch(Some(BranchId::new(MAIN))),
+        ),
+        "EXPIRED_EXECUTIVE_AND_RATE_MANAGER" => Some(
+            Actor::new(
+                "user-EXPIRED_EXEC_RM",
+                ORG,
+                vec![
+                    ScopedRole::new(
+                        Role::Executive,
+                        None,
+                        from,
+                        Some(from + chrono::Duration::seconds(1)),
+                    ),
+                    ScopedRole::new(Role::RateManager, Some(BranchId::new(MAIN)), from, None),
+                ],
+                None,
+            )
+            .with_branch(Some(BranchId::new(MAIN))),
+        ),
         _ => None,
     }
 }

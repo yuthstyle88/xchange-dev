@@ -224,7 +224,8 @@ async fn setup_actors(
             None,
         )],
         None,
-    );
+    )
+    .with_branch(Some(BranchId::new(branch)));
 
     let verifier_actor = AuthActor::new(
         &verifier_user_id.to_string(),
@@ -236,7 +237,8 @@ async fn setup_actors(
             None,
         )],
         None,
-    );
+    )
+    .with_branch(Some(BranchId::new(branch)));
 
     (teller_actor, verifier_actor, org_id)
 }

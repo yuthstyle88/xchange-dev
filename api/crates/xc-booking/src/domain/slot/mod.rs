@@ -2,6 +2,7 @@
 
 pub mod booking_slot;
 pub mod branch_closure;
+pub mod closed_by;
 pub mod repository;
 pub mod slot_error;
 pub mod slot_generator;

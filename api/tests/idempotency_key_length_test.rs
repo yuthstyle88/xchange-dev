@@ -127,9 +127,9 @@ impl SessionReader for HeaderUsers {
                     role.map(|r| {
                         let from = Utc::now() - ChronoDuration::days(30);
                         let scoped = ScopedRole::new(r, branch.clone(), from, None);
-                        let mut actor = User::new(user_id, org_id, vec![scoped], customer_id);
-                        actor.branch = branch;
-                        actor
+                        let session_branch = branch.or_else(|| Some(BranchId::new("MAIN")));
+                        User::new(user_id, org_id, vec![scoped], customer_id)
+                            .with_branch(session_branch)
                     })
                 } else {
                     None
@@ -143,15 +143,19 @@ impl SessionReader for HeaderUsers {
 
                 Role::parse(role).map(|r| {
                     let branch_id = (branch != "*").then(|| BranchId::new(branch));
+                    let session_branch = Some(if branch == "*" {
+                        BranchId::new("MAIN")
+                    } else {
+                        BranchId::new(branch)
+                    });
                     let from = Utc::now() - ChronoDuration::days(30);
-                    let mut actor = User::new(
+                    User::new(
                         id,
                         org,
-                        vec![ScopedRole::new(r, branch_id.clone(), from, None)],
+                        vec![ScopedRole::new(r, branch_id, from, None)],
                         None,
-                    );
-                    actor.branch = branch_id;
-                    actor
+                    )
+                    .with_branch(session_branch)
                 })
             } else {
                 None
