@@ -4,6 +4,7 @@
 //! SKELETON (XC-V9-PRICING): `SourceFreshness::is_current` and `FollowPlan::plan` are PV-f1's; the wire strings are
 //! the contract and are written here. Types and signatures stay.
 
+use crate::domain::formula::price_formula::PriceFormula;
 use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 use sqlx::PgConnection;
@@ -133,6 +134,17 @@ pub enum FollowOutcome {
 pub struct FollowPlan;
 
 impl FollowPlan {
+    /// As `plan`, with the suggestion priced through `formula` (`PricingSuggestion::of_with`, pricing-formula.md
+    /// §3a) instead of `PricingSuggestion::of`. `plan` becomes `plan_with(input, now, &PriceFormula::default())`.
+    pub fn plan_with(
+        input: &FollowInput,
+        now: DateTime<Utc>,
+        formula: &PriceFormula,
+    ) -> FollowOutcome {
+        let _ = (input, now, formula);
+        todo!("pricing-formula wave 3: FollowPlan::plan_with")
+    }
+
     /// `PricingSuggestion::of(&input.suggestion)`, then blocked (every reason found, in `FollowReason` order) when:
     /// - `NoAnchor`: no **market** anchor (`MarketQuote::anchor_for`). The suggestion also flags `NoAnchor` when the
     ///   draft path's BoT/START base is missing (`pricing_suggestion.rs:252-256`); FOLLOW never uses that base
