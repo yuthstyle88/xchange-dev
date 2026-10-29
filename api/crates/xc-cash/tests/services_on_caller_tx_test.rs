@@ -367,7 +367,10 @@ async fn approved_transfer(db: &Db, notes: i32) -> Moving {
     let creator = db.person(Role::BranchManager, Some(&from)).await;
     let approver = db.person(Role::BranchManager, Some(&from)).await;
     let receiver = db.person(Role::BranchManager, Some(&to)).await;
-    let finance = db.person(Role::Finance, None).await;
+    let finance = db
+        .person(Role::Finance, None)
+        .await
+        .with_branch(Some(BranchId::new("MAIN")));
     let executive = db.person(Role::Executive, None).await;
     db.transfer_limit_usd(&executive, "1000.00").await;
     let usd50 = db.denomination("USD", "50").await;
@@ -1254,7 +1257,10 @@ async fn receive_in_of_a_single_branch_kind_runs_on_a_once_locked_tx() {
     let branch = db.branch("b").await;
     let manager = db.person(Role::BranchManager, Some(&branch)).await;
     let approver = db.person(Role::BranchManager, Some(&branch)).await;
-    let finance = db.person(Role::Finance, None).await;
+    let finance = db
+        .person(Role::Finance, None)
+        .await
+        .with_branch(Some(BranchId::new("MAIN")));
     let executive = db.person(Role::Executive, None).await;
     db.transfer_limit_usd(&executive, "1000.00").await;
     let usd50 = db.denomination("USD", "50").await;

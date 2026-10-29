@@ -223,7 +223,8 @@ fn marketing_never_reads_identity_documents() {
         RoleGrants::seed(Role::VerificationReviewer).contains(&Permission::IdentityDocumentRead)
     );
 
-    let marketing = user(vec![held(Role::Marketing, None)]);
+    // #5279: a session gives an organisation-wide row its session branch (`SessionBranch::effective`).
+    let marketing = user(vec![held(Role::Marketing, None)]).with_branch(Some(BranchId::new(MAIN)));
     for branch in [None, Some(MAIN)] {
         assert_eq!(
             refused(
@@ -309,7 +310,9 @@ fn a_customer_reading_another_customers_data_is_out_of_scope() {
         ORG,
         vec![held(Role::Customer, None)],
         Some("cust-1"),
-    );
+    )
+    // #5279: a session gives an organisation-wide row its session branch (`SessionBranch::effective`).
+    .with_branch(Some(BranchId::new(MAIN)));
     let own = Target::new(ORG, None, Some("cust-1"));
     let other = Target::new(ORG, None, Some("cust-2"));
 
@@ -325,7 +328,8 @@ fn a_customer_reading_another_customers_data_is_out_of_scope() {
     assert_eq!(refusal.code(), "outOfScope");
 
     // A CUSTOMER user not linked to any customer owns nobody's data.
-    let unlinked = Actor::new("user-c0", ORG, vec![held(Role::Customer, None)], None);
+    let unlinked = Actor::new("user-c0", ORG, vec![held(Role::Customer, None)], None)
+        .with_branch(Some(BranchId::new(MAIN)));
     assert_eq!(
         refused(
             Authorizer::check(Some(&unlinked), Permission::CustomerSelf, &own, now()),
@@ -339,21 +343,37 @@ fn a_customer_reading_another_customers_data_is_out_of_scope() {
 
 /// §3.5: an organisation-wide user who names no branch gets `MAIN` (v3's rule); one who names a branch gets it.
 #[test]
-fn an_organisation_wide_user_works_on_the_branch_named_and_on_main_when_none_is() {
+fn an_organisation_wide_user_works_on_the_branch_named_or_its_session_branch_and_never_on_main_by_default()
+ {
+    // #5279 S1-1 … S1-3, restated by the sub-controller claude/2ca5874b from
+    // `an_organisation_wide_user_works_on_the_branch_named_and_on_main_when_none_is` (design
+    // `docs/design/org-wide-actor-branch.md` §0 site 1, §5). Before #5279 the actor with no session branch was
+    // granted the literal `MAIN`.
     let executive = user(vec![held(Role::Executive, None)]);
     assert_eq!(
-        granted_branch(
+        refused(
             check(&executive, Permission::OverviewRead, &on(None)),
-            "EXECUTIVE names no branch"
+            "EXECUTIVE with no session branch names no branch"
         ),
-        MAIN
+        Refusal::OutOfScope,
+        "S1-1: no stand-in branch is invented"
+    );
+    let in_b2 = executive.clone().with_branch(Some(BranchId::new(B2)));
+    assert_eq!(
+        granted_branch(
+            check(&in_b2, Permission::OverviewRead, &on(None)),
+            "EXECUTIVE working in B2 names no branch"
+        ),
+        B2,
+        "S1-2: the session branch"
     );
     assert_eq!(
         granted_branch(
             check(&executive, Permission::OverviewRead, &on(Some(B2))),
             "EXECUTIVE names B2"
         ),
-        B2
+        B2,
+        "S1-3: the branch named"
     );
 }
 

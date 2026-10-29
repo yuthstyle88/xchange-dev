@@ -152,6 +152,7 @@ impl ConfirmTransaction {
                     tx,
                     EXCHANGE_TRANSACTION,
                     &id.0.to_string(),
+                    Some(&t.branch_id),
                     &json!({
                         "transactionId": id.0.to_string(),
                         "settleThb": settle.to_string(),

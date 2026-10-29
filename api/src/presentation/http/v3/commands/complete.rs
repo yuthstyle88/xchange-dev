@@ -168,6 +168,7 @@ impl CommandAction for TransactionCompleteCommand {
                     &self.pool,
                     &self.approvals,
                     &NegativeStockObject::Transaction(id),
+                    branch,
                     refusal,
                     who,
                     key.as_str(),

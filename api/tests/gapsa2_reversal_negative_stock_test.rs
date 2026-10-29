@@ -456,6 +456,7 @@ impl Shop {
             self.pool(),
             &approvals,
             object,
+            &BranchId::new("MAIN"),
             "stockInsufficient: the posting takes a drawer, a safe or a position below zero",
             &poster_actor(),
             &next("gapsa2-ns"),

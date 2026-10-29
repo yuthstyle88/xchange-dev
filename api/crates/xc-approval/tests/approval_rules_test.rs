@@ -80,6 +80,7 @@ use serde_json::{Value, json};
 use sqlx::{Postgres, Transaction};
 use tokio::sync::Barrier;
 use xc_auth::domain::access::Actor;
+use xc_kernel::ids::BranchId;
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,7 @@ async fn open(
             &mut tx,
             type_name,
             object_id,
+            Some(&BranchId::new("MAIN")),
             &json!({ "currency": "USD", "buyRate": "32.10000000" }),
             by,
             &key(),
@@ -297,6 +299,7 @@ async fn only_one_request_per_type_and_object_may_be_pending() {
             &mut tx,
             TYPE_A,
             "obj-1",
+            Some(&BranchId::new("MAIN")),
             &json!({ "currency": "EUR" }),
             &rates("rates-2"),
             &key(),
@@ -628,7 +631,15 @@ async fn the_same_key_and_payload_replays_the_request_without_writing_again() {
 
     let mut tx = db.begin().await;
     let first = svc
-        .request(&mut tx, TYPE_A, "obj-1", &payload, &rates("rates-1"), &k)
+        .request(
+            &mut tx,
+            TYPE_A,
+            "obj-1",
+            Some(&BranchId::new("MAIN")),
+            &payload,
+            &rates("rates-1"),
+            &k,
+        )
         .await
         .expect("the request opens");
     tx.commit().await.expect("commit");
@@ -637,7 +648,15 @@ async fn the_same_key_and_payload_replays_the_request_without_writing_again() {
 
     let mut tx = db.begin().await;
     let again = svc
-        .request(&mut tx, TYPE_A, "obj-1", &payload, &rates("rates-1"), &k)
+        .request(
+            &mut tx,
+            TYPE_A,
+            "obj-1",
+            Some(&BranchId::new("MAIN")),
+            &payload,
+            &rates("rates-1"),
+            &k,
+        )
         .await
         .expect("a retry with the same key and payload replays");
     tx.commit().await.expect("commit");
@@ -658,9 +677,17 @@ async fn the_same_key_with_anything_else_is_an_idempotency_conflict() {
     let payload = json!({ "currency": "USD", "buyRate": "32.10000000" });
 
     let mut tx = db.begin().await;
-    svc.request(&mut tx, TYPE_A, "obj-1", &payload, &rates("rates-1"), &k)
-        .await
-        .expect("the request opens");
+    svc.request(
+        &mut tx,
+        TYPE_A,
+        "obj-1",
+        Some(&BranchId::new("MAIN")),
+        &payload,
+        &rates("rates-1"),
+        &k,
+    )
+    .await
+    .expect("the request opens");
     tx.commit().await.expect("commit");
 
     let other_payload = json!({ "currency": "USD", "buyRate": "32.20000000" });
@@ -670,6 +697,7 @@ async fn the_same_key_with_anything_else_is_an_idempotency_conflict() {
             &mut tx,
             TYPE_A,
             "obj-1",
+            Some(&BranchId::new("MAIN")),
             &other_payload,
             &rates("rates-1"),
             &k,
@@ -679,7 +707,15 @@ async fn the_same_key_with_anything_else_is_an_idempotency_conflict() {
 
     let mut tx = db.begin().await;
     let got = svc
-        .request(&mut tx, TYPE_A, "obj-2", &payload, &rates("rates-1"), &k)
+        .request(
+            &mut tx,
+            TYPE_A,
+            "obj-2",
+            Some(&BranchId::new("MAIN")),
+            &payload,
+            &rates("rates-1"),
+            &k,
+        )
         .await;
     assert_eq!(settle(tx, got).await, Err("idempotencyConflict"));
 
@@ -701,6 +737,7 @@ async fn the_stored_payload_is_redacted() {
             &mut tx,
             TYPE_A,
             "obj-1",
+            Some(&BranchId::new("MAIN")),
             &json!({
                 "currency": "USD",
                 "customer": { "passportNo": "XK9988776655", "password": "hunter2-ZXCV" },

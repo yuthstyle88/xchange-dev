@@ -251,6 +251,7 @@ async fn open(desk: &Desk, by: &Actor) -> RequestId {
             &mut tx,
             BINDING_QUOTE,
             &proposal_id(&base(), None),
+            Some(&BranchId::new("MAIN")),
             &json!({ "settleThb": "3245.00", "approvalLimitThb": "1000.00" }),
             by,
             &format!("bindingQuote:{}", uuid::Uuid::new_v4()),

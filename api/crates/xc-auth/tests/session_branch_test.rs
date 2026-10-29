@@ -275,7 +275,10 @@ fn a_session_branch_outside_the_permissions_scope_falls_back_to_the_old_arms() {
 }
 
 #[test]
-fn without_a_session_branch_the_old_arms_are_unchanged() {
+fn without_a_session_branch_no_stand_in_branch_is_invented() {
+    // #5279 S1-4 / S1-5, restated by the sub-controller claude/2ca5874b from
+    // `without_a_session_branch_the_old_arms_are_unchanged` (design `docs/design/org-wide-actor-branch.md` §5).
+    // The organisation-wide arm used to grant the literal `MAIN`; it now refuses.
     let org_wide = actor(vec![row(Role::Admin, None)], None);
     assert_eq!(
         Authorizer::check(
@@ -284,9 +287,17 @@ fn without_a_session_branch_the_old_arms_are_unchanged() {
             &naming_none(),
             now()
         )
-        .unwrap()
-        .branch,
-        b("MAIN")
+        .unwrap_err(),
+        Refusal::OutOfScope,
+        "an organisation-wide row with no session branch is not granted MAIN"
+    );
+    // S1-4: rows at exactly one branch still give that branch.
+    let one = actor(vec![row(Role::RateManager, Some("B2"))], None);
+    assert_eq!(
+        Authorizer::check(Some(&one), Permission::RatesDraft, &naming_none(), now())
+            .unwrap()
+            .branch,
+        b("B2")
     );
     let several = actor(
         vec![

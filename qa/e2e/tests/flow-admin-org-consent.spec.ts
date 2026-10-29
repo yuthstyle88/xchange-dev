@@ -241,7 +241,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
   test('consentTextPublish & retentionSet (b) validation only (§9.2): invalid inputs refused in th and en without sending writes', async ({
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json: run scripts/reseed.sh');
+    test.skip(!hasAccount('executive'), 'no executive account in users.json: run scripts/reseed.sh');
 
     // §9.2: consentTextPublish and retentionSet are validation-only; never send a write request.
     const unexpectedWrites: string[] = [];
@@ -255,7 +255,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
       }
     });
 
-    await signIn(page, 'admin', `/?branch=${encodeURIComponent(users.branch)}`);
+    await signIn(page, 'executive', `/?branch=${encodeURIComponent(users.branch)}`);
 
     // Screen root `.admin-consent-screen` (`web/src/screens/admin/consent/Consent.tsx:187`),
     // publish form `.consent-publish-form` (`Consent.tsx:204`),

@@ -1,7 +1,7 @@
 // QA-S8 — smoke: desk and operations pages (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-S8; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { test } from '@playwright/test';
-import { STAFF_LANGS, signIn, smoke } from './helpers';
+import { STAFF_LANGS, hasAccount, signIn, smoke } from './helpers';
 
 test.describe('QA-S8 smoke: desk and operations pages', () => {
   // key: web/src/screens/desk/bookings/DeskBookingsScreen.tsx:606
@@ -98,27 +98,31 @@ test.describe('QA-S8 smoke: desk and operations pages', () => {
 
   // key: web/src/screens/operations/verification/VerificationScreen.tsx:681
   test('/operations/verification', async ({ page }) => {
-    await signIn(page, 'admin', '/operations/verification');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/operations/verification');
     await smoke(page, {
       area: 'desk-ops',
       screen: 'verification',
       path: '/operations/verification',
-      role: 'admin',
+      role,
       key: 'data-testid=verification-screen',
       langs: STAFF_LANGS,
+      needs: 'VerificationReview',
     });
   });
 
   // key: web/src/screens/kiosk-currencies/KioskCurrenciesScreen.tsx:326
   test('/kiosk-currencies.html', async ({ page }) => {
-    await signIn(page, 'admin', '/kiosk-currencies.html');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/kiosk-currencies.html');
     await smoke(page, {
       area: 'desk-ops',
       screen: 'kiosk-currencies',
       path: '/kiosk-currencies.html',
-      role: 'admin',
+      role,
       key: '#bank-reference',
       langs: STAFF_LANGS,
+      needs: 'RatesDraft',
     });
   });
 

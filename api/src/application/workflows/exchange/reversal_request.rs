@@ -144,6 +144,7 @@ impl RequestReversal {
                 tx,
                 TRANSACTION_REVERSAL,
                 &id.0.to_string(),
+                Some(&input.branch),
                 &serde_json::json!({
                     "originalTransactionId": input.original.0.to_string(),
                     "reason": input.reason,

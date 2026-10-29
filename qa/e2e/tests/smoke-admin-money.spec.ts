@@ -43,16 +43,18 @@ test.describe('QA-S4 smoke: admin money menus', () => {
     });
   });
 
-  // key: web/src/screens/admin/rates/Rates.tsx:313
+  // key: web/src/screens/admin/rates/Rates.tsx:313 (menu.ts:14 needs RatesDraft; executive holds it)
   test('/#rates', async ({ page }) => {
-    await signIn(page, 'admin', '/#rates');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#rates');
     await smoke(page, {
       area: 'admin-money',
       screen: 'rates',
       path: '/#rates',
-      role: 'admin',
+      role,
       key: '.admin-rates-screen',
       langs: STAFF_LANGS,
+      needs: 'RatesDraft',
     });
   });
 

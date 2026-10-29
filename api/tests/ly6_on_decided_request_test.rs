@@ -55,6 +55,7 @@ async fn open_request(db: &TestDb, writer: &FakeWriter) -> String {
             &mut tx,
             SUBJECT,
             &writer.object_id(),
+            None,
             &json!({ "kind": "POINT", "versionId": writer.id.to_string() }),
             &executive("user-EXECUTIVE"),
             &Uuid::new_v4().to_string(),

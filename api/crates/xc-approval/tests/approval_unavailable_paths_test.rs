@@ -141,6 +141,7 @@ async fn pending(
             &mut tx,
             TYPE_U,
             &unique("obj"),
+            None,
             &json!({}),
             &owner(proposer),
             &key(),

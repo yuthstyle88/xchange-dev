@@ -6,7 +6,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { hasAccount, posted, shot, signIn, users, type Role } from './helpers';
 
-const REQUIRED: Role[] = ['finance', 'branchManager', 'admin'];
+const REQUIRED: Role[] = ['finance', 'branchManager', 'executive'];
 
 const transferRow = (page: Page, id: string) => page.locator(`tr[data-transfer-id="${id}"]`);
 
@@ -81,11 +81,11 @@ async function dispatchAndReceiveTransfer(finance: Page, id: string, qty: string
   await expect(row, `transfer ${id} is RECEIVED`).toHaveAttribute('data-status', 'RECEIVED', { timeout: 20_000 });
 }
 
-async function findPendingTransferRequestId(admin: Page, transferId: string): Promise<string> {
-  const res = await admin.request.get(
+async function findPendingTransferRequestId(executive: Page, transferId: string): Promise<string> {
+  const res = await executive.request.get(
     `/api/v3/views/approval_requests?branch=${encodeURIComponent(users.branch)}&status=PENDING&type=CASH_TRANSFER`,
   );
-  expect(res.ok(), `admin reads approval_requests: ${res.status()}`).toBeTruthy();
+  expect(res.ok(), `executive reads approval_requests: ${res.status()}`).toBeTruthy();
   const body = (await res.json()) as {
     data?: { requests?: Array<{ id: string; objectId: string; status: string }> };
   };
@@ -94,22 +94,22 @@ async function findPendingTransferRequestId(admin: Page, transferId: string): Pr
   return match!.id;
 }
 
-async function approveOnAdminScreen(admin: Page, reqId: string): Promise<void> {
-  await admin.goto('/#approvals');
-  await admin.reload();
-  const filterBtn = admin.locator('[data-type-filter="CASH_TRANSFER"]');
+async function approveOnAdminScreen(executive: Page, reqId: string): Promise<void> {
+  await executive.goto('/#approvals');
+  await executive.reload();
+  const filterBtn = executive.locator('[data-type-filter="CASH_TRANSFER"]');
   await expect(filterBtn).toBeVisible({ timeout: 20_000 });
   await filterBtn.click();
-  const card = admin
+  const card = executive
     .locator(`[data-request="${reqId}"]`)
-    .filter({ has: admin.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }) })
+    .filter({ has: executive.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }) })
     .first();
-  await expect(card, `pending CASH_TRANSFER card ${reqId} on admin /#approvals`).toBeVisible({ timeout: 20_000 });
-  const decided = await posted(admin, /^\/api\/approvals\/[^/]+\/decide$/, () =>
+  await expect(card, `pending CASH_TRANSFER card ${reqId} on /#approvals`).toBeVisible({ timeout: 20_000 });
+  const decided = await posted(executive, /^\/api\/approvals\/[^/]+\/decide$/, () =>
     card.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }).click(),
   );
-  console.log(`[f12:admin] decide ${reqId} -> ${decided.text}`);
-  expect(decided.ok, `admin approved ${reqId}: ${decided.text}`).toBeTruthy();
+  console.log(`[f12:executive] decide ${reqId} -> ${decided.text}`);
+  expect(decided.ok, `executive approved ${reqId}: ${decided.text}`).toBeTruthy();
 }
 
 test.describe.serial('F12 cash transfer escalation above limit', () => {
@@ -122,18 +122,18 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
       `missing password in users.json for: ${missing.map((r) => `${r} (${users[r]?.identifier ?? users[r]?.phone ?? 'unmapped'})`).join(', ')}`,
     );
 
-    const admin = await asRole(browser, 'admin', '/');
+    const executive = await asRole(browser, 'executive', '/');
     const finance = await asRole(browser, 'finance', '/staff');
     const manager = await asRole(browser, 'branchManager', '/');
 
     try {
-      // Step 0 (admin): read cash_transfer_policy and pick THB lines over the limit (null policy -> any amount).
-      const policyRes = await admin.request.get('/api/v3/views/cash_transfer_policy');
+      // Step 0 (executive): read cash_transfer_policy and pick THB lines over the limit (null policy -> any amount).
+      const policyRes = await executive.request.get('/api/v3/views/cash_transfer_policy');
       expect(policyRes.ok(), `GET /api/v3/views/cash_transfer_policy (${policyRes.status()})`).toBeTruthy();
       const policyBody = (await policyRes.json()) as {
         data?: { limits?: Record<string, string> } | null;
       };
-      const denomRes = await admin.request.get('/api/v3/views/denominations');
+      const denomRes = await executive.request.get('/api/v3/views/denominations');
       expect(denomRes.ok(), `GET /api/v3/views/denominations (${denomRes.status()})`).toBeTruthy();
       const denomBody = (await denomRes.json()) as {
         data?: { rows?: Array<{ currency: string; faceValue: string }> };
@@ -161,7 +161,7 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
         'e2e F12: above-limit EXTERNAL_IN',
       );
       await shot(finance, 'cash', 'escalation-1-in-submitted');
-      const inReqId = await findPendingTransferRequestId(admin, inId);
+      const inReqId = await findPendingTransferRequestId(executive, inId);
 
       // Step 2 (manager): on /#approvals, attempt to approve it -> refused (ABOVE_LIMIT); still PENDING.
       await manager.goto('/#approvals');
@@ -221,16 +221,16 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
       await shot(manager, 'cash', 'escalation-2-manager-refused');
 
       // Still PENDING in approval_requests and still DRAFT on finance's transfer row.
-      expect(await findPendingTransferRequestId(admin, inId)).toBe(inReqId);
+      expect(await findPendingTransferRequestId(executive, inId)).toBe(inReqId);
       await finance.reload();
       await expect(transferRow(finance, inId), 'EXTERNAL_IN stays DRAFT while approval is still PENDING').toContainText(
         'DRAFT',
         { timeout: 20_000 },
       );
 
-      // Step 3 (admin): approve on /#approvals -> ok; transfer is APPROVED.
-      await approveOnAdminScreen(admin, inReqId);
-      await shot(admin, 'cash', 'escalation-3-admin-approved-in');
+      // Step 3 (executive): approve on /#approvals -> ok; transfer is APPROVED.
+      await approveOnAdminScreen(executive, inReqId);
+      await shot(executive, 'cash', 'escalation-3-admin-approved-in');
 
       // Step 4 (finance): dispatch and receive the same quantities -> DISPATCHED, RECEIVED.
       await dispatchAndReceiveTransfer(finance, inId, qty);
@@ -243,16 +243,16 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
         qty,
         'e2e F12: above-limit EXTERNAL_OUT restore safe',
       );
-      const outReqId = await findPendingTransferRequestId(admin, outId);
+      const outReqId = await findPendingTransferRequestId(executive, outId);
 
-      // Step 6 (admin): approve EXTERNAL_OUT -> ok.
-      await approveOnAdminScreen(admin, outReqId);
+      // Step 6 (executive): approve EXTERNAL_OUT -> ok.
+      await approveOnAdminScreen(executive, outReqId);
 
       // Step 7 (finance): dispatch and receive -> RECEIVED (safe is back where it started).
       await dispatchAndReceiveTransfer(finance, outId, qty);
       await shot(finance, 'cash', 'escalation-7-out-received');
     } finally {
-      await Promise.all([admin.close(), finance.close(), manager.close()]);
+      await Promise.all([executive.close(), finance.close(), manager.close()]);
     }
   });
 });

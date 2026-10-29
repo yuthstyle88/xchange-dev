@@ -130,7 +130,7 @@ pub(crate) async fn caller_in(
             ))
         })
         .collect();
-    Ok(User::new(&id, &org, roles, None))
+    Ok(User::new(&id, &org, roles, None).with_branch(who.branch.clone()))
 }
 
 /// G1: a quantity is a decimal string of a whole number ≥ 0 (`"0"` included).

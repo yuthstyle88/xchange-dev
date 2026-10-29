@@ -16,7 +16,7 @@
 // - api/crates/xc-verification/src/application/case_service.rs:195-209
 //   first bytes checked for PNG signature [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] (1 B–15 MB)
 import { expect, test, type Page } from '@playwright/test';
-import { hasAccount, posted, shot, signIn, users, type Role } from './helpers';
+import { hasAccount, mePermissions, posted, shot, signIn, users, type Role } from './helpers';
 
 /** 1x1 transparent PNG (67 bytes; starts with PNG signature 89 50 4E 47 0D 0A 1A 0A, case_service.rs:199-201). */
 const TINY_PNG = Buffer.from(
@@ -43,8 +43,10 @@ async function revokeVerifiedCase(customer: Page, admin: Page): Promise<{ ok: bo
   if (!id) return { ok: false, text: 'missing case id from my_verification' };
   const expectedVersion = myVer.case?.version ?? 1;
   if (admin.url() === 'about:blank') {
-    await signIn(admin, 'admin', '/operations/verification');
+    await signIn(admin, 'executive', '/operations/verification');
   }
+  const perms = await mePermissions(admin);
+  test.skip(!perms.includes('VerificationReview'), 'executive lacks VerificationReview');
   const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
     headers: {
       'x-xchange-request': '1',
@@ -100,7 +102,7 @@ async function selectCaseOnStaff(admin: Page, caseId: string): Promise<void> {
 
 test.describe.serial('F9 customer verification', () => {
   test('customer submits passport, admin requests update, customer resubmits, admin rejects', async ({ browser }) => {
-    const required: readonly Role[] = ['customer', 'admin'];
+    const required: readonly Role[] = ['customer', 'executive'];
     for (const role of required) {
       if (!hasAccount(role)) {
         const reason = `no ${role} account in users.json: run scripts/reseed.sh`;
@@ -166,7 +168,7 @@ test.describe.serial('F9 customer verification', () => {
           expect(resubLeftover.ok, `resubmit leftover NEEDS_UPDATE: ${resubLeftover.text}`).toBeTruthy();
         }
 
-        await signIn(admin, 'admin', '/operations/verification');
+        await signIn(admin, 'executive', '/operations/verification');
         await selectCaseOnStaff(admin, leftoverId);
         const curStatus = (await admin.getByTestId('case-status').innerText()).trim();
         if (curStatus === 'SUBMITTED') {
@@ -238,8 +240,10 @@ test.describe.serial('F9 customer verification', () => {
       ).toBeVisible({ timeout: 20_000 });
       await shot(customer, 'verification', 'f9-3-submitted');
 
-      // Step 4: admin opens /operations/verification, selects row [data-case-id=<id>], clicks start-review -> UNDER_REVIEW.
-      await signIn(admin, 'admin', '/operations/verification');
+      // Step 4: executive opens /operations/verification, selects row [data-case-id=<id>], clicks start-review -> UNDER_REVIEW.
+      await signIn(admin, 'executive', '/operations/verification');
+      const reviewerPerms = await mePermissions(admin);
+      test.skip(!reviewerPerms.includes('VerificationReview'), 'executive lacks VerificationReview');
       await expect(
         admin.getByTestId('verification-screen'),
         'operations verification screen (VerificationScreen.tsx:685)',

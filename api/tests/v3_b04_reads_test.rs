@@ -478,6 +478,7 @@ impl Room {
                 &mut tx,
                 exchange_approval::EXCHANGE_TRANSACTION,
                 &t.id.0.to_string(),
+                Some(&BranchId::new(branch)),
                 &json!({ "reason": "over the limit" }),
                 &staff("FRONT", branch),
                 &format!("over-{}", t.id.0),

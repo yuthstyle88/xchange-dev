@@ -30,6 +30,7 @@ use sqlx::{AssertSqlSafe, Postgres, Transaction};
 use xc_approval::domain::policy::ApprovalPolicy;
 use xc_approval::domain::request::Outcome;
 use xc_approval::domain::subject::ApprovalSubject;
+use xc_kernel::ids::BranchId;
 
 const TYPE_T: &str = "TEST_TX_HASH";
 
@@ -112,6 +113,7 @@ async fn a_hash_written_earlier_in_the_same_transaction_is_the_one_the_request_b
             &mut tx,
             TYPE_T,
             "o1",
+            Some(&BranchId::new("MAIN")),
             &json!({ "currency": "USD" }),
             &rates("rates-1"),
             &key(),
@@ -138,7 +140,15 @@ async fn a_hash_moved_earlier_in_the_deciding_transaction_makes_the_decision_sta
         .expect("seed the committed hash");
     let mut tx = db.begin().await;
     let req = svc
-        .request(&mut tx, TYPE_T, "o2", &json!({}), &rates("rates-1"), &key())
+        .request(
+            &mut tx,
+            TYPE_T,
+            "o2",
+            Some(&BranchId::new("MAIN")),
+            &json!({}),
+            &rates("rates-1"),
+            &key(),
+        )
         .await
         .expect("the request opens");
     tx.commit().await.expect("commit the request");
@@ -180,7 +190,15 @@ async fn an_unchanged_hash_read_through_the_transaction_lets_the_decision_throug
         .expect("seed the committed hash");
     let mut tx = db.begin().await;
     let req = svc
-        .request(&mut tx, TYPE_T, "o3", &json!({}), &rates("rates-1"), &key())
+        .request(
+            &mut tx,
+            TYPE_T,
+            "o3",
+            Some(&BranchId::new("MAIN")),
+            &json!({}),
+            &rates("rates-1"),
+            &key(),
+        )
         .await
         .expect("the request opens");
     tx.commit().await.expect("commit the request");
