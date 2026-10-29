@@ -92,7 +92,10 @@ async fn rows(replay: &Replay<'_>) -> (i64, i64, i64) {
     (
         count("SELECT count(*) FROM quotes WHERE branch_id = 'MAIN'").await,
         count("SELECT count(*) FROM transactions WHERE branch_id = 'MAIN'").await,
-        count("SELECT count(*) FROM approval_requests WHERE branch_id = 'MAIN'").await,
+        count(
+            "SELECT count(*) FROM approval_requests WHERE branch_id = 'MAIN' AND type = 'EXCHANGE_TRANSACTION'",
+        )
+        .await,
     )
 }
 

@@ -257,7 +257,10 @@ struct Cast {
 
 async fn cast(db: &Db) -> Cast {
     Cast {
-        finance: db.person("Pim", &[(Role::Finance, None)]).await,
+        finance: db
+            .person("Pim", &[(Role::Finance, None)])
+            .await
+            .with_branch(Some(BranchId::new("MAIN"))),
         exec: db.person("Exec", &[(Role::Executive, None)]).await,
     }
 }
