@@ -6,7 +6,7 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { hasAccount, posted, shot, signIn, users, type Role } from './helpers';
 
-const REQUIRED_ROLES: readonly Role[] = ['admin', 'finance', 'branchManager', 'finance2', 'branchManager2'];
+const REQUIRED_ROLES: readonly Role[] = ['executive', 'finance', 'branchManager', 'finance2', 'branchManager2'];
 const TRANSFER_QTY = '1';
 
 const transferRow = (page: Page, id: string) => page.locator(`tr[data-transfer-id="${id}"]`);
@@ -163,15 +163,15 @@ test.describe.serial('F12b branch-to-branch cash transfer', () => {
     const branch1 = users.branch;
     const branch2 = users.branch2!;
 
-    const admin = await asRole(browser, 'admin', '/');
+    const executive = await asRole(browser, 'executive', '/');
     const finance1 = await asRole(browser, 'finance', '/staff');
     const manager1 = await asRole(browser, 'branchManager', '/');
     const finance2 = await asRole(browser, 'finance2', '/staff');
     const manager2 = await asRole(browser, 'branchManager2', '/staff');
 
     try {
-      // Step 0 (admin): read cash_transfer_policy and pick a THB line within the limit (e.g. 1 note of 100 THB).
-      const policyRes = await admin.request.get('/api/v3/views/cash_transfer_policy');
+      // Step 0 (executive): read cash_transfer_policy and pick a THB line within the limit (e.g. 1 note of 100 THB).
+      const policyRes = await executive.request.get('/api/v3/views/cash_transfer_policy');
       expect(policyRes.ok(), `GET /api/v3/views/cash_transfer_policy (${policyRes.status()})`).toBeTruthy();
       const policyBody = (await policyRes.json()) as {
         data?: { limits?: Record<string, string> } | null;
@@ -183,7 +183,7 @@ test.describe.serial('F12b branch-to-branch cash transfer', () => {
         `cash_transfer_policy THB limit must be positive so a branch transfer is within the limit (got ${rawThbLimit ?? 'null'})`,
       ).toBeTruthy();
 
-      const denomRes = await admin.request.get('/api/v3/views/denominations');
+      const denomRes = await executive.request.get('/api/v3/views/denominations');
       expect(denomRes.ok(), `GET /api/v3/views/denominations (${denomRes.status()})`).toBeTruthy();
       const denomBody = (await denomRes.json()) as {
         data?: { rows?: Array<{ id: number; currency: string; faceValue: string }> };
@@ -247,7 +247,7 @@ test.describe.serial('F12b branch-to-branch cash transfer', () => {
       await receiveTransfer(manager1, leg2Id, denomId, TRANSFER_QTY, 'leg2-manager1-receive');
       await shot(manager1, 'cash', 'branch-transfer-8-leg2-received');
     } finally {
-      await Promise.all([admin.close(), finance1.close(), manager1.close(), finance2.close(), manager2.close()]);
+      await Promise.all([executive.close(), finance1.close(), manager1.close(), finance2.close(), manager2.close()]);
     }
   });
 });
