@@ -341,13 +341,17 @@ fn user_of(spec: &str) -> Option<User> {
     let (id, role, branch) = (parts.next()?, parts.next()?, parts.next()?);
     let role = Role::parse(role)?;
     let branch = (branch != "*").then(|| BranchId::new(branch));
+    let session = Some(branch.clone().unwrap_or_else(|| BranchId::new("MAIN")));
     let from = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
-    Some(User::new(
-        id,
-        ORG,
-        vec![ScopedRole::new(role, branch, from, None)],
-        None,
-    ))
+    Some(
+        User::new(
+            id,
+            ORG,
+            vec![ScopedRole::new(role, branch, from, None)],
+            None,
+        )
+        .with_branch(session),
+    )
 }
 
 struct HeaderUsers;

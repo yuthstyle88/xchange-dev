@@ -133,7 +133,7 @@ impl ScreenTable {
             Gate::Anyone => self.render_screen(decl),
             Gate::SignedIn => {
                 let callers = pages::get_callers(req).await;
-                if callers.owner_standing().is_none() && callers.staff_standing().is_none() {
+                if !callers.signed_in() {
                     pages::to_login(req)
                 } else {
                     self.render_screen(decl)
@@ -141,7 +141,7 @@ impl ScreenTable {
             }
             Gate::Branch => {
                 let callers = pages::get_callers(req).await;
-                if callers.owner_standing().is_none() && callers.staff_standing().is_none() {
+                if !callers.signed_in() {
                     pages::to_login(req)
                 } else {
                     match pages::page_branch(req, &callers) {

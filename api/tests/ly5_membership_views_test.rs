@@ -238,7 +238,8 @@ impl TestCallers {
                     None,
                 )],
                 Some(cust_id),
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             return Callers {
                 user: Some(user),
                 staff_user: None,
@@ -256,7 +257,8 @@ impl TestCallers {
                     None,
                 )],
                 Some(cust_id),
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             return Callers {
                 user: Some(user),
                 staff_user: None,
@@ -292,7 +294,8 @@ impl TestCallers {
                     None,
                 )],
                 None,
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             return Callers {
                 user: Some(user),
                 staff_user: None,
@@ -309,7 +312,8 @@ impl TestCallers {
                     None,
                 )],
                 None,
-            );
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
             return Callers {
                 user: Some(user),
                 staff_user: None,

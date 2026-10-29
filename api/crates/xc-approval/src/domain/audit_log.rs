@@ -29,25 +29,15 @@ pub struct AuditEntry {
 
 /// Append-only audit log port.
 pub trait AuditLog: Send + Sync {
-    /// Appends an audit event to the log in the caller's transaction, returning the new id.
+    /// Appends an audit event for `organization_id` in the caller's transaction, returning the new id.
     ///
     /// The log redacts `before` and `after` payloads before writing them.
-    fn append<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        event: &'a AuditEvent,
-    ) -> BoxFuture<'a, AppResult<i64>>;
-
-    /// Appends an audit event for `organization_id` in the caller's transaction, returning the new id.
     fn append_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         organization_id: &'a str,
         event: &'a AuditEvent,
-    ) -> BoxFuture<'a, AppResult<i64>> {
-        let _ = organization_id;
-        self.append(tx, event)
-    }
+    ) -> BoxFuture<'a, AppResult<i64>>;
 
     /// Reads a page of audit entries strictly ascending by id (keyset pagination).
     fn page<'a>(

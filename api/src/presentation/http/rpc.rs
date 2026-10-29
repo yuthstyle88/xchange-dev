@@ -268,7 +268,14 @@ pub(crate) async fn caller_of_rpc(
     let Some((user, access_actor)) = identity_session_actor(req, now).await else {
         return Ok(None);
     };
-    Ok(Standing::of(&access_actor, now).map(|standing| RpcCaller {
+    let standing = Standing::of(&access_actor, now).or_else(|| {
+        is_staff_caller(&access_actor, now).then_some(Standing {
+            user_id: access_actor.user_id,
+            kind: StandingKind::Owner,
+            branch: None,
+        })
+    });
+    Ok(standing.map(|standing| RpcCaller {
         standing,
         username: user.name.clone(),
         name: user.name,

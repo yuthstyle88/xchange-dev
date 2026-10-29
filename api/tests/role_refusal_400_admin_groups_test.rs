@@ -112,13 +112,29 @@ fn scoped(one: &str) -> ScopedRole {
     ScopedRole::in_group(code, base, branch, DateTime::<Utc>::UNIX_EPOCH, None)
 }
 
+fn session_branch(rows: &[ScopedRole]) -> Option<BranchId> {
+    if rows.is_empty() {
+        return None;
+    }
+    if rows.iter().any(|r| r.branch.is_none()) {
+        return Some(BranchId::new("MAIN"));
+    }
+    let first = rows.first().and_then(|r| r.branch.as_ref())?;
+    if rows.iter().all(|r| r.branch.as_ref() == Some(first)) {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 fn user_of(spec: &str) -> Option<User> {
     if spec.is_empty() {
         return None;
     }
     let user_id = format!("user-{}", spec.replace(['@', '*', '+', ':'], "-"));
-    let roles = spec.split('+').map(scoped).collect();
-    Some(User::new(&user_id, SEEDED_XC_ORG_ID, roles, None))
+    let roles: Vec<_> = spec.split('+').map(scoped).collect();
+    let session = session_branch(&roles);
+    Some(User::new(&user_id, SEEDED_XC_ORG_ID, roles, None).with_branch(session))
 }
 
 impl SessionReader for HeaderUsers {

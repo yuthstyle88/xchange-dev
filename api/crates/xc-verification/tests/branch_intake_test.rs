@@ -144,15 +144,16 @@ struct FailingAuditLog {
 }
 
 impl AuditLog for FailingAuditLog {
-    fn append<'a>(
+    fn append_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
         event: &'a AuditEvent,
     ) -> BoxFuture<'a, AppResult<i64>> {
         if self.should_fail.load(Ordering::Relaxed) {
             Box::pin(async move { Err(AppError::Internal("simulated audit failure".to_string())) })
         } else {
-            self.inner.append(tx, event)
+            self.inner.append_in(tx, organization_id, event)
         }
     }
 
