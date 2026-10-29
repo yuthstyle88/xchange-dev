@@ -159,7 +159,7 @@ fn user_id(spec: &str) -> String {
 }
 
 fn user_of(spec: &str) -> Option<User> {
-    let (role, branch) = spec.split_once('@')?;
+    let (role, branch_str) = spec.split_once('@')?;
     let role = match role {
         "FINANCE" => Role::Finance,
         "ADMIN" => Role::Admin,
@@ -169,18 +169,26 @@ fn user_of(spec: &str) -> Option<User> {
         "MARKETING" => Role::Marketing,
         other => panic!("unknown role {other}"),
     };
-    let branch = (branch != "*").then(|| BranchId::new(branch));
-    Some(User::new(
-        &user_id(spec),
-        "XC",
-        vec![ScopedRole::new(
-            role,
-            branch,
-            DateTime::<Utc>::UNIX_EPOCH,
+    let branch = (branch_str != "*").then(|| BranchId::new(branch_str));
+    let session_branch = Some(if branch_str == "*" {
+        BranchId::new("MAIN")
+    } else {
+        BranchId::new(branch_str)
+    });
+    Some(
+        User::new(
+            &user_id(spec),
+            "XC",
+            vec![ScopedRole::new(
+                role,
+                branch,
+                DateTime::<Utc>::UNIX_EPOCH,
+                None,
+            )],
             None,
-        )],
-        None,
-    ))
+        )
+        .with_branch(session_branch),
+    )
 }
 
 fn spec_of(req: &HttpRequest) -> String {

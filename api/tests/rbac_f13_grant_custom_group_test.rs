@@ -222,13 +222,29 @@ fn scoped(one: &str) -> ScopedRole {
     ScopedRole::in_group(code, base, branch, DateTime::<Utc>::UNIX_EPOCH, None)
 }
 
+fn session_branch(rows: &[ScopedRole]) -> Option<BranchId> {
+    if rows.is_empty() {
+        return None;
+    }
+    if rows.iter().any(|r| r.branch.is_none()) {
+        return Some(BranchId::new("MAIN"));
+    }
+    let first = rows.first().and_then(|r| r.branch.as_ref())?;
+    if rows.iter().all(|r| r.branch.as_ref() == Some(first)) {
+        Some(first.clone())
+    } else {
+        None
+    }
+}
+
 fn user_of(spec: &str) -> Option<User> {
     let roles_part = spec.split_once('#').map_or(spec, |(r, _)| r);
     if roles_part.is_empty() {
         return None;
     }
-    let roles = roles_part.split('+').map(scoped).collect();
-    Some(User::new(&user_id(spec), SEEDED_XC_ORG_ID, roles, None))
+    let roles: Vec<_> = roles_part.split('+').map(scoped).collect();
+    let branch = session_branch(&roles);
+    Some(User::new(&user_id(spec), SEEDED_XC_ORG_ID, roles, None).with_branch(branch))
 }
 
 fn spec_of(req: &HttpRequest) -> String {
