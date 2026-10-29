@@ -61,7 +61,12 @@ pub enum TicketCommand {
     Finish,
     /// WAITING | CALLED → CANCELLED with this reason.
     Cancel { reason: String },
+    /// SERVING → CANCELLED with reason [`NO_SALE`]: the customer was served but no sale was saved (#5541).
+    Release,
 }
+
+/// `queue_tickets.ended_reason` of a SERVING ticket released with no sale (#5541, owner 2026-10-29).
+pub const NO_SALE: &str = "noSale";
 
 /// The ticket after a command, and the event to write.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -121,6 +126,11 @@ impl QueueTicket {
                 ticket.status = TicketStatus::Completed;
                 ticket.completed_at = Some(now);
                 EventKind::Finish
+            }
+            (TicketStatus::Serving, TicketCommand::Release) => {
+                ticket.status = TicketStatus::Cancelled;
+                ticket.ended_reason = Some(NO_SALE.to_owned());
+                EventKind::Cancel
             }
             (TicketStatus::Waiting | TicketStatus::Called, TicketCommand::Cancel { reason }) => {
                 ticket.status = TicketStatus::Cancelled;

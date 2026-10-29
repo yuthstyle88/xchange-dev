@@ -33,6 +33,10 @@ pub enum QueueError {
     /// `[open, close − 10 min)`, outside hours, or with no hours set.
     #[error("outsideServiceHours")]
     OutsideServiceHours,
+    /// #5541: release with no sale on a ticket that a non-CANCELLED transaction names
+    /// (`transactions.queue_ticket_id`).
+    #[error("ticketHasSale")]
+    TicketHasSale,
 }
 
 impl QueueError {
@@ -48,6 +52,7 @@ impl QueueError {
             Self::NothingWaiting => "nothingWaiting",
             Self::NotFound => "notFound",
             Self::OutsideServiceHours => "outsideServiceHours",
+            Self::TicketHasSale => "ticketHasSale",
         }
     }
 }

@@ -23,7 +23,7 @@ use crate::domain::counter::counter::CounterStatus;
 use crate::domain::repository::{BranchFacts, QueueRepository};
 use crate::domain::ticket::queue_error::QueueError;
 use crate::domain::ticket::queue_event::{EventKind, QueueEvent};
-use crate::domain::ticket::queue_ticket::{QueueTicket, TicketStatus};
+use crate::domain::ticket::queue_ticket::{NO_SALE, QueueTicket, TicketStatus};
 use crate::domain::ticket::service_type::ServiceType;
 
 #[derive(Clone)]
@@ -772,6 +772,102 @@ impl QueueDesk {
         Ok(QueueTicket {
             status: TicketStatus::Completed,
             completed_at: Some(now),
+            ..ticket
+        })
+    }
+
+    /// SERVING → CANCELLED with reason `NO_SALE`, when no non-CANCELLED transaction names the ticket (#5541).
+    pub async fn release(
+        &self,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        let desk = self.clone();
+        let b = branch.clone();
+        let act = actor.clone();
+        let tid = ticket_id.to_owned();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { desk.release_in(tx, &act, &b, &tid, now).await })
+            })
+            .await
+    }
+
+    /// `release` inside the caller's transaction, which must already hold the branch's lock (the v3
+    /// command seam's `BranchTx`, design `queue-tickets.md` §4.6).
+    pub async fn release_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        branch: &BranchId,
+        ticket_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<QueueTicket> {
+        self.authorize_in(tx, actor, branch, now).await?;
+        check_on_duty(tx, branch, &actor.user_id).await?;
+        let ticket = fetch_ticket_for_update(tx, branch, ticket_id).await?;
+        if ticket.status != TicketStatus::Serving {
+            return Err(QueueError::StaleVersion.into());
+        }
+        check_ticket_owner(actor, &ticket)?;
+
+        let (sales,): (i64,) = sqlx::query_as(
+            "SELECT count(*) FROM transactions \
+             WHERE queue_ticket_id = $1::uuid AND status <> 'CANCELLED'",
+        )
+        .bind(&ticket.id)
+        .fetch_one(&mut **tx)
+        .await?;
+        if sales > 0 {
+            return Err(QueueError::TicketHasSale.into());
+        }
+
+        let rows = sqlx::query(
+            "UPDATE queue_tickets \
+             SET status = 'CANCELLED', ended_reason = 'noSale' \
+             WHERE id = $1::uuid AND status = 'SERVING'",
+        )
+        .bind(&ticket.id)
+        .execute(&mut **tx)
+        .await?;
+
+        if rows.rows_affected() == 0 {
+            return Err(QueueError::StaleVersion.into());
+        }
+
+        let event = QueueEvent {
+            id: uuid::Uuid::new_v4().to_string(),
+            organization_id: ticket.organization_id.clone(),
+            ticket_id: ticket.id.clone(),
+            status: TicketStatus::Cancelled,
+            kind: EventKind::Cancel,
+            actor_id: Some(actor.user_id.clone()),
+            at: now,
+            reason: Some(NO_SALE.to_owned()),
+        };
+        self.repo.insert_event_in(tx, &event).await?;
+        self.status.refresh_in(tx, branch, now).await?;
+
+        if let (Some(request_id), Some(events)) = (&ticket.kiosk_request_id, &self.kiosk_events) {
+            events
+                .on_ticket_ended_in(
+                    tx,
+                    branch,
+                    request_id,
+                    &xc_kernel::kiosk_queue_events::KioskTicketEnd::Cancelled {
+                        reason: NO_SALE.to_owned(),
+                    },
+                    &actor.user_id,
+                    now,
+                )
+                .await?;
+        }
+
+        Ok(QueueTicket {
+            status: TicketStatus::Cancelled,
+            ended_reason: Some(NO_SALE.to_owned()),
             ..ticket
         })
     }

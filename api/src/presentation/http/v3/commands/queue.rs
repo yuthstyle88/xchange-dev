@@ -121,6 +121,7 @@ pub fn refusal(err: AppError) -> V3Error {
             "notYourTicket" => ("notYourTicket", StatusCode::CONFLICT),
             "nothingWaiting" => ("nothingWaiting", StatusCode::CONFLICT),
             "outsideServiceHours" => ("outsideServiceHours", StatusCode::CONFLICT),
+            "ticketHasSale" => ("ticketHasSale", StatusCode::CONFLICT),
             _ => return unexpected(err),
         },
         _ => return unexpected(err),
@@ -362,6 +363,10 @@ ticket_command!(
     /// SERVING → COMPLETED.
     Finish, "ticketFinish", "/api/queue/tickets/{id}/finish", finish_in
 );
+ticket_command!(
+    /// SERVING → CANCELLED with reason `noSale`: served, no sale saved (#5541).
+    Release, "ticketRelease", "/api/queue/tickets/{id}/release", release_in
+);
 
 /// `POST /api/queue/tickets/{id}/cancel`: WAITING or CALLED → CANCELLED, with `reason`.
 pub struct Cancel(pub QueueServices);
@@ -523,6 +528,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     CommandEndpoint::register(cfg, Arc::new(Skip(q.clone())));
     CommandEndpoint::register(cfg, Arc::new(Start(q.clone())));
     CommandEndpoint::register(cfg, Arc::new(Finish(q.clone())));
+    CommandEndpoint::register(cfg, Arc::new(Release(q.clone())));
     CommandEndpoint::register(cfg, Arc::new(Cancel(q.clone())));
     CommandEndpoint::register(cfg, Arc::new(Pause(q.clone())));
     CommandEndpoint::register(cfg, Arc::new(Resume(q.clone())));

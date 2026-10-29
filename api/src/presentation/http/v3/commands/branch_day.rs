@@ -93,14 +93,21 @@ fn map_service_error(err: pos_error::AppError) -> V3Error {
 pub struct DayStartServiceCommand {
     service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
     ports: Arc<dyn CustodyPorts>,
+    /// Opens the branch's queue in the day start's own transaction (#5540).
+    queue: xc_queue::application::status::status_service::StatusService,
 }
 
 impl DayStartServiceCommand {
     pub fn new(
         service: Arc<BranchDayService<PgCustodyRepository, PgShiftRepository>>,
         ports: Arc<dyn CustodyPorts>,
+        queue: xc_queue::application::status::status_service::StatusService,
     ) -> Self {
-        Self { service, ports }
+        Self {
+            service,
+            ports,
+            queue,
+        }
     }
 }
 
@@ -168,6 +175,10 @@ impl CommandAction for DayStartServiceCommand {
                 },
                 Utc::now(),
             )
+            .await
+            .map_err(map_service_error)?;
+        self.queue
+            .open_in(tx, who, branch, Utc::now())
             .await
             .map_err(map_service_error)?;
 
@@ -639,6 +650,10 @@ impl CommandAction for AttendanceCloseForCommand {
 pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
     let pool = state.db.clone();
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let queue = xc_queue::application::status::status_service::StatusService::new(
+        branch_tx.clone(),
+        Arc::new(xc_queue::infrastructure::repository::PgQueueRepository::new(pool.clone())),
+    );
     let shifts = ShiftService::new(
         Arc::new(
             xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
@@ -655,7 +670,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 
     CommandEndpoint::register(
         cfg,
-        Arc::new(DayStartServiceCommand::new(service.clone(), ports)),
+        Arc::new(DayStartServiceCommand::new(service.clone(), ports, queue)),
     );
     CommandEndpoint::register(cfg, Arc::new(DayCutoffCommand::new(service.clone())));
     CommandEndpoint::register(cfg, Arc::new(DayTargetCommand::new(service.clone())));

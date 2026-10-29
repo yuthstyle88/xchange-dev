@@ -18,7 +18,7 @@ pub mod target_user;
 
 pub use actor::Actor;
 pub use approval_decider::ApprovalDecider;
-pub use authorizer::{Authorizer, Grant, Refusal, Target};
+pub use authorizer::{Authorizer, Grant, Refusal, Target, TargetScope};
 pub use branch_scope::BranchScope;
 pub use grant_guard::{AccountAction, GrantGuard, GrantRefusal};
 pub use matrix_guardrails::{GuardrailBreach, MatrixGuardrails};

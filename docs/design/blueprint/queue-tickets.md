@@ -41,7 +41,7 @@
 | Q2 | **Two service types, `WALK_IN` and `BOOKING`**, each with its own daily sequence per branch. | Q-A1, §16 UQ |
 | Q3 | **Numbers.** `sequence` starts at 1 per (branch, service date, service type). `service_date` is the branch's local date (Branch `timezone`, PR 589 OR-1). `display_number` is the type's letter and the sequence zero-padded to 3: `W001`, `B001`. [proposed: the letters and padding are look only] | §16, §18 *"เลขคิวไม่ซ้ำในสาขา/วัน"* |
 | Q4 | **Who issues.** A walk-in ticket is issued when the kiosk request becomes WAITING (the customer submits on the tablet), or by a teller at the desk for a customer without the tablet. A booking ticket is issued by the booking's check-in (B02, #555), linked to it. A booking has at most one active ticket. | Q-A2, §16 relations |
-| Q5 | **States** (§16): `WAITING → CALLED → SERVING → COMPLETED`; `CANCELLED`, `NO_SHOW`. Recall keeps CALLED and writes an event. Skip = `NO_SHOW`, final (Q-A3). Cancel is allowed from WAITING or CALLED. SERVING ends only in COMPLETED. | §16, B06, Q-A3 |
+| Q5 | **States** (§16): `WAITING → CALLED → SERVING → COMPLETED`; `CANCELLED`, `NO_SHOW`. Recall keeps CALLED and writes an event. Skip = `NO_SHOW`, final (Q-A3). Cancel is allowed from WAITING or CALLED. SERVING ends in COMPLETED, or, when no sale was saved, in CANCELLED with reason `noSale` (§4.6, owner 2026-10-29, #5541). | §16, B06, Q-A3 |
 | Q6 | **Call order: BOOKING before WALK_IN** (Q-A2). Within a type: lowest sequence first. "Call next" takes the first WAITING ticket in that order. A teller may also call a chosen ticket. | Q-A2 |
 | Q7 | **A counter is a teller with an OPEN shift** (PR 590 C1: one OPEN shift per teller). Its state is `ACTIVE` or `PAUSED` (Q-A4). `active_counters` = the branch's ACTIVE counters. A teller with no OPEN shift cannot call. | Q-A4, PR 590 |
 | Q8 | **The branch's queue is open or closed** (`queue_open`). BRANCH_MANAGER closes it: no new ticket is issued, and existing tickets are still served. The queue opens with the branch day's start service (PR 590 C9) and closes at cut-off unless reopened. When the branch day closes, every WAITING or CALLED ticket becomes `CANCELLED` with reason `dayClosed`; before that, every unfinished kiosk request (`WAITING`, `ACCEPTED`, `ID_CHECKED`) is cancelled `DAY_CLOSED`, and its ticket (SERVING included) ends `kioskCancelled:DAY_CLOSED` (`queue-day-close.md` §7, ticket 4147). | §16 `queue_open`, PR 590 C9; owner 2026-10-21 (K-1, K-4) |
@@ -122,6 +122,7 @@ queue_tickets:  WAITING --call--> CALLED --start--> SERVING --finish--> COMPLETE
                 CALLED  --recall--> CALLED                   (event only; called_at unchanged)
                 CALLED  --skip--> NO_SHOW                    (final, Q-A3)
                 WAITING | CALLED --cancel(reason)--> CANCELLED
+                SERVING --release--> CANCELLED (reason noSale; refused while a non-CANCELLED sale names it, §4.6)
                 WAITING | CALLED --branch day closes--> CANCELLED (reason dayClosed)
 queue_counters: ACTIVE --pause--> PAUSED --resume--> ACTIVE ; removed when the shift closes
 branch queue:   closed --open (start service or BRANCH_MANAGER)--> open --close (cut-off or BRANCH_MANAGER)--> closed
@@ -152,6 +153,7 @@ routes are [proposed] and may be renamed in review without changing logic.
 | `ticketCallNext` | `POST /api/queue/call-next` | `QueueOperate` |
 | `ticketCall` / `ticketRecall` / `ticketSkip` / `ticketStart` / `ticketFinish` / `ticketCancel` | `POST /api/queue/tickets/{id}/call` · `/recall` · `/skip` · `/start` · `/finish` · `/cancel` | `QueueOperate` |
 | `counterPause` / `counterResume` | `POST /api/queue/counter/pause` · `/resume` | `QueueOperate` |
+| `ticketRelease` (§4.6) | `POST /api/queue/tickets/{id}/release` | `QueueOperate` |
 | `queueOpen` / `queueClose` | `POST /api/queue/open` · `/close` | `BranchDayOperate` |
 
 The kiosk's ticket and the booking's ticket are issued inside the kiosk's `confirm` and in #555's check-in. They are not
@@ -180,6 +182,111 @@ separate routes.
   *requests* (amount, staff, accept, filter, paging, request id), not queue tickets, and `queue_board` carries none of
   that. The earlier text grouped it with the card by mistake. `kiosk_queue` therefore stays until a later row gives the
   panel a v3 request view. **Its `startedAt`/`completedAt` keep their wire shape but are read from the request's queue ticket** (`queue_tickets.served_at`/`completed_at`, joined on the ticket the kiosk `confirm` issued), not from the request's own columns, which QU-8's M2 drops. This is the copy relation stated above, read at the source. A request with no ticket answers `null` for both.
+
+### 4.6 Releasing a SERVING ticket with no sale (#5541)
+
+> Design delta by claude/2ca5874b (BE lane, under claude/553782), 2026-10-29 ICT. Measured on `origin/main` `6d573093`.
+> Owner's decision, 2026-10-29 19:0x ICT, in claude/553782's session (label verbatim): **"ยกเลิกได้ ระบุว่าไม่มีการขาย (Recommended)"** (#5541 §2). It answers desk check round 4's P3.
+
+**The gap.**
+- The desk serves a walk-in at the booking step (`web/src/screens/desk/steps/booking/step.tsx:63` → `POST /api/queue/tickets/serve`), before any sale exists.
+- In round 4, W013's PromptPay save was blocked, so W013 stayed SERVING. The teller's next walk-in got 409 `alreadyServing` (`check_not_serving`, `queue_desk.rs:88-109`).
+- The only way out was `finish`, which recorded COMPLETED for a sale that never happened. `QueueTicket::apply` has `Finish` as SERVING's only exit (`queue_ticket.rs:120`), and `Cancel` is WAITING | CALLED only (`:125`).
+
+**The transition.** `SERVING --release--> CANCELLED`, with `ended_reason = noSale` and a `CANCEL` event whose `reason` is `noSale`.
+- `[required]` The reason is the one fixed value `NO_SALE = "noSale"` (`queue_ticket.rs`), and the request carries no reason text. It is camelCase like the desk's other reasons (`dayClosed`, `customerLeft`).
+- The event reuses what the one existing SERVING → CANCELLED path writes: the kiosk end (`ticket_issuer.rs:391-401`) writes status CANCELLED, kind `CANCEL`, and the reason in `queue_events.reason`.
+  - Its reason is `kioskCancelled:<code>`, which means the kiosk request ended. `noSale` means a teller served the customer and no sale was saved.
+  - No new event kind is added, so the `queue_events.kind` CHECK (`20261101100000_queue.sql:37`) is unchanged.
+  - (#5541 §3 also cites the day-close hook, `queue_day_shift_hook_test.rs:122`. Measured there: day close leaves a SERVING ticket SERVING, with no event, so it is not such a path.)
+- **A new command, not a wider `cancel`.** `cancel` keeps its free reason and its WAITING | CALLED rule. The existing pins stay true unedited: `queue_ticket_machine_test.rs:271-275` (SERVING + `Cancel` is stale) and `every_command_outside_the_table_is_stale` (`:279`, whose `all_commands()` list has no `Release`).
+  - #5541 §4 expected `queue_desk_test.rs:321-337` to flip. Measured: those lines refuse commands on a NO_SHOW ticket, not a SERVING one, so they stay true.
+
+**Who may send it.** The same as `finish` (QU-A2, `queue_desk.rs:729-741`): `QueueOperate` (`authorize_in`), an OPEN shift (`check_on_duty`), and either the serving teller or a BRANCH_MANAGER of the branch (`check_ticket_owner`, `:111`).
+
+**A ticket with a sale cannot be released.** When a transaction with `status <> 'CANCELLED'` names the ticket (`transactions.queue_ticket_id`, `20261226130000_transactions_queue_ticket_id.sql`), release is refused with `ticketHasSale` (409), and the ticket stays SERVING.
+- The predicate is the one the column's unique index uses (`:3-4`). So a DRAFT, PENDING_APPROVAL or CONFIRMED sale blocks release: the teller cancels the sale first, then releases the ticket.
+- A sale that is completed later finishes its ticket through `finish_for_sale_in` (`complete.rs:323-326`). That path is unchanged.
+
+**After a release:**
+- the branch version and the estimate refresh (`StatusService::refresh_in`), as for every transition (§4.3);
+- the teller holds no CALLED or SERVING ticket, so `alreadyServing` no longer fires;
+- a kiosk-linked ticket tells its request through `KioskQueueEvents::on_ticket_ended_in(.., Cancelled { reason: "noSale" })`, as `cancel_in` does (`queue_desk.rs:845-857`);
+- a booking's ticket is released like a walk-in. As with `cancel`, no booking event is sent.
+
+**Class diagram (the delta).**
+
+```mermaid
+classDiagram
+    class TicketCommand {
+        <<enum>>
+        Release
+    }
+    class QueueTicket {
+        +apply(cmd, now) Result~Transition, QueueError~
+    }
+    class QueueError {
+        <<enum>>
+        TicketHasSale  "ticketHasSale"
+    }
+    class QueueDesk {
+        +release(actor, branch, ticket_id, now) AppResult~QueueTicket~
+        +release_in(tx, actor, branch, ticket_id, now) AppResult~QueueTicket~
+    }
+    class Release {
+        <<CommandAction ticketRelease>>
+        POST /api/queue/tickets/{id}/release
+    }
+    Release --> QueueDesk : release_in
+    QueueDesk --> QueueTicket : apply(Release)
+    QueueDesk ..> QueueError : TicketHasSale
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `TicketCommand::Release`, `NO_SALE` | `api/crates/xc-queue/src/domain/ticket/queue_ticket.rs` | skeleton on `test/5541` | T1 |
+| the `(Serving, Release)` arm of `apply` | same file | **T1** | `QueueDesk::release_in` |
+| `QueueError::TicketHasSale` (`"ticketHasSale"`) | `api/crates/xc-queue/src/domain/ticket/queue_error.rs` | skeleton | T1 |
+| `QueueDesk::release`, `release_in` (signatures) | `api/crates/xc-queue/src/application/desk/queue_desk.rs` | skeleton (answers `staleVersion`, today's refusal) | the route |
+| `release_in` body | same file | **T1** | — |
+| `Release` (`ticketRelease`, the `ticket_command!` macro), its `register` line, `ticketHasSale` → 409 in `refusal` | `api/src/presentation/http/v3/commands/queue.rs` | skeleton | FE ticket |
+| `queue_operate("ticketRelease")` | `api/crates/xc-auth/src/domain/policy/areas/queue.rs` | skeleton | — |
+
+`[required]` route `POST /api/queue/tickets/{id}/release`, body `{branch, id}` (`QueueTicketInput`), answer `QueueTicketDto`, and refusal codes `staleVersion`, `notYourTicket`, `noOpenShift`, `ticketHasSale` (each 409), plus the policy's role refusal.
+
+**Behaviour table.**
+
+| # | Ticket | Caller | Answer | Up-front test |
+|---|---|---|---|---|
+| N-1 | SERVING, no sale | the serving teller | CANCELLED `noSale`; one `CANCEL` event by them, reason `noSale`; version moves; the teller can call the next ticket | `xc-queue/tests/queue_desk_release_test.rs::the_serving_teller_releases_…` (red today) |
+| N-2 | SERVING | another teller | `notYourTicket`; unchanged | `…::another_teller_is_refused_and_a_branch_manager_on_duty_releases` (red today) |
+| N-3 | SERVING | a BRANCH_MANAGER on duty | CANCELLED `noSale`; the event is theirs | same test |
+| N-4 | WAITING, CALLED or COMPLETED | the teller | `staleVersion`; unchanged (CALLED is cancelled or skipped instead) | `…::only_a_serving_ticket_is_released_…` |
+| N-5 | SERVING | a caller with no OPEN shift | `noOpenShift`; unchanged | `…::a_teller_without_an_open_shift_is_refused` (red today) |
+| N-6 | SERVING, named by a non-CANCELLED sale | the teller | `ticketHasSale`; stays SERVING | `api/tests/queue_release_no_sale_route_test.rs::a_ticket_a_sale_names_is_refused_ticket_has_sale_and_stays_serving` (red today) |
+| N-7 | SERVING, its only sale CANCELLED | the teller | CANCELLED `noSale` | `…::a_ticket_whose_only_sale_was_cancelled_is_released` (red today) |
+| N-8 | round 4's W013: served, released | the teller, then a second `serve` | release 200 CANCELLED; the second serve gets a new ticket, not `alreadyServing` | `…::a_served_walk_in_with_no_sale_is_released_and_the_next_walk_in_is_served` (red today) |
+| N-9 | domain: `apply(Release)` from SERVING / any other state | — | CANCELLED `noSale`, `Cancel` event, `served_at` kept, no `completed_at` / `StaleVersion` | `xc-queue/tests/queue_ticket_release_test.rs` (the SERVING case is red today) |
+| N-10 | the policy row | — | `ticketRelease` needs `QueueOperate` | `…route_test::the_policy_row_ticket_release_needs_queue_operate` |
+
+**Up-front tests.** They are on branch **`test/5541`** at `dc0d3fee`, off `origin/main` `6d573093`, with the skeleton above and 12 tests in the three files.
+- On `test/5541`: 7 fail on the result (the skeleton's `staleVersion` where a release or a different refusal is expected), and 5 pass.
+- With a throwaway T1: 106/106 across these files and `queue_desk_test`, `queue_ticket_machine_test`, `queue_desk_rules_test`, `queue_desk_on_duty_test`, `kiosk_ticket_cancel_test`, `gapsa6_desk_kiosk_events_test`, `walk_in_desk_test`, `walkin_sale_link_test`, `walkin_serve_command_test` and `queue_commands_views_test`.
+- clippy `-p xc-queue -p xc-auth -p xchange --all-targets -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` are clean.
+- No existing test changes.
+
+**Function tickets.**
+
+| Ticket | Lane | File scope | Done line |
+|---|---|---|---|
+| **T1** release with no sale | BE: `class:logic`, Gemini 4 Argon, base `main`, from `test/5541` | `api/crates/xc-queue/src/domain/ticket/queue_ticket.rs`, `api/crates/xc-queue/src/application/desk/queue_desk.rs` | `cd api && cargo nextest run -p xc-queue -p xchange -E 'test(/^(queue_desk_release_test\|queue_ticket_release_test\|queue_release_no_sale_route_test\|queue_desk_test\|queue_ticket_machine_test\|kiosk_ticket_cancel_test\|walkin_sale_link_test)::/)'` all green; clippy and `fmt-included.sh` clean |
+| **FE-1** the desk's "ไม่มีการขาย" (no sale) button | FE: cut by the FE controller claude/e92db6 | for the FE controller to set; measured candidates: `web/src/screens/desk/queue/queue-commands.ts` (`TicketVerb` gains `release`), `web/src/screens/desk/queue/actions/TicketActions.tsx` (the SERVING ticket's actions, beside finish), and the booking step's walk-in card (`web/src/screens/desk/steps/booking/step.tsx`) | the button shows on a SERVING ticket, posts the route above, and shows `ticketHasSale` as "this ticket has a sale; cancel the sale first" |
+
+FE-1 needs T1 on main for a live route, but it can start against the `[required]` contract above.
+
+**Data migration.** None. `CANCELLED` and `ended_reason` exist (`20261101100000_queue.sql:14`, `:20`). `ended_reason` is free text with no CHECK, and `CANCEL` is an allowed event kind (`:37`). No row changes shape.
+
+**Out of scope.** Releasing a CALLED ticket (it already has `cancel` and `skip`), and any change to `finish` or `cancel`.
 
 ## 5. Class diagram
 

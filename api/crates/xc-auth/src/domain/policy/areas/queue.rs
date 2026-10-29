@@ -37,6 +37,7 @@ pub const ROWS: &[AreaRow] = &[
     queue_operate("ticketSkip"),
     queue_operate("ticketStart"),
     queue_operate("ticketFinish"),
+    queue_operate("ticketRelease"),
     queue_operate("ticketCancel"),
     queue_operate("counterPause"),
     queue_operate("counterResume"),

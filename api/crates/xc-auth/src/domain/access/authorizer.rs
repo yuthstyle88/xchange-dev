@@ -11,9 +11,16 @@ use super::role_grants::RoleGrants;
 use super::scoped_role::ScopedRole;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TargetScope {
+    Branch(BranchId),
+    Unnamed,
+    Organisation,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Target {
     pub organization_id: String,
-    pub branch: Option<BranchId>,
+    pub scope: TargetScope,
     pub customer_id: Option<String>,
 }
 
@@ -21,8 +28,32 @@ impl Target {
     pub fn new(organization_id: &str, branch: Option<BranchId>, customer_id: Option<&str>) -> Self {
         Self {
             organization_id: organization_id.to_string(),
-            branch,
+            scope: match branch {
+                Some(b) => TargetScope::Branch(b),
+                None => TargetScope::Unnamed,
+            },
             customer_id: customer_id.map(str::to_string),
+        }
+    }
+
+    /// A target on one named branch (#5514, design `org-wide-actor-branch.md` §9.2).
+    pub fn at_branch(organization_id: &str, branch: BranchId) -> Self {
+        Self::new(organization_id, Some(branch), None)
+    }
+
+    /// An object of the whole organisation, which only an organisation-wide row may act on (#5514 §9.2).
+    pub fn organisation(organization_id: &str) -> Self {
+        Self {
+            organization_id: organization_id.to_string(),
+            scope: TargetScope::Organisation,
+            customer_id: None,
+        }
+    }
+
+    pub fn branch(&self) -> Option<&BranchId> {
+        match &self.scope {
+            TargetScope::Branch(b) => Some(b),
+            TargetScope::Unnamed | TargetScope::Organisation => None,
         }
     }
 }
@@ -88,8 +119,8 @@ impl Authorizer {
             return Err(Refusal::RoleNotAllowed);
         }
 
-        let grant_branch = match &target.branch {
-            Some(target_b) => {
+        let grant_branch = match &target.scope {
+            TargetScope::Branch(target_b) => {
                 let in_scope = qualifying
                     .iter()
                     .any(|r| r.branch.is_none() || r.branch.as_ref() == Some(target_b));
@@ -99,7 +130,7 @@ impl Authorizer {
                     return Err(Refusal::OutOfScope);
                 }
             }
-            None => {
+            TargetScope::Unnamed => {
                 // SB-1 §14.3: the session branch, when a qualifying row covers it; otherwise the arms below.
                 let session = actor.branch.as_ref().filter(|b| {
                     qualifying
@@ -123,6 +154,10 @@ impl Authorizer {
                     }
                 }
             }
+            TargetScope::Organisation => match &actor.branch {
+                Some(b) if qualifying.iter().any(|r| r.branch.is_none()) => b.clone(),
+                _ => return Err(Refusal::OutOfScope),
+            },
         };
 
         // 4. Owner check for CustomerSelf
