@@ -64,6 +64,7 @@ classDiagram
   ConfirmExchange --> ApprovalService : Some(t.branch_id)
   ReversalRequest --> ApprovalService : Some(input.branch)
   LoyaltyRuleSubmit --> ApprovalService : None
+  NegativeStockGate --> ApprovalService : Some(branch)
 ```
 
 The `request` signature change is the only one. `[required]`: `branch` comes right after `object_id`, and it is `Option<&BranchId>` (`xc_kernel::ids::BranchId`). `None` means the object belongs to the organisation and to no branch.
@@ -81,6 +82,7 @@ The `request` signature change is the only one. `[required]`: `branch` comes rig
 | 7 | `api/src/.../exchange/confirm.rs:151` | exchange approval | `Some(&t.branch_id)` | the owner requests: `NULL` → the transaction's branch |
 | 8 | `api/src/.../exchange/reversal_request.rs:143` | reversal | `Some(&input.branch)` | the owner requests: `NULL` → the exchange's branch |
 | 9 | `api/src/presentation/http/v3/commands/loyalty_rule_submit.rs:161` | `LOYALTY_RULE_VERSION` | `None`: a loyalty rule belongs to the organisation | a requester with a branch row: that branch / `MAIN` → `NULL` |
+| 10 | `api/src/application/workflows/exchange/negative_stock_gate.rs:84` (`NegativeStockGate::open_after_refusal`) | `NEGATIVE_STOCK` | `Some(branch)`: the branch whose stock is short. `open_after_refusal` and `stock_refusal_answer` (`v3/negative_stock.rs:27`) gain a `branch: &BranchId` after `object`, which their three callers already hold (`commands/complete.rs:156`, `reversal_post.rs:157`, `cash/transfers.rs:222`, each scoped by `this_branchs`) | an org-wide requester (the owner: `NULL`) → the branch |
 
 **Who reads the stored branch:**
 - The decision policies call `ApprovalDecider::holds_on(who, p, request.branch_id)` (`approval_decider.rs:35-39`): `count_difference.rs:116`, `negative_stock.rs:72`, `exchange/approval.rs:171` and `binding_approval.rs:131`.
@@ -124,7 +126,7 @@ The fixture reds that wave 2 does not own also move to `test/5279`, behaviour-ne
 
 **Skeleton on `test/5279`** (sub-controller, not a ticket):
 - the `request` signature of §2;
-- the nine callers of §3 passing their branch;
+- the ten callers of §3 passing their branch;
 - every test call of `request(..)` given its branch (`xc-approval/tests/approval_rules_test.rs`, `approval_subject_tx_test.rs`, `approval_unavailable_paths_test.rs`, `approval_request_organisation_test.rs`, `or71_stored_actor_test.rs`, and the api / `xc-cash` tests that call it);
 - the tests of §5.
 
