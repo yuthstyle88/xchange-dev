@@ -88,7 +88,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('cashLimitsSave (PUT /api/cash-limits): happy path, reload read-back, and restore in finally', async ({
     page,
   }) => {
-    await signIn(page, 'admin', adminPath('cash-limits'));
+    await signIn(page, 'executive', adminPath('cash-limits'));
     await loadCashLimits(page, 'goto');
 
     const noLimitCheckbox = page.locator('input[data-action="no-limit"]');
@@ -136,7 +136,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('transferPolicySave (PUT /api/cash-transfer-policy): happy path, reload read-back, and restore in finally', async ({
     page,
   }) => {
-    await signIn(page, 'admin', adminPath('cash-policy'));
+    await signIn(page, 'executive', adminPath('cash-policy'));
     await page.goto(adminPath('cash-policy'));
     await waitCashPolicyReady(page);
 
@@ -184,7 +184,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('denominationGroupCreate + denominationGroupMap + denominationGroupRemove: create, map board key, reload read-back, and remove', async ({
     page,
   }) => {
-    await signIn(page, 'admin', adminPath('denomination-groups'));
+    await signIn(page, 'executive', adminPath('denomination-groups'));
     await page.goto(adminPath('denomination-groups'));
     const currency = await selectFirstDenomCurrency(page);
 
@@ -253,7 +253,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('transferReconcile (POST /api/cash-transfers/{id}/reconcile): happy path and reload read-back when a RECEIVED row exists', async ({
     page,
   }) => {
-    const role = hasAccount('finance') ? 'finance' : 'admin';
+    const role = hasAccount('finance') ? 'finance' : 'executive';
     await signIn(page, role, adminPath('cash'));
 
     const meRes = await page.request.get('/api/v3/views/me');
@@ -328,7 +328,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('reconciliationCertify (POST /api/v3/commands/reconciliation_certify): happy path and reload read-back', async ({
     page,
   }) => {
-    const role = hasAccount('finance') ? 'finance' : 'admin';
+    const role = hasAccount('finance') ? 'finance' : 'executive';
     await signIn(page, role, adminPath('reconciliation'));
     await page.goto(adminPath('reconciliation'));
 
@@ -365,7 +365,7 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
     page,
   }) => {
     // 1 & 2. cashLimitsSave (CashLimits.tsx:31-37, 134-137, 189): negative limit and >2 decimal places
-    await signIn(page, 'admin', adminPath('cash-limits'));
+    await signIn(page, 'executive', adminPath('cash-limits'));
     await loadCashLimits(page, 'goto');
 
     for (const lang of ['th', 'en'] as const) {
