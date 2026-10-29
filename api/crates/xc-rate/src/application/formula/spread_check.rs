@@ -437,7 +437,14 @@ fn check_row(
     inputs: &FormulaInputs,
     policy: &RatePolicy,
 ) {
-    match formula.price(inputs) {
+    // A side whose formula names a missing reference side is unpriced, as in the draft path
+    // (`RateProposal::of_with`); it is never a failure.
+    let price_side = |side: Side| match formula.side(side, inputs) {
+        Ok(rate) => Ok(Some(rate.value())),
+        Err(FormulaError::MissingInput(_)) => Ok(None),
+        Err(e) => Err(e),
+    };
+    match price_side(Side::Buy).and_then(|b| price_side(Side::Sell).map(|s| (b, s))) {
         Err(e) => {
             report.priced.push(SpreadRow {
                 branch: branch.clone(),
@@ -457,25 +464,25 @@ fn check_row(
                 reason: SpreadReason::Formula(e),
             });
         }
-        Ok((buy_rate, sell_rate)) => {
-            let buy = buy_rate.value();
-            let sell = sell_rate.value();
+        Ok((buy, sell)) => {
             report.priced.push(SpreadRow {
                 branch: branch.clone(),
                 currency,
                 tier,
                 mode,
-                buy: Some(buy),
-                sell: Some(sell),
+                buy,
+                sell,
             });
-            if buy > sell {
+            if let (Some(b), Some(s)) = (buy, sell)
+                && b > s
+            {
                 report.failures.push(SpreadFailure {
                     branch: branch.clone(),
                     currency,
                     tier,
                     mode,
-                    buy: Some(buy),
-                    sell: Some(sell),
+                    buy,
+                    sell,
                     reason: SpreadReason::BuyAboveSell,
                 });
             } else if mode == SpreadMode::Auto {
@@ -484,8 +491,8 @@ fn check_row(
                     (Side::Buy, buy, inputs.ref_buy),
                     (Side::Sell, sell, inputs.ref_sell),
                 ] {
-                    if let (Some(guard), Some(r)) =
-                        (policy.guard_for(currency.as_str(), side), ref_val)
+                    if let (Some(price), Some(guard), Some(r)) =
+                        (price, policy.guard_for(currency.as_str(), side), ref_val)
                         && r > Decimal::ZERO
                     {
                         let pct = ((price / r - Decimal::ONE) * hundred)
@@ -496,8 +503,8 @@ fn check_row(
                                 currency,
                                 tier,
                                 mode,
-                                buy: Some(buy),
-                                sell: Some(sell),
+                                buy,
+                                sell,
                                 reason: SpreadReason::OutsideGuard {
                                     side,
                                     pct,
