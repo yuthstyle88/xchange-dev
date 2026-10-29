@@ -8,13 +8,17 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use pos_error::AppResult;
+use chrono::{DateTime, Utc};
+use pos_error::{AppError, AppResult};
 use serde::Serialize;
 use sqlx::PgPool;
 use ts_rs::TS;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_rate::domain::formula::input::FormulaInput;
+use xc_rate::domain::formula::price_formula::{DEFAULT_BUY, DEFAULT_SELL};
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
@@ -84,6 +88,17 @@ impl PricingFormulaView {
     }
 }
 
+#[derive(sqlx::FromRow)]
+struct OrgFormulaRow {
+    id: Uuid,
+    version: i32,
+    buy_formula: String,
+    sell_formula: String,
+    valid_from: DateTime<Utc>,
+    approved_by: String,
+    reason: String,
+}
+
 impl BranchView for PricingFormulaView {
     const NAME: &'static str = "pricing_formula";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
@@ -97,8 +112,101 @@ impl BranchView for PricingFormulaView {
         _who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
-        let _ = (&self.pool, branch);
-        async move { todo!("pricing-formula wave 3: pricing_formula view") }
+        let pool = self.pool.clone();
+        let branch = branch.clone();
+        async move {
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
+
+            let org_id: Option<Uuid> =
+                sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+                    .bind(branch.as_str())
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+            let org_id = org_id.ok_or_else(|| AppError::NotFound {
+                entity: "branch",
+                id: branch.to_string(),
+            })?;
+
+            let org_row: Option<OrgFormulaRow> = sqlx::query_as(
+                "SELECT id, version, buy_formula, sell_formula, valid_from, approved_by, reason \
+                 FROM pricing_formula_versions \
+                 WHERE organization_id = $1 AND valid_to IS NULL",
+            )
+            .bind(org_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            let has_org_formula = org_row.is_some();
+            let organisation = org_row.map(|row| OrganisationFormulaDto {
+                id: row.id.to_string(),
+                version: row.version,
+                buy_formula: row.buy_formula,
+                sell_formula: row.sell_formula,
+                valid_from: row.valid_from.to_rfc3339(),
+                approved_by: row.approved_by,
+                reason: row.reason,
+            });
+
+            let branch_rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+                "SELECT b.id, rpv.buy_formula, rpv.sell_formula \
+                 FROM branches b \
+                 LEFT JOIN LATERAL ( \
+                     SELECT buy_formula, sell_formula \
+                     FROM rate_policy_versions \
+                     WHERE branch_id = b.id AND valid_to IS NULL \
+                     ORDER BY version DESC \
+                     LIMIT 1 \
+                 ) rpv ON true \
+                 WHERE b.organization_id = $1 \
+                 ORDER BY b.id ASC",
+            )
+            .bind(org_id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(AppError::Database)?;
+
+            tx.commit().await.map_err(AppError::Database)?;
+
+            let branches = branch_rows
+                .into_iter()
+                .map(|(branch, buy, sell)| {
+                    let (source, own) = match (buy, sell) {
+                        (Some(buy_formula), Some(sell_formula)) => (
+                            "BRANCH".to_string(),
+                            Some(FormulaTextsDto {
+                                buy_formula,
+                                sell_formula,
+                            }),
+                        ),
+                        _ if has_org_formula => ("ORGANISATION".to_string(), None),
+                        _ => ("DEFAULT".to_string(), None),
+                    };
+                    BranchFormulaDto { branch, source, own }
+                })
+                .collect();
+
+            let default = FormulaTextsDto {
+                buy_formula: DEFAULT_BUY.to_string(),
+                sell_formula: DEFAULT_SELL.to_string(),
+            };
+
+            let inputs = FormulaInput::ALL
+                .into_iter()
+                .map(|i| FormulaInputDto {
+                    name: i.name().to_string(),
+                })
+                .collect();
+
+            Ok(PricingFormulaData {
+                organisation,
+                default,
+                inputs,
+                branches,
+            })
+        }
     }
 }
 
