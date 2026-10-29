@@ -121,6 +121,7 @@ async fn open(db: &TestDb, by: &Actor, object_id: &str) -> ApprovalRequest {
             &mut tx,
             TYPE,
             object_id,
+            None,
             &json!({ "n": 1 }),
             by,
             &format!("key-{object_id}"),

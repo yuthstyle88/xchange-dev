@@ -110,7 +110,7 @@ impl Authorizer {
                 if let Some(b) = session {
                     b.clone()
                 } else if has_org_wide {
-                    BranchId::new("MAIN")
+                    return Err(Refusal::OutOfScope);
                 } else {
                     let distinct_branches: HashSet<_> = qualifying
                         .iter()

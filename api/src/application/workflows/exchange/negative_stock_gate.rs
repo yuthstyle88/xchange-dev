@@ -12,6 +12,7 @@ use xc_cash::domain::posting::ApprovalRequestId;
 use xc_cash::domain::shortfall::StockShortfall;
 use xc_exchange::domain::reversal::reversal::ReversalId;
 use xc_exchange::domain::transaction::transaction::TransactionId;
+use xc_kernel::ids::BranchId;
 
 /// Outcome of handling a `stockInsufficient` refusal at exchange completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,11 +68,13 @@ impl NegativeStockGate {
 
     /// Opens or re-reads the `NEGATIVE_STOCK` approval request in its own transaction after the source's
     /// posting refuses with `stockInsufficient` (#3405 §7). `refusal` is that refusal's message: the
-    /// shortfall it carries becomes the request's `proposed_payload` (`StockShortfall`, row 1).
+    /// shortfall it carries becomes the request's `proposed_payload` (`StockShortfall`, row 1). The request is filed
+    /// under `branch`, the branch whose stock is short (design `org-wide-actor-branch.md` §3).
     pub async fn open_after_refusal(
         pool: &PgPool,
         approvals: &ApprovalService,
         object: &NegativeStockObject,
+        branch: &BranchId,
         refusal: &str,
         actor: &Actor,
         key: &str,
@@ -81,7 +84,15 @@ impl NegativeStockGate {
         let mut tx = pool.begin().await.map_err(AppError::Database)?;
 
         match approvals
-            .request(&mut tx, NEGATIVE_STOCK, &object_id, &payload, actor, key)
+            .request(
+                &mut tx,
+                NEGATIVE_STOCK,
+                &object_id,
+                Some(branch),
+                &payload,
+                actor,
+                key,
+            )
             .await
         {
             Ok(req) if req.status == "REJECTED" => Ok(NegativeStockOutcome::Rejected(req.id)),

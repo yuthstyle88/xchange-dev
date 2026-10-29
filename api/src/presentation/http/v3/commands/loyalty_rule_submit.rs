@@ -162,6 +162,7 @@ impl CommandAction for LoyaltyRuleSubmitCommand {
                 tx,
                 rule_approval::TYPE,
                 &object_id,
+                None,
                 &payload,
                 who,
                 key.as_str(),

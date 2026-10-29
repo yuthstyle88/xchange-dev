@@ -5,48 +5,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
 use xc_auth::domain::access::{Actor, Role};
-
-fn requester_branch(by: &Actor) -> Option<String> {
-    let has_org_exec = by
-        .roles
-        .iter()
-        .any(|r| r.role == Role::Executive && r.branch.is_none());
-    let has_org_admin = by
-        .roles
-        .iter()
-        .any(|r| r.role == Role::Admin && r.branch.is_none());
-    if has_org_exec && has_org_admin {
-        return None;
-    }
-    const PRIORITY: [Role; 7] = [
-        Role::Teller,
-        Role::BranchManager,
-        Role::RateManager,
-        Role::Finance,
-        Role::Admin,
-        Role::VerificationReviewer,
-        Role::Executive,
-    ];
-    for role in PRIORITY {
-        if let Some(r) = by.roles.iter().find(|r| r.role == role) {
-            return Some(
-                r.branch
-                    .as_ref()
-                    .map(|b| b.as_str().to_string())
-                    .unwrap_or_else(|| "MAIN".to_string()),
-            );
-        }
-    }
-    if let Some(r) = by.roles.first() {
-        return Some(
-            r.branch
-                .as_ref()
-                .map(|b| b.as_str().to_string())
-                .unwrap_or_else(|| "MAIN".to_string()),
-        );
-    }
-    None
-}
+use xc_kernel::ids::BranchId;
 
 fn approver_role(who: &Actor) -> &'static str {
     const DECIDER_PRIORITY: [Role; 9] = [
@@ -182,11 +141,15 @@ impl ApprovalService {
     /// - Checks if a request for `(type_name, object_id)` is already PENDING.
     /// - Redacts payload before storing.
     /// - Binds the current `version_hash` and `policy_version`.
+    /// - Files the request under `branch`, the branch of the object (design `org-wide-actor-branch.md` §2-§3,
+    ///   owner #5279: "เก็บที่สาขาของสิ่งที่ขอ"); `None` for an object of the organisation.
+    #[allow(clippy::too_many_arguments)]
     pub async fn request(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         type_name: &str,
         object_id: &str,
+        branch: Option<&BranchId>,
         payload: &Value,
         by: &Actor,
         key: &str,
@@ -226,7 +189,7 @@ impl ApprovalService {
 
         let policy_version = policy.policy_version();
         let proposed_payload = Redactor::redact(payload);
-        let branch_id = requester_branch(by);
+        let branch_id = branch.map(|b| b.as_str().to_string());
         let requested_by = by.user_id.clone();
 
         let req = self

@@ -4,9 +4,10 @@
 //! (claude/89bd61d9, rule A). Do not edit, delete or weaken; add tests in a file of your own.
 //!
 //! What this test pins ([required]):
-//! - **Ruling 4 (no stored value changes):** `request()` stores the requester's branch as `legacy_actor`
-//!   derives it: NULL for the v3 owner's user (EXECUTIVE + ADMIN, organisation-wide), otherwise the branch of the
-//!   requester's role, and `MAIN` for an organisation-wide role of anybody else. `requested_by` is the user's id.
+//! - **Ruling 4, replaced by #5279** (owner, #5279 issuecomment-6452390376: *"เก็บที่สาขาของสิ่งที่ขอ"*; design
+//!   `docs/design/org-wide-actor-branch.md` §3, restated by the sub-controller claude/2ca5874b): `request()` stores
+//!   the branch of the object it is given, whoever asks, and no longer the requester's branch. `requested_by` is the
+//!   user's id. The organisation-wide row that used to store `MAIN` is the restated test below.
 //! - **Ruling 5 (named change):** the decision row's `approver_role` and the audit row's `actor_role` are the
 //!   Blueprint role that qualified, spelled as the Blueprint spells it: a BRANCH_MANAGER's decision stores
 //!   `"BRANCH_MANAGER"` (before #1020, `"MANAGER"`), a RATE_MANAGER's `"RATE_MANAGER"` (before, `"RATES"`).
@@ -59,11 +60,20 @@ fn anyone(subject: &Arc<FakeSubject>) -> Vec<(Arc<dyn ApprovalSubject>, Arc<dyn 
     vec![(subject, policy)]
 }
 
-async fn open(db: &TestDb, by: &Actor, object_id: &str) -> ApprovalRequest {
+async fn open(db: &TestDb, by: &Actor, object_id: &str, branch: Option<&str>) -> ApprovalRequest {
     let svc = db.service(anyone(&FakeSubject::new(TYPE_A)));
+    let branch = branch.map(BranchId::new);
     let mut tx = db.begin().await;
     let request = svc
-        .request(&mut tx, TYPE_A, object_id, &json!({ "n": 1 }), by, &key())
+        .request(
+            &mut tx,
+            TYPE_A,
+            object_id,
+            branch.as_ref(),
+            &json!({ "n": 1 }),
+            by,
+            &key(),
+        )
         .await
         .expect("the request opens");
     tx.commit().await.expect("commit");
@@ -82,7 +92,7 @@ async fn stored(db: &TestDb, request: &ApprovalRequest) -> (Option<String>, Stri
 #[tokio::test]
 async fn the_owners_request_stores_no_branch() {
     let db = TestDb::start().await;
-    let r = open(&db, &owner("owner-1"), "obj-1").await;
+    let r = open(&db, &owner("owner-1"), "obj-1", None).await;
     assert_eq!(stored(&db, &r).await, (None, "owner-1".to_owned()));
     db.finish().await;
 }
@@ -114,7 +124,7 @@ async fn an_employees_request_stores_the_branch_of_their_role() {
             "B2",
         ),
     ] {
-        let r = open(&db, &who, object).await;
+        let r = open(&db, &who, object, Some(branch)).await;
         assert_eq!(
             stored(&db, &r).await,
             (Some(branch.to_owned()), who.user_id.clone()),
@@ -125,14 +135,21 @@ async fn an_employees_request_stores_the_branch_of_their_role() {
     db.finish().await;
 }
 
+/// #5279 S2-1, restated from `an_organisation_wide_role_of_anybody_but_the_owner_stores_main`: an organisation-wide
+/// FINANCE's request on an object of `B01` is filed at `B01`, not at `MAIN`.
 #[tokio::test]
-async fn an_organisation_wide_role_of_anybody_but_the_owner_stores_main() {
+async fn an_organisation_wide_role_files_the_request_at_the_objects_branch() {
     let db = TestDb::start().await;
+    sqlx::query("INSERT INTO branches (id, name) VALUES ('B01', 'B01')")
+        .execute(&db.pool)
+        .await
+        .expect("a branch");
     let finance = user("finance-org", &[(Role::Finance, None)]);
-    let r = open(&db, &finance, "obj-1").await;
+    let r = open(&db, &finance, "obj-1", Some("B01")).await;
     assert_eq!(
         stored(&db, &r).await,
-        (Some("MAIN".to_owned()), "finance-org".to_owned())
+        (Some("B01".to_owned()), "finance-org".to_owned()),
+        "the request belongs to the object's branch (#5279 site 2)"
     );
     db.finish().await;
 }
@@ -159,6 +176,7 @@ async fn a_decision_stores_the_blueprint_role_that_decided() {
                 &mut tx,
                 TYPE_A,
                 object,
+                Some(&BranchId::new("MAIN")),
                 &json!({ "n": 1 }),
                 &rates("rates-1"),
                 &key(),

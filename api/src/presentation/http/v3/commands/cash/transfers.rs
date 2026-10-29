@@ -229,6 +229,7 @@ impl CommandAction for TransferDispatch {
                     &self.pool,
                     &self.approvals,
                     &object,
+                    branch,
                     refusal,
                     &user,
                     key.as_str(),

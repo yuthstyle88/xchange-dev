@@ -226,6 +226,7 @@ impl IssueBindingQuote {
                     &mut own_tx,
                     BINDING_QUOTE,
                     &proposal_id,
+                    Some(&req.quote.branch_id),
                     &payload,
                     &actor,
                     &key,

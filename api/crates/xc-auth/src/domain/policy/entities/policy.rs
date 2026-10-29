@@ -352,6 +352,18 @@ mod tests {
 
     fn who(roles: &[(BpRole, Option<&str>)]) -> Who {
         let since = at() - Duration::days(1);
+        // #5279: the branch a session would work in (`SessionBranch::effective`): `MAIN` for an
+        // organisation-wide row, the branch when every row names the same one, else none.
+        let session = if roles.iter().any(|(_, b)| b.is_none()) {
+            Some(BranchId::new("MAIN"))
+        } else {
+            match roles.first() {
+                Some((_, Some(first))) if roles.iter().all(|(_, b)| b == &Some(*first)) => {
+                    Some(BranchId::new(*first))
+                }
+                _ => None,
+            }
+        };
         Who::new(
             "u1",
             "org",
@@ -361,6 +373,7 @@ mod tests {
                 .collect(),
             None,
         )
+        .with_branch(session)
     }
 
     #[test]

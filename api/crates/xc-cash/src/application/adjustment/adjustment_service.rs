@@ -178,6 +178,7 @@ impl LedgerAdjustmentService {
                 tx,
                 LEDGER_ADJUSTMENT,
                 &id,
+                Some(branch),
                 &a.to_payload(),
                 who,
                 &format!("ledger-adjustment:{id}"),

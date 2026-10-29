@@ -11,11 +11,12 @@
 //!   PENDING, no decision row. Before #4023 the organisation was checked only for branch-bound requests.
 //! - Row 3 (kept): organisation B's executive, not the requester, decides it as before.
 //! - Row 4 (kept, #2368): a branch-bound request of organisation A is refused to organisation B's decider.
-//! - Row 6 (lane controller's ruling 2 on #4023, issuecomment-6306292056): an organisation-wide FINANCE of
-//!   organisation B stores branch `MAIN` (`requester_branch`, pinned by #1020 ruling 4), which is the default
-//!   organisation's branch. Stored as `(B, MAIN)` the composite FK to `branches (organization_id, id)` refuses
-//!   it: the request is refused with `databaseError` and nothing is stored. Before #4023 it was stored silently
-//!   as the default organisation's. Which branch it should belong to is a follow-up ticket, not this one.
+//! - Row 6, restated by #5279 (owner, #5279 issuecomment-6452390376: *"เก็บที่สาขาของสิ่งที่ขอ"*; design
+//!   `docs/design/org-wide-actor-branch.md` §3, S2-5; restated by the sub-controller claude/2ca5874b). It replaces
+//!   decision C (#4094) and the lane controller's ruling 2 on #4023 (issuecomment-6306292056). An
+//!   organisation-wide FINANCE of organisation B asking on an object of B's branch `B-B1` is stored as
+//!   `(B, B-B1)`. Before #5279 `requester_branch` filed it at the default
+//!   organisation's `MAIN`, and the composite FK refused it with `databaseError`.
 //!
 //! The policy is `AnyonePolicy`, so only the core's rules act. Needs `TEST_DATABASE_URL` (see `common/mod.rs`);
 //! nothing here skips.
@@ -89,11 +90,20 @@ fn anyone(subject: &Arc<FakeSubject>) -> Vec<(Arc<dyn ApprovalSubject>, Arc<dyn 
     vec![(subject, policy)]
 }
 
-async fn open(db: &TestDb, by: &Actor, object_id: &str) -> ApprovalRequest {
+async fn open(db: &TestDb, by: &Actor, object_id: &str, branch: Option<&str>) -> ApprovalRequest {
     let svc = db.service(anyone(&FakeSubject::new(TYPE_A)));
+    let branch = branch.map(BranchId::new);
     let mut tx = db.begin().await;
     let request = svc
-        .request(&mut tx, TYPE_A, object_id, &json!({ "n": 1 }), by, &key())
+        .request(
+            &mut tx,
+            TYPE_A,
+            object_id,
+            branch.as_ref(),
+            &json!({ "n": 1 }),
+            by,
+            &key(),
+        )
         .await
         .expect("the request opens");
     tx.commit().await.expect("commit");
@@ -141,7 +151,7 @@ async fn stored(db: &TestDb, request: &ApprovalRequest) -> (Option<String>, Stri
 async fn row1_an_organisation_wide_request_stores_the_requesters_organisation() {
     let db = TestDb::start().await;
     second_organisation(&db).await;
-    let r = open(&db, &executive("exec-b", ORG_B), "obj-1").await;
+    let r = open(&db, &executive("exec-b", ORG_B), "obj-1", None).await;
     assert_eq!(
         stored(&db, &r).await,
         (None, ORG_B.to_owned()),
@@ -154,7 +164,7 @@ async fn row1_an_organisation_wide_request_stores_the_requesters_organisation() 
 async fn row2_another_organisations_executive_cannot_decide_an_organisation_wide_request() {
     let db = TestDb::start().await;
     second_organisation(&db).await;
-    let r = open(&db, &executive("exec-b", ORG_B), "obj-1").await;
+    let r = open(&db, &executive("exec-b", ORG_B), "obj-1", None).await;
     assert_eq!(
         approve(&db, &r, &executive("exec-a", ORG_A)).await,
         Err("outOfScope"),
@@ -169,7 +179,7 @@ async fn row2_another_organisations_executive_cannot_decide_an_organisation_wide
 async fn row3_the_same_organisations_executive_decides_an_organisation_wide_request() {
     let db = TestDb::start().await;
     second_organisation(&db).await;
-    let r = open(&db, &executive("exec-b", ORG_B), "obj-1").await;
+    let r = open(&db, &executive("exec-b", ORG_B), "obj-1", None).await;
     assert_eq!(approve(&db, &r, &executive("exec-b2", ORG_B)).await, Ok(()));
     assert_eq!(db.status(r.id.as_str()).await, "APPROVED");
     let decisions = db.decisions(r.id.as_str()).await;
@@ -190,7 +200,7 @@ async fn row4_a_branch_bound_request_is_refused_to_another_organisations_decider
     .await
     .expect("a branch of organisation A");
     let manager = user("manager-a", ORG_A, &[(Role::BranchManager, Some("A-B1"))]);
-    let r = open(&db, &manager, "obj-1").await;
+    let r = open(&db, &manager, "obj-1", Some("A-B1")).await;
     assert_eq!(stored(&db, &r).await.0.as_deref(), Some("A-B1"));
     assert_eq!(
         approve(&db, &r, &executive("exec-b", ORG_B)).await,
@@ -202,11 +212,18 @@ async fn row4_a_branch_bound_request_is_refused_to_another_organisations_decider
     db.finish().await;
 }
 
+/// #5279 S2-5, restated from `row6_an_organisation_wide_finance_of_another_organisation_is_refused_and_nothing_is_stored`.
 #[tokio::test]
-async fn row6_an_organisation_wide_finance_of_another_organisation_is_refused_and_nothing_is_stored()
- {
+async fn row6_an_organisation_wide_finance_of_another_organisation_files_at_its_objects_branch() {
     let db = TestDb::start().await;
     second_organisation(&db).await;
+    sqlx::query(
+        "INSERT INTO branches (id, name, organization_id) VALUES ('B-B1', 'B-B1', $1::uuid)",
+    )
+    .bind(ORG_B)
+    .execute(&db.pool)
+    .await
+    .expect("a branch of organisation B");
     let finance = user("finance-b", ORG_B, &[(Role::Finance, None)]);
     let svc = db.service(anyone(&FakeSubject::new(TYPE_A)));
     let mut tx = db.begin().await;
@@ -215,17 +232,30 @@ async fn row6_an_organisation_wide_finance_of_another_organisation_is_refused_an
             &mut tx,
             TYPE_A,
             "obj-1",
+            Some(&BranchId::new("B-B1")),
             &json!({ "n": 1 }),
             &finance,
             &key(),
         )
         .await;
-    tx.rollback().await.expect("rollback");
+    let r = match got {
+        Ok(r) => r,
+        Err(e) => {
+            tx.rollback().await.expect("rollback");
+            panic!(
+                "organisation B's request on its own branch was refused: {}",
+                e.code()
+            );
+        }
+    };
+    tx.commit().await.expect("commit");
     assert_eq!(
-        code(got),
-        "databaseError",
-        "organisation B's request on the default organisation's MAIN was stored"
+        stored(&db, &r).await,
+        (Some("B-B1".to_owned()), ORG_B.to_owned()),
+        "the request belongs to the object's branch, in organisation B"
     );
-    assert_eq!(db.count("approval_requests").await, 0);
+    // Deciding it is not pinned here: AP-1's audit row is written without the organisation
+    // (`xc-approval/src/infrastructure/audit_log.rs:31-36`), so a decision on another organisation's branch-bound
+    // request breaks `(organization_id, branch_id) → branches` today, whatever #5279 does. That is its own ticket.
     db.finish().await;
 }

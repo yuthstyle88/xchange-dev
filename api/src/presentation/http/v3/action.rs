@@ -279,7 +279,9 @@ mod tests {
                         ScopedRole::new(Role::Admin, None, since, None),
                     ],
                     None,
-                );
+                )
+                // #5279: a session gives the owner its session branch (`SessionBranch::effective`).
+                .with_branch(Some(BranchId::new("MAIN")));
                 Callers {
                     user: Some(user),
                     staff_user: None,

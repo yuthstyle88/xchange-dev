@@ -696,6 +696,7 @@ impl RateDraftService {
                 tx,
                 "RATE_PUBLICATION",
                 &id.to_string(),
+                Some(branch),
                 &eval_json,
                 who,
                 key,
