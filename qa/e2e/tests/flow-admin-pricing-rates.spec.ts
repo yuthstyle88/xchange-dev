@@ -195,7 +195,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/starting-prices/StartingPrices.tsx:322,382,427,442,468,482,494,509 (menu.ts:13 needs OrgStartingPricesManage)
-    await signIn(page, 'admin', '/#starting-prices');
+    await signIn(page, 'executive', '/#starting-prices');
     const screen = page.locator('.xc-sp-screen');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 
@@ -262,7 +262,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     const financePage = hasAccount('finance') ? await browser.newPage({ baseURL: users.baseUrl }) : null;
 
     try {
-      await signIn(adminPage, 'admin', `/?branch=${encodeURIComponent(users.branch)}#pricing`);
+      await signIn(adminPage, 'executive', `/?branch=${encodeURIComponent(users.branch)}#pricing`);
       const initialBoard = await fetchPricingBoard(adminPage, users.branch);
       if (!initialBoard?.policyVersionId || !initialBoard.valueTiersOn || initialBoard.rows.length === 0) {
         const reason = `pricing_board on branch ${users.branch} is not ready (policyVersionId=${initialBoard?.policyVersionId ?? 'null'}, valueTiersOn=${String(initialBoard?.valueTiersOn)}, rows=${initialBoard?.rows.length ?? 0})`;
@@ -402,7 +402,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/rate-alert-settings/RateAlertSettings.tsx:211,242,258,289,320,353,433 (menu.ts:13 needs RateAlertSettingsSave)
-    await signIn(page, 'admin', '/#rate-alert-settings');
+    await signIn(page, 'executive', '/#rate-alert-settings');
     const screen = page.locator('.rate-alert-settings');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 
@@ -480,7 +480,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/alert-settings/AlertSettings.tsx:148,160,184,193,207,215,224 (menu.ts:12 needs AlertSettingsSave)
-    await signIn(page, 'admin', `/?branch=${encodeURIComponent(users.branch)}#alert-settings`);
+    await signIn(page, 'executive', `/?branch=${encodeURIComponent(users.branch)}#alert-settings`);
     const screen = page.locator('.alert-settings-container');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 
@@ -576,7 +576,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
   test('pricingConfigure and pricingApprove (b): refuse invalid inputs in th and en with exact worded text, preserve typed values, and restore in finally', async ({
     page,
   }) => {
-    await signIn(page, 'admin', `/?branch=${encodeURIComponent(users.branch)}#pricing`);
+    await signIn(page, 'executive', `/?branch=${encodeURIComponent(users.branch)}#pricing`);
     const initialBoard = await fetchPricingBoard(page, users.branch);
     if (!initialBoard?.policyVersionId || !initialBoard.valueTiersOn || initialBoard.rows.length === 0) {
       const reason = `pricing_board on branch ${users.branch} is not ready (policyVersionId=${initialBoard?.policyVersionId ?? 'null'}, valueTiersOn=${String(initialBoard?.valueTiersOn)}, rows=${initialBoard?.rows.length ?? 0})`;
@@ -763,7 +763,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/starting-prices/StartingPrices.tsx:186-277, i18n.ts:34-44,78-88
-    await signIn(page, 'admin', '/#starting-prices');
+    await signIn(page, 'executive', '/#starting-prices');
     const screen = page.locator('.xc-sp-screen');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 
@@ -871,7 +871,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/rate-alert-settings/RateAlertSettings.tsx:142-178, i18n.ts:34-38,74-78
-    await signIn(page, 'admin', '/#rate-alert-settings');
+    await signIn(page, 'executive', '/#rate-alert-settings');
     const screen = page.locator('.rate-alert-settings');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 
@@ -939,7 +939,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     page,
   }) => {
     // web/src/screens/admin/alert-settings/AlertSettings.tsx:148, branch_alert_settings_save.rs:60-105
-    await signIn(page, 'admin', `/?branch=${encodeURIComponent(users.branch)}#alert-settings`);
+    await signIn(page, 'executive', `/?branch=${encodeURIComponent(users.branch)}#alert-settings`);
     const screen = page.locator('.alert-settings-container');
     await expect(screen).toBeVisible({ timeout: 20_000 });
 

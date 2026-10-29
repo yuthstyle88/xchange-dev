@@ -371,6 +371,7 @@ impl FeedPublisher {
                 tx,
                 "RATE_FEED_PUBLICATION",
                 &object_id,
+                Some(branch),
                 &payload,
                 &system_actor,
                 &idempotency_key,

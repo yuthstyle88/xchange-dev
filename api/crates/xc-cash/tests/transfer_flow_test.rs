@@ -246,7 +246,10 @@ async fn cast(db: &Db) -> Cast {
     let manager_b1 = db.person("Krit", &[(Role::BranchManager, Some(&b1))]).await;
     let exec = db.person("Exec", &[(Role::Executive, None)]).await;
     let receiver_b2 = db.person("Nida", &[(Role::BranchManager, Some(&b2))]).await;
-    let finance = db.person("Pim", &[(Role::Finance, None)]).await;
+    let finance = db
+        .person("Pim", &[(Role::Finance, None)])
+        .await
+        .with_branch(Some(BranchId::new("MAIN")));
     db.limit_usd(&exec, "300.00").await;
     Cast {
         b1,

@@ -240,7 +240,15 @@ impl CountDifferenceGate {
 
         let req = self
             .approvals
-            .request(tx, COUNT_DIFFERENCE, &count.id, &payload, by, &key)
+            .request(
+                tx,
+                COUNT_DIFFERENCE,
+                &count.id,
+                Some(&count.branch_id),
+                &payload,
+                by,
+                &key,
+            )
             .await
             .map_err(|e| match e {
                 xc_approval::application::approval_service::ApprovalError::Database(err) => {

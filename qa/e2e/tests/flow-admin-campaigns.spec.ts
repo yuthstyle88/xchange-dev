@@ -99,7 +99,7 @@ async function resolveCampaignRole(browser: Browser): Promise<Role> {
       await page.close().catch(() => {});
     }
   }
-  return 'admin';
+  return 'executive';
 }
 
 function assertWordedRefusal(text: string, lang: Lang, label: string): void {
@@ -280,8 +280,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
   test('(b.1) invalid input: end before start on create form is refused with worded error in th and en', async ({
     browser,
   }) => {
-    if (!hasAccount('marketing') && !hasAccount('admin')) {
-      test.skip(true, 'no marketing or admin account in users.json: run scripts/reseed.sh');
+    if (!hasAccount('marketing') && !hasAccount('executive')) {
+      test.skip(true, 'no marketing or executive account in users.json: run scripts/reseed.sh');
     }
     const role = await resolveCampaignRole(browser);
     const runMarker = `${MARKER_PREFIX}-${Date.now()}`;
@@ -339,8 +339,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
   test('(b.2) invalid inputs: negative or too-many-decimal benefit and coupon count of 0 are refused and worded in th and en', async ({
     browser,
   }) => {
-    if (!hasAccount('marketing') && !hasAccount('admin')) {
-      test.skip(true, 'no marketing or admin account in users.json: run scripts/reseed.sh');
+    if (!hasAccount('marketing') && !hasAccount('executive')) {
+      test.skip(true, 'no marketing or executive account in users.json: run scripts/reseed.sh');
     }
     const role = await resolveCampaignRole(browser);
     const runMarker = `${MARKER_PREFIX}-${Date.now()}`;
@@ -445,8 +445,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
   test('(b.3) invalid input: empty campaign name on create form is refused with worded error in th and en', async ({
     browser,
   }) => {
-    if (!hasAccount('marketing') && !hasAccount('admin')) {
-      test.skip(true, 'no marketing or admin account in users.json: run scripts/reseed.sh');
+    if (!hasAccount('marketing') && !hasAccount('executive')) {
+      test.skip(true, 'no marketing or executive account in users.json: run scripts/reseed.sh');
     }
     const role = await resolveCampaignRole(browser);
 
@@ -501,12 +501,12 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
   test('(a) happy path: create campaign -> save draft -> simulate -> submit -> pause -> resume -> issue coupon -> new version', async ({
     browser,
   }) => {
-    if (!hasAccount('marketing') || !hasAccount('admin')) {
-      test.skip(true, 'requires marketing and admin accounts in users.json: run scripts/reseed.sh');
+    if (!hasAccount('marketing') || !hasAccount('executive')) {
+      test.skip(true, 'requires marketing and executive accounts in users.json: run scripts/reseed.sh');
     }
 
     const marketing = await browser.newPage({ baseURL: users.baseUrl });
-    const admin = await browser.newPage({ baseURL: users.baseUrl });
+    const executive = await browser.newPage({ baseURL: users.baseUrl });
     const runMarker = `${MARKER_PREFIX}-${Date.now()}`;
     const startsDate = bangkokDate(0);
     const endsDate = bangkokDate(30);
@@ -519,7 +519,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
       if (!mktPerms.includes('MarketingCampaigns')) {
         test.skip(true, 'marketing account lacks MarketingCampaigns permission');
       }
-      await signIn(admin, 'admin', `/?branch=${encodeURIComponent(users.branch)}#approvals`);
+      await signIn(executive, 'executive', `/?branch=${encodeURIComponent(users.branch)}#approvals`);
 
       // 1. campaignCreate (POST /api/campaigns, Campaigns.tsx:452): create campaign named with runMarker.
       campaignId = await createDraftCampaignThroughUi(marketing, 'marketing', runMarker, startsDate, endsDate, '50000.00');
@@ -592,9 +592,9 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
       await openCampaignRowAfterReload(marketing, 'marketing', campaignId, runMarker);
       await expect(statusBadge).toHaveClass(/xc-status-pending_approval/);
 
-      // Approve CAMPAIGN_VERSION as admin on /#approvals so the campaign reaches ACTIVE (campaigns.rs:226-243).
-      const approvalId = await findPendingCampaignApprovalId(admin, campaignId);
-      await approveCampaignOnAdminScreen(admin, approvalId);
+      // Approve CAMPAIGN_VERSION as executive on /#approvals so the campaign reaches ACTIVE (campaigns.rs:226-243).
+      const approvalId = await findPendingCampaignApprovalId(executive, campaignId);
+      await approveCampaignOnAdminScreen(executive, approvalId);
       campaignApproved = true;
 
       await openCampaignRowAfterReload(marketing, 'marketing', campaignId, runMarker);
@@ -677,7 +677,7 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
           .catch(() => {});
       }
       await marketing.close().catch(() => {});
-      await admin.close().catch(() => {});
+      await executive.close().catch(() => {});
     }
   });
 });

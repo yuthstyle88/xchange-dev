@@ -150,6 +150,7 @@ async fn open(svc: &ApprovalService, pool: &PgPool, who: &Actor, branch: &str) -
             &mut tx,
             LEDGER_ADJUSTMENT,
             &id,
+            Some(&BranchId::new(branch)),
             &payload(branch),
             who,
             &format!("ledger-adjustment:{id}"),
@@ -254,10 +255,12 @@ async fn la_t9_the_policy_reads_the_payloads_branch_not_the_requesters() {
     let pool = db().await;
     let svc = service(&pool);
     let req = open(&svc, &pool, &fin_org(), B01).await;
+    // #5279 S2-6, restated by the sub-controller claude/2ca5874b (owner, #5279 issuecomment-6452390376: the
+    // request is filed at the branch of the object; design `docs/design/org-wide-actor-branch.md` §3 row 2).
     assert_eq!(
         req.branch_id.as_deref(),
-        Some("MAIN"),
-        "AP-1 files an organisation-wide requester's request at MAIN (approval_service.rs requester_branch)"
+        Some(B01),
+        "AP-1 files an organisation-wide FINANCE's adjustment at the adjustment's branch, not at MAIN"
     );
     decide(&svc, &pool, &req, &fin_b(), Outcome::Approved)
         .await
@@ -267,7 +270,7 @@ async fn la_t9_the_policy_reads_the_payloads_branch_not_the_requesters() {
     let other = open(&svc, &pool, &fin_org(), B01).await;
     refused_out_of_scope(
         decide(&svc, &pool, &other, &fin_c(), Outcome::Approved).await,
-        "FINANCE of B02 on B01's adjustment filed at MAIN",
+        "FINANCE of B02 on B01's adjustment",
     );
 }
 

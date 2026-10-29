@@ -585,7 +585,15 @@ impl TransferFlow {
 
         let req = self
             .approvals
-            .request(tx, "CASH_TRANSFER", id, &payload, &policy_actor, &key)
+            .request(
+                tx,
+                "CASH_TRANSFER",
+                id,
+                Some(&t.from_branch),
+                &payload,
+                &policy_actor,
+                &key,
+            )
             .await
             .map_err(|e| match e {
                 xc_approval::application::approval_service::ApprovalError::Database(m)

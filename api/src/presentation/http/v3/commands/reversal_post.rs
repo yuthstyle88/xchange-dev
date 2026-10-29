@@ -167,6 +167,7 @@ impl CommandAction for ReversalPostCommand {
                     &self.pool,
                     &self.approvals,
                     &NegativeStockObject::Reversal(id),
+                    branch,
                     refusal,
                     who,
                     key.as_str(),

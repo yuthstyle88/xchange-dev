@@ -22,7 +22,7 @@ const TYPE_FILTERS = [
 ] as const;
 
 test.describe('QA-F5 flow: approvals list and a pending request, read only', () => {
-  test('admin opens the approvals list and its filters', async ({ page }) => {
+  test('executive opens the approvals list and its filters', async ({ page }) => {
     const log = watchConsole(page);
     const decideCalls: string[] = [];
 
@@ -34,8 +34,8 @@ test.describe('QA-F5 flow: approvals list and a pending request, read only', () 
       }
     });
 
-    // Step 1: signIn(page, 'admin', '/'), then page.goto('/#approvals').
-    await signIn(page, 'admin', '/');
+    // Step 1: signIn(page, 'executive', '/'), then page.goto('/#approvals').
+    await signIn(page, 'executive', '/');
     await page.goto('/#approvals');
 
     // Screen root and filter bars (web/src/screens/admin/approvals/Approvals.tsx:319-358).

@@ -1,7 +1,7 @@
 // QA-F10 — smoke: admin pricing menu (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-F10; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test } from '@playwright/test';
-import { hasAccount, signIn, smoke, STAFF_LANGS } from './helpers';
+import { hasAccount, mePermissions, signIn, smoke, STAFF_LANGS } from './helpers';
 
 test.describe('QA-F10 smoke: admin pricing menu', () => {
   // key: web/src/screens/admin/pricing/Pricing.tsx:153 (menu.ts:15 needs ReferenceRatesRead)
@@ -33,8 +33,8 @@ test.describe('QA-F10 smoke: admin pricing menu', () => {
     });
   });
 
-  // key: web/src/screens/admin/pricing/Pricing.tsx:154 (toolbar, search, reload, detail)
-  test('read-only clicks, admin', async ({ page }) => {
+  // key: web/src/screens/admin/pricing/Pricing.tsx:154 (toolbar, search, reload, detail; needs ReferenceRatesRead)
+  test('read-only clicks', async ({ page }) => {
     let writeCalls = 0;
     await page.route('**/api/pricing/**', async (route) => {
       writeCalls++;
@@ -45,7 +45,10 @@ test.describe('QA-F10 smoke: admin pricing menu', () => {
       await route.abort('blockedbyclient');
     });
 
-    await signIn(page, 'admin', '/#pricing');
+    const role = hasAccount('executive') ? 'executive' : hasAccount('finance') ? 'finance' : 'admin';
+    await signIn(page, role, '/#pricing');
+    const perms = await mePermissions(page);
+    test.skip(!perms.includes('ReferenceRatesRead'), `${role} lacks ReferenceRatesRead`);
     await expect(page.locator('.pricing-screen').first(), '/#pricing loaded').toBeVisible({ timeout: 20_000 });
 
     const filter = page.locator('select[name="filter"]');

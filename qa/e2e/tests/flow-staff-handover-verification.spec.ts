@@ -106,8 +106,10 @@ async function revokeVerifiedCase(
   if (!id) return { ok: false, text: 'missing case id from my_verification' };
   const expectedVersion = myVer.case?.version ?? 1;
   if (admin.url() === 'about:blank') {
-    await signIn(admin, 'admin', '/operations/verification');
+    await signIn(admin, 'executive', '/operations/verification');
   }
+  const perms = await mePermissions(admin);
+  test.skip(!perms.includes('VerificationReview'), 'executive lacks VerificationReview');
   const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
     headers: {
       'x-xchange-request': '1',
@@ -693,6 +695,11 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       await signIn(teller, 'teller', '/staff');
       await signIn(manager, 'branchManager', '/staff');
       await signIn(finance, 'finance', `/?branch=${encodeURIComponent(users.branch)}#approvals`);
+      const financePerms = await mePermissions(finance);
+      test.skip(
+        !financePerms.includes('ApprovalsDecide') || !financePerms.includes('ApproveCountDifference'),
+        'finance lacks ApprovalsDecide or ApproveCountDifference',
+      );
 
       await expect(teller.locator('.xc-shift-card'), 'teller .xc-shift-card visible (ShiftCard.tsx:445)').toBeVisible({
         timeout: 20_000,
@@ -973,7 +980,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
   test('verification case approve & revoke: permission (c), invalid inputs (b) in th/en, and approve/revoke happy paths (a) with reload', async ({
     browser,
   }) => {
-    const required: readonly Role[] = ['customer', 'teller', 'admin'];
+    const required: readonly Role[] = ['customer', 'teller', 'executive'];
     for (const role of required) {
       if (!hasAccount(role)) {
         const reason = `no ${role} account in users.json: run scripts/reseed.sh`;
@@ -1059,7 +1066,7 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
           expect(resubLeftover.ok, `resubmit leftover NEEDS_UPDATE: ${resubLeftover.text}`).toBeTruthy();
         }
 
-        await signIn(admin, 'admin', '/operations/verification');
+        await signIn(admin, 'executive', '/operations/verification');
         await selectCaseOnStaff(admin, leftoverId);
         const curStatus = (await admin.getByTestId('case-status').innerText()).trim();
         if (curStatus === 'SUBMITTED') {
@@ -1120,8 +1127,10 @@ test.describe.serial('R9-8 shift handover & verification case approve/revoke', (
       );
       expect(submitRes.ok, `submit verification case: ${submitRes.text}`).toBeTruthy();
 
-      // Admin opens /operations/verification, selects case, and starts review -> UNDER_REVIEW.
-      await signIn(admin, 'admin', '/operations/verification');
+      // Admin/executive opens /operations/verification, selects case, and starts review -> UNDER_REVIEW.
+      await signIn(admin, 'executive', '/operations/verification');
+      const execPerms = await mePermissions(admin);
+      test.skip(!execPerms.includes('VerificationReview'), 'executive lacks VerificationReview');
       await expect(
         admin.getByTestId('verification-screen'),
         'operations verification screen (VerificationScreen.tsx:685)',

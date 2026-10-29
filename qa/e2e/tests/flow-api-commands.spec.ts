@@ -128,7 +128,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
   }) => {
     // (a) Happy path + restore in finally (margin_guard_set.rs:28-90; view margin_guard.rs:34-72;
     // column max_spread_share is numeric(5,4) in migrations/20261205101000_campaigns.sql:77).
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
     const viewUrl = `/api/v3/views/margin_guard?branch=${encodeURIComponent(users.branch)}`;
     const beforeRes = await page.request.get(viewUrl);
     expect(beforeRes.ok(), `GET ${viewUrl}`).toBeTruthy();
@@ -691,7 +691,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // Why (a) is skipped (docs/design/qa-e2e.md §9.2; ticket #4297 §3):
     // Switching a branch to 'RATE_BOARD' cannot be undone ('RATE_BOARD' -> 'BOT_DRAFT') without publishing an approved
     // BoT rate draft in the same transaction (branch_price_source.rs:6-9; price_source.rs:86-91), which violates E-4.
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
 
     // (b) Invalid bodies: missing priceSource, wrong enum value, bad draftId UUID (branch_price_source.rs:38-43,89-96).
     await expectWorded400(
@@ -739,7 +739,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // Why (a) is skipped (docs/design/qa-e2e.md §9.2; ticket #4297 §3):
     // customerContactVerify revokes the customer's active PHONE row in customer_identities and inserts a new encrypted
     // identity row with no delete/undo command (contact_verify.rs:150-183), permanently altering seeded customer records.
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
 
     // (b) Invalid bodies: wrong type for customerId, wrong type for phone, missing phone
     // (customer_contact_verify.rs:28-33; command.rs:383-393).
@@ -795,7 +795,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // Creating a DRAFT transaction requires an open teller shift, an active quote, and an uploaded passport scan
     // (transactions.rs:104,341; create.rs:121-136), and cancelling permanently records a CANCELLED row in transactions
     // (cancel.rs:58-67) that cannot be removed.
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
     const zeroUuid = '00000000-0000-0000-0000-000000000000';
 
     // (b) Invalid bodies: non-UUID path id, wrong type for reason, invalid branch (transactions.rs:124-129,184-188,439; command.rs:342-393).
@@ -851,7 +851,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // supersedeReferral requires an existing ACTIVE referral_attributions row (created on a transaction via attachReferral
     // in R9-9 flow-desk-extras.spec.ts) and permanently marks the old row SUPERSEDED while inserting a new ACTIVE row
     // with no delete/undo command (supersede_referral.rs:4-6,55-92).
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
     const zeroUuid = '00000000-0000-0000-0000-000000000000';
     const routeUrl = `/api/referral-attributions/${zeroUuid}/supersede`;
 

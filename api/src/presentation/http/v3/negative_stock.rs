@@ -7,6 +7,7 @@ use pos_error::AppError;
 use sqlx::PgPool;
 use xc_approval::application::approval_service::ApprovalService;
 use xc_auth::domain::access::Actor;
+use xc_kernel::ids::BranchId;
 
 use crate::application::workflows::exchange::negative_stock_gate::{
     NegativeStockGate, NegativeStockObject, NegativeStockOutcome,
@@ -28,17 +29,19 @@ pub async fn stock_refusal_answer(
     pool: &PgPool,
     approvals: &ApprovalService,
     object: &NegativeStockObject,
+    branch: &BranchId,
     refusal: &str,
     who: &Actor,
     key: &str,
 ) -> V3Error {
-    let outcome =
-        match NegativeStockGate::open_after_refusal(pool, approvals, object, refusal, who, key)
-            .await
-        {
-            Ok(outcome) => outcome,
-            Err(_) => return server_error(),
-        };
+    let outcome = match NegativeStockGate::open_after_refusal(
+        pool, approvals, object, branch, refusal, who, key,
+    )
+    .await
+    {
+        Ok(outcome) => outcome,
+        Err(_) => return server_error(),
+    };
     match outcome {
         NegativeStockOutcome::ApprovalRequired(req_id) => V3Error::new(
             "approvalRequired",
