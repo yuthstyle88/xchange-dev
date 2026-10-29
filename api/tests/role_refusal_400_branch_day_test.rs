@@ -304,7 +304,11 @@ async fn branch_day_role_refusals_answer_400_per_route_and_command() {
 
     let mut tx = db.pool.begin().await.expect("tx");
 
-    let err = DayStartServiceCommand::new(service.clone(), ports)
+    let queue = xc_queue::application::status::status_service::StatusService::new(
+        BranchTx::new(Transactor::new(db.pool.clone())),
+        Arc::new(xc_queue::infrastructure::repository::PgQueueRepository::new(db.pool.clone())),
+    );
+    let err = DayStartServiceCommand::new(service.clone(), ports, queue)
         .run(
             &mut tx,
             &branch,
