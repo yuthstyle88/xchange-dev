@@ -25,6 +25,7 @@ use super::error::V3Error;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportGrant {
     pub actor_id: String,
+    pub organization_id: String,
     /// The first role of the `ReportsExport` grant, e.g. `FINANCE`.
     pub role: String,
     pub branch: BranchId,
@@ -47,6 +48,7 @@ impl ExportGate {
         let role = grant.roles_used.first().ok_or_else(refused)?;
         Ok(ExportGrant {
             actor_id: actor.user_id.clone(),
+            organization_id: actor.organization_id.clone(),
             role: role.as_str().to_owned(),
             branch: branch.clone(),
         })
@@ -83,7 +85,7 @@ impl ExportGate {
         };
         let mut tx = pool.begin().await.map_err(|e| failed(&e))?;
         PgAuditLog::new(pool.clone())
-            .append(&mut tx, &event)
+            .append_in(&mut tx, &grant.organization_id, &event)
             .await
             .map_err(|e| failed(&e))?;
         tx.commit().await.map_err(|e| failed(&e))?;

@@ -170,8 +170,9 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
         roles.dedup();
         let audit_log = PgAuditLog::new(self.pool.clone());
         audit_log
-            .append(
+            .append_in(
                 tx,
+                &org_id.to_string(),
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
                     actor_role: roles.join(","),
