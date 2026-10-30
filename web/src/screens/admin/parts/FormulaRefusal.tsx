@@ -1,7 +1,6 @@
 // Pricing formula FE T5 (docs/design/blueprint/pricing-formula-web.md §2, §3 R1–R2): a refused save's failing
 // prices, one row per line.
 import { For, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../shared/i18n';
 import * as table from './formula-i18n';
 import { failureText, type SpreadFailureLine } from './spread-failure';
 import './formula.css';
@@ -11,7 +10,7 @@ export interface FormulaRefusalProps {
 }
 
 export function FormulaRefusal(props: FormulaRefusalProps): JSX.Element {
-  const t = screenT('admin.formula', table);
+  const t = table.formulaT;
 
   return (
     <Show when={props.lines().length > 0}>
