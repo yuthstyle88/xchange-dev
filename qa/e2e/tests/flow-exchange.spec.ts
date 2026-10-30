@@ -18,7 +18,20 @@
 // - desk/steps/refunds/RefundsStep.tsx:87-96,128-136 [data-action="post"][data-id="<reversalId>"], ConfirmDialog (staff/parts/ConfirmDialog.tsx:20-33)
 // - staff-report/StaffReport.tsx:75-101,178-190 .staff-report, input[type="date"], .staff-report-sheet, .staff-report-metrics
 import { expect, test, type Page } from '@playwright/test';
-import { closeShift, cutOff, hasAccount, openShift, posted, shot, signIn, startService, users, type Role } from './helpers';
+import {
+  closeQueueIfOpened,
+  closeShift,
+  cutOff,
+  ensureQueueOpen,
+  hasAccount,
+  openShift,
+  posted,
+  shot,
+  signIn,
+  startService,
+  users,
+  type Role,
+} from './helpers';
 
 /** Small constant amount so THB paid out stays inside the opening float of SHIFT_QTY notes and below any approval limit (§8 row 2, §9). */
 const EXCHANGE_AMOUNT = '1';
@@ -110,6 +123,7 @@ test.describe.serial('F6 desk exchange', () => {
     const teller = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
     const finance = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    let openedQueue = false;
 
     try {
       // Step 1: teller + manager open the teller's shift on /staff (helpers.ts openShift asserts opening count + verify),
@@ -159,6 +173,8 @@ test.describe.serial('F6 desk exchange', () => {
           timeout: 15_000,
         });
         await shot(teller, 'desk', 'exchange-2-booking');
+
+        openedQueue = await ensureQueueOpen(manager);
 
         // Step 4: booking step — "Confirm booking" advances to the payment step.
         await confirmBookingBtn.click();
@@ -358,6 +374,7 @@ test.describe.serial('F6 desk exchange', () => {
         await expect(metricValues.nth(3), 'reversedVolume rendered on /staff/report').not.toHaveText(/^0(?:\.0+)?$/);
         await shot(manager, 'staff', 'exchange-8-staff-report');
       } finally {
+        await closeQueueIfOpened(manager, openedQueue).catch(() => {});
         // Step 12: cut off service if this test started it, then close the teller's shift.
         if (started === 'started') await cutOff(manager);
         await teller.goto('/staff');

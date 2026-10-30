@@ -11,7 +11,7 @@ tier: number | null,
 /**
  * `AUTO` · `FOLLOW`.
  */
-mode: string, 
+mode: string, unitSize: string, 
 /**
  * Decimal strings, normalised; `null` when the side has no price.
  */

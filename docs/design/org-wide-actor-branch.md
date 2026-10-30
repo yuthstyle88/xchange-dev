@@ -311,3 +311,338 @@ Both tickets also need `cargo clippy --all-targets -D warnings` on the crates th
 - The `Policy` route classification and the `AreaRow` scope field (#5526; see 9.3).
 - A transfer reconciled at both branches (ruling 1: not taken).
 - The other `None` meanings in `Policy::authorize_with` callers (row P).
+
+
+## 10. Policy rows whose object is the whole organisation (#5526)
+
+> Design by claude/2ca5874b (BE lane, under claude/553782), 2026-10-29 ICT. Measured on `origin/main` `bf5305fc`, which has #5514's `TargetScope` (`82330436`). Ticket #5526 §3. The `AreaRow` scope field lands here (claude/553782's scope note on #5526, 2026-10-29 20:43 ICT).
+
+### 10.1 Why each row says its kind
+
+**The chain.** A branch-scoped role can act on an organisation-level object by naming no branch:
+- Every v3 route is authorized by `Policy::authorize_with` (`api/crates/xc-auth/src/domain/policy/entities/policy.rs:269`). It builds `Target::new(org, named, ..)`, where `named` is the request's `branch` (`v3/command.rs:342`, `v3/view.rs:600`), and `None` from an `OrgView` (`v3/org_view.rs:128`).
+- With no `branch`, the target is `TargetScope::Unnamed`. `Authorizer::check` then grants the session branch to any qualifying row that covers it (`authorizer.rs:133-155`, SB-1 §14.3).
+- So a branch-scoped row passes even when the object belongs to the whole organisation. One example: `margin_guards` has one row per organisation (`margin_guard_set.rs:95-97`), and a group holding `RatePolicySave` on one branch could set it.
+
+**Why the kind goes on each row, not on each permission:**
+- Groups are editable (RBAC §11, `role_grants.rs`), so any permission can sit on a branch-scoped row.
+- One permission covers objects of both kinds. `BranchesManage` covers `branchSave`, whose object is one branch, and `bookingPolicySet`, whose object is the organisation's single booking policy.
+- `grant_guard.rs:58-76` deliberately lets a branch-scoped ADMIN manage its own branch's users.
+
+So the kind is set per row.
+
+### 10.2 Class diagram
+
+```mermaid
+classDiagram
+    class AreaRow {
+        +path: EntryPath
+        +action: &'static str
+        +need: Need
+        +scope: RowScope
+    }
+    class RowScope {
+        <<enum>>
+        Request
+        Organisation
+    }
+    class Policy {
+        +authorize_with(areas, actor, path, action, named, now) Result~Grant, PolicyError~
+        +scope_with(areas, path, action) RowScope
+    }
+    class Target {
+        +new(org, branch, customer) Target
+        +organisation(org) Target
+    }
+    AreaRow --> RowScope
+    Policy ..> AreaRow : finds the row
+    Policy ..> Target : Request ⇒ new(org, named, ..) / Organisation ⇒ organisation(org)
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `RowScope { Request, Organisation }` and the field `AreaRow.scope` | `api/crates/xc-auth/src/domain/policy/areas/mod.rs` | skeleton on `test/5526` | every area file; `Policy` |
+| `scope: RowScope::Request` on every `AreaRow` literal (147 literals: 39 area files and 2 test files) | the area files and `xc-auth/tests/{area_rows_seam,policy_need_any_of}_test.rs` | skeleton (mechanical; compile only) | — |
+| `Policy::scope_with` (a route-table row or no row ⇒ `Request`), and the `match` in `authorize_with` that builds the target | `api/crates/xc-auth/src/domain/policy/entities/policy.rs` | skeleton | — |
+| the named-branch check: `let checked = named.unwrap_or(&grant.branch)` before `require_branch` / `require_branch_in_caller_org` | `api/src/presentation/http/v3/{command,action,view}.rs` | skeleton | — |
+| `scope: RowScope::Organisation` on the rows of 10.3 | each ticket's area files | **T1, T2, T3** | — |
+
+- `[required]` `RowScope`, its two variants, the field name `scope` and `Policy::scope_with(areas, path, action) -> RowScope`. The up-front tests name them.
+- `[proposed]` A file whose rows come from a helper adds a second helper for the organisation rows, e.g. `org_row` in `org_admin.rs`, which is `AreaRow { scope: RowScope::Organisation, ..row(action, permission) }`.
+- **Why the skeleton carries the wiring.** With every row `Request`, the new `match` builds exactly today's target, so the skeleton changes no answer. The existing suite proves that (10.5). Each ticket then only marks its own rows, and the three run together with no ticket waiting on another.
+- An `Organisation` row grants the session branch, whatever `branch` the request names. With no session branch the answer is `outOfScope`, as #5514 §9.2 rules for `Target::organisation`.
+- **The transport still checks the branch the request named.** Today the v3 transport checks only `grant.branch`: `require_branch` (`noSuchBranch`) and `require_branch_in_caller_org` (`outOfScope`) at `v3/command.rs:380`, `v3/action.rs:187`, `v3/view.rs:612-617` and `:730-735` on `bf5305fc`. Under an `Organisation` row `grant.branch` is the session branch, so a named branch of another organisation, or one that does not exist, would pass unchecked. The measured result: `view_org_scope_test::a_paged_view_naming_another_organisations_branch_is_out_of_scope` answered 200 and `v3_view_unknown_branch_test::every_generated_view_refuses_an_unknown_branch` answered 200 for `admin_employee_register`. The skeleton therefore checks `named.unwrap_or(grant.branch)` at those four sites. For a `Request` row the two are the same branch whenever a branch is named, so nothing changes today. `Need::Public` rows answer before the target is built (`policy.rs:211` on `test/5526`). An `Organisation` row must not be `Public` or `CustomerSelf`; `row_scope_test.rs::w5_…` pins this.
+- The `build.rs` generator (`build_support/area_rows.rs:31-55`) reads only the file names and the `pub const ROWS: &[AreaRow]` line, so it is unchanged.
+
+### 10.3 Every area row (169, from `AREA_ROWS` at `bf5305fc`)
+
+**Method.**
+- A throwaway test printed every `AREA_ROWS` row (169: 160 `Rpc`, 9 `StaffRpc`).
+- For each action, I found every route whose `INHERITS` or `authenticate_and_authorize` names it (`git grep '"<action>"' -- api/src`). I then read its input, the table it reads or writes, and how it uses `grant.branch`.
+- **Kind `Request`** = the object is on a branch (the named branch, the grant's branch, or the object's own branch, which a service re-checks), or it is the caller's own record or one customer's.
+- **Kind `Organisation`** = the object is keyed by the organisation alone. A view is marked `Organisation` only when it does not use the named branch, because an `Organisation` row ignores it.
+
+29 rows are marked `Organisation`, in three ticket groups: 17 are decided here, because the object has no branch at all, and 12 are B-1's (10.8, the owner chose `Organisation`). B-2's 4 rows stay `Request` by the owner's answer (10.8). The other 140 stay `Request` too.
+
+
+| Area file | Path | Action | Need | Kind | Why |
+|---|---|---|---|---|---|
+| `alert_settings` | Rpc | `branchAlertSettings` | AlertSettingsSave | Request | `branch_alert_settings` (org, branch); the request's `branch` is the object (`branch_alert_settings_save.rs:45`) |
+| `alert_settings` | Rpc | `branchAlertSettingsSave` | AlertSettingsSave | Request | `branch_alert_settings` (org, branch); the request's `branch` is the object (`branch_alert_settings_save.rs:45`) |
+| `assistant` | Rpc | `assistantAsk` | Public | Request | `Public`; no target is checked |
+| `assistant` | Rpc | `my_assistant_conversation` | Public | Request | `Public`; no target is checked |
+| `binding_quote` | Rpc | `bindingQuoteIssue` | BindingQuoteIssue | Request | the quote is made at `grant.branch` (`binding_quote_issue.rs:278`) |
+| `bookings` | Rpc | `bookingCreate` | AnyOf([CustomerSelf, BookingsDesk]) | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `bookingCheckIn` | BookingsDesk | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `kioskBookingCheckIn` | QueueOperate | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `bookingConfirm` | CustomerSelf | Request | the customer's own booking |
+| `bookings` | Rpc | `bookingCancel` | AnyOf([CustomerSelf, BookingsDesk]) | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `bookingReschedule` | AnyOf([CustomerSelf, BookingsDesk]) | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `bookingQrReissue` | AnyOf([CustomerSelf, BookingsDesk]) | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `slotRuleSet` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `closureAdd` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `closureRemove` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `slotCapacitySet` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `slotClose` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `slotOpen` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `bookingPolicySet` | BranchesManage | **Organisation** | `booking_policies` keyed by organisation (`20261205131000_booking_slots.sql:24`); the handler already refuses a non-org-wide scope (`bookings/policy.rs:59-63`) |
+| `bookings` | Rpc | `booking_slots` | Public | Request | `Public` |
+| `bookings` | Rpc | `desk_bookings` | BookingsDesk | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `bookings` | Rpc | `my_bookings` | CustomerSelf | Request | the customer's own bookings |
+| `bookings` | Rpc | `admin_booking_slots` | BranchesManage | Request | a booking, slot or closure of one branch (`grant.branch`, or path `{id}` locked to it) |
+| `branch_day` | Rpc | `dayStartService` | BranchDayOperate | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `dayCutoff` | BranchDayOperate | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `dayTarget` | CashTargetSet | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `clock` | AttendanceClock | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `attendanceCloseFor` | AttendanceCloseFor | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `openAttendance` | AttendanceCloseFor | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `holdCreate` | CustomerHoldPlace | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `holdRelease` | VerificationReview | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `branch_day` | Rpc | `draftBegin` | ShiftOperate | Request | the branch day, its attendance or holds at `grant.branch` (`commands/branch_day.rs`) |
+| `cash` | Rpc | `countSubmit` | AnyOf([ShiftOperate, CashManage]) | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `countVerify` | ShiftCloseCertify | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `countReject` | ShiftCloseCertify | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `handoverStart` | ShiftOperate | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `handoverAccept` | ShiftOperate | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `handoverReject` | ShiftOperate | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `transferCreate` | CashManage | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `transferSubmit` | CashManage | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `transferDispatch` | CashManage | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `transferReceive` | AnyOf([CashManage, ShiftOperate]) | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `transferReconcile` | FinanceReconcile | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `myShift` | ShiftOperate | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `handoversPending` | ShiftOperate | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `cashCounts` | AnyOf([ShiftOperate, ShiftCloseCertify, CashManage]) | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash` | Rpc | `cashTransfers` | CashManage | Request | a count, handover, transfer or shift of one branch; the services re-check at the object's branch |
+| `cash_limits` | Rpc | `cashLimitsSave` | CashLimitsManage | Request | `cash_limits` (org, branch) at `grant.branch` (`cash_limits_save.rs:61`) |
+| `cash_limits` | Rpc | `cashLimitsRead` | CashLimitsManage | Request | `cash_limits` (org, branch) at `grant.branch` (`cash_limits_save.rs:61`) |
+| `cash_transfer_policy` | Rpc | `transferPolicySave` | CashTransferPolicySet | **Organisation** | `cash_transfer_policy_versions` keyed by organisation only (`commands/cash.rs:552`); `run` ignores `branch` |
+| `copy_by_email` | Rpc | `copyByEmail` | CustomerSelf | Request | the customer's own record (`CustomerSelf`) |
+| `customer_account` | Rpc | `customerSelf` | CustomerSelf | Request | the customer's own record (`CustomerSelf`) |
+| `customer_app` | Rpc | `plannerDraftSave` | Public | Request | `Public`; the planner draft is the caller's |
+| `customer_app` | Rpc | `plannerDraftDelete` | Public | Request | `Public`; the planner draft is the caller's |
+| `customer_app` | Rpc | `planner_preview` | Public | Request | `Public`; the planner draft is the caller's |
+| `customer_app` | Rpc | `my_planner_drafts` | Public | Request | `Public`; the planner draft is the caller's |
+| `customer_app` | Rpc | `appSettingsSave` | SystemSettings | **Organisation** | `customer_app_settings` keyed by organisation; the service already checks `Target::organisation` (#5514 T1, `app_settings_service.rs:41-46`) |
+| `customer_benefits` | Rpc | `my_benefits` | CustomerSelf | Request | the customer's own record |
+| `customer_history` | Rpc | `my_transactions` | CustomerSelf | Request | the customer's own record |
+| `desk_transaction` | Rpc | `receiptReprint` | ReceiptReprint | Request | `receipts JOIN transactions WHERE t.branch_id` (`receipt_document.rs:55`) |
+| `exchange_settings` | Rpc | `exchangeSettingsSave` | SystemSettings | Request | the command writes an org-level TTL but already refuses a non-org-wide scope (`exchange_settings_save.rs:126`); the row is shared with the `exchange_settings` view, which reads the named branch's limit (`views/exchange_settings.rs:58`), so `Organisation` would answer the session branch's limit instead |
+| `exchange_settings` | Rpc | `branchExchangeLimitSave` | BranchesManage | Request | `branch_exchange_limits` (org, branch); path `{id}` locked to `grant.branch` (`exchange_settings_save.rs:184-186`) |
+| `executive` | Rpc | `executiveOverview` | OverviewRead | Request | an `OrgView` (named branch is always `None`, `org_view.rs:128`) that filters rows by `BranchScope` (`:142-187`): a branch-scoped reader sees its own branches by design |
+| `finance_reconciliation` | Rpc | `financeReconciliation` | FinanceReconcile | Request | the branch-day sheet / certification of the named branch (`reconciliation_certify.rs:55`) |
+| `finance_reconciliation` | Rpc | `reconciliationCertify` | FinanceReconcile | Request | the branch-day sheet / certification of the named branch (`reconciliation_certify.rs:55`) |
+| `identity_reveal` | Rpc | `identityReveal` | IdentityDocumentRead | Request | one customer's identity, re-checked at the branch (`xc-customer/.../service.rs:352-355`) |
+| `ledger_adjustment` | Rpc | `ledgerAdjustmentCreate` | FinanceReconcile | Request | an adjustment of one branch; a payload branch other than `grant.branch` is refused (`adjustment_service.rs:109`, `:219`) |
+| `ledger_adjustment` | Rpc | `ledgerAdjustmentPost` | FinanceReconcile | Request | an adjustment of one branch; a payload branch other than `grant.branch` is refused (`adjustment_service.rs:109`, `:219`) |
+| `ledger_adjustment` | Rpc | `ledgerAdjustments` | FinanceReconcile | Request | an adjustment of one branch; a payload branch other than `grant.branch` is refused (`adjustment_service.rs:109`, `:219`) |
+| `loyalty` | Rpc | `my_membership` | CustomerSelf | Request | the customer's own record, or one customer's tier |
+| `loyalty` | Rpc | `customer_tier` | AnyOf([ExchangeTransact, MarketingMembers]) | Request | one customer's tier |
+| `loyalty_rules` | StaffRpc | `loyaltyRuleDraft` | LoyaltyRulesManage | **Organisation** | as the `Rpc` row; no route reaches the `StaffRpc` row (see 10.9) |
+| `loyalty_rules` | StaffRpc | `loyaltyRuleSubmit` | LoyaltyRulesManage | **Organisation** | as the `Rpc` row; no route reaches the `StaffRpc` row (see 10.9) |
+| `loyalty_rules` | Rpc | `loyaltyRuleDraft` | LoyaltyRulesManage | **Organisation** | loyalty rules are one set for the organisation (the loyalty service takes no branch, `http_rule_writer.rs:55-56`) |
+| `loyalty_rules` | Rpc | `loyaltyRuleSubmit` | LoyaltyRulesManage | **Organisation** | loyalty rules are one set for the organisation (the loyalty service takes no branch, `http_rule_writer.rs:55-56`) |
+| `loyalty_rules` | Rpc | `loyalty_rule_versions` | LoyaltyRulesManage | **Organisation** | loyalty rules are one set for the organisation (the loyalty service takes no branch, `http_rule_writer.rs:55-56`) |
+| `marketing` | Rpc | `campaignCreate` | MarketingCampaigns | **Organisation** (owner, B-1) | `campaigns` / `campaign_versions` keyed by organisation (`campaign_create.rs:143`, `:156`); body `branches[]` is data, checked only against the organisation (`:119`). See B-1 |
+| `marketing` | Rpc | `campaignVersionSave` | MarketingCampaigns | **Organisation** (owner, B-1) | `campaign_versions` by organisation (`campaign_version_save.rs:193`). See B-1 |
+| `marketing` | Rpc | `campaignVersionNew` | MarketingCampaigns | **Organisation** (owner, B-1) | `campaigns` by organisation (`campaign_version_new.rs:90`). See B-1 |
+| `marketing` | Rpc | `campaignSimulate` | AnyOf([MarketingCampaigns, MarketingPerformance]) | **Organisation** (owner, B-1) | a version of an organisation campaign (`campaign_simulate.rs:103`). See B-1 |
+| `marketing` | Rpc | `campaignSubmit` | MarketingCampaigns | **Organisation** (owner, B-1) | approval with no branch (`campaign_submit.rs:248-251`). See B-1 |
+| `marketing` | Rpc | `campaignPause` | MarketingCampaigns | **Organisation** (owner, B-1) | `campaign_versions` by organisation (`campaign_pause.rs:87`). See B-1 |
+| `marketing` | Rpc | `campaignResume` | MarketingCampaigns | **Organisation** (owner, B-1) | as `campaignPause` (`campaign_resume.rs:87`). See B-1 |
+| `marketing` | Rpc | `couponIssue` | MarketingCampaigns | **Organisation** (owner, B-1) | a coupon of an organisation campaign's rule (`coupon_issue.rs:116`, `:199`). See B-1 |
+| `marketing` | Rpc | `marginGuardSet` | RatePolicySave | **Organisation** | `margin_guards` keyed by organisation (`margin_guard_set.rs:95-97`), command and view |
+| `marketing` | Rpc | `campaigns` | MarketingCampaigns | Request | lists the organisation's campaigns, but the named branch picks whose redemption totals are shown (`views/campaigns.rs:144`, `:153`); `Organisation` would always answer the session branch's totals. See B-1 |
+| `marketing` | Rpc | `campaign` | MarketingCampaigns | **Organisation** (owner, B-1) | one organisation campaign (`views/campaign.rs:63`); `_branch` unused. See B-1 |
+| `marketing` | Rpc | `campaignPerformance` | MarketingPerformance | Request | per-branch figures, `PerformanceScope::new(vec![grant.branch])` (`campaign_performance.rs:93`) |
+| `notifications` | Rpc | `notificationRead` | SignedIn | Request | the caller's own notifications (`SignedIn`) |
+| `notifications` | Rpc | `notificationReadAll` | SignedIn | Request | the caller's own notifications (`SignedIn`) |
+| `notifications` | Rpc | `myNotifications` | SignedIn | Request | the caller's own notifications (`SignedIn`) |
+| `org_admin` | Rpc | `branchSave` | BranchesManage | Request | the branch itself: the named (or session) branch is the object (`branch_save.rs:144`) |
+| `org_admin` | Rpc | `adminBranchesProfile` | BranchesManage | Request | the named (or session) branch's profile (`admin_branches_profile.rs:53-54`) |
+| `org_admin` | Rpc | `userGrant` | UsersManage | Request | the role row's branch is the request's `branch` (`user_grant.rs:37`); `GrantGuard` limits a branch ADMIN to its own branches (`grant_guard.rs:58-76`) |
+| `org_admin` | Rpc | `userRevoke` | UsersManage | Request | as `userGrant` (`user_revoke.rs:34`, `:68`) |
+| `org_admin` | Rpc | `userDisable` | UsersManage | Request | a user of the organisation, limited by `GrantGuard` to users whose live roles sit at the caller's ADMIN branches (`user_service.rs:296`) |
+| `org_admin` | Rpc | `adminUsers` | UsersManage | Request (owner, B-2) | every user of the organisation; the branch only finds the organisation (`admin_users.rs:70-75`). See B-2; a branch ADMIN is to see only its own branches, by #5557's filter |
+| `org_admin` | Rpc | `userSuspend` | UsersManage | Request | as `userDisable` (`user_service.rs:349`) |
+| `org_admin` | Rpc | `userResume` | UsersManage | Request | as `userDisable` (`user_service.rs:401`) |
+| `org_admin` | Rpc | `userEnable` | UsersManage | Request | as `userDisable`; Enable also needs EXECUTIVE (`user_service.rs:450`) |
+| `org_admin` | Rpc | `userResetPassword` | UsersManage | Request | no route reaches this row (swept `api/src` at `bf5305fc`); left as it is, see 10.9 |
+| `org_admin` | Rpc | `userProfileSave` | UsersManage | Request | as `userDisable` (`user_service.rs:506`) |
+| `org_admin` | Rpc | `adminPermissionMatrix` | UsersManage | **Organisation** | `role_permission_grants` / `roles`, not keyed by any branch (`role_grant_store.rs:80`) |
+| `org_admin` | Rpc | `adminUserAudit` | AuditLogsRead | Request (owner, B-2) | `user_audit WHERE organization_id` (`user_repository.rs:421`). See B-2; a branch ADMIN is to see only its own branches, by #5557's filter |
+| `org_admin` | Rpc | `adminLoginHistory` | AuditLogsRead | Request (owner, B-2) | `login_history WHERE organization_id` (`user_repository.rs:472`). See B-2; a branch ADMIN is to see only its own branches, by #5557's filter |
+| `org_admin` | Rpc | `adminEmployeeRegister` | UsersManage | Request (owner, B-2) | every user of the organisation (`admin_employee_register.rs:62-64`). See B-2; a branch ADMIN is to see only its own branches, by #5557's filter |
+| `org_admin` | Rpc | `adminGroupAdd` | UsersManage | **Organisation** | the groups table, not keyed by any branch (`role_grant_store.rs:321`); the handler also needs an org-wide EXECUTIVE (`admin_groups.rs:105`) |
+| `org_admin` | Rpc | `adminGroupSave` | UsersManage | **Organisation** | as `adminGroupAdd` (`role_grant_store.rs:178-258`, `admin_groups.rs:143`) |
+| `org_admin` | Rpc | `adminGroupDelete` | UsersManage | **Organisation** | as `adminGroupAdd` (`role_grant_store.rs:359`, `admin_groups.rs:194`) |
+| `org_starting_prices` | Rpc | `orgStartingPriceSave` | OrgStartingPricesManage | **Organisation** | `org_starting_prices` keyed by organisation (`org_starting_price_save.rs:216`); the save also drafts every unpublished branch (`:241`) |
+| `org_starting_prices` | Rpc | `orgStartingPrices` | OrgStartingPricesManage | **Organisation** | `org_starting_prices` keyed by organisation (`org_starting_price_save.rs:216`); the save also drafts every unpublished branch (`:241`) |
+| `queue` | Rpc | `ticketIssueWalkIn` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketServeWalkIn` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketCallNext` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketCall` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketRecall` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketSkip` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketStart` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketFinish` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketRelease` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `ticketCancel` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `counterPause` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `counterResume` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `queueBoard` | QueueOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `queueOpen` | BranchDayOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `queueClose` | BranchDayOperate | Request | a queue ticket, counter or service status of `grant.branch` |
+| `queue` | Rpc | `queueTicketTake` | CustomerSelf | Request | a queue ticket, counter or service status of `grant.branch` |
+| `rate_alerts` | Rpc | `rateAlertCreate` | CustomerSelf | Request | the customer's own alert |
+| `rate_alerts` | Rpc | `rateAlertPause` | CustomerSelf | Request | the customer's own alert |
+| `rate_alerts` | Rpc | `rateAlertResume` | CustomerSelf | Request | the customer's own alert |
+| `rate_alerts` | Rpc | `rateAlertDelete` | CustomerSelf | Request | the customer's own alert |
+| `rate_alerts` | Rpc | `rateAlertSettingsSave` | RateAlertSettingsSave | **Organisation** | `rate_alert_settings` keyed by organisation (`xc-alert/.../repository.rs:172-175`); `_branch` unused |
+| `rate_alerts` | Rpc | `myRateAlerts` | SignedIn | Request | the customer's own alert |
+| `rate_alerts` | Rpc | `rateAlertSettings` | RateAlertSettingsSave | **Organisation** | reads `rate_alert_settings WHERE organization_id` (`views/rate_alert_settings.rs:52-53`) |
+| `receipts` | Rpc | `my_receipt` | CustomerSelf | Request | the customer's own receipt |
+| `referral` | Rpc | `attachReferral` | ReferralAttach | Request | an attribution at `grant.branch` (`attach_referral.rs:58-68`, `supersede_referral.rs:60-68`, `referral_attributions.rs:121`) |
+| `referral` | Rpc | `supersedeReferral` | ReferralSupersede | Request | an attribution at `grant.branch` (`attach_referral.rs:58-68`, `supersede_referral.rs:60-68`, `referral_attributions.rs:121`) |
+| `referral` | Rpc | `referralAttributions` | ReferralRead | Request | an attribution at `grant.branch` (`attach_referral.rs:58-68`, `supersede_referral.rs:60-68`, `referral_attributions.rs:121`) |
+| `segments` | Rpc | `segmentDefine` | MarketingMembers | **Organisation** (owner, B-1) | `segment_definitions` / `segment_snapshots` keyed by organisation, over every customer of it (`segment_service.rs:100`, `:122`). See B-1 |
+| `segments` | Rpc | `segmentSnapshot` | MarketingMembers | **Organisation** (owner, B-1) | `segment_definitions` / `segment_snapshots` keyed by organisation, over every customer of it (`segment_service.rs:100`, `:122`). See B-1 |
+| `segments` | Rpc | `segment_preview` | MarketingMembers | **Organisation** (owner, B-1) | `segment_definitions` / `segment_snapshots` keyed by organisation, over every customer of it (`segment_service.rs:100`, `:122`). See B-1 |
+| `staff_customers` | StaffRpc | `staffCustomers` | CustomerHoldPlace | Request | searches the organisation's customers (`staff_customers.rs:78`), which branch staff serve wherever they come from; the object is a customer, not the organisation |
+| `staff_customers` | StaffRpc | `customerContactVerify` | CustomerHoldPlace | Request | one customer's phone identity (`contact_verify.rs:105`) |
+| `staff_floor` | StaffRpc | `staffMe` | SignedIn | Request | the floor, holds or attendance of `grant.branch` |
+| `staff_floor` | StaffRpc | `staffFloor` | AttendanceClock | Request | the floor, holds or attendance of `grant.branch` |
+| `staff_floor` | StaffRpc | `staffHolds` | AnyOf([CustomerHoldPlace, VerificationReview]) | Request | the floor, holds or attendance of `grant.branch` |
+| `staff_floor` | StaffRpc | `staffAttendance` | AttendanceClock | Request | the floor, holds or attendance of `grant.branch` |
+| `staff_report` | StaffRpc | `staffDailyReport` | AnyOf([ShiftCloseCertify, FinanceReconcile, OverviewRead]) | Request | every query is `branch_id = $1` (`staff_daily_report.rs:114-351`) |
+| `transaction_read` | Rpc | `transactionView` | TransactionRead | Request | `transactions WHERE id AND branch_id` (`views/transaction.rs:86`) |
+| `user_create` | Rpc | `userCreate` | UsersManage | Request | each new role's branch is checked by `creator_may_grant` (`user_service.rs:699`, `:707`) |
+| `verification_branch` | Rpc | `verificationBranchCaseOpen` | VerificationReview | Request | a case filed at the reviewer's branch (`branch_intake.rs:259`) |
+| `verification_review` | Rpc | `verification_queue` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verification_case` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verification_policy` | VerificationReview | Request (B-3) | reads the organisation's verification policy (`verification_policy.rs:69-71`), which every branch reviewer reviews against. See B-3 |
+| `verification_review` | Rpc | `verificationCaseStartReview` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verificationCaseApprove` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verificationCaseReject` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verificationCaseRequestUpdate` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verificationCaseRevoke` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_review` | Rpc | `verificationDocumentLink` | VerificationReview | Request | a case, scoped to the reviewer's branches by `BranchScope` (`verification_queue.rs:102`, `review_service.rs:110-130`) |
+| `verification_self` | Rpc | `my_verification` | CustomerSelf | Request | the customer's own case |
+| `verification_self` | Rpc | `verificationCaseOpen` | CustomerSelf | Request | the customer's own case |
+| `verification_self` | Rpc | `verificationCaseSubmit` | CustomerSelf | Request | the customer's own case |
+| `verification_self` | Rpc | `verificationDocumentRemove` | CustomerSelf | Request | the customer's own case |
+| `verification_self` | Rpc | `verificationMyDocumentLink` | CustomerSelf | Request | the customer's own case |
+| `verification_self` | Rpc | `verificationDocumentUpload` | CustomerSelf | Request | the customer's own case |
+| `web_request` | Rpc | `webRequestCreate` | CustomerSelf | Request | the customer's own request |
+| `web_request` | Rpc | `webRequestQrReissue` | CustomerSelf | Request | the customer's own request |
+| `web_request` | Rpc | `webRequestCancel` | CustomerSelf | Request | the customer's own request |
+
+### 10.4 Tests that pin today's answer for the `Organisation` rows
+
+**Method.** I ran the whole workspace (`cargo nextest run --workspace`, 8536 tests, private PG17) with all 33 rows then proposed marked `Organisation` on top of the skeleton (B-2's 4 rows included; 10.6 re-measures T3 without them). Every failure was then re-run on the skeleton alone.
+- 7 failures also fail on the skeleton alone, so they come from this machine, not from the marking: `pages_test` ×3, `executive_admin_shell_test` ×3 and `marketing_admin_shell_test` ×1 (the web shell is not built in this clone). `main` CI is green at `bf5305fc`.
+- 2 failures were the named-branch gap of 10.2. With the transport check in the skeleton they pass, and they stay as guards, unedited: `view_org_scope_test::a_paged_view_naming_another_organisations_branch_is_out_of_scope` (`admin_users`) and `v3_view_unknown_branch_test::every_generated_view_refuses_an_unknown_branch` (`admin_employee_register`). Both reached the gap through B-2's rows, which now stay `Request`; the check stays, because every other `Organisation` view (`campaign`, `orgStartingPrices`, `rateAlertSettings`, `adminPermissionMatrix`) would have the same gap.
+- 2 failures (`mk7_campaign_views_test` ×2) came from marking the `campaigns` view, which is why it stays `Request` (10.3).
+- **8 tests pin today's answer**: a branch-scoped holder reached the handler and was refused there with 400, or was granted. They are restated on `test/5526` (10.6), each with a `#5526` comment:
+
+| Test | Row | Today | After |
+|---|---|---|---|
+| `xc-auth/tests/cash_transfer_policy_permission_test.rs::policy_authorize_on_transfer_policy_save_grants_executive_and_finance` | `transferPolicySave` | FINANCE at MAIN is granted | FINANCE organisation-wide is granted; FINANCE at MAIN gets `OutOfScope` |
+| `api/tests/margin_guard_set_role_test.rs::m1_…`, `m2_…`, `m5_…` | `marginGuardSet` | RATE_MANAGER at MAIN: 400 `roleNotAllowedHere` | 403 `outOfScope` |
+| `api/tests/rbac_f12_admin_groups_test.rs::only_an_org_wide_executive_base_changes_groups` | `adminGroupAdd/Save/Delete` | EXECUTIVE@XC-B01: 400 `roleNotAllowed` | 403 `outOfScope` (ORG_ADMIN unchanged: 400 `roleNotAllowed`) |
+| `api/tests/role_refusal_400_admin_groups_test.rs::admin_group_{add,save,delete}_refuses_…` | same | same | same |
+
+- The refusal moves from the handler to the policy, and its code changes from `roleNotAllowed`/`roleNotAllowedHere` to `outOfScope`. The web shows both through the shared worded error (`error.outOfScope`, e.g. `BookingSlots.permission.test.tsx:209`), so no FE ticket follows.
+- With the marking, the skeleton and the restated tests, the whole workspace is green apart from the 7 machine-local reds (measured in 10.6).
+- Scope of the sweep: the tests that ran at `bf5305fc` + the skeleton. A row with no test that a branch-scoped caller would reach is covered by the up-front tests only.
+
+### 10.5 Behaviour table
+
+| # | Row kind | Caller | Request names | Answer | Up-front test |
+|---|---|---|---|---|---|
+| W-1 | `Organisation` | holder, branch-scoped at B1 (session B1) | nothing, or B1 | `outOfScope` | `row_scope_test.rs::w1_…`; per area: `org_level_rows_*_test.rs::a2_…`, `a3_…` |
+| W-2 | `Organisation` | holder, organisation-wide (session B1) | B2 of its organisation | granted at B1 (the session branch) | `w2_…`; per area `a4_…` |
+| W-3 | `Organisation` | organisation-wide, no session branch | — | `outOfScope` | `w2_…` |
+| W-4 | `Request` | any | any | as today | `w3_…`; per area `a5_…` (every other row of the file still grants a branch holder at B1) |
+| W-5 | `Organisation` | — | — | never `Public` or `CustomerSelf` | `w5_…` |
+| W-6 | `Organisation` | organisation-wide | a branch of another organisation | 403 `outOfScope` | `view_org_scope_test` (unedited) |
+| W-7 | `Organisation` | organisation-wide | a branch that does not exist | 400 `noSuchBranch` | `v3_view_unknown_branch_test` (unedited) |
+| W-8 | — | `Policy::scope_with` | a row / a route-table action / no row | the row's scope / `Request` / `Request` | `w4_…` |
+| A-1 | per area | — | — | the `Organisation` rows of the file are exactly 10.3's list | `org_level_rows_*_test.rs::a1_…` |
+
+### 10.6 Up-front tests and measurements
+
+On branch **`test/5526`** at `d876edf0`, off `origin/main` `bf5305fc`: the skeleton commit `53d5d775` (10.2), then the test commit `d876edf0`. Measured at the first test commit (`d79c9552`, which also listed B-2's rows): the 10 files below plus `view_org_scope_test` and `v3_view_unknown_branch_test` ran 64 tests, 44 passed and 20 failed, every failure an assertion on the answer (none a compile error). `d876edf0` only drops B-2's 4 rows from `org_level_rows_org_admin_test`'s list; re-measured there, that file is `a1`..`a4` red and `a5` green.
+- `api/crates/xc-auth/tests/row_scope_test.rs` (W-1..W-5, W-8): test-only rows through `Policy::authorize_with`; **green** on `test/5526`, because the skeleton is what it tests.
+- `api/crates/xc-auth/tests/org_level_rows_settings_test.rs` (T1, 7 rows), `org_level_rows_marketing_test.rs` (T2, 18 rows), `org_level_rows_org_admin_test.rs` (T3, 4 rows): `a1`..`a4` fail on the result on `test/5526`, `a5` passes.
+- The 8 restated tests of 10.4 fail on the result on `test/5526`.
+- With a throwaway T3 of its 4 rows only, T3's done line (10.9) ran 109 tests, 109 passed (2026-10-30 ICT).
+- With a throwaway T1 + T2 + T3 (the 33 markings, B-2's included): every test named in 10.9 passes, and the whole workspace is green except the 7 machine-local reds of 10.4 (measured 2026-10-30 ICT: `cargo nextest run --workspace --no-fail-fast`, 8556 run, 8549 passed, 7 failed — exactly those 7, 1 skipped).
+- clippy `--workspace --all-targets -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` are clean on `test/5526`.
+
+### 10.7 Data migration
+
+None. `RowScope` is a compile-time field of the policy table; no table, column or row changes.
+
+### 10.8 For the owner: rows whose kind is a business question (answered)
+
+Answered on #5526 by claude/553782, 2026-10-30 07:1x ICT (issuecomment-6511530429), with the owner's labels verbatim. `test/5526` follows the answers.
+
+| # | Answer | Effect here |
+|---|---|---|
+| B-1 | owner: **"เฉพาะ marketer ระดับองค์กร (Recommended)"** | the 12 rows are `Organisation` (T2). The seeded test marketer is MARKETING @ `MAIN` (`deploy/server/seed-test-booking.sh:300`), so T2 also makes it organisation-wide there (`branch_id` NULL), or the e2e campaign specs lose their user. Its session still stands at `MAIN` (`xc-auth/src/domain/access/standing.rs:12`: a MARKETING row with no branch stands at `MAIN`). Re-seeding a host stays a separate owner order |
+| B-2 | owner: **"กรองให้เห็นเฉพาะสาขาตัวเอง (Recommended)"** | the 4 rows stay `Request`. The filter (a branch ADMIN sees only the users its rows cover, by `GrantGuard`'s rule) is #5557, not this design |
+| B-3 | claude/553782: keep `Request` | unchanged |
+| B-4 | claude/553782: a follow-up | #5558 asks to move the `need_table` rows into area files and classify them |
+
+The questions as they were put:
+
+| # | Rows | Question | Today (measured) | Recommend | Why |
+|---|---|---|---|---|---|
+| B-1 | `campaignCreate`, `campaignVersionSave`, `campaignVersionNew`, `campaignSimulate`, `campaignSubmit`, `campaignPause`, `campaignResume`, `couponIssue`, the `campaign` view; `segmentDefine`, `segmentSnapshot`, `segment_preview` | May a marketer whose group sits on one branch run the organisation's campaigns and segments? | Yes, and further: the body's `branches[]` is checked only against the organisation (`campaign_create.rs:119`), so a branch marketer can aim a campaign at any branch; segments cover every customer of the organisation (`segment_service.rs:100`) | **`Organisation`**: only an organisation-wide marketing row runs them | campaigns and segments are keyed by the organisation alone. The alternative, keeping `Request`, needs a new `branches ⊆ caller's branches` check in five commands (a separate ticket) |
+| B-2 | `adminUsers`, `adminUserAudit`, `adminLoginHistory`, `adminEmployeeRegister` | May a branch ADMIN read every user, audit row and login of the organisation? | Yes; the branch only finds the organisation (`admin_users.rs:70-75`) | **`Organisation`** | the lists are organisation-wide. If branch ADMINs need a list of their own branch's users, that is a new filtered view (a follow-up), not this row |
+| B-3 | the `verification_policy` view | Is the verification policy for organisation-wide reviewers only? | Every branch reviewer reads it (`verification_policy.rs:69-71`) | **keep `Request`** | branch reviewers review against it; marking it would refuse them |
+| B-4 | `need_table` rows (`adminCreateBranch`, `ratePolicySave`, `consentPolicy`, `marketRatesRefresh`, `rateDraft`, `approvalDecide`/`Read`, `reversalRequest`, …) | — (process) | `Policy::need_with` reads them after the area rows; `scope_with` answers `Request` for them, so this field cannot mark them | a follow-up ticket that moves them into area files, then classifies them | out of #5526's scope (its §3 names `AreaRow`) |
+
+### 10.9 Function tickets
+
+All three are `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/5526` (`Test branch: test/5526`). Each marks rows only (the `scope` field, plus a helper where the file uses one). File scopes are disjoint, so the three run together.
+
+| Ticket | Rows | File scope | Done line (`cd api && cargo nextest run -p xc-auth -p xchange -E 'test(/^(…)::/)'`, all green; clippy and `fmt-included.sh` clean) |
+|---|---|---|---|
+| **T1** settings | `bookingPolicySet`, `transferPolicySave`, `appSettingsSave`, `orgStartingPriceSave`, `orgStartingPrices`, `rateAlertSettingsSave`, `rateAlertSettings` | `api/crates/xc-auth/src/domain/policy/areas/bookings.rs`, `…/cash_transfer_policy.rs`, `…/customer_app.rs`, `…/org_starting_prices.rs`, `…/rate_alerts.rs` | `row_scope_test`, `org_level_rows_settings_test`, `cash_transfer_policy_permission_test`, `v3_cash_transfer_policy_test`, `v3_cash_commands_test`, `bk6_slot_admin_test`, `booking_policy_org_scope_test`, `r_booking_policy_set_bounds_test`, `app_settings_org_level_test`, `app_settings_test`, `customer_app_rows_test`, `org_starting_price_test`, `org_starting_price_same_day_test`, `org_starting_price_rate_bound_test`, `v3_rate_alerts_http_test`, `alert_settings_test`, `settings_number_bounds_test` |
+| **T2** marketing | `marginGuardSet`; B-1's 12 rows; the 5 loyalty rows; the seeded marketer made organisation-wide | `api/crates/xc-auth/src/domain/policy/areas/marketing.rs`, `…/segments.rs`, `…/loyalty_rules.rs`, `deploy/server/seed-test-booking.sh` (step 6d only: `'$BRANCH'` → `NULL` at `:300`, and the `:291` label) | `bash -n deploy/server/seed-test-booking.sh` clean and `grep -n "'MARKETING', '\$ORG_ID', NULL" deploy/server/seed-test-booking.sh` finds step 6d; `row_scope_test`, `org_level_rows_marketing_test`, `margin_guard_set_role_test`, `mk7_campaign_views_test`, `mk4_campaign_commands_test`, `campaign_branches_scope_test`, `campaign_create_blank_name_test`, `coupon_issue_stored_output_test`, `r_campaign_budget_bound_test`, `mk6_segments_test`, `ly6_draft_retry_test`, `ly6_draft_retry_more_test`, `ly6_loyalty_rule_versions_test`, `loyalty_rule_writer_shared_test` |
+| **T3** organisation admin | `adminPermissionMatrix`, `adminGroupAdd/Save/Delete` | `api/crates/xc-auth/src/domain/policy/areas/org_admin.rs` | `row_scope_test`, `org_level_rows_org_admin_test`, `rbac_f12_admin_groups_test`, `role_refusal_400_admin_groups_test`, `view_org_scope_test`, `v3_view_unknown_branch_test`, `rbac_c1b_org_admin_rows_test`, `rbac_c1b_audit_rows_test`, `rbac_f4a_test`, `rbac_f4b_test`, `rbac_f5_permission_matrix_view_test`, `rbac_f6_test`, `rbac_f8_test`, `rbac_f10_test`, `admin_users_cursor_org_test`, `admin_users_search_test`, `v3_org_admin_test` |
+
+Each list = the up-front tests plus every existing test file that names the ticket's actions (`git grep -l '<action>' -- api/tests api/crates/*/tests` at `bf5305fc`); all of them pass with the throwaway.
+
+### 10.10 Out of scope, and findings for their own tickets
+
+Out of scope: `appSettingsSave`'s service check and transfer reconcile (#5514), any role ↔ permission change, and the `need_table` rows (B-4, #5558). B-2's branch filter for the admin user lists is #5557.
+
+Found while sweeping (measured at `bf5305fc`; each goes to claude/553782 as a proposed ticket, not opened here):
+- `GrantGuard`'s "every live role sits at the caller's ADMIN branches" check is true for a user with no live role (`grant_guard.rs:75`, `.all()` on an empty list). So a branch ADMIN can disable, suspend, resume or edit any role-less user of the organisation.
+- `campaignCreate`, `campaignVersionSave` and `campaignSimulate` check `branches[]` only against the organisation (B-1). B-1 is answered `Organisation`, so T2 makes these unreachable for a branch marketer.
+- The `StaffRpc` rows `loyaltyRuleDraft` / `loyaltyRuleSubmit` have no handler (no route names them on `StaffRpc`).
+- The `userResetPassword` row has no route.
+- `loyaltyRuleDraft` derives its draft id from `(kind, grant.branch, key)` (`loyalty_rule_draft.rs:50-53`). Under `Organisation`, `grant.branch` is the session branch, so a retry with the same key from another session branch makes a second draft. A retry from the same session (the case the id serves) is unchanged.

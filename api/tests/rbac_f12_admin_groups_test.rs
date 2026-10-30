@@ -692,27 +692,19 @@ async fn only_an_org_wide_executive_base_changes_groups() {
     let audits = group_audit_rows(&db).await;
 
     for who in [ORG_ADMIN, "EXECUTIVE@XC-B01"] {
+        // #5526 (org-wide-actor-branch.md §10): groups are organisation-level, so the branch
+        // EXECUTIVE is refused by the policy (403 outOfScope) before the handler's base check.
+        let (status, want) = if who == ORG_ADMIN {
+            (StatusCode::BAD_REQUEST, "roleNotAllowed")
+        } else {
+            (StatusCode::FORBIDDEN, "outOfScope")
+        };
         let a = add(&db, who, NIGHT, "TELLER", &names(&night_set())).await;
-        refused(
-            &a,
-            StatusCode::BAD_REQUEST,
-            "roleNotAllowed",
-            &format!("{who} adds"),
-        );
+        refused(&a, status, want, &format!("{who} adds"));
         let s = save(&db, who, "TELLER", &names(&night_set())).await;
-        refused(
-            &s,
-            StatusCode::BAD_REQUEST,
-            "roleNotAllowed",
-            &format!("{who} saves"),
-        );
+        refused(&s, status, want, &format!("{who} saves"));
         let d = delete(&db, who, "SPARE_GROUP").await;
-        refused(
-            &d,
-            StatusCode::BAD_REQUEST,
-            "roleNotAllowed",
-            &format!("{who} deletes"),
-        );
+        refused(&d, status, want, &format!("{who} deletes"));
     }
 
     assert!(!db.group_exists(NIGHT).await, "nothing was added");

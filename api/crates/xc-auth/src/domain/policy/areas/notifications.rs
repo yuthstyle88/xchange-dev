@@ -1,4 +1,4 @@
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -8,15 +8,18 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "notificationRead",
         need: Need::Permission(Permission::SignedIn),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "notificationReadAll",
         need: Need::Permission(Permission::SignedIn),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "myNotifications",
         need: Need::Permission(Permission::SignedIn),
+        scope: RowScope::Request,
     },
 ];

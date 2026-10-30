@@ -24,7 +24,7 @@
 //! same catch-all as before; so is every other row.
 
 use xc_auth::domain::access::Permission;
-use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, duplicates, shadowed};
+use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, RowScope, duplicates, shadowed};
 use xc_auth::domain::policy::entities::policy::{Need, Policy};
 use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -33,6 +33,7 @@ const NEW_ROW: AreaRow = AreaRow {
     path: EntryPath::Rpc,
     action: "attachReferral",
     need: Need::Permission(Permission::ExchangeTransact),
+    scope: RowScope::Request,
 };
 
 #[test]
@@ -78,6 +79,7 @@ fn rows_in_a_second_area_file_are_found_too() {
         path: EntryPath::UserRoute,
         action: "myReceipt",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     }];
     assert_eq!(
         Policy::need_with(
@@ -159,6 +161,7 @@ fn shadowed_finds_an_area_row_the_table_already_answers() {
             path: EntryPath::Rpc,
             action: "adminSnapshot",
             need: Need::Public,
+            scope: RowScope::Request,
         },
     ];
     assert_eq!(shadowed(&[a]), vec![(EntryPath::Rpc, "adminSnapshot")]);
@@ -172,6 +175,7 @@ fn shadowed_counts_a_catch_all_answer_as_answered() {
         path: EntryPath::Upload,
         action: "anything",
         need: Need::Public,
+        scope: RowScope::Request,
     }];
     assert_eq!(shadowed(&[a]), vec![(EntryPath::Upload, "anything")]);
 }

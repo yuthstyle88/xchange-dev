@@ -4,7 +4,7 @@
 //! ledger design §11 Q-2), not `CashManage`: a branch manager must not raise the limit that decides
 //! when FINANCE checks their own branch's counts.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -14,10 +14,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "cashLimitsSave",
         need: Need::Permission(Permission::CashLimitsManage),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "cashLimitsRead",
         need: Need::Permission(Permission::CashLimitsManage),
+        scope: RowScope::Request,
     },
 ];

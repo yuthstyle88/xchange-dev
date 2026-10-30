@@ -6,7 +6,7 @@
 //! Picked up by `xc-auth/build.rs` to generate `AREA_ROWS`.
 
 use crate::domain::access::Permission;
-use crate::domain::policy::areas::AreaRow;
+use crate::domain::policy::areas::{AreaRow, RowScope};
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 
@@ -20,4 +20,5 @@ pub const ROWS: &[AreaRow] = &[AreaRow {
     path: EntryPath::StaffRpc,
     action: "staffDailyReport",
     need: Need::AnyOf(READERS),
+    scope: RowScope::Request,
 }];

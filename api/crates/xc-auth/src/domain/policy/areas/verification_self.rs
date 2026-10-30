@@ -2,7 +2,7 @@
 //!
 //! Picked up by `xc-auth/build.rs` to generate `AREA_ROWS`.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -12,30 +12,36 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "my_verification",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "verificationCaseOpen",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "verificationCaseSubmit",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "verificationDocumentRemove",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "verificationMyDocumentLink",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "verificationDocumentUpload",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
 ];
