@@ -1,7 +1,7 @@
 // QA-S5 — smoke: admin org menus and the queue bar (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-S5; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test } from '@playwright/test';
-import { mePermissions, STAFF_LANGS, signIn, smoke } from './helpers';
+import { hasAccount, mePermissions, STAFF_LANGS, signIn, smoke } from './helpers';
 
 test.describe('QA-S5 smoke: admin org menus and the queue bar', () => {
   // key: web/src/screens/admin/customers/Customers.tsx:419
@@ -19,12 +19,13 @@ test.describe('QA-S5 smoke: admin org menus and the queue bar', () => {
 
   // key: web/src/screens/admin/approvals/Approvals.tsx:319 (menu.ts:14 needs ApprovalsDecide)
   test('/#approvals', async ({ page }) => {
-    await signIn(page, 'admin', '/#approvals');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#approvals');
     await smoke(page, {
       area: 'admin-org',
       screen: 'approvals',
       path: '/#approvals',
-      role: 'admin',
+      role,
       key: '.admin-approvals-screen',
       langs: STAFF_LANGS,
       needs: 'ApprovalsDecide',
@@ -33,12 +34,13 @@ test.describe('QA-S5 smoke: admin org menus and the queue bar', () => {
 
   // key: web/src/screens/admin/consent/Consent.tsx:187 (menu.ts:14 needs ConsentPolicyManage)
   test('/#consent', async ({ page }) => {
-    await signIn(page, 'admin', '/#consent');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#consent');
     await smoke(page, {
       area: 'admin-org',
       screen: 'consent',
       path: '/#consent',
-      role: 'admin',
+      role,
       key: '.admin-consent-screen',
       langs: STAFF_LANGS,
       needs: 'ConsentPolicyManage',
@@ -75,12 +77,13 @@ test.describe('QA-S5 smoke: admin org menus and the queue bar', () => {
 
   // key: web/src/screens/admin/executive/Executive.tsx:285 (menu.ts:14 needs OverviewRead)
   test('/#executive', async ({ page }) => {
-    await signIn(page, 'admin', '/#executive');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#executive');
     await smoke(page, {
       area: 'admin-org',
       screen: 'executive',
       path: '/#executive',
-      role: 'admin',
+      role,
       key: '.executive',
       langs: STAFF_LANGS,
       needs: 'OverviewRead',
