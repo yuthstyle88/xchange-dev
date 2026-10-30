@@ -151,7 +151,7 @@ async fn d1_an_executive_alone_manages_groups_audited_as_executive() {
     db.finish().await;
 }
 
-/// D-2: the owner (EXECUTIVE + ADMIN) is unchanged: allowed, audited as `OWNER`.
+/// D-2: the owner (EXECUTIVE + ADMIN) is unchanged: allowed, audited as `EXECUTIVE` (`OWNER` until #5630).
 #[tokio::test]
 async fn d2_the_owner_is_unchanged_and_audited_as_owner() {
     let db = TestDb::start().await;
@@ -159,7 +159,8 @@ async fn d2_the_owner_is_unchanged_and_audited_as_owner() {
     let got = audits(&db).await;
     assert_eq!(got.len(), 1);
     assert_eq!(got[0].0, "denominationGroupCreate");
-    assert_eq!(got[0].2, "OWNER");
+    // #5630 (§14.5, rulings on #5661), restated by claude/studio-claude-17: was V.9's `OWNER`.
+    assert_eq!(got[0].2, "EXECUTIVE");
     db.finish().await;
 }
 
