@@ -1,7 +1,6 @@
 // Pricing formula FE T3 (docs/design/blueprint/pricing-formula-web.md §2, §3 E1–E4): the two formula texts, the
 // inputs a formula may name, and the parse error under its field.
 import { createUniqueId, For, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../shared/i18n';
 import type { FormulaTextsDto } from '../../../shared/api/generated/pricing_formula';
 import type { FormulaParseErrorDto } from '../../../shared/api/generated/pricing_formula_preview';
 import * as table from './formula-i18n';
@@ -19,7 +18,7 @@ export interface FormulaEditorProps {
   disabled: () => boolean;
 }
 
-const t = screenT('admin.formula', table);
+const t = table.formulaT;
 
 function formatError(err: FormulaParseErrorDto): string {
   const codeKey = `code.${err.code}` as keyof typeof table.th;

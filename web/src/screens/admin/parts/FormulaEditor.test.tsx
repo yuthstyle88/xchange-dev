@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { FormulaTextsDto } from '../../../shared/api/generated/pricing_formula';
-import type { FormulaParseErrorDto } from '../../../shared/api/generated/pricing_formula_preview';
+import { makeFormulaTextsDto, type FormulaParseErrorDto } from '../../../shared/testing/fixtures';
 import { th } from './formula-i18n';
 import { FormulaEditor } from './FormulaEditor';
 
@@ -31,7 +30,7 @@ describe('FormulaEditor (E1–E4)', () => {
     const [buy, setBuy] = createSignal(buyValue);
     const [sell, setSell] = createSignal(sellValue);
     const inputs = () => ['ref_buy', 'ref_sell', 'custom_var'];
-    const defaults = (): FormulaTextsDto => ({ buyFormula: 'ref_buy', sellFormula: 'ref_sell' });
+    const defaults = () => makeFormulaTextsDto({ buyFormula: 'ref_buy', sellFormula: 'ref_sell' });
     const parseError = (): FormulaParseErrorDto | null => null;
     const disabled = () => false;
 
@@ -100,7 +99,7 @@ describe('FormulaEditor (E1–E4)', () => {
   it('E2: pressing default button calls onBuy and onSell with defaults', () => {
     let capturedBuy = '';
     let capturedSell = '';
-    const defaults = (): FormulaTextsDto => ({
+    const defaults = () => makeFormulaTextsDto({
       buyFormula: 'defaults_buy_formula',
       sellFormula: 'defaults_sell_formula',
     });
