@@ -21,7 +21,7 @@
 // - screens/admin/reconciliation/reversals/ReversalsPart.tsx:58-79 [data-request="<approvalRequestId>"], input[name="reason"], button[data-action="approve"]
 // - screens/desk/steps/refunds/task.tsx:53             button[data-desk-task="refunds"]
 // - screens/desk/steps/refunds/RefundsStep.tsx:87-96,128-136 button[data-action="post"][data-id="<reversalId>"], dialog.xc-dialog
-// - smoke-rbac-matrix.spec.ts:99-117                   customer has no desk (redirected to /login?next=…)
+// - smoke-rbac-matrix.spec.ts:99-118                   customer has no desk (forwarded to /app via /login?next=…; HomeScreen.tsx:345 .xc-customer-home)
 import { expect, test, type Page } from '@playwright/test';
 import * as phoneI18n from '../../../web/src/screens/desk/loyalty/phone/i18n';
 import {
@@ -640,17 +640,23 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
   test('(c) permission: customer has no desk and cannot execute desk draft, referral, counter, or phone verification commands', async ({
     page,
   }) => {
-    // Also proven by smoke-rbac-matrix.spec.ts:99-117 (customer is redirected to /login?next=… from /desk?branch=MAIN and /staff).
+    // Also proven by smoke-rbac-matrix.spec.ts:99-118 (signed-in customer is forwarded to /app from /desk?branch=MAIN and /staff).
     test.skip(!hasAccount('customer'), 'no customer account in users.json: run scripts/reseed.sh');
 
     await signIn(page, 'customer', '/app');
 
-    // UI gate: customer navigating to /desk, /staff/desk, or /desk/queue is redirected away and desk UI is not rendered.
+    // UI gate: customer navigating to /desk, /staff/desk, or /desk/queue receives 303 /login?next=… (screens.rs:137,145,160; pages.rs:690-708),
+    // and since #4351 LoginScreen forwards the signed-in customer to /app (LoginScreen.tsx:40,47-48; home.ts:48-58; main.tsx:12).
+    // Wait for that forward and customer home before the next goto so no navigation is still in flight (#4796).
     for (const deskPath of [`/desk?branch=${encodeURIComponent(users.branch)}`, '/staff/desk', '/desk/queue']) {
-      await page.goto(deskPath);
-      await page.waitForLoadState('domcontentloaded');
+      await page.goto(deskPath, { waitUntil: 'commit' });
+      await page.waitForURL((url) => url.pathname === '/app', { timeout: 20_000 });
+      await expect(
+        page.locator('.xc-customer-home'), // HomeScreen.tsx:345
+        `customer visiting ${deskPath} settles on /app`,
+      ).toBeVisible({ timeout: 20_000 });
       const pathname = new URL(page.url(), users.baseUrl).pathname;
-      expect(pathname, `customer visiting ${deskPath} must be redirected to /login`).toBe('/login');
+      expect(pathname, `customer visiting ${deskPath} lands on /app`).toBe('/app');
       await expect(page.locator('.desk-page')).toHaveCount(0); // DeskPage.tsx:31
     }
 
