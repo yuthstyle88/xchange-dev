@@ -187,7 +187,7 @@ impl ReviewService {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: case.organization_id.to_string(),
             action: "verification_case.start_review".to_string(),
             object_ref: case.id.to_string(),
@@ -279,7 +279,7 @@ impl ReviewService {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: case.organization_id.to_string(),
             action: "verification_case.approve".to_string(),
             object_ref: case.id.to_string(),
@@ -345,7 +345,7 @@ impl ReviewService {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: case.organization_id.to_string(),
             action: "verification_case.reject".to_string(),
             object_ref: case.id.to_string(),
@@ -409,7 +409,7 @@ impl ReviewService {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: case.organization_id.to_string(),
             action: "verification_case.request_update".to_string(),
             object_ref: case.id.to_string(),
@@ -475,7 +475,7 @@ impl ReviewService {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: case.organization_id.to_string(),
             action: "verification_case.revoke".to_string(),
             object_ref: case.id.to_string(),

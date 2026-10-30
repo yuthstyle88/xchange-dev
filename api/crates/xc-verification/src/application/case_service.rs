@@ -135,11 +135,7 @@ impl CaseService {
                             }
                             _ => None,
                         };
-                        (
-                            r.user_id.to_string(),
-                            "VERIFICATION_REVIEWER".to_string(),
-                            b,
-                        )
+                        (r.user_id.to_string(), r.role.as_str().to_string(), b)
                     }
                 };
                 let event = AuditEvent {
@@ -294,11 +290,7 @@ impl CaseService {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),
                     _ => None,
                 };
-                (
-                    r.user_id.to_string(),
-                    "VERIFICATION_REVIEWER".to_string(),
-                    b,
-                )
+                (r.user_id.to_string(), r.role.as_str().to_string(), b)
             }
         };
 
@@ -394,11 +386,7 @@ impl CaseService {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),
                     _ => None,
                 };
-                (
-                    r.user_id.to_string(),
-                    "VERIFICATION_REVIEWER".to_string(),
-                    b,
-                )
+                (r.user_id.to_string(), r.role.as_str().to_string(), b)
             }
         };
 
@@ -488,11 +476,7 @@ impl CaseService {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),
                     _ => None,
                 };
-                (
-                    r.user_id.to_string(),
-                    "VERIFICATION_REVIEWER".to_string(),
-                    b,
-                )
+                (r.user_id.to_string(), r.role.as_str().to_string(), b)
             }
         };
 
