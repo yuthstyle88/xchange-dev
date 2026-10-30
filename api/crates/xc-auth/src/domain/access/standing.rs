@@ -117,12 +117,6 @@ impl Standing {
         })
     }
 
-    /// #5618: the audit `actor_role` text of a v3 caller: its [`Standing::acting`] text, else `STAFF`.
-    /// It never refuses; the permission check has already decided.
-    pub fn audit_text_of(actor: &Actor, now: DateTime<Utc>) -> &'static str {
-        Standing::acting(actor, now).map_or("STAFF", |s| s.kind.audit_text())
-    }
-
     pub fn is_owner(&self) -> bool {
         self.kind == StandingKind::Owner
     }

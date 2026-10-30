@@ -16,11 +16,11 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Actor;
-use xc_auth::domain::access::Standing;
 use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_exchange::domain::settings::repository::SettingsRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
@@ -32,6 +32,7 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::exchange_settings::{
     BranchExchangeLimitDto, ExchangeSettingsDto,
 };
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, Locks, out_of_scope, server_error,
 };
@@ -117,12 +118,27 @@ impl CommandAction for ExchangeSettingsSaveCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let now = Utc::now();
         if BranchScope::of(who, Permission::SystemSettings, now) != BranchScope::All {
             return Err(out_of_scope());
@@ -140,7 +156,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: Standing::audit_text_of(who, now).to_owned(),
+                actor_role: audit_role(&caller.granted, who, now).to_owned(),
                 scope: "organization".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: org.to_string(),
@@ -187,12 +203,27 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let now = Utc::now();
         let target = BranchId::new(input.id.clone());
         let limit = match input.approval_limit_thb.as_deref() {
@@ -228,7 +259,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: Standing::audit_text_of(who, now).to_owned(),
+                actor_role: audit_role(&caller.granted, who, now).to_owned(),
                 scope: "branch".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: target.as_str().to_owned(),

@@ -10,6 +10,7 @@ use ts_rs::TS;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::CurrencyCode;
 use xc_rate::application::currency::denomination_group_service::DenominationGroupService;
@@ -19,6 +20,7 @@ use xc_rate::infrastructure::currency::denomination_groups::PgDenominationGroups
 use super::commands::map_rate_engine_error;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -58,12 +60,27 @@ impl CommandAction for DenominationGroupCreateCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -82,7 +99,7 @@ impl CommandAction for DenominationGroupCreateCommand {
         })?;
 
         self.service
-            .create_group(tx, who, code, &group, &[])
+            .create_group(tx, who, code, &group, &caller.granted)
             .await
             .map_err(map_rate_engine_error)?;
 
@@ -133,12 +150,27 @@ impl CommandAction for DenominationGroupMapCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -164,7 +196,7 @@ impl CommandAction for DenominationGroupMapCommand {
                 &group,
                 &input.provider,
                 &input.instrument_key,
-                &[],
+                &caller.granted,
             )
             .await
             .map_err(map_rate_engine_error)?;
@@ -214,12 +246,27 @@ impl CommandAction for DenominationGroupRemoveCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let code = CurrencyCode::parse(&input.currency).map_err(|e| {
             V3Error::new(
                 "validationFailed",
@@ -238,7 +285,7 @@ impl CommandAction for DenominationGroupRemoveCommand {
         })?;
 
         self.service
-            .remove_group(tx, who, code, &group, &[])
+            .remove_group(tx, who, code, &group, &caller.granted)
             .await
             .map_err(map_rate_engine_error)?;
 
