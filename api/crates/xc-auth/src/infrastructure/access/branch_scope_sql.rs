@@ -16,6 +16,23 @@ pub fn push_user_in_scope(
     user_id: &str,
     now: DateTime<Utc>,
 ) {
-    // Skeleton (#5557): T2 writes the body. Today's answer: no filter.
-    let _ = (builder, scope, user_id, now);
+    let BranchScope::Branches(list) = scope else {
+        return;
+    };
+    let branches: Vec<String> = list.iter().map(|b| b.as_str().to_owned()).collect();
+    builder.push(" AND EXISTS (SELECT 1 FROM user_roles cr WHERE cr.user_id = ");
+    builder.push(user_id);
+    builder.push(" AND cr.valid_from <= ");
+    builder.push_bind(now);
+    builder.push(" AND (cr.valid_to IS NULL OR cr.valid_to > ");
+    builder.push_bind(now);
+    builder.push(")) AND NOT EXISTS (SELECT 1 FROM user_roles cr WHERE cr.user_id = ");
+    builder.push(user_id);
+    builder.push(" AND cr.valid_from <= ");
+    builder.push_bind(now);
+    builder.push(" AND (cr.valid_to IS NULL OR cr.valid_to > ");
+    builder.push_bind(now);
+    builder.push(") AND (cr.branch_id IS NULL OR NOT (cr.branch_id = ANY(");
+    builder.push_bind(branches);
+    builder.push("))))");
 }
