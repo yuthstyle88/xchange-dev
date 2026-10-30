@@ -29,7 +29,7 @@ let REPO_DIR: string;
  */
 const ALLOWED_STAFF_ME_CALLERS: Record<string, string> = {
   'web/src/screens/desk/queue/QueueScreen.tsx': "the counter needs the teller's userId; staff only",
-  'web/src/screens/staff/staff-context.ts': "/staff's staff_me + staff_floor reader, moved out of StaffPage.tsx (#5640); staff only",
+  'web/src/screens/staff/staff-context.ts': "/staff's staff_me + staff_floor reader (#5640), and /desk's shift gate for ShiftOperate holders only (#5641: the gate checks the session me first, so the owner never reads it)",
 };
 
 beforeAll(async () => {

@@ -69,8 +69,14 @@ classDiagram
     class ShiftCard { <<staff/shift/ShiftCard.tsx · T2>> }
     class StaffPage { <<staff/StaffPage.tsx · T3>> }
     class DeskShiftGate {
-        <<component desk/shift/DeskShiftGate.tsx · T4>>
-        props: branch, children
+        <<module desk/shift/DeskShiftGate.tsx · T4>>
+        +createDeskShiftGate(opts?) DeskShift
+        open() boolean
+        Panel() JSX
+    }
+    class DeskPage {
+        <<desk/DeskPage.tsx · T4>>
+        prop shift?: DeskShift
     }
     class deskShiftPhase {
         <<function desk/shift/phase.ts · T4>>
@@ -89,6 +95,7 @@ classDiagram
     DeskShiftGate --> CountForm
     DeskShiftGate --> CountWaitingLine
     DeskShiftGate --> deskShiftPhase
+    DeskPage --> DeskShiftGate : shows Panel until open()
     WaitingCounts ..> NoticeFeed : onFreshNotice('cash_count')
 ```
 
@@ -99,7 +106,7 @@ classDiagram
 | `ClockButton` | `web/src/screens/staff/floor/ClockButton.tsx` (new) | **T1**, which also makes `FloorCard.tsx` mount it | T4 |
 | `CountForm`, `CountWaitingLine` | `web/src/screens/staff/shift/CountForm.tsx` (new) | **T2**, which also makes `ShiftCard.tsx` mount them and read `counts` / `createWaitingCounts` | T4 |
 | `createStaffContext` | `web/src/screens/staff/staff-context.ts` (new) | **T3**, which also makes `StaffPage.tsx` use it | T4 |
-| `DeskShiftGate`, `deskShiftPhase`, desk texts, mount | `web/src/screens/desk/shift/DeskShiftGate.tsx`, `web/src/screens/desk/shift/phase.ts`, `web/src/screens/desk/i18n.ts`, `web/src/screens/desk/main.tsx` | **T4** | — |
+| `createDeskShiftGate`, `deskShiftPhase`, the `shift` prop of `DeskPage`, desk texts, mount, `pageBranch` exported | `web/src/screens/desk/shift/DeskShiftGate.tsx`, `web/src/screens/desk/shift/phase.ts`, `web/src/screens/desk/DeskPage.tsx`, `web/src/screens/desk/i18n.ts`, `web/src/screens/desk/main.tsx`, `web/src/screens/desk/desk-store.ts`, `web/src/screens/desk/desk.css` | **T4** | — |
 
 - **Why this PR writes `counts.ts` and `waiting-counts.ts` itself.** Both are lifts of code already on main, 56 and 57 lines, with no new rule. Both T2 and T4 build on them, so landing them here keeps T1–T3 parallel. This follows the `notice-feed.ts` precedent in #5564. Until T2 lands, `ShiftCard.tsx` keeps its own copies, and T2 deletes them.
 - **Placement.** The shared pieces stay under `screens/staff/`, so their texts stay in the existing `staff.floor` / `staff.shift` tables (TH/EN, staff screens) and no key moves. `/desk` imports them, as `desk-transaction/TransactionScreen.tsx:19-21` already imports `staff/parts`.
@@ -156,16 +163,29 @@ export function createStaffContext(opts: {
   navigate(url: string): void;
 }): StaffContext; // call inside a component: it refreshes on each fresh `cash_count` notice while mounted (X7)
 
-// desk/shift/phase.ts (T4)
+// desk/shift/phase.ts (T4, amended: see §3 T4)
 export type DeskShiftPhase = 'loading' | 'error' | 'noAccess' | 'clockIn' | 'openCount' | 'waiting' | 'open';
 export function deskShiftPhase(i: {
-  me: StaffMe | undefined;
-  meError: string | undefined;
+  sessionMe: Me | undefined;          // the session's `me` (generated common.ts `Me`, with permissions): staff and owner alike
+  staffMe: StaffMe | undefined;       // createStaffContext.me(), read only for ShiftOperate holders
+  staffError: string | undefined;     // createStaffContext.error()
   floor: StaffFloor | undefined;
-  floorError: string | undefined;
   countsLoaded: boolean;
   openWaiting: CashCountRow | undefined;
 }): DeskShiftPhase;
+
+// desk/shift/DeskShiftGate.tsx (T4). Call once, inside a component (main.tsx's render).
+export interface DeskShift { open(): boolean; Panel(): JSX.Element }
+export function createDeskShiftGate(opts?: {
+  me?: Accessor<Me | undefined>;      // default sharedSession().me
+  branch?: Accessor<string>;          // default pageBranch(deskPathFor(location.pathname), me())
+}): DeskShift;
+
+// desk/DeskPage.tsx (T4): a new optional prop. Absent = today's page.
+shift?: DeskShift;   // until shift.open(): no step bar, no aside, and shift.Panel() in the step's place; the refunds task is not gated
+
+// desk/desk-store.ts (T4): `pageBranch` becomes exported, unchanged.
+export function pageBranch(path: DeskPath, me: Me | undefined): string;
 ```
 
 ## 3. Behaviour tables
@@ -184,7 +204,7 @@ export function deskShiftPhase(i: {
 |---|---|---|
 | N1 | `CountForm` OPEN | `CurrencyCount` with the denominations (`props.denominations` or its own `denominations` read), THB locked, no expected |
 | N2 | `CountForm` CLOSE | reads `my_shift` and passes `expected`/`locked` as `ShiftCard.tsx:234-253` |
-| N2b | `CountForm` CLOSE before `my_shift` has answered (#5631) | `shift-count-save` disabled and a submit sends nothing: a THB-only CLOSE count reached finance as a shortage (#5631, PR #5642 verdict). If `my_shift` fails: `onError(<worded>)` and save stays disabled, so the teller cancels and opens the form again `[proposed]` |
+| N2b | `CountForm` CLOSE before `my_shift` has answered (#5631) | `shift-count-save` disabled and a submit sends nothing: a THB-only CLOSE count reached finance as a shortage (#5631, PR #5642 verdict). If `my_shift` fails, the form is usable THB-only, as today (`ShiftCard.currency-pick.test.tsx` row 9 pins it). Shipped in #5653 |
 | N3 | submit | the same validation and body as `ShiftCard.tsx:266-344`; `shiftId` = `floor.myShift.id` for CLOSE, null for OPEN; on 2xx `onSaved()`; a `lines[i].qty` refusal shows on that line; any other refusal `onError(<worded>)` |
 | N4 | in flight | a second submit sends nothing |
 | N5 | cancel | `onCancel()`; nothing sent |
@@ -202,32 +222,43 @@ export function deskShiftPhase(i: {
 | X7 | a fresh `cash_count` notice (#5564 feed) while mounted | `refresh()`, so a verified OPEN count shows the open shift (`myShift`) without a reload, on `/staff` and `/desk` alike. Re-check on `eb1c31e0` (#564 issuecomment-6514647190): after a verify, the card kept "waiting" until a reload. This is the FE half; the BE half (verify sends the counter no notice) is with claude/553782 |
 | X6 | StaffPage | uses it with `signInUrl '/login?next=%2Fstaff'`; every existing `StaffPage*.test.tsx` and `main.test.tsx` stays green unedited |
 
-### T4: `/desk` gate (wave 2)
+### T4: `/desk` gate (wave 2, amended after wave 1)
+
+**Why amended** (#564 issuecomment-6514974930):
+- `staff_me` answers 401 `employeeAuthRequired` for the owner (guard `shared/api/staff-me-callers.test.ts`, #3970). So the gate reads the caller's permissions from the session's `me` first, and reads `staff_me` / `staff_floor` only for `ShiftOperate` holders.
+- The refunds task lives inside `DeskPage` and is used by the owner without a shift (pinned: `refunds.test.tsx` "owner with ReversalRequest on me (while staff_me answers 401): task visible … no staff_me request"). So the gate covers the exchange steps only (step bar, step panel, aside), not the whole page.
+- `desk-frame.test.tsx` S2 pins that `main.tsx` reads no store member but `step` and `go`. So the gate takes its branch from `pageBranch`, as the store does, not from `store.branch`.
+
 `deskShiftPhase`, first match wins:
 
-| # | Input | Phase | `/desk` shows |
+| # | Input | Phase | `/desk` shows in the step's place |
 |---|---|---|---|
-| G1 | `me` not yet read, no error | `loading` | `shift.checking` "กำลังตรวจสอบกะ…" (v2 L3's wording, shortened) |
-| G2 | `meError` | `error` | the worded error and a retry button |
-| G3 | `floor.myShift` set | `open` | **the sale steps** (`DeskPage` with its aside), unchanged |
-| G4 | no `ShiftOperate` | `noAccess` | v2's bar `shift.noShift` "ยังไม่มีกะเปิด กรุณาเปิดกะจากหน้าแอดมินก่อน" |
-| G5 | `floorError` and no `floor` | `error` | the worded error and a retry button |
-| G6 | `floor` not yet read | `loading` | as G1 |
+| G1 | session `me` not yet known | `loading` | `shift.checking` "กำลังตรวจสอบกะ…" |
+| G4 | session `me` without `ShiftOperate` | `noAccess` | v2's bar `shift.noShift` "ยังไม่มีกะเปิด กรุณาเปิดกะจากหน้าแอดมินก่อน"; **no `staff_me` / `staff_floor` / `cash_counts` read** |
+| G2 | `staffMe` not read, `staffError` | `error` | the worded error and a retry button `shift.retry` "ลองใหม่" |
+| G2b | `staffMe` not read, no error | `loading` | as G1 |
+| G3 | `floor.myShift` set | `open` | **the exchange steps** (step bar, panel, aside), unchanged |
+| G5 | no `floor`, `staffError` | `error` | as G2 |
+| G6 | no `floor` | `loading` | as G1 |
 | G7 | not clocked in | `clockIn` | `shift.clockInFirst` "กรุณาลงเวลาเข้างานก่อนเปิดกะ" and `ClockButton` |
 | G8 | counts not loaded | `loading` | as G1 (no count button before the first read, #5591) |
 | G9 | my OPEN count waits | `waiting` | `CountWaitingLine` OPEN |
-| G10 | otherwise | `openCount` | `shift.openCountFirst` "ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ", the `shift-open-count` button, and on click `CountForm` OPEN |
+| G10 | otherwise | `openCount` | `shift.openCountFirst` "ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ", a `shift-open-count` button `shift.openCount` "นับเปิดกะ", and on click `CountForm` OPEN |
 
-`DeskShiftGate` behaviour:
+`createDeskShiftGate` and `DeskPage`:
 
 | # | Case | Required |
 |---|---|---|
-| D1 | mount | `createStaffContext({branch: store.branch, signInUrl: '/login?next=' + encodeURIComponent(location.pathname + location.search)})` and `createWaitingCounts({branch, enabled: ShiftOperate})` |
-| D2 | `ClockButton` / `CountForm` saved | `refresh()`; after a count, `reload()` too |
-| D3 | a fresh `cash_count` notice | covered by the shared readers: `createStaffContext` refreshes (X7), so a verified OPEN count turns into `myShift` and the steps appear without a reload; the counts reload by themselves (W3) |
-| D4 | `open` → not open (shift closed elsewhere) | the steps unmount. The store lives in `main.tsx`, outside the gate, so a draft comes back as it was once the shift is open again. |
-| D5 | texts | new keys in `desk/i18n.ts` `th`, the same Thai in `en` (staff screen, TH/EN) |
-| D6 | out of scope on `/desk` | clock-out, close count, handover, close certify, day start/cutoff: they stay on `/staff` |
+| D1 | session `me` with `ShiftOperate` | once: `createStaffContext({ branch, signInUrl: '/login?next=' + encodeURIComponent(location.pathname + location.search) })` refreshed, and `createWaitingCounts({ branch, enabled: ShiftOperate })` read (the session `me` arrives after mount, so the gate starts both when `ShiftOperate` first holds) |
+| D2 | `ClockButton` / `CountForm` saved | `refresh()`; after a count, `counts.reload()` too; the form closes |
+| D3 | a fresh `cash_count` notice | covered by the shared readers (X7, W3): a verified OPEN count turns into `myShift` and the steps appear without a reload |
+| D4 | `open` → not open (shift closed elsewhere) | the steps hide; the store lives in `main.tsx`, so a draft is still there when the shift opens again |
+| D5 | `DeskPage` with `shift` and not `open()` | no `ol.steps`, no `.desk-aside`, `shift.Panel()` in the panel; the refunds nav item and task panel unchanged; without `shift`, today's page |
+| D6 | texts | new keys in `desk/i18n.ts` `th`, the same Thai in `en` (TH/EN staff screen) |
+| D7 | out of scope on `/desk` | clock-out, close count, handover, close certify, day start/cutoff: they stay on `/staff` |
+| D9 | `main.tsx` | a small component makes the gate **once** and passes it: `function Desk() { const shift = createDeskShiftGate(); return <DeskPage … shift={shift} />; }`. A call in the prop (`shift={createDeskShiftGate()}`) is re-run on every read of `props.shift` and builds a new gate each time. Comments in `main.tsx` are `//`: `desk-frame.test.tsx` S5 strips `/*…*/` and the step glob `'./steps/*/step.tsx'` holds a `/*` |
+| D10 | `desk.css` | a rule for each new class, e.g. `.desk-shift-gate` (ratchet `shared/ui/screen-look.test.ts`) |
+| D8 | the `staff_me` guard | its allow-list reason for `staff-context.ts` becomes "/staff, and /desk's shift gate for ShiftOperate holders only"; the ticket author changes that line on `test/5641`, not the implementer |
 
 ## 4. Decisions
 
@@ -239,7 +270,7 @@ export function deskShiftPhase(i: {
 - everything else stays on `/staff`.
 
 **`[proposed]`, for claude/e92db6:**
-1. **G3 before G4.** An open `myShift` shows the steps whatever the permissions say. A `ShiftCloseCertify`-only user (no `ShiftOperate`) cannot open a shift, so they see the bar. The reason: `ShiftCard` offers the open count only to `canOperate()` (`ShiftCard.tsx:656`).
+1. **G4 before G3 (amended).** Without `ShiftOperate` the gate shows the bar and reads nothing staff-only, so an open `myShift` is never seen for such a user. A `ShiftCloseCertify`-only user cannot open a shift anyway: `ShiftCard` offers the open count only to `canOperate()`.
 2. **Demo customers are gated too.** `Mode::Demo` sales need no shift (`create.rs:366`), but the customer is chosen inside the steps, after the gate, so the gate cannot tell. A teller opens a shift before any sale, demo or not.
 3. **The new Thai lines**, in `shift.checking` / `shift.clockInFirst` / `shift.openCountFirst` (G1, G7, G10).
 4. **Both desk paths are gated.** `main.tsx` serves both `/desk` and `/staff/desk` (`desk-path.ts`), and the owner's `?branch=` desk reads that branch's `staff_floor`.

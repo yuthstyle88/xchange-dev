@@ -40,6 +40,7 @@ import {
   type ReversalSummaryDto,
 } from '../../../../shared/testing/fixtures';
 import { setLang } from '../../../../shared/i18n';
+import { withOpenShift } from '../../shift/open-shift.testing';
 
 interface Texts {
   th: Record<string, string>;
@@ -130,6 +131,8 @@ interface World {
   refunds: DeskRefunds;
   /** How the post answers, call by call (the last repeats). */
   posts: Reply[];
+  /** #5641: the caller has an open shift, so main.tsx offers the exchange steps (desk-shift-open.md §3 T4). */
+  shiftOpen?: boolean;
 }
 
 let world: World;
@@ -182,6 +185,7 @@ function install(): void {
       return json(404, { error: { code: 'notFound', message: `unexpected ${method} ${u.pathname}` } });
     }),
   );
+  if (world.shiftOpen) vi.stubGlobal('fetch', withOpenShift(globalThis.fetch));
 }
 
 const reads = (name: string) => calls.filter((c) => c.method === 'GET' && c.path === `/api/v3/views/${name}`);
@@ -504,7 +508,7 @@ describe('RF-17: the nav item counts the last read', () => {
 
 describe('RF-18: opening and closing the step leaves the exchange as it was', () => {
   it('the step and its typed fields come back unchanged, and the step bar never moved', async () => {
-    await boot();
+    await boot({ me: me(['ReversalRequest']), shiftOpen: true });
     const currentStep = () => text(app.querySelector('ol.steps li[aria-current="step"]'));
     const currency = () => app.querySelector<HTMLSelectElement>('select[name="currency"]');
     const amount = () => app.querySelector<HTMLInputElement>('input[name="amount"]');

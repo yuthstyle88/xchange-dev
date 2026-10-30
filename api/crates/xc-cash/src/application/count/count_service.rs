@@ -1099,6 +1099,22 @@ impl CashCountService {
         count_id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<CountVerified> {
+        let answer = self.verify_count_in(tx, actor, count_id, now).await?;
+        if let (CountVerified::Verified(count), Some(n)) = (&answer, &self.notices) {
+            CloseNotices::new(n.clone())
+                .notify_verified_in(tx, count)
+                .await?;
+        }
+        Ok(answer)
+    }
+
+    async fn verify_count_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        count_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<CountVerified> {
         let count = self
             .repo
             .find_count_by_id(&mut *tx, count_id)

@@ -19,10 +19,12 @@ export function DeskPage<S extends FrameStore>(props: {
   store: S;
   steps: DeskStep<S>[];
   aside?: JSX.Element;
+  shift?: { open(): boolean; Panel(): JSX.Element };
 }): JSX.Element {
   const t = screenT('desk', screenI18n);
   const current = () => props.steps.find((s) => s.index === props.store.step());
   const task = taskMod?.createTask?.({ store: props.store });
+  const shiftOpen = () => (props.shift ? props.shift.open() : true);
   const withEntry = props.store as S & {
     entry?: () => { banner: () => string; actions?: () => JSX.Element } | undefined;
   };
@@ -38,19 +40,21 @@ export function DeskPage<S extends FrameStore>(props: {
         )}
       </Show>
       <nav class="desk-nav">
-        <ol class="steps" aria-label={t('stepsLabel')}>
-          <For each={props.steps}>
-            {(step) => (
-              <li
-                aria-current={
-                  step.index === props.store.step() ? 'step' : undefined
-                }
-              >
-                {String(step.index + 1).padStart(2, '0')}&nbsp;{step.label()}
-              </li>
-            )}
-          </For>
-        </ol>
+        <Show when={shiftOpen()}>
+          <ol class="steps" aria-label={t('stepsLabel')}>
+            <For each={props.steps}>
+              {(step) => (
+                <li
+                  aria-current={
+                    step.index === props.store.step() ? 'step' : undefined
+                  }
+                >
+                  {String(step.index + 1).padStart(2, '0')}&nbsp;{step.label()}
+                </li>
+              )}
+            </For>
+          </ol>
+        </Show>
         {task?.nav()}
       </nav>
 
@@ -59,15 +63,17 @@ export function DeskPage<S extends FrameStore>(props: {
           <Show
             when={task?.isOpen()}
             fallback={
-              <Show
-                when={current()}
-                fallback={<div class="desk-empty">{t('empty')}</div>}
-              >
-                {(step) => (
-                  <div class="desk-step-content">
-                    {step().component({ store: props.store })}
-                  </div>
-                )}
+              <Show when={shiftOpen()} fallback={props.shift?.Panel()}>
+                <Show
+                  when={current()}
+                  fallback={<div class="desk-empty">{t('empty')}</div>}
+                >
+                  {(step) => (
+                    <div class="desk-step-content">
+                      {step().component({ store: props.store })}
+                    </div>
+                  )}
+                </Show>
               </Show>
             }
           >
@@ -75,7 +81,7 @@ export function DeskPage<S extends FrameStore>(props: {
           </Show>
         </section>
 
-        <Show when={props.aside}>
+        <Show when={shiftOpen() && props.aside}>
           <aside class="desk-aside">{props.aside}</aside>
         </Show>
       </div>

@@ -24,6 +24,7 @@ import {
   makeTransactionPaymentDto,
 } from "../../../../shared/testing/fixtures";
 import { warmModules } from "../../../../shared/testing/warm-modules";
+import { withOpenShift } from "../../shift/open-shift.testing";
 
 const HEAD = {
   rate: "เลือกเรทและจำนวนเงิน",
@@ -96,9 +97,10 @@ function json(status: number, body: unknown): Response {
 
 function fakeServer() {
   const calls: string[] = [];
+  // #5641: the caller has an open shift, so main.tsx offers the exchange steps (desk-shift-open.md §3 T4).
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    withOpenShift(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const method = String(init?.method ?? "GET").toUpperCase();
       const path = String(input).split("?")[0]!;
       calls.push(`${method} ${path}`);
@@ -119,7 +121,7 @@ function fakeServer() {
       if (method === "POST" && path === "/api/transactions/tx-1/complete") return json(200, tx("COMPLETED", DOC));
       if (method === "POST" && path === "/api/queue/tickets/serve") return json(200, makeQueueTicketDto({ displayNumber: "W001", status: "SERVING" }));
       return json(404, { error: { code: "notFound", message: `unexpected ${method} ${path}` } });
-    }),
+    })),
   );
   return { calls };
 }

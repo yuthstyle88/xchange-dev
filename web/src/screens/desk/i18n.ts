@@ -38,6 +38,12 @@ export const th = {
   pricingHiddenMISMATCH: 'ชุดราคาไม่ตรงกับสาขาหลัก',
   'fieldLabel.amount': 'จำนวนเงิน',
   'fieldLabel.fee': 'ค่าบริการ THB',
+  'shift.checking': 'กำลังตรวจสอบกะ…',
+  'shift.retry': 'ลองใหม่',
+  'shift.noShift': 'ยังไม่มีกะเปิด กรุณาเปิดกะจากหน้าแอดมินก่อน',
+  'shift.clockInFirst': 'กรุณาลงเวลาเข้างานก่อนเปิดกะ',
+  'shift.openCountFirst': 'ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ',
+  'shift.openCount': 'นับเปิดกะ',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -78,4 +84,10 @@ export const en: Record<keyof typeof th, string> = {
   pricingHiddenMISMATCH: "the price set does not match MAIN's",
   'fieldLabel.amount': 'Amount',
   'fieldLabel.fee': 'Fee THB',
+  'shift.checking': 'กำลังตรวจสอบกะ…',
+  'shift.retry': 'ลองใหม่',
+  'shift.noShift': 'ยังไม่มีกะเปิด กรุณาเปิดกะจากหน้าแอดมินก่อน',
+  'shift.clockInFirst': 'กรุณาลงเวลาเข้างานก่อนเปิดกะ',
+  'shift.openCountFirst': 'ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ',
+  'shift.openCount': 'นับเปิดกะ',
 };

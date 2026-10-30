@@ -919,3 +919,231 @@ All three are `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/
 - `rpc.rs` and `pages.rs` (rows 10–13): v2 surfaces, unchanged.
 - **Finding:** an EXECUTIVE alone is neither `owner_standing` nor `staff_standing` on the v2 routes listed in row 12–13, so e.g. `payment_methods.rs:124` and `device_setup.rs:66` treat it as neither. #5446 / #5480 moved the page gates to `is_staff_caller`; these route-level readers were not swept there. Whether each should admit an executive alone is a separate ticket (proposed to claude/553782, not opened here).
 - **Finding:** the audit `actor_role` is computed four ways in v3 (`audit_text`, `cash_exception_raise.rs:36` first role or `STAFF`, `approval_service.rs:10` a priority list, `price_source.rs:102` a literal). `audit_text_of` is the place they could share; unifying them is a separate ticket.
+
+## 13. The v2 route readers and an EXECUTIVE alone (#5629)
+
+> Design by claude/studio-claude-17 (sub-controller of #5629 under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `29aa1183`. Ticket #5629 §3; it follows §12.9's first finding.
+
+### 13.1 The question
+
+- `Callers::owner_standing` is `Standing::of(user)` filtered to the owner. `staff_standing` is `Standing::of(staff_user)` filtered to staff (`pages.rs:24-38`).
+- For an EXECUTIVE alone (organisation-wide, no ADMIN), both answer `None` (§12.1).
+- The v2 routes below read them **before** any v3 permission check, so what they do with "neither" is a rule, not a redundant gate (#5629 §2).
+- Each row asks whether the route should treat an EXECUTIVE alone as the owner. That is the rule §12 applied to v3 (V.9's OWNER maps to EXECUTIVE, RBAC §11.2), and #5618 K-1 already set kiosk role `Owner` for it.
+
+### 13.2 Every reader (`git grep -n -E 'owner_standing\(\)|staff_standing\(\)' -- api/src` at `29aa1183`, 17 call sites in 11 readers)
+
+| # | Reader | What it guards | EXECUTIVE alone today | Owner today | Required | Source |
+|---|---|---|---|---|---|---|
+| R-1 | `device_setup.rs:66` `device_agents_page_handler` | the pairing page `GET /_xc/device-agents`; its API `POST /api/device-setup` needs `SystemSettings` (`policy.rs:171`) | **303 `/login`**, though the API admits it | 200 | **B-1** (business question, 13.6). Recommended: 200, as the owner | the AG design calls it "the owner's page" (`device_setup_http_test.rs:2`) |
+| R-2 | `files.rs:144` `upload`: `is_staff` | which upload path: staff (session branch) or owner/customer (`?branch=`) | the owner's path (it is not staff) | the owner's path | **unchanged** | already as the owner |
+| R-3 | `files.rs:262-263` `file`: `is_owner` | which read: `open_owned` (the caller's own uploads) or `open_in_branch` | the owner's path (`user` is set and `staff_standing` is `None`) | the owner's path | **unchanged** | already as the owner |
+| R-4 | `kiosk.rs:97-118` `kiosk_actor_from_callers` | the actor the kiosk service is given | **`KioskActor::Customer`**: a staff `cancel` is refused `notCancellable` (`kiosk_machine.rs:319-325`), `get` and `publishReceipt` `staffRequired` (`:343-375`), though the policy admits the action (`QueueOperate`, `policy.rs:149-152`) | `Staff { username: "owner", role: Owner }` | **`Staff { username: <its user id>, role: Owner }`** | #5618 K-1: kiosk role `Owner` for `StandingKind::Executive`. Its own id, not the literal `owner`: it is one user among several, as the save step records it (#5618 X-1) |
+| R-5 | `kiosk.rs:329` the named-branch rule | whether a named `branchId` is authorised, or replaced by the staff branch | the named branch (it is not staff) | the named branch | **unchanged** | already as the owner. Only a password session reaches the replacement, and since OR-7.m w2 none signs in |
+| R-6 | `kiosk.rs:481-503` `notifications`' employee line | who the notification screen says is signed in | **500** (neither arm ⇒ `kiosk_server_error`) | `{ id: "owner", username: "owner", name: "Owner", role: "OWNER" }` | **`{ id: <user id>, username/name: <users.name>, role: "EXECUTIVE" }`** | as R-4. The role is `audit_text()` of its standing, as the staff arm writes (`:496`) |
+| R-7 | `payment_methods.rs:124-133` | the D-4 scope check: a staff member naming another branch ⇒ 403 | not checked (it is not staff) | not checked | **unchanged** | already as the owner. `save` still needs `SystemSettings` (`policy.rs:166`) |
+| R-8 | `pages.rs:319-352` `devices_receipt_handler` | the receipt's branch: the URL's, or the staff branch | the URL's branch | the URL's branch | **unchanged** | already as the owner |
+| R-9 | `pages.rs:498-502` `DeskVariant` pages | a teller-only page | to `/staff` | to `/staff` | **unchanged** | teller only, by design |
+| R-10 | `pages.rs:637-660` `page_branch` (`Gate::Branch`, `screens.rs:142-151`) | a page's branch: the query's, or the staff branch | the query's | the query's | **unchanged** | already as the owner |
+| R-11 | `screens.rs:153-161` `Gate::Front` | a teller-only screen | to `/staff` | to `/staff` | **unchanged** | teller only, by design |
+
+**So three readers change** (R-1, R-4, R-6). Six already treat an EXECUTIVE alone as the owner, because they branch on "not staff" (R-2, R-3, R-5, R-7, R-8, R-10). The two teller gates (R-9, R-11) stay closed to it, as they are to the owner.
+
+### 13.3 Class diagram
+
+```mermaid
+classDiagram
+  class Callers {
+    <<api presentation/pages.rs  CHANGED (skeleton)>>
+    +owner_standing() Option~Standing~  unchanged
+    +staff_standing() Option~Standing~  unchanged
+    +executive_standing() Option~Standing~  NEW
+  }
+  class Standing {
+    <<xc-auth  #5618>>
+    +acting(actor, now) Option~Standing~
+  }
+  class kiosk_rs {
+    <<api presentation/http/kiosk.rs  T1>>
+    kiosk_actor_from_callers: Executive arm
+    notifications: Executive employee line
+  }
+  class device_setup_rs {
+    <<api presentation/http/device_setup.rs  T2>>
+    device_agents_page_handler: owner or executive (B-1)
+  }
+  Callers ..> Standing : acting(user), kind == Executive
+  kiosk_rs ..> Callers
+  device_setup_rs ..> Callers
+```
+
+- `[required]` `Callers::executive_standing(&self) -> Option<Standing>`: `Standing::acting(user, now)` with `kind == StandingKind::Executive`, read from `user` as `owner_standing` is. It is on `test/5629`.
+- **Why one reader, not three hand-written checks:** "an organisation-wide EXECUTIVE valid at now" is already written once, in `Standing::acting` (§12.2). The readers ask `Callers` for it, just as they ask for the owner and for staff.
+- `owner_standing` and `staff_standing` keep their answers. The eight unchanged readers are not touched.
+
+### 13.4 Behaviour table
+
+| Row | Caller | Route | Today | Required | Test |
+|---|---|---|---|---|---|
+| K-1 | EXECUTIVE alone | `/api/kiosk` `notifications` | 500 | 200; employee `{ id: user id, username/name: users.name, role: EXECUTIVE }` | `api/tests/kiosk_executive_alone_test.rs` |
+| K-2 | owner | the same | 200, `owner` / `OWNER` | unchanged | the same file |
+| K-3 | EXECUTIVE alone | `manage` | 200 | unchanged (it does not read the actor) | the same file |
+| K-4 | EXECUTIVE alone | `list` | 200 | unchanged | the same file |
+| K-5 | EXECUTIVE alone | `cancel` a WAITING request, reason `DUPLICATE` | 400 `คำขอนี้ยกเลิกไม่ได้` (`notCancellable`) | 200, the request `CANCELLED` | the same file |
+| P-1 | EXECUTIVE alone | `GET /_xc/device-agents` | 303 `/login` | 200, HTML, `no-store` (B-1 recommended answer) | `api/tests/device_agents_page_executive_test.rs` |
+| P-2 | owner; every staff role of `one_of_each_role` | the same | 200; 303 | unchanged | the same file, and `device_setup_http_test::the_owner_s_page_is_served_to_the_owner_only` |
+
+**Tests that pin today's answer**, swept with `git grep -l -E 'device-agents|"notifications"|kiosk_actor_from_callers' -- api/tests` at `29aa1183`: `device_setup_http_test::the_owner_s_page_…` (owner 200, staff 303) and `kiosk_http_test` (owner and staff). Under the recommended B-1, none has an EXECUTIVE alone, and none flips. Under B-1 option A, the `SYSTEM` (ADMIN at `MAIN`) row of `the_owner_s_page_…` flips to 200 and is restated.
+
+### 13.5 Up-front tests and measurements
+
+On `test/5629` at `1538f15b`, off `origin/main` `29aa1183`: the skeleton `afb540be`, then the tests. Measured 2026-10-30 ICT on the Mac Studio with a throwaway PostgreSQL 17:
+- The 7 up-front tests: 4 passed and 3 failed. The failures are K-1 (500), K-5 (400 `คำขอนี้ยกเลิกไม่ได้`) and P-1 (303), each on the answer. K-2, K-3, K-4 and P-2 pass, as the table says.
+- With a throwaway T1 + T2 (B-1 recommended): those 7, plus `kiosk_http_test`, `device_setup_http_test`, `device_setup_branch_scope_test`, `gapsa6_queue_skip_cancel_kiosk_route_test` and every test whose name contains `kiosk`, ran 254 and passed 254.
+- clippy `-D warnings`, `cargo fmt --all --check` and `scripts/fmt-included.sh origin/main` are clean on `test/5629`. The two new files were also run through `rustfmt` directly, since they are `include!`d and `cargo fmt` skips them (the miss found in #5618's review).
+
+### 13.6 For claude/553782: the one business question
+
+| # | Question | Today | Options | Recommend | Why |
+|---|---|---|---|---|---|
+| B-1 | Who gets the pairing page `GET /_xc/device-agents`? | the owner only (EXECUTIVE + ADMIN). Its API `POST /api/device-setup` admits every `SystemSettings` holder: EXECUTIVE, ADMIN (org-wide or at a branch), and any group given it | **A.** Whoever holds `SystemSettings`, the same check as the API. An ADMIN alone, including a branch ADMIN, gets the page; `the_owner_s_page_…`'s `SYSTEM` row flips. **B.** The owner or an EXECUTIVE alone (`owner_standing \|\| executive_standing`); no other caller changes. **C.** Unchanged: an EXECUTIVE alone keeps the API but not the page. | **B** | It is "the owner's page" (AG design), and V.9's OWNER maps to EXECUTIVE (§11.2), the same reading as §12 and R-4/R-6. A widens a page to ADMIN, which is the owner's choice to make. C leaves an executive with an API it can use and no page to use it from |
+
+Until B-1 is answered, T2 is not released; T1 does not depend on it.
+
+### 13.7 Data migration
+
+None.
+
+### 13.8 Function tickets
+
+Both `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/5629`. Their File scopes are disjoint, so they run together.
+
+| Ticket | Change | File scope | Done line |
+|---|---|---|---|
+| **T1** kiosk | R-4: an `executive_standing()` arm between the owner and staff arms of `kiosk_actor_from_callers`: `Staff { username: exec.user_id, role: KioskRole::Owner }`. R-6: the same arm in `notifications`' employee line: `id` the user id, `username` and `name` from `usernames(..)` / `username_or_id` as the staff arm, `role` `exec.kind.audit_text()` | `api/src/presentation/http/kiosk.rs` | `kiosk_executive_alone_test`, `kiosk_http_test`, `gapsa6_queue_skip_cancel_kiosk_route_test`, and `test(/kiosk/)` green |
+| **T2** pairing page | R-1 per B-1 (B: `owner_standing().is_some() \|\| executive_standing().is_some()`) | `api/src/presentation/http/device_setup.rs` | `device_agents_page_executive_test`, `device_setup_http_test`, `device_setup_branch_scope_test` green |
+
+### 13.9 Out of scope
+
+- The eight unchanged readers (13.2). The two teller gates (R-9, R-11) stay teller-only.
+- The literal `"owner"` username the kiosk gives the owner (R-4, R-6) is v2's and is not changed here.
+
+## 14. One rule for an audit row's `actor_role` (#5630)
+
+> Design by claude/studio-claude-17 (sub-controller of #5630 under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `75a687ec`. Ticket #5630 §3; it follows §12.9's second finding.
+
+### 14.1 The question
+
+- An `audit_events` row stores who acted (`actor_id`) and as what (`actor_role`, free text).
+- The web shows that text raw: `AuditSection.tsx:25` (`{e.actorId} · {e.actorRole}`) and `VerificationScreen.tsx:719`.
+- Today the text comes from **13 different rules in two vocabularies** (14.2). So the same person, acting the same way, is written `FRONT` in one place, `TELLER` in another and `TELLER,FINANCE` in a third.
+- #5630 asks for one rule. Two parts of the answer are business choices (14.4); the rest follows from them.
+
+### 14.2 Every writer (`git grep -n actor_role` and `INSERT INTO audit_events` in `api/src` and `api/crates/*/src`, outside tests, at `75a687ec`)
+
+| # | Writer | Rule today | Vocabulary | Values it writes |
+|---|---|---|---|---|
+| W-1 | the exchange workflows: `cancel.rs:93`, `complete.rs:388`, `confirm.rs:188`, `:223`, `create.rs:454` (`SaveActor::audit_role`, `save_step.rs:66`) | the caller's `Standing` (`Standing::acting` since #5618): TELLER first, then BRANCH_MANAGER, RATE_MANAGER, FINANCE, ADMIN, VERIFICATION_REVIEWER, MARKETING; owner first of all | **V.9** (`StandingKind::audit_text`) | `OWNER`, `EXECUTIVE`, `FRONT`, `MANAGER`, `RATES`, `FINANCE`, `SYSTEM`, `DOCUMENT_REVIEW`, `MARKETING` |
+| W-2 | `denomination_group_service.rs:81`, `:181`, `:297`; `exchange_settings_save.rs:143`, `:231` | `Standing::audit_text_of` (#5618) | V.9 | as W-1, else `STAFF` |
+| W-3 | `approval_service.rs:305`, `:467` (`approver_role`, `:10-28`) | the first role held, by EXECUTIVE, FINANCE, BRANCH_MANAGER, RATE_MANAGER, ADMIN, TELLER, VERIFICATION_REVIEWER, MARKETING, CUSTOMER. It ignores validity and branch | **Blueprint** | the role name, else `UNKNOWN` |
+| W-4 | `approval_service.rs:378` (decision by policy) | literal | — | `POLICY` |
+| W-5 | `cash_exception_raise.rs:36`, `cash_exception_review.rs:30` | the first row (`roles.first()`), in whatever order the rows were loaded | Blueprint | the role name, else `STAFF` |
+| W-6 | `phone_verification_service.rs:129` | the first row | Blueprint | the role name, else `""` |
+| W-7 | `contact_verify.rs:204` (raw SQL) | the first row | Blueprint | the role name, else `TELLER` |
+| W-8 | `customer/service.rs:402` (raw SQL, `identityReveal`) | **the grant's first role used** (`grant.roles_used.first()`) | Blueprint | the role name, else `TELLER` |
+| W-9 | `supersede_referral.rs:79` → `capture_service.rs:225` | the grant's first role used | Blueprint | the role name |
+| W-10 | `export_gate.rs:69` | the role that granted the export (`ExportGrant.role`, `:52`) | Blueprint | the role name |
+| W-11 | `document_access.rs:171`, `:242` | the first row | Blueprint | the role name, else `staff_role` / `owner_role` |
+| W-12 | `branch_alert_settings_save.rs:178`, `ledger_adjustment_create.rs:108`, `ledger_adjustment_post.rs:171`, `reconciliation_certify.rs:128` | **every** row's role, de-duplicated, joined with `,` | Blueprint | e.g. `EXECUTIVE,ADMIN` |
+| W-13 | `price_source.rs:102`, `:168` | literal (the check requires an org-wide EXECUTIVE) | Blueprint | `EXECUTIVE` |
+| W-14 | `review_service.rs:190`, `:282`, `:348`, `:412`, `:478`; `branch_intake.rs:352`; `case_service.rs` reviewer arm | literal, whatever the reviewer's own role (the check is the `VerificationReview` permission) | Blueprint | `VERIFICATION_REVIEWER` |
+| W-15 | `case_service.rs` customer arm; `system_phone.rs:119` | literal, for a **customer** or the **system**, not a staff member | — | `CUSTOMER`, `SYSTEM` |
+
+- 14 staff rules, W-1..W-14 (W-4 is a policy, not a person), plus non-staff literals.
+- **Two vocabularies.** W-1 and W-2 write V.9's names. Every other staff writer writes the Blueprint's.
+- **Four ways to choose among several roles:**
+  - a priority list (W-1/W-2, and a different list in W-3);
+  - the first row in load order (W-5, W-6, W-7, W-11);
+  - the role the grant used (W-8, W-9, W-10);
+  - all of them (W-12).
+- **Five different fallbacks:** `STAFF`, `UNKNOWN`, `""`, `TELLER`, `staff_role`/`owner_role`. A fallback of `TELLER` claims a role the caller may not hold.
+
+### 14.3 What reads the text
+
+- **Readers:** `transaction_audit` (`views/transaction_audit.rs:64-81`) and `verification_case` (`views/verification_case.rs:169-198`). Both pass it through unchanged, and the web prints it raw (14.1). No code compares the stored text to a value.
+- **Tests that assert a value:** 11 files, swept with `git grep -l actor_role -- api/tests 'api/crates/*/tests'` at `75a687ec`:
+  - `or7_5_save_actor_test`, `v3_b04_reads_test` and `exchange_transaction_audit_test` pin the V.9 names of W-1;
+  - `standing_regate_5618_test` pins W-2;
+  - `customer_contact_verify_test`, `customer_phone_verification_test`, `customer_system_phone_test`, `v3_export_gate_test`, `v3_referral_routes_test`, `verification_c10_rework_test` and `verification_f02_test` pin Blueprint names or literals.
+- **Stored rows are not rewritten** (#5630 §3). Whatever the answer, rows written before it keep their text, so the screens will show both spellings for history. Rewriting them would be a backfill, which is Data Risk and is not proposed.
+
+### 14.4 Two business questions: answered
+
+**Rulings**, by claude/553782 on #5661, 2026-10-30 ICT (the rulings comment on the PR):
+- **Q-1: A.** The Blueprint role names (`Role::as_str`). This applies RBAC §0 row 1 (`user-management-rbac.md:29`, owner #564): *"V.9's own role names are not imported"*. #1020 ruling 5 kept V.9's spelling only so that OR-7 changed nothing.
+- **Q-2: A.** The role whose row granted the action (`Grant.roles_used`).
+  - Where no grant reaches the writer (W-1 and W-3), use B: the `Standing` order, with the owner written `EXECUTIVE`.
+  - C is not used; W-12 stops joining roles.
+  - The `TELLER` fallback (W-7, W-8) goes; the final fallback is `STAFF`.
+- **Web:** `AuditSection.tsx:25` and `VerificationScreen.tsx:719` print the text raw, and nothing maps a V.9 name, so no web change follows.
+
+The questions as they were put:
+
+
+| # | Question | Options | Recommend | Why |
+|---|---|---|---|---|
+| Q-1 | **Which names?** | **A.** The Blueprint role names: `EXECUTIVE`, `ADMIN`, `TELLER`, `BRANCH_MANAGER`, `RATE_MANAGER`, `FINANCE`, `VERIFICATION_REVIEWER`, `MARKETING` (`Role::as_str`). W-1/W-2 change: `FRONT` → `TELLER`, `OWNER` → see Q-2, and so on. **B.** V.9's names (`StandingKind::audit_text`): `OWNER`, `FRONT`, `MANAGER`, … Every Blueprint writer changes (W-3, W-5..W-14). | **A** | RBAC §0 row 1 (`user-management-rbac.md:29`): *"V.9's own role names are not imported"*. 12 of the 14 staff rules already write Blueprint names. They are the names of the groups the owner edits (§11). #1020 ruling 5 kept the V.9 spelling only so that OR-7 changed nothing; it was not a choice of vocabulary |
+| Q-2 | **Which role, when the caller holds several?** | **A.** The role whose row granted this action (`Grant.roles_used`, as W-8/W-9/W-10 already do). Each writer must be handed the grant or its role. **B.** One role by one fixed priority list: the `Standing` order, with the owner (EXECUTIVE + ADMIN) as `EXECUTIVE`. Works from the actor alone. **C.** Every valid role, joined with `,` (W-12). | **A**, else **B** where no grant reaches the writer | A answers "as what did they act" exactly. A teller who is also FINANCE and approves a reversal is written `FINANCE`, not `TELLER`. B can name a role that had nothing to do with the action. C is honest but not a role. Where the writer sits behind a service that has no grant (W-1 inside the exchange workflow, W-3 inside `ApprovalService`), threading the grant through is a bigger change, so B is the fallback rule there |
+
+Non-staff writers keep their literals: `CUSTOMER`, `SYSTEM`, `POLICY` (W-4, W-15). They name who acted, and that is not a staff role.
+
+### 14.5 The design (Q-1 A, Q-2 A)
+
+- **The core**, `[required]`, in `xc-auth` `domain/access/standing.rs`, exported from `xc_auth::domain::access`:
+  - `pub fn audit_role(roles_used: &[Role], actor: &Actor, now: DateTime<Utc>) -> &'static str`;
+  - `roles_used` not empty ⇒ `roles_used[0].as_str()` (Q-2 A);
+  - else `Standing::acting(actor, now)` (Q-2 B): `Owner` or `Executive` ⇒ `"EXECUTIVE"`, `Staff(r)` ⇒ `r.as_str()`;
+  - else `"STAFF"`;
+  - it never refuses.
+  - `Standing::audit_text_of` (§12, V.9 spelling) is removed by the ticket that moves its last callers (W-2). `StandingKind::audit_text` stays: the kiosk's employee line and the v2 compat snapshots still read it, and they are not audit rows.
+- **How the grant reaches a v3 command.** `CommandAction::run(tx, branch, who, input, key)` gets no grant (`v3/command.rs:102-109`), and 107 commands implement it, so its signature does not change. Instead:
+  - `[required]` `Caller` (`v3/caller.rs:20`) gains `pub granted: Vec<Role>`. It is empty where `Caller` is built (`caller.rs:113`, `views/my_assistant_conversation.rs:50`, `views/my_planner_drafts.rs:44`).
+  - The transport sets it to `grant.roles_used` after `Policy::authorize` (`command.rs:369`), before `run_as`.
+  - A command that writes an audit row implements `run_as` instead of `run` and reads `caller.granted`. The other 100 commands are untouched.
+  - All of this is in the skeleton. It changes no answer: nothing reads `granted` yet.
+- **Each writer, under the rulings:**
+
+| # | Writer | Grant reaches it? | Rule | Today → after (examples) |
+|---|---|---|---|---|
+| W-1 | the exchange workflows (`SaveActor::audit_role`) | no: the save step has the actor only | B | `FRONT` → `TELLER`, `MANAGER` → `BRANCH_MANAGER`, `RATES` → `RATE_MANAGER`, `SYSTEM` → `ADMIN`, `DOCUMENT_REVIEW` → `VERIFICATION_REVIEWER`, `OWNER` → `EXECUTIVE` |
+| W-2 | `denomination_groups.rs` → `DenominationGroupService` ×3; `exchange_settings_save.rs` ×2 | yes, through `Caller.granted`; the service gains a `roles_used: &[Role]` argument | A | owner `OWNER` → `EXECUTIVE` (its `RatesDraft` / `SystemSettings` row); `ADMIN@*` `SYSTEM` → `ADMIN` |
+| W-3 | `ApprovalService` decisions (`approval_service.rs:305`, `:467`) | no: `ApprovalService` has the actor only | B | a FINANCE + TELLER decider: `EXECUTIVE`-first list → the `Standing` order (`TELLER`) |
+| W-5 | `cash_exception_raise.rs`, `cash_exception_review.rs` | yes, `Caller.granted` | A | first row → the granting row |
+| W-6 | `PhoneVerificationService` via `customer_phone_start.rs` / `customer_phone_confirm.rs` | yes, `Caller.granted`; the service gains `roles_used` | A | first row, else `""` → granting row, else `STAFF` |
+| W-7 | `contact_verify.rs` via `customer_contact_verify.rs` | yes, the same | A | first row, else `TELLER` → granting row, else `STAFF` |
+| W-8 | `customer/service.rs` `identityReveal` | yes, already | A | only the fallback: `TELLER` → `STAFF` |
+| W-9 | `supersede_referral.rs` → `capture_service.rs` | yes, already | A | unchanged values; it calls the core |
+| W-10 | `export_gate.rs` | yes, already | A | unchanged values; it calls the core |
+| W-11 | `DocumentAccess` via `verification_document_link.rs` / `verification_my_document_link.rs` | yes, `Caller.granted`; `link_for_*` gain `roles_used` | A | first row, else `staff_role` / `owner_role` → granting row, else `STAFF` |
+| W-12 | `branch_alert_settings_save.rs`, `ledger_adjustment_create.rs`, `ledger_adjustment_post.rs`, `reconciliation_certify.rs` | yes, `Caller.granted` | A | `EXECUTIVE,ADMIN` → the one granting role |
+| W-13 | `price_source.rs` ×2 | the service checks EXECUTIVE itself | B | unchanged: `EXECUTIVE`; it calls the core |
+| W-14 | `ReviewService` ×5 via `verification_case_approve.rs` / `_reject.rs` / …; `branch_intake.rs:352` via `branch_verification_intake.rs:194` (its `_grant`) | yes; the services gain `roles_used` | A | literal `VERIFICATION_REVIEWER` → the granting row (`VERIFICATION_REVIEWER` for the built-in group) |
+
+- `Standing::audit_text_of` is deleted by T5, which moves all of its callers (W-2) in one ticket.
+- **Tests:** the up-front tests pin one row per writer. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test`, `standing_regate_5618_test` and `denomination_group_executive_test` are restated, citing the rulings.
+- **Function tickets**, Gemini 4 Argon, `class:guarded`, branched from `test/5630`, File scopes disjoint (each crate's writers with the v3 files that call them):
+
+| Ticket | Writers | File scope (summary) |
+|---|---|---|
+| T1 approval | W-3 | `api/crates/xc-approval/src/application/approval_service.rs` |
+| T2 customer | W-6, W-7, W-8 | `xc-customer` `phone_verification_service.rs`, `contact_verify.rs`, `customer/service.rs`; `customer_phone_start.rs`, `customer_phone_confirm.rs`, `customer_contact_verify.rs` |
+| T3 verification | W-11, W-14 | `xc-verification` `document_access.rs`, `review_service.rs`, `branch_intake.rs`, `case_service.rs`; the verification commands that call them; `branch_verification_intake.rs` |
+| T4 v3 commands | W-5, W-9, W-10, W-12 | `cash_exception_raise.rs`, `cash_exception_review.rs`, `supersede_referral.rs`, `xc-referral` `capture_service.rs`, `export_gate.rs`, the four W-12 commands |
+| T5 the #5618 writers | W-2, W-13; deletes `audit_text_of` | `denomination_groups.rs`, `denomination_group_service.rs`, `exchange_settings_save.rs`, `price_source.rs`, `standing.rs` |
+| T6 the exchange save | W-1 | `api/src/application/workflows/save_step.rs` |
+
+The up-front tests go on `test/5630` and the per-crate tickets are released together, after this design merges.
+
+### 14.6 Data migration
+
+None: no schema change, and stored rows are not rewritten (14.3).

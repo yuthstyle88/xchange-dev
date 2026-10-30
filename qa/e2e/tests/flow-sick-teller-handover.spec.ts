@@ -249,7 +249,7 @@ async function fillDenominationsForBalances(
   for (const cur of Object.keys(remaining)) {
     await expect(
       rows
-        .filter({ has: form.locator('.xc-shift-denom-currency', { hasText: new RegExp(`^\\s*${cur}\\s*$`) }) })
+        .filter({ has: form.page().locator('.xc-shift-denom-currency', { hasText: new RegExp(`^\\s*${cur}\\s*$`) }) })
         .first(),
       `denomination rows for ${cur} loaded`,
     ).toBeVisible({ timeout: 15_000 });

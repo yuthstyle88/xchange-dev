@@ -77,6 +77,13 @@ ol.steps li[aria-current="step"] {
   height: 100%;
 }
 
+.desk-shift-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 560px;
+}
+
 /* steps (DK-C/D/E #539): the form every step draws */
 .desk-form {
   display: flex;

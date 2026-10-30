@@ -146,7 +146,7 @@ function bangkokToday(): string {
 }
 
 /** The owner's desk names its branch in `?branch=`; staff work in their own branch. */
-function pageBranch(path: DeskPath, me: Me | undefined): string {
+export function pageBranch(path: DeskPath, me: Me | undefined): string {
   if (path.kind === 'owner' && typeof location !== 'undefined') {
     const fromUrl = new URLSearchParams(location.search).get('branch');
     if (fromUrl) return fromUrl;
