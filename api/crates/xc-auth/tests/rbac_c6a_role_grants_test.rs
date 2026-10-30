@@ -102,6 +102,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ApproveRatePublication,
             P::ApproveLoyaltyRuleVersion,
             P::AttendanceCloseFor, // staff corrections SC-D2
+            P::PricingFormulaSave, // #5733 (owner ruling A): EXECUTIVE only by seed
         ],
     ),
     (
@@ -296,7 +297,7 @@ const SEED: [(Role, &[Permission]); 9] = [
 
 /// The no-module permissions: §11.2's desk basics, "Branch cash basics" (`CashManage`, `ApprovalsDecide`),
 /// `SignedIn` and the rest of §11.3 rule 5, proposal A's five, and §11.9's nine approval kinds (AP-0).
-const NO_MODULE: [Permission; 28] = [
+const NO_MODULE: [Permission; 29] = [
     P::SignedIn,
     P::AttendanceClock,
     P::CompatRead,
@@ -328,6 +329,8 @@ const NO_MODULE: [Permission; 28] = [
     P::AttendanceCloseFor,
     // ledger-inventory.md §13.3 (LA-1).
     P::ApproveLedgerAdjustment,
+    // #5733 (owner ruling A): EXECUTIVE-only by seed, so RatesStock at Full never implies it.
+    P::PricingFormulaSave,
 ];
 
 fn in_all_order(set: &[Permission]) -> Vec<Permission> {

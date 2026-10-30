@@ -343,10 +343,12 @@ async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_
                     // Staff corrections SC-D2 (version 7): binding quote's seed sync gives every new no-module
                     // permission of the base to its custom groups.
                     Permission::AttendanceCloseFor,
+                    // #5733 (version 9): the same sync gives EXECUTIVE-based groups PricingFormulaSave.
+                    Permission::PricingFormulaSave,
                 ])
                 .collect::<Vec<_>>()
         ),
-        "the custom group gains EXECUTIVE's four version-4 kinds and AttendanceCloseFor"
+        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor and PricingFormulaSave"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,
