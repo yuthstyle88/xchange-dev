@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import * as deskBookingsI18n from '../../../web/src/screens/desk/bookings/i18n';
 import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
 import * as staffI18n from '../../../web/src/screens/staff/i18n';
 import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
@@ -833,7 +834,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             expectWordedRefusal(await fieldErr.innerText(), `desk new-booking quantity ${badQty} (${lang})`);
             await expect(qtyInput, `quantity input keeps '${badQty}' (${lang})`).toHaveValue(badQty);
           }
-          await modal.locator('[data-action="close-modal"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
 
           // Part B: Cancel booking dialog (`[data-action="cancel"]`, `bookingCancel`) with empty ('') and whitespace ('   ') reasons.
           const bookingRow = manager.locator(`[data-booking-id="${createdBookingId}"]`);
@@ -863,7 +866,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             );
             await expect(cancelReasonInput, 'cancel reason input keeps value').toHaveValue(badReason);
           }
-          await modal.locator('[data-action="close-cancel"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
 
           // Also verify server-side `bookingCancel` (`POST /api/bookings/{id}/cancel`) refuses whitespace reason.
           const apiCancelRes = await manager.request.post(
@@ -886,7 +891,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             modal.locator('[data-action="confirm-reschedule"]'),
             'confirm-reschedule disabled when targetSlotId is empty (DeskBookingsScreen.tsx:954)',
           ).toBeDisabled();
-          await modal.locator('[data-action="close-reschedule"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
         }
         await shot(manager, 'desk', 'validation-desk-bookings');
       } finally {
