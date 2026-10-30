@@ -16,6 +16,7 @@ import {
   hasAccount,
   openShift,
   posted,
+  sameOriginHeaders,
   shot,
   signIn,
   users,
@@ -54,8 +55,7 @@ interface BranchServiceStatusEnvelope {
 }
 
 const kioskHeaders = {
-  'x-xchange-request': '1',
-  origin: new URL(users.baseUrl).origin,
+  ...sameOriginHeaders(),
   'content-type': 'application/json',
 };
 const KIOSK_PRECONDITION_RE = /Counter is closed|Rate changed or counter closed|outside.*hours/i;
