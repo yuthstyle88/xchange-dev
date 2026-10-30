@@ -223,7 +223,8 @@ test.describe.serial('F12 cash transfer escalation above limit', () => {
       // Still PENDING in approval_requests and still DRAFT on finance's transfer row.
       expect(await findPendingTransferRequestId(executive, inId)).toBe(inReqId);
       await finance.reload();
-      await expect(transferRow(finance, inId), 'EXTERNAL_IN stays DRAFT while approval is still PENDING').toContainText(
+      await expect(transferRow(finance, inId), 'EXTERNAL_IN stays DRAFT while approval is still PENDING').toHaveAttribute(
+        'data-status',
         'DRAFT',
         { timeout: 20_000 },
       );
