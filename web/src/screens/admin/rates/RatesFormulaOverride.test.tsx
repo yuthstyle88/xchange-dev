@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { BranchFormulaDto, PricingFormulaData } from '../../../shared/api/generated/pricing_formula';
+import { makeOrganisationFormulaDto, makePricingFormulaData, type BranchFormulaDto } from '../../../shared/testing/fixtures';
 import { previewCalls, resetFormulaStubs } from '../parts/formula-stubs.testing';
 import { EMPTY_OVERRIDE, type FormulaOverrideState } from './formula-override';
 import { RatesFormulaOverride } from './RatesFormulaOverride';
@@ -34,22 +34,22 @@ const DEFAULT = {
   sellFormula: 'ref_sell * (1 + (sell_pct + tier_sell_pct) / 100)',
 };
 
-function data(branches: BranchFormulaDto[], organisation = true): PricingFormulaData {
-  return {
+function data(branches: BranchFormulaDto[], organisation = true) {
+  return makePricingFormulaData({
     organisation: organisation
-      ? {
+      ? makeOrganisationFormulaDto({
           id: 'f-3',
           version: 3,
           ...ORG,
           validFrom: '2026-10-29T10:00:00Z',
           approvedBy: 'exec-1',
           reason: 'narrow',
-        }
+        })
       : null,
     default: DEFAULT,
     inputs: [{ name: 'ref_buy' }, { name: 'ref_sell' }, { name: 'ref_mid' }],
     branches,
-  };
+  });
 }
 
 function json(body: unknown, status = 200): Response {
