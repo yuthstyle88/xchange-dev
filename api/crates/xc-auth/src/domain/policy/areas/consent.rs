@@ -14,11 +14,18 @@ const fn row(path: EntryPath, action: &'static str, need: Need) -> AreaRow {
     }
 }
 
+const fn org_row(path: EntryPath, action: &'static str, need: Need) -> AreaRow {
+    AreaRow {
+        scope: RowScope::Organisation,
+        ..row(path, action, need)
+    }
+}
+
 const fn p(permission: Permission) -> Need {
     Need::Permission(permission)
 }
 
-pub const ROWS: &[AreaRow] = &[row(
+pub const ROWS: &[AreaRow] = &[org_row(
     EntryPath::Rpc,
     "consentPolicy",
     p(Permission::ConsentPolicyManage),
