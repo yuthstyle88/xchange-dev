@@ -120,6 +120,15 @@ export function loadUsers(): Users {
 
 export const users: Users = loadUsers();
 
+/** Headers every API write needs: same-origin guard (api/src/presentation/extractors/origin.rs:4) + idempotency key. */
+export function writeHeaders(idempotencyKey: string): Record<string, string> {
+  return {
+    'Idempotency-Key': idempotencyKey,
+    'x-xchange-request': '1',
+    origin: new URL(users.baseUrl).origin,
+  };
+}
+
 /** True when users.json carries a real password for the role (the example file's `<…>` placeholders do not count). */
 export function hasAccount(role: Role): boolean {
   const account = users[role];

@@ -21,6 +21,7 @@ import {
   startService,
   users,
   withLang,
+  writeHeaders,
   type Lang,
   type Role,
 } from './helpers';
@@ -199,11 +200,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         // ── 2. Holds form (`/staff` — `holdCreate`) ──
         // Citations: HoldsCard.tsx:97-123,153-208; holds/i18n.ts:7,16; commands/branch_day.rs:344-375.
         const reserveRes = await manager.request.post('/api/rpc', {
-          headers: {
-            'Idempotency-Key': `${runMarker}-reserve-hold-cust`,
-            'x-xchange-request': '1',
-            Origin: new URL(users.baseUrl).origin,
-          },
+          headers: writeHeaders(`${runMarker}-reserve-hold-cust`),
           data: {
             action: 'reserveCustomer',
             payload: {
@@ -405,7 +402,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
       await signIn(teller, 'teller', '/staff');
       await signIn(manager, 'branchManager', '/staff');
       await signIn(finance, 'finance', '/staff');
-      await signIn(customer, 'customer', '/bookings');
+      await signIn(customer, 'customer', '/app/bookings');
 
       await openShift(teller, manager);
       let shiftOpened = true;
@@ -557,11 +554,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             const releaseRes = await teller.request.post(
               `/api/queue/tickets/${encodeURIComponent(servedTicketId)}/release`,
               {
-                headers: {
-                  'Idempotency-Key': `${runMarker}-release-${servedTicketId}`,
-                  'x-xchange-request': '1', // api/src/presentation/extractors/origin.rs:4
-                  origin: new URL(users.baseUrl).origin,
-                },
+                headers: writeHeaders(`${runMarker}-release-${servedTicketId}`),
                 data: { id: servedTicketId },
               },
             );
@@ -804,7 +797,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           displayName: null,
         };
         const createBookingRes = await customer.request.post('/api/bookings', {
-          headers: { 'Idempotency-Key': `${runMarker}-booking` },
+          headers: writeHeaders(`${runMarker}-booking`),
           data: createBody,
         });
         expect(createBookingRes.ok(), `POST /api/bookings for ${tomorrow}`).toBeTruthy();
@@ -876,11 +869,13 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           const apiCancelRes = await manager.request.post(
             `/api/bookings/${encodeURIComponent(createdBookingId)}/cancel`,
             {
-              headers: { 'Idempotency-Key': `${runMarker}-bad-cancel-${lang}` },
+              headers: writeHeaders(`${runMarker}-bad-cancel-${lang}`),
               data: { reason: '   ' },
             },
           );
           expect(apiCancelRes.status(), 'bookingCancel whitespace reason HTTP 400').toBe(400);
+          const cancelBody = (await apiCancelRes.json()) as { error?: { code?: string } };
+          expect(cancelBody.error?.code, 'bookingCancel whitespace reason error.code').toBe('validationFailed');
 
           // Part C: Reschedule dialog (`[data-action="reschedule"]`, `bookingReschedule`) with no target slot selected ('').
           await bookingRow.locator('[data-action="reschedule"]').click();
@@ -898,11 +893,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         for (const ticketId of servedTicketIds) {
           await teller.request
             .post(`/api/queue/tickets/${encodeURIComponent(ticketId)}/release`, {
-              headers: {
-                'Idempotency-Key': `${runMarker}-cleanup-release-${ticketId}`,
-                'x-xchange-request': '1',
-                origin: new URL(users.baseUrl).origin,
-              },
+              headers: writeHeaders(`${runMarker}-cleanup-release-${ticketId}`),
               data: { id: ticketId },
             })
             .catch(() => {});
@@ -911,7 +902,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         if (createdBookingId) {
           await manager.request
             .post(`/api/bookings/${encodeURIComponent(createdBookingId)}/cancel`, {
-              headers: { 'Idempotency-Key': `${runMarker}-cleanup-cancel` },
+              headers: writeHeaders(`${runMarker}-cleanup-cancel`),
               data: { reason: `${runMarker}-cleanup` },
             })
             .catch(() => {});
