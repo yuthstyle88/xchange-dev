@@ -1,6 +1,8 @@
 // Pricing formula FE T2 up-front tests (docs/design/blueprint/pricing-formula-web.md §3 S1–S10), written before the
 // implementation by the sub-controller claude/studio-claude-3. Do not edit, delete or weaken; add tests in a file of
 // your own. The line grammar is `SpreadFailure::describe` (api/crates/xc-rate/src/application/formula/spread_check.rs:92-130).
+// S1–S4 use, verbatim, the four sample lines of describe()'s doc comment (spread_check.rs:92-94), so the two sides pin
+// the same strings (#5570 verdict follow-up, issuecomment-6513014829). Change them only together with that comment.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { ApiError } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
