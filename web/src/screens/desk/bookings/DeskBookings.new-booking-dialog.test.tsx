@@ -9,6 +9,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 interface WriteCall {
   path: string;
@@ -90,7 +91,7 @@ function makeServer() {
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
 
-  vi.stubGlobal('fetch', fetchFn);
+  vi.stubGlobal('fetch', withBookingSlots(fetchFn));
 
   return {
     writes,
@@ -178,7 +179,7 @@ describe('DeskBookingsScreen.tsx — New booking dialog lifecycle and write guar
 
   function getCloseButton(): HTMLButtonElement {
     const btn = Array.from(host.querySelectorAll<HTMLButtonElement>('.xc-modal-actions button')).find(
-      (x) => x.textContent?.trim() === 'Close',
+      (x) => x.textContent?.trim() === 'ปิด',
     );
     expect(btn, 'dialog Close button').toBeDefined();
     return btn!;
@@ -373,7 +374,7 @@ describe('DeskBookingsScreen.tsx — New booking dialog lifecycle and write guar
     await vi.waitFor(() => expect(server.held).toHaveLength(1));
 
     const cancelCloseBtn = Array.from(host.querySelectorAll<HTMLButtonElement>('.xc-modal-actions button')).find(
-      (x) => x.textContent?.trim() === 'Close',
+      (x) => x.textContent?.trim() === 'ปิด',
     );
     expect(cancelCloseBtn, 'Cancel modal close button').toBeDefined();
     expect(cancelCloseBtn!.disabled).toBe(false);

@@ -1,6 +1,7 @@
 import { createSignal, onMount, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
+import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { DeskBookingItemDto, DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
 import type { DeskConfig } from '../../../shared/api/generated/desk_config';
 import type {
@@ -17,6 +18,7 @@ import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
+import { MoneyText } from '../../../shared/ui/MoneyText';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { BenefitLines } from '../benefits/BenefitLines';
 import { newKey } from '../save';
@@ -32,6 +34,7 @@ interface SlotGroup {
 
 const DESK_PERMISSION = 'BookingsDesk';
 const VIEW_DESK_BOOKINGS = 'desk_bookings';
+const VIEW_BOOKING_SLOTS = 'booking_slots';
 const VIEW_ME = 'me';
 const ROUTE_BOOKINGS = '/api/bookings';
 const routeCheckIn = (id: string) => `/api/bookings/${encodeURIComponent(id)}/check-in`;
@@ -81,6 +84,12 @@ function formatSlotDate(startAt?: string, timeZone = 'Asia/Bangkok'): string {
   }
 }
 
+function formatBangkokDate(iso?: string): string {
+  const d = iso ? new Date(iso) : new Date();
+  const valid = Number.isNaN(d.getTime()) ? new Date() : d;
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(valid);
+}
+
 function groupBookingsBySlot(items: DeskBookingItemDto[]): SlotGroup[] {
   const map = new Map<string, SlotGroup>();
   for (const item of items) {
@@ -120,7 +129,11 @@ export function DeskBookingsScreen(): JSX.Element {
 
   // Reschedule dialog state
   const [reschedulingBookingId, setReschedulingBookingId] = createSignal<string | null>(null);
+  const [rescheduleDate, setRescheduleDate] = createSignal('');
   const [targetSlotId, setTargetSlotId] = createSignal('');
+  const [rescheduleSlots, setRescheduleSlots] = createSignal<BookingSlotItemDto[]>([]);
+  const [rescheduleSlotsError, setRescheduleSlotsError] = createSignal<string | null>(null);
+  let rescheduleSlotsSeq = 0;
 
   // QR reissue dialog state
   const [qrDialogData, setQrDialogData] = createSignal<{ bookingNo: string; qrToken: string | null } | null>(null);
@@ -129,7 +142,11 @@ export function DeskBookingsScreen(): JSX.Element {
   const [showNewBookingModal, setShowNewBookingModal] = createSignal(false);
   const [currencies, setCurrencies] = createSignal<string[]>(['USD']);
   const [formBranchId, setFormBranchId] = createSignal('');
+  const [formDate, setFormDate] = createSignal('');
   const [formSlotId, setFormSlotId] = createSignal('');
+  const [newBookingSlots, setNewBookingSlots] = createSignal<BookingSlotItemDto[]>([]);
+  const [newBookingSlotsError, setNewBookingSlotsError] = createSignal<string | null>(null);
+  let newBookingSlotsSeq = 0;
   const [formShopSide, setFormShopSide] = createSignal('SELL');
   const [formCurrency, setFormCurrency] = createSignal('USD');
   const [formQuantity, setFormQuantity] = createSignal('');
@@ -198,6 +215,55 @@ export function DeskBookingsScreen(): JSX.Element {
     });
   }
 
+  async function loadNewBookingSlots(branch: string, date: string) {
+    const seq = ++newBookingSlotsSeq;
+    setNewBookingSlotsError(null);
+    try {
+      const env = await api.view<BookingSlotsData>(VIEW_BOOKING_SLOTS, {
+        branch: branch.trim() || undefined,
+        filter: { date: date || null },
+      });
+      if (seq !== newBookingSlotsSeq) return;
+      const open = (env.data?.slots ?? []).filter((s) => s.available > 0);
+      setNewBookingSlots(open);
+      const cur = formSlotId();
+      const nextSlot = cur && open.some((s) => s.id === cur) ? cur : (open[0]?.id ?? '');
+      if (nextSlot !== cur) {
+        setFormSlotId(nextSlot);
+        void requestBookingQuote();
+      }
+    } catch {
+      if (seq !== newBookingSlotsSeq) return;
+      setNewBookingSlots([]);
+      setNewBookingSlotsError(t('dialog.slotsLoadFailed'));
+      if (formSlotId() !== '') {
+        setFormSlotId('');
+        void requestBookingQuote();
+      }
+    }
+  }
+
+  async function loadRescheduleSlots(date: string, bookingId: string | null) {
+    const seq = ++rescheduleSlotsSeq;
+    setRescheduleSlotsError(null);
+    try {
+      const env = await api.view<BookingSlotsData>(VIEW_BOOKING_SLOTS, {
+        branch: branchId().trim() || undefined,
+        filter: { date: date || null },
+      });
+      if (seq !== rescheduleSlotsSeq) return;
+      const ownSlotId = items().find((b) => b.id === bookingId)?.slotId;
+      const open = (env.data?.slots ?? []).filter((s) => s.available > 0 && s.id !== ownSlotId);
+      setRescheduleSlots(open);
+      setTargetSlotId(open[0]?.id ?? '');
+    } catch {
+      if (seq !== rescheduleSlotsSeq) return;
+      setRescheduleSlots([]);
+      setRescheduleSlotsError(t('dialog.slotsLoadFailed'));
+      setTargetSlotId('');
+    }
+  }
+
   const allSlots = () => groupBookingsBySlot(items());
   let readErrorActive = false;
   let readSeq = 0;
@@ -246,11 +312,6 @@ export function DeskBookingsScreen(): JSX.Element {
         loadedQr = qrParam;
         const mappedItems: DeskBookingItemDto[] = envelope.data.items;
         setItems(mappedItems);
-        const groups = groupBookingsBySlot(mappedItems);
-        const firstSlot = groups[0]?.slotId;
-        if (firstSlot && !formSlotId()) {
-          setFormSlotId(firstSlot);
-        }
         setAuthorized(true);
         setRefusalMessage(null);
       }
@@ -570,9 +631,12 @@ export function DeskBookingsScreen(): JSX.Element {
     setErrorMessage(null);
     setRetryAction(null);
     const booking = items().find((b) => b.id === bookingId);
-    const slots = allSlots();
-    const otherSlot = slots.find((s) => s.slotId !== booking?.slotId) ?? slots[0];
-    setTargetSlotId(otherSlot?.slotId ?? '');
+    const date = formatBangkokDate(booking?.startAt);
+    setRescheduleDate(date);
+    setRescheduleSlots([]);
+    setRescheduleSlotsError(null);
+    setTargetSlotId('');
+    void loadRescheduleSlots(date, bookingId);
   }
 
   async function handleConfirmReschedule() {
@@ -629,11 +693,13 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
     setQuantityInvalid(false);
     resetNewBookingForm();
+    const today = formatBangkokDate();
+    setFormDate(today);
+    setNewBookingSlots([]);
+    setNewBookingSlotsError(null);
+    setFormSlotId('');
     setShowNewBookingModal(true);
-    const slots = allSlots();
-    if (!formSlotId() && slots.length > 0) {
-      setFormSlotId(slots[0].slotId);
-    }
+    void loadNewBookingSlots(formBranchId() || branchId(), today);
   }
 
   function resetNewBookingForm() {
@@ -997,7 +1063,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     class="xc-btn-secondary"
                     onClick={() => setCancellingBookingId(null)}
                   >
-                    Close
+                    {t('close')}
                   </button>
                   <button
                     type="button"
@@ -1034,7 +1100,25 @@ export function DeskBookingsScreen(): JSX.Element {
                   </div>
                 </Show>
                 <div class="xc-form-group">
-                  <label for="reschedule-slot-select">Slot</label>
+                  <label for="reschedule-date">{t('dialog.date')}</label>
+                  <input
+                    id="reschedule-date"
+                    type="date"
+                    value={rescheduleDate()}
+                    onInput={(e) => {
+                      if (e.currentTarget.value === rescheduleDate()) return;
+                      setRescheduleDate(e.currentTarget.value);
+                      void loadRescheduleSlots(e.currentTarget.value, reschedulingBookingId());
+                    }}
+                    onChange={(e) => {
+                      if (e.currentTarget.value === rescheduleDate()) return;
+                      setRescheduleDate(e.currentTarget.value);
+                      void loadRescheduleSlots(e.currentTarget.value, reschedulingBookingId());
+                    }}
+                  />
+                </div>
+                <div class="xc-form-group">
+                  <label for="reschedule-slot-select">{t('dialog.slot')}</label>
                   <select
                     id="reschedule-slot-select"
                     name="targetSlotId"
@@ -1042,17 +1126,32 @@ export function DeskBookingsScreen(): JSX.Element {
                     onInput={(e) => setTargetSlotId(e.currentTarget.value)}
                     onChange={(e) => setTargetSlotId(e.currentTarget.value)}
                   >
-                    <For each={allSlots()}>
-                      {(s) => (
-                        <option value={s.slotId}>
-                          {formatSlotTime(s.startAt, s.endAt) || s.slotId}
+                    <Show
+                      when={rescheduleSlots().length > 0}
+                      fallback={
+                        <option value="" disabled selected>
+                          {t('dialog.noSlots')}
                         </option>
-                      )}
-                    </For>
-                    <Show when={targetSlotId() && !allSlots().some((s) => s.slotId === targetSlotId())}>
-                      <option value={targetSlotId()}>{targetSlotId()}</option>
+                      }
+                    >
+                      <For each={rescheduleSlots()}>
+                        {(s) => (
+                          <option value={s.id} selected={targetSlotId() === s.id}>
+                            {s.start
+                              ? `${formatSlotDate(s.start)} ${formatSlotTime(s.start, s.end)}`
+                              : s.id}
+                          </option>
+                        )}
+                      </For>
                     </Show>
                   </select>
+                  <Show when={rescheduleSlotsError()}>
+                    {(msg) => (
+                      <div role="alert" class="field-error" data-row="slots-error">
+                        {msg()}
+                      </div>
+                    )}
+                  </Show>
                 </div>
                 <div class="xc-modal-actions">
                   <button
@@ -1060,7 +1159,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     class="xc-btn-secondary"
                     onClick={() => setReschedulingBookingId(null)}
                   >
-                    Close
+                    {t('close')}
                   </button>
                   <button
                     type="button"
@@ -1107,12 +1206,34 @@ export function DeskBookingsScreen(): JSX.Element {
                       onInput={(e) => {
                         if (e.currentTarget.value === formBranchId()) return;
                         setFormBranchId(e.currentTarget.value);
+                        void loadNewBookingSlots(e.currentTarget.value || branchId(), formDate());
                         void requestBookingQuote();
                       }}
                       onChange={(e) => {
                         if (e.currentTarget.value === formBranchId()) return;
                         setFormBranchId(e.currentTarget.value);
+                        void loadNewBookingSlots(e.currentTarget.value || branchId(), formDate());
                         void requestBookingQuote();
+                      }}
+                    />
+                  </div>
+
+                  <div class="xc-form-group">
+                    <label for="new-booking-date">{t('dialog.date')}</label>
+                    <input
+                      id="new-booking-date"
+                      type="date"
+                      name="serviceDate"
+                      value={formDate()}
+                      onInput={(e) => {
+                        if (e.currentTarget.value === formDate()) return;
+                        setFormDate(e.currentTarget.value);
+                        void loadNewBookingSlots(formBranchId() || branchId(), e.currentTarget.value);
+                      }}
+                      onChange={(e) => {
+                        if (e.currentTarget.value === formDate()) return;
+                        setFormDate(e.currentTarget.value);
+                        void loadNewBookingSlots(formBranchId() || branchId(), e.currentTarget.value);
                       }}
                     />
                   </div>
@@ -1136,19 +1257,32 @@ export function DeskBookingsScreen(): JSX.Element {
                         void requestBookingQuote();
                       }}
                     >
-                      <For each={allSlots()}>
-                        {(s) => (
-                          <option value={s.slotId}>
-                            {s.startAt
-                              ? `${formatSlotDate(s.startAt)} ${formatSlotTime(s.startAt, s.endAt)}`
-                              : s.slotId}
+                      <Show
+                        when={newBookingSlots().length > 0}
+                        fallback={
+                          <option value="" disabled selected>
+                            {t('dialog.noSlots')}
                           </option>
-                        )}
-                      </For>
-                      <Show when={formSlotId() && !allSlots().some((s) => s.slotId === formSlotId())}>
-                        <option value={formSlotId()}>{formSlotId()}</option>
+                        }
+                      >
+                        <For each={newBookingSlots()}>
+                          {(s) => (
+                            <option value={s.id} selected={formSlotId() === s.id}>
+                              {s.start
+                                ? `${formatSlotDate(s.start)} ${formatSlotTime(s.start, s.end)}`
+                                : s.id}
+                            </option>
+                          )}
+                        </For>
                       </Show>
                     </select>
+                    <Show when={newBookingSlotsError()}>
+                      {(msg) => (
+                        <div role="alert" class="field-error" data-row="slots-error">
+                          {msg()}
+                        </div>
+                      )}
+                    </Show>
                     <Show when={fieldErrors().slotId}>
                       {(msg) => (
                         <div role="alert" class="field-error">
@@ -1322,6 +1456,16 @@ export function DeskBookingsScreen(): JSX.Element {
                   <Show when={bookingQuote()}>
                     {(q) => (
                       <dl data-row="booking-estimate">
+                        <For each={q().lines}>
+                          {(line) => (
+                            <div data-row="booking-estimate-thb">
+                              <dt>{t('dialog.estimatedThb')}</dt>
+                              <dd>
+                                <MoneyText value={line.settleThb} currency="THB" />
+                              </dd>
+                            </div>
+                          )}
+                        </For>
                         <BenefitLines benefits={q().benefits} basis={q().benefitBasis} />
                       </dl>
                     )}
@@ -1337,7 +1481,7 @@ export function DeskBookingsScreen(): JSX.Element {
                         setShowNewBookingModal(false);
                       }}
                     >
-                      Close
+                      {t('close')}
                     </button>
                     <button
                       type="submit"
@@ -1383,7 +1527,7 @@ export function DeskBookingsScreen(): JSX.Element {
                       class="xc-btn-secondary"
                       onClick={() => setQrDialogData(null)}
                     >
-                      Close
+                      {t('close')}
                     </button>
                   </div>
                 </div>

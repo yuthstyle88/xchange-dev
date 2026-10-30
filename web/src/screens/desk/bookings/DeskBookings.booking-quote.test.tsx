@@ -25,6 +25,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 interface Call {
   path: string;
@@ -81,7 +82,7 @@ function makeServer() {
 
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const u = new URL(rawUrl, 'http://localhost');
       const method = (init?.method ?? 'GET').toUpperCase();
@@ -108,7 +109,7 @@ function makeServer() {
       }
       return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
     }),
-  );
+  ));
 
   return {
     quotes,

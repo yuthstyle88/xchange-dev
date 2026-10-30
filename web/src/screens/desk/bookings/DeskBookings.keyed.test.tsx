@@ -9,6 +9,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 interface WriteCall {
   method: string;
@@ -93,7 +94,7 @@ function makeHarness(steps: StepAnswer[]) {
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
 
-  vi.stubGlobal('fetch', fetchFn);
+  vi.stubGlobal('fetch', withBookingSlots(fetchFn));
 
   return { writes };
 }
