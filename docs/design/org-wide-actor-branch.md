@@ -1353,3 +1353,100 @@ classDiagram
 **Up-front tests** (branch `test/5665`, file `api/tests/create_branch_organisation_test.rs`, over HTTP with a real session, both red on `61382f2f` with `left: Some("00000000-0000-0000-0000-000000000001")`):
 - `a_branch_created_from_organisation_bs_branch_belongs_to_organisation_b`
 - `a_branch_created_with_no_session_branch_belongs_to_the_callers_organisation`
+
+### 15.12 F-3: the catch-all defaults go, and the named rows move to area files (#5682)
+
+> Design by claude/e2926a49 (Studio claude-5, sub-controller of #5682 under lane controller claude/608dff), 2026-10-30 ICT. Measured on `origin/main` `61382f2f`. The change was accepted at #5558 issuecomment-6515987193 (15.6).
+
+**The chain.**
+- `Policy::need_table` (`policy.rs:107-124`) answers every name on `Devices`, `OwnerRoute` and `UserRoute`. A name that no arm spells falls to a default: `SignedIn`, `UsersManage` or `SignedIn`.
+- So a route that asks an unknown name is granted to anyone holding the default's permission.
+- And `shadowed()` counts each of those paths as answered, so their named rows could not move into area files (15.2).
+- `EntryPath::StaffDesk` and `EntryPath::Custody` (`entry_path.rs:12`, `:17`) have no `authorize` caller under `api/src`. `Need::Custody` exists only for `Custody`.
+
+**Every production caller of the three paths** (`git grep -nP 'EntryPath::(Devices|OwnerRoute|UserRoute)\b' -- api/src`, 11 sites):
+
+| Path | Name asked | Caller |
+|---|---|---|
+| `Devices` | the body's `action` (one of the 8 named rows; anything else falls through) | `http/devices.rs:84` |
+| `Devices` | `snapshot` | `INHERITS` of `views/devices.rs:49`, `device_events.rs:44`, `device_jobs.rs:43`, `device_transactions.rs:40` |
+| `OwnerRoute` | `/api/reference-rates` | `http/reference_rates.rs:54`; `INHERITS` of `views/pricing_board.rs:69`, `views/rates_reference.rs:192` |
+| `OwnerRoute` | `queueTicketTake` | `INHERITS` of `commands/queue_ticket_take.rs:55` |
+| `UserRoute` | `documents` | `INHERITS` of `views/documents.rs:49`, `views/transaction_documents.rs:41` |
+
+No route asks `OwnerRoute` `employees` / `list` or `UserRoute` `receipt` / `admin` / `desk`. Those names reach a row only in tests.
+
+**Class diagram (delta).**
+
+```mermaid
+classDiagram
+    class EntryPath {
+        <<enum>>
+        Rpc StaffRpc Upload StaffUpload File StaffFile
+        Devices Kiosk OwnerRoute UserRoute
+        PaymentMethods DrawerPassport DeviceSetup
+    }
+    class Need {
+        <<enum>>
+        Public
+        Permission(Permission)
+        AnyOf(&[Permission])
+    }
+    class Policy {
+        +need_table(path, action) Option~Need~
+    }
+    class devices { ROWS: 8 rows, Request }
+    class owner_route { ROWS: 2 rows, Request }
+    class user_route { ROWS: 1 row, Request }
+    devices ..> AreaRow
+    owner_route ..> AreaRow
+    user_route ..> AreaRow
+    Policy ..> AreaRow : AREA_ROWS (build.rs)
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `EntryPath` without `StaffDesk` and `Custody`; `Need` without `Custody`; `authorize` without their arms; `is_staff_path` without `StaffDesk` | `value_objects/entry_path.rs`, `entities/policy.rs`, `api/src/presentation/extractors/actor.rs` | skeleton on `test/5682` | — |
+| `need_table` answers `None` for `Devices`, `OwnerRoute` and `UserRoute` (the arms are deleted, with the comment at `policy.rs:92-96` updated) | `entities/policy.rs` | **T1** | `need_with`, `shadowed` |
+| The 8 named `Devices` rows (`setPrinter`, `setDrawer`: SystemSettings; `queue`: DeviceQueue; `process`, `retry`, `drawerObservation`: DeviceProcess; `printerOnline`: DevicePrinterOnline; `snapshot`: SignedIn), all `Request` | new `areas/devices.rs` | **T1** | `AREA_ROWS` |
+| `OwnerRoute` `/api/reference-rates` (ReferenceRatesRead) and `queueTicketTake` (CustomerSelf), `Request` | new `areas/owner_route.rs` | **T1** | `AREA_ROWS` |
+| `UserRoute` `documents` (DocumentsList), `Request` | new `areas/user_route.rs` | **T1** | `AREA_ROWS` |
+
+The area files are named after their path, as `kiosk.rs` and `payment_methods.rs` are (15.2). New files, so no other ticket's scope is touched. Every row stays `Request`: each route acts on a branch, or on the caller's own record (15.3).
+
+**Behaviour table.**
+
+| # | Case | Before (`61382f2f`) | After |
+|---|---|---|---|
+| 1 | each of the 11 named rows | its permission | the same permission (`policy_named_rows_only_test::f3_row1`) |
+| 2 | where the row lives | `need_table` | one `Request` area row each (`f3_row2`); `need_table` answers `None` on the three paths (`f3_row3`) |
+| 3 | `Devices` / `OwnerRoute` / `UserRoute` with a name no row spells (`nope`, `""`, `employees`, `list`, `receipt`, `admin`, `desk`) | granted to `SignedIn` / `UsersManage` / `SignedIn` holders | no row (`f3_row4`); a signed-in caller hears `invalidRequest` 400 (`f3_row5`) |
+| 4 | the same, nobody signed in | `กรุณาเข้าสู่ระบบ` 401 | unchanged (`f3_row6`) |
+| 5 | `POST /api/devices` with an unknown `action` | the policy grants it; `devices.rs:251` answers `คำขอไม่ถูกต้อง` 400 | the policy answers the same sentence and status first (`PolicyError::InvalidRequest`, `policy_error.rs:21`; `BAD_REQUEST`, `actor.rs:21`). The one visible difference: a cross-origin call with an unknown action now hears this sentence instead of `ORIGIN_REJECTED`; both are 400 |
+| 6 | `StaffDesk`, `Custody`, `Need::Custody` | types with rows and no caller | deleted: `git grep -nP 'EntryPath::(Custody\|StaffDesk)\b\|Need::Custody\b' -- api/src api/crates` prints nothing |
+| 7 | `shadowed(AREA_ROWS)`, `duplicates(AREA_ROWS)` | empty | empty (`f3_row7`) |
+
+**Tests restated on `test/5682`** (the skeleton deletes the types they named; the rest pin the old defaults):
+- `policy_common` (`PATHS` 14 → 12).
+- `area_rows_seam_test`: `TODAY` loses the 96 rows of the two deleted paths, and 136 catch-all rows of the three paths become `None`.
+- `policy_route_table_test`: rows, and `the_blueprint_users_b1_made_are_answered_as_before`.
+- `policy_test`:
+  - `retired_by_5682` takes 162 mapped cases out of the replays; S11 keeps 40 of its 44, because 4 are `StaffDesk`;
+  - six hand-written tests are restated, each named in the file's header.
+- `row_scope_test`: the unreachable arm goes.
+- api: `or4_routes_guard_test::entry_path`, `policy_inherits_resolve_test::ALL`.
+
+The v2 fixtures (`v2_policy_cases.json`, `blueprint_policy_cases.json`) and their generators are **not** edited, because they record v2. The replays count the retired cases, as RE-7, CA-10, BK-11 and #5558 did.
+
+**Measured** (2026-10-30 ICT, Studio):
+- On the skeleton, `xc-auth` runs 524. The reds are the four up-front cases `f3_row2`..`f3_row5`, plus five restated tests that are red until T1:
+  - `area_rows_seam_test::need_table_is_todays_route_table_unchanged`;
+  - `policy_route_table_test::every_route_and_action_names_its_permission`;
+  - `policy_test::an_unknown_action_is_refused_in_the_words_of_its_path`;
+  - `the_device_route_refuses_a_name_it_has_no_row_for`;
+  - `the_employee_route_names_are_names_nobody_knows`.
+- With a throwaway T1, `xc-auth` passes 524/524. The 22 api test files that name the three paths, their routes or their `INHERITS` views pass 176/176.
+
+**Function tickets.** One function, so one ticket (#5682 itself), `class:guarded`, Argon, base `main`, `Test branch: test/5682`. File scope: `entities/policy.rs` and the three new area files.
+
+**Data migration.** None. The rows are code; no table, column or row changes.
