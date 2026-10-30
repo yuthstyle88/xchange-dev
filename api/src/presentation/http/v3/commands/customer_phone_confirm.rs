@@ -12,6 +12,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_customer::application::customer::phone_verification_service::{
     PhoneVerificationError, PhoneVerificationService,
 };
@@ -21,6 +22,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::notify::notify_sms_sender::NotifySmsSender;
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -61,12 +63,27 @@ impl CommandAction for CustomerPhoneConfirmCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let challenge_id = Uuid::parse_str(&input.challenge_id).map_err(|_| {
             V3Error::new(
                 "notFound",
@@ -90,7 +107,7 @@ impl CommandAction for CustomerPhoneConfirmCommand {
                 challenge_id,
                 &input.code,
                 now,
-                &[],
+                &caller.granted,
             )
             .await
             .map_err(map_phone_error)?;

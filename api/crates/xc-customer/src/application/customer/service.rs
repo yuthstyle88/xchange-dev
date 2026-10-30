@@ -5,6 +5,7 @@ use pos_error::{AppError, AppResult};
 use sqlx::Transaction;
 use uuid::Uuid;
 use xc_auth::domain::access::actor::Actor;
+use xc_auth::domain::access::audit_role;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
 use xc_kernel::branch_tx::BranchTx;
@@ -399,11 +400,7 @@ impl CustomerService {
                 .map_err(|e| AppError::Internal(format!("invalid UTF-8 payload: {e}")))?,
         };
 
-        let role_str = grant
-            .roles_used
-            .first()
-            .map(|r| r.as_str())
-            .unwrap_or("TELLER");
+        let role_str = audit_role(&grant.roles_used, actor, now);
 
         sqlx::query(
             "INSERT INTO audit_events ( \
