@@ -60,24 +60,27 @@ test.describe('QA-F10 smoke: admin pricing menu', () => {
     await search.fill('');
 
     await page.locator('button[name="reload"]').click();
+    // Pricing.tsx:319-321: .pricing-settings renders once pricing_board sets board()
+    await expect(page.locator('.pricing-settings'), 'the pricing board loaded').toBeVisible({ timeout: 20_000 });
+
+    // PricingGrid.tsx:21-22,46-72: on a branch with no published rates, all rows are disabled and folded behind toggleDisabled
+    const toggleDisabled = page.locator('button[name="toggleDisabled"]');
+    if (await toggleDisabled.isVisible().catch(() => false)) {
+      await toggleDisabled.click();
+    }
 
     const codeBtn = page.locator('.pricing-btn-code').first();
-    // wait for the board to answer (a row or the empty state) before choosing a branch
+    // wait for the board to show a row (enabled or unfolded disabled) or the empty state
     await expect(page.locator('.pricing-btn-code, [data-testid="pricing-grid-empty"]').first()).toBeVisible({ timeout: 20_000 });
     const hasRow = await codeBtn.isVisible().catch(() => false);
     if (hasRow) {
       await codeBtn.click();
       await expect(page.locator('.pricing-detail'), 'the pricing detail opened').toBeVisible({ timeout: 20_000 });
-      // TierEditor.tsx:26,128: one row per tier, TIER_NOS = [1, 2, 3, 4]
+      // TierEditor.tsx:28,183: one row per tier, TIER_NOS = [1, 2, 3, 4]
       await expect(page.locator('.pricing-detail .tier-editor-table tbody tr'), 'the tier editor shows 4 tiers').toHaveCount(4);
     } else {
       // PricingGrid.tsx:29: an empty board must not fail the test
       await expect(page.getByTestId('pricing-grid-empty'), 'the empty board').toBeVisible();
-    }
-
-    const toggleDisabled = page.locator('button[name="toggleDisabled"]');
-    if (await toggleDisabled.isVisible().catch(() => false)) {
-      await toggleDisabled.click();
     }
 
     expect(writeCalls, 'zero write calls reached the route handler').toBe(0);
