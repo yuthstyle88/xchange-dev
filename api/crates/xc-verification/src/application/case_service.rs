@@ -23,6 +23,12 @@ use crate::domain::case_repository::CaseRepository;
 use crate::domain::document::access_class::AccessClass;
 use crate::domain::document::verification_document::VerificationDocument;
 
+/// #5630 (design `org-wide-actor-branch.md` §14.4): the audit `actor_role` of a customer acting on their own case or
+/// document. A non-staff writer keeps this literal; staff are written by `access::audit_role`.
+pub fn customer_audit_role() -> &'static str {
+    "CUSTOMER"
+}
+
 pub struct CaseService {
     pool: PgPool,
     cases: Arc<dyn CaseRepository>,
@@ -127,7 +133,11 @@ impl CaseService {
         match inserted {
             Some(case) => {
                 let (actor_id, actor_role, branch_str) = match actor {
-                    CaseActor::Customer(c) => (c.customer_id.clone(), "CUSTOMER".to_string(), None),
+                    CaseActor::Customer(c) => (
+                        c.customer_id.clone(),
+                        customer_audit_role().to_string(),
+                        None,
+                    ),
                     CaseActor::Reviewer(r) => {
                         let b = match &r.scope {
                             ReviewerScope::Branch { branch_id, .. } => {
@@ -284,7 +294,11 @@ impl CaseService {
             .await?;
 
         let (actor_id, actor_role, branch_str) = match actor {
-            CaseActor::Customer(c) => (c.customer_id.clone(), "CUSTOMER".to_string(), None),
+            CaseActor::Customer(c) => (
+                c.customer_id.clone(),
+                customer_audit_role().to_string(),
+                None,
+            ),
             CaseActor::Reviewer(r) => {
                 let b = match &r.scope {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),
@@ -380,7 +394,11 @@ impl CaseService {
             .await?;
 
         let (actor_id, actor_role, branch_str) = match actor {
-            CaseActor::Customer(c) => (c.customer_id.clone(), "CUSTOMER".to_string(), None),
+            CaseActor::Customer(c) => (
+                c.customer_id.clone(),
+                customer_audit_role().to_string(),
+                None,
+            ),
             CaseActor::Reviewer(r) => {
                 let b = match &r.scope {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),
@@ -470,7 +488,11 @@ impl CaseService {
             .await?;
 
         let (actor_id, actor_role, branch_str) = match actor {
-            CaseActor::Customer(c) => (c.customer_id.clone(), "CUSTOMER".to_string(), None),
+            CaseActor::Customer(c) => (
+                c.customer_id.clone(),
+                customer_audit_role().to_string(),
+                None,
+            ),
             CaseActor::Reviewer(r) => {
                 let b = match &r.scope {
                     ReviewerScope::Branch { branch_id, .. } => Some(branch_id.as_str().to_string()),

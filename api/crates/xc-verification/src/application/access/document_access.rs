@@ -239,7 +239,7 @@ impl DocumentAccess {
             .await
             .map_err(|e| AccessError::Internal(e.to_string()))?;
 
-        let actor_role = "CUST".to_string() + "OMER";
+        let actor_role = crate::application::case_service::customer_audit_role().to_string();
 
         let event = AuditEvent {
             actor_id: actor.user_id.clone(),
