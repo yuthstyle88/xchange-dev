@@ -120,12 +120,8 @@ impl CommandAction for MarketRatesRefreshCommand {
                 Arc::new(PgTierSetStore),
                 Arc::new(PgBranchPolicyStore),
             ));
-            let pricing_loop = MarketPricingLoop::new(
-                self.state.db.clone(),
-                refresh,
-                tier_publisher,
-                branch_push,
-            );
+            let pricing_loop =
+                MarketPricingLoop::new(self.state.db.clone(), refresh, tier_publisher, branch_push);
             for currency in currencies {
                 let res = pricing_loop
                     .plan_currency(currency, now)
