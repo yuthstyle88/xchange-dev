@@ -6,12 +6,13 @@ import { hasAccount, signIn, smoke, STAFF_LANGS } from './helpers';
 test.describe('QA-S6 smoke: admin policy menus', () => {
   // key: web/src/screens/admin/alert-settings/AlertSettings.tsx:148 (menu.ts:12 needs AlertSettingsSave)
   test('/#alert-settings', async ({ page }) => {
-    await signIn(page, 'admin', '/#alert-settings');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#alert-settings');
     await smoke(page, {
       area: 'admin-policy',
       screen: 'alert-settings',
       path: '/#alert-settings',
-      role: 'admin',
+      role,
       key: '.alert-settings-container',
       langs: STAFF_LANGS,
       needs: 'AlertSettingsSave',
@@ -20,12 +21,13 @@ test.describe('QA-S6 smoke: admin policy menus', () => {
 
   // key: web/src/screens/admin/cash-policy/CashPolicy.tsx:173 (menu.ts:13 needs CashTransferPolicySet)
   test('/#cash-policy', async ({ page }) => {
-    await signIn(page, 'admin', '/#cash-policy');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#cash-policy');
     await smoke(page, {
       area: 'admin-policy',
       screen: 'cash-policy',
       path: '/#cash-policy',
-      role: 'admin',
+      role,
       key: '.admin-cash-policy-screen',
       langs: STAFF_LANGS,
       needs: 'CashTransferPolicySet',
@@ -34,12 +36,13 @@ test.describe('QA-S6 smoke: admin policy menus', () => {
 
   // key: web/src/screens/admin/rate-alert-settings/RateAlertSettings.tsx:211 (menu.ts:13 needs RateAlertSettingsSave)
   test('/#rate-alert-settings', async ({ page }) => {
-    await signIn(page, 'admin', '/#rate-alert-settings');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#rate-alert-settings');
     await smoke(page, {
       area: 'admin-policy',
       screen: 'rate-alert-settings',
       path: '/#rate-alert-settings',
-      role: 'admin',
+      role,
       key: '.rate-alert-settings',
       langs: STAFF_LANGS,
       needs: 'RateAlertSettingsSave',
@@ -93,12 +96,13 @@ test.describe('QA-S6 smoke: admin policy menus', () => {
 
   // key: web/src/screens/admin/loyalty/Loyalty.tsx:217 (menu.ts:13 needs LoyaltyRulesManage; 503 loyaltyUnavailable when unconfigured)
   test('/#loyalty', async ({ page }) => {
-    await signIn(page, 'admin', '/#loyalty');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#loyalty');
     await smoke(page, {
       area: 'admin-policy',
       screen: 'loyalty',
       path: '/#loyalty',
-      role: 'admin',
+      role,
       key: 'section[data-form="point-draft"]',
       langs: STAFF_LANGS,
       needs: 'LoyaltyRulesManage',
@@ -108,12 +112,13 @@ test.describe('QA-S6 smoke: admin policy menus', () => {
 
   // key: web/src/screens/admin/cash-limits/CashLimits.tsx:149 (menu.ts:13 needs CashLimitsManage)
   test('/#cash-limits', async ({ page }) => {
-    await signIn(page, 'admin', '/#cash-limits');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#cash-limits');
     await smoke(page, {
       area: 'admin-policy',
       screen: 'cash-limits',
       path: '/#cash-limits',
-      role: 'admin',
+      role,
       key: '.cash-limits',
       langs: STAFF_LANGS,
       needs: 'CashLimitsManage',
