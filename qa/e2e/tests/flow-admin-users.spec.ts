@@ -2,20 +2,22 @@
 // Written by ticket #4285 (QA-R9-1); this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
-import { hasAccount, mePermissions, shot, signIn, STAFF_LANGS, users, withLang } from './helpers';
+import {
+  hasAccount,
+  mePermissions,
+  shot,
+  signIn,
+  STAFF_LANGS,
+  users,
+  withLang,
+  writeHeaders,
+} from './helpers';
 
 // Raw error-code camelCase / UPPER_SNAKE tokens that must never surface as user-facing error text (§9.4 (b)).
 const RAW_CODE =
   /^(validationFailed|codeTaken|employeeCodeTaken|outOfScope|roleNotAllowed|userNotActive|statusNotAllowed|selfChange|lastOwner|holdsCash|notBound|invalidRequest|serverError|notFound|builtIn|inUse|guardrail:[1-5]|ORIGIN_REJECTED)$/;
 
 const REVIEWER_ROLE_CODE = 'VERIFICATION_REVIEWER';
-
-// v3 commands need the same-origin headers and an Idempotency-Key header (command.rs:256-268).
-const writeHeaders = (key: string) => ({
-  'x-xchange-request': '1',
-  origin: new URL(users.baseUrl).origin,
-  'Idempotency-Key': key,
-});
 
 let cachedMarketingUserId: string | undefined;
 let originalProfile:
