@@ -286,6 +286,7 @@ impl Db {
     async fn org_reviewer(&self, org: &str) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Organization {
                 organization_id: Uuid::from_str(org).expect("uuid"),
@@ -296,6 +297,7 @@ impl Db {
     async fn branch_reviewer(&self, org: &str, branch_id: BranchId) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Branch {
                 organization_id: Uuid::from_str(org).expect("uuid"),
@@ -468,6 +470,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u1 = db.user(ORG_1).await;
     let c1 = db.customer_with_user(ORG_1, u1).await;
     let r1 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u1,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -486,6 +489,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u2 = db.user(ORG_1).await;
     let c2 = db.customer_with_user(ORG_1, u2).await;
     let r2 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u2,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -506,6 +510,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u3 = db.user(ORG_1).await;
     let c3 = db.customer_with_user(ORG_1, u3).await;
     let r3 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u3,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -527,6 +532,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u4 = db.user(ORG_1).await;
     let c4 = db.customer_with_user(ORG_1, u4).await;
     let r4 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u4,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -548,6 +554,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u5 = db.user(ORG_1).await;
     let c5 = db.customer_with_user(ORG_1, u5).await;
     let r5 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u5,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -1310,5 +1317,28 @@ async fn stale_version_when_expected_version_does_not_match() {
         .await;
     assert_eq!(version, 1);
 
+    db.finish().await;
+}
+
+/// #5630 W-14 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the
+/// sub-controller claude/studio-claude-17 before the implementation: a review action is audited under the role whose
+/// row granted `VerificationReview` (`ReviewerActor.role`), not the literal `VERIFICATION_REVIEWER`. A BRANCH_MANAGER
+/// holds `VerificationReview` (DOCUMENTS FULL, RBAC §11.2).
+#[tokio::test]
+async fn w14_a_review_is_audited_under_the_granting_role() {
+    let db = Db::start().await;
+    let mut reviewer = db.org_reviewer(ORG_1).await;
+    reviewer.role = xc_auth::domain::access::Role::BranchManager;
+    let customer = db.customer(ORG_1).await;
+    let case = db
+        .insert_case(ORG_1, &customer.id, "SUBMITTED", None, 1)
+        .await;
+    db.service()
+        .start_review(&reviewer, case, 1)
+        .await
+        .expect("start_review");
+    let events = db.audit_events_for_case(case).await;
+    assert_eq!(events.len(), 1, "W-14: {events:?}");
+    assert_eq!(events[0].1, "BRANCH_MANAGER", "W-14");
     db.finish().await;
 }

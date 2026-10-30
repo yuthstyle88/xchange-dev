@@ -370,6 +370,7 @@ impl Db {
         let branch_id = self.branch(org).await;
         (
             ReviewerActor {
+                role: xc_auth::domain::access::Role::VerificationReviewer,
                 user_id,
                 scope: ReviewerScope::Branch {
                     organization_id: Uuid::parse_str(org).expect("uuid"),

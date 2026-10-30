@@ -9,7 +9,7 @@ use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, Role, audit_role};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher};
@@ -126,14 +126,6 @@ pub struct PhoneVerificationService {
     repo: PgPhoneVerificationRepository,
 }
 
-fn actor_role(actor: &Actor) -> String {
-    actor
-        .roles
-        .first()
-        .map(|r| r.role.as_str().to_string())
-        .unwrap_or_default()
-}
-
 impl PhoneVerificationService {
     pub fn new(branch_tx: BranchTx, sms_sender: Arc<dyn SmsSender>) -> Self {
         let repo = PgPhoneVerificationRepository::new(branch_tx.pool().clone());
@@ -163,15 +155,17 @@ impl PhoneVerificationService {
         customer_id: &str,
         phone: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneStartResult, PhoneVerificationError> {
         let mut tx = self.repo.pool().begin().await?;
         let res = self
-            .start_in_tx(&mut tx, actor, branch, customer_id, phone, now)
+            .start_in_tx(&mut tx, actor, branch, customer_id, phone, now, roles_used)
             .await?;
         tx.commit().await?;
         Ok(res)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_in_tx(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -180,6 +174,7 @@ impl PhoneVerificationService {
         customer_id: &str,
         phone: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneStartResult, PhoneVerificationError> {
         let org_id = Uuid::parse_str(&actor.organization_id)
             .map_err(|_| PhoneVerificationError::NotFound)?;
@@ -210,6 +205,8 @@ impl PhoneVerificationService {
                             customer_id,
                             None,
                             "refused",
+                            now,
+                            roles_used,
                         )
                         .await;
                     return Err(PhoneVerificationError::ValidationFailed(
@@ -226,6 +223,8 @@ impl PhoneVerificationService {
                         customer_id,
                         None,
                         "refused",
+                        now,
+                        roles_used,
                     )
                     .await;
                 return Err(PhoneVerificationError::ValidationFailed(
@@ -250,6 +249,8 @@ impl PhoneVerificationService {
                     customer_id,
                     None,
                     "refused",
+                    now,
+                    roles_used,
                 )
                 .await;
             return Err(PhoneVerificationError::RateLimited);
@@ -272,6 +273,8 @@ impl PhoneVerificationService {
                     customer_id,
                     None,
                     "refused",
+                    now,
+                    roles_used,
                 )
                 .await;
             return Err(PhoneVerificationError::RateLimited);
@@ -292,6 +295,8 @@ impl PhoneVerificationService {
                     customer_id,
                     None,
                     "refused",
+                    now,
+                    roles_used,
                 )
                 .await;
             return Err(PhoneVerificationError::RateLimited);
@@ -325,6 +330,8 @@ impl PhoneVerificationService {
                     customer_id,
                     None,
                     "refused",
+                    now,
+                    roles_used,
                 )
                 .await;
             return Err(PhoneVerificationError::SmsUnavailable);
@@ -364,6 +371,8 @@ impl PhoneVerificationService {
             customer_id,
             Some(challenge_id),
             "sent",
+            now,
+            roles_used,
         )
         .await?;
 
@@ -373,6 +382,7 @@ impl PhoneVerificationService {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn confirm(
         &self,
         actor: &Actor,
@@ -381,10 +391,20 @@ impl PhoneVerificationService {
         challenge_id: Uuid,
         code: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneConfirmResult, PhoneVerificationError> {
         let mut tx = self.repo.pool().begin().await?;
         let res = self
-            .confirm_in_tx(&mut tx, actor, branch, customer_id, challenge_id, code, now)
+            .confirm_in_tx(
+                &mut tx,
+                actor,
+                branch,
+                customer_id,
+                challenge_id,
+                code,
+                now,
+                roles_used,
+            )
             .await?;
         tx.commit().await?;
         Ok(res)
@@ -400,6 +420,7 @@ impl PhoneVerificationService {
         challenge_id: Uuid,
         code: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneConfirmResult, PhoneVerificationError> {
         let org_id = Uuid::parse_str(&actor.organization_id)
             .map_err(|_| PhoneVerificationError::NotFound)?;
@@ -447,6 +468,7 @@ impl PhoneVerificationService {
                     customer_id,
                     challenge_id,
                     now,
+                    roles_used,
                 )
                 .await?;
             return Err(err);
@@ -537,6 +559,8 @@ impl PhoneVerificationService {
             customer_id,
             Some(challenge_id),
             "verified",
+            now,
+            roles_used,
         )
         .await?;
 
@@ -556,9 +580,11 @@ impl PhoneVerificationService {
         customer_id: &str,
         challenge_id: Option<Uuid>,
         outcome: &str,
+        now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<(), PhoneVerificationError> {
         let audit_log = PgAuditLog::new(self.repo.pool().clone());
-        let actor_role = actor_role(actor);
+        let actor_role = audit_role(roles_used, actor, now).to_string();
 
         let after = if let Some(cid) = challenge_id {
             json!({
@@ -593,6 +619,7 @@ impl PhoneVerificationService {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn write_audit_event_standalone(
         &self,
         teller_user_id: &Uuid,
@@ -601,6 +628,8 @@ impl PhoneVerificationService {
         customer_id: &str,
         challenge_id: Option<Uuid>,
         outcome: &str,
+        now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<(), PhoneVerificationError> {
         let mut tx = self.repo.pool().begin().await?;
         self.write_audit_event_in_tx(
@@ -611,6 +640,8 @@ impl PhoneVerificationService {
             customer_id,
             challenge_id,
             outcome,
+            now,
+            roles_used,
         )
         .await?;
         tx.commit().await?;
@@ -626,6 +657,7 @@ impl PhoneVerificationService {
         customer_id: &str,
         challenge_id: Uuid,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneVerificationError, PhoneVerificationError> {
         let mut tx = self.repo.pool().begin().await?;
 
@@ -670,6 +702,8 @@ impl PhoneVerificationService {
             customer_id,
             Some(challenge_id),
             outcome,
+            now,
+            roles_used,
         )
         .await?;
 

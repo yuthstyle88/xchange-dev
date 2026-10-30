@@ -51,6 +51,7 @@ impl BranchView for MyAssistantConversationView {
             user: Some(who.clone()),
             app_session: None,
             session_hash: None,
+            granted: Vec::new(),
         };
         let branch = branch.clone();
         let filter = filter.clone();

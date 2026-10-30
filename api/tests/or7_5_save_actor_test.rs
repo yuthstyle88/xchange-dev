@@ -344,11 +344,14 @@ async fn each_v3_role_saves_or_is_refused_as_today() {
             .roles
             .iter()
             .any(|r| RoleGrants::seed(r.role).contains(&Permission::ExchangeTransact));
-        let audit_role = Standing::of(&user, Utc::now())
-            .expect("a v3 role has standing")
-            .kind
-            .audit_text()
-            .to_owned();
+        // #5630 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 B on #5661), restated by the
+        // sub-controller claude/studio-claude-17: the save step has no grant, so the audit role is the saver's
+        // standing in Blueprint names (`access::audit_role(&[], ..)`), no longer V.9's `audit_text`.
+        assert!(
+            Standing::of(&user, Utc::now()).is_some(),
+            "a v3 role has standing"
+        );
+        let audit_role = xc_auth::domain::access::audit_role(&[], &user, Utc::now()).to_owned();
 
         let before = shop.count("SELECT count(*) FROM transactions").await;
         let got = shop.save_as(reader.clone(), role, &id).await;
@@ -403,7 +406,8 @@ async fn a_teller_saves_as_their_user() {
         got,
         Saved::Completed {
             status: "COMPLETED".to_owned(),
-            audit: (user_id.clone(), "FRONT".to_owned()),
+            // #5630 (§14.5, ruling Q-1 A on #5661), restated by claude/studio-claude-17: was `FRONT`.
+            audit: (user_id.clone(), "TELLER".to_owned()),
             recorded: (user_id.clone(), user_id.clone()),
         },
         "a teller saves as their user, recorded by users.id"

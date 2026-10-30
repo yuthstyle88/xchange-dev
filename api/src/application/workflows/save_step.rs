@@ -62,9 +62,9 @@ impl SaveActor {
         self.standing
     }
 
-    /// The audit `actor_role` text of this saver, spelled as v3 stored it (unchanged by OR-7).
+    /// The audit `actor_role` text of this saver: the saver's standing in Blueprint names (#5630 §14.5).
     pub fn audit_role(&self) -> &'static str {
-        self.standing.audit_text()
+        self.standing.blueprint_name()
     }
 
     /// The saver as an `access::Actor` at `branch` (the owner organisation-wide), valid from

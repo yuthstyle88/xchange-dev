@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::access::{Actor, Role, Standing};
+use xc_auth::domain::access::{Actor, Role, audit_role};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
@@ -48,6 +48,7 @@ impl DenominationGroupService {
         who: &Actor,
         code: CurrencyCode,
         group: &GroupCode,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
         let now = Utc::now();
         executive_org_wide(who, now)?;
@@ -78,7 +79,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupCreate".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
@@ -98,6 +99,7 @@ impl DenominationGroupService {
     }
 
     /// Maps a denomination group to a board rate row (instrument_key).
+    #[allow(clippy::too_many_arguments)]
     pub async fn map_group(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -106,6 +108,7 @@ impl DenominationGroupService {
         group: &GroupCode,
         provider: &str,
         instrument_key: &str,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
         let now = Utc::now();
         executive_org_wide(who, now)?;
@@ -178,7 +181,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupMap".to_string(),
             object_ref: format!("{}/{}/{}", code.as_str(), group.as_str(), provider),
@@ -209,6 +212,7 @@ impl DenominationGroupService {
         who: &Actor,
         code: CurrencyCode,
         group: &GroupCode,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
         let now = Utc::now();
         executive_org_wide(who, now)?;
@@ -294,7 +298,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupRemove".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),

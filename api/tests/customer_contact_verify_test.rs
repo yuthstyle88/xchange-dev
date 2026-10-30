@@ -420,7 +420,15 @@ impl Db {
         let service = ContactVerify::new(self.branch_tx());
         let mut tx = self.pool.begin().await.expect("begin");
         let answer = service
-            .verify_in(&mut tx, &who, &BranchId::new(MAIN), customer_id, phone, now)
+            .verify_in(
+                &mut tx,
+                &who,
+                &BranchId::new(MAIN),
+                customer_id,
+                phone,
+                now,
+                &[],
+            )
             .await;
         if answer.is_ok() {
             tx.commit().await.expect("commit");

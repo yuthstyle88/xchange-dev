@@ -9,6 +9,7 @@ use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_auth::domain::access::actor::Actor;
 use xc_auth::domain::access::branch_scope::BranchScope;
 use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::{Role, audit_role};
 use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
 use xc_kernel::ids::BranchId;
 
@@ -131,6 +132,7 @@ impl DocumentAccess {
         session: &str,
         document_id: Uuid,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<IssuedLink, AccessError> {
         let query_str = "SELECT d.encrypted_object_ref, d.removed_at, d.purged_at, c.organization_id AS case_org_id, c.branch_id \
                          FROM verification_documents d \
@@ -168,11 +170,7 @@ impl DocumentAccess {
             .await
             .map_err(|e| AccessError::Internal(e.to_string()))?;
 
-        let actor_role = actor
-            .roles
-            .first()
-            .map(|r| r.role.as_str().to_string())
-            .unwrap_or_else(|| "staff_role".to_string());
+        let actor_role = audit_role(roles_used, actor, now).to_string();
 
         let event = AuditEvent {
             actor_id: actor.user_id.clone(),
@@ -206,7 +204,9 @@ impl DocumentAccess {
         session: &str,
         document_id: Uuid,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<IssuedLink, AccessError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let query_str = "SELECT d.encrypted_object_ref, d.removed_at, d.purged_at, c.organization_id AS case_org_id, c.customer_id, c.branch_id \
                          FROM verification_documents d \
                          JOIN verification_cases c ON c.id = d.case_id \
@@ -239,11 +239,7 @@ impl DocumentAccess {
             .await
             .map_err(|e| AccessError::Internal(e.to_string()))?;
 
-        let actor_role = actor
-            .roles
-            .first()
-            .map(|r| r.role.as_str().to_string())
-            .unwrap_or_else(|| "owner_role".to_string());
+        let actor_role = crate::application::case_service::customer_audit_role().to_string();
 
         let event = AuditEvent {
             actor_id: actor.user_id.clone(),

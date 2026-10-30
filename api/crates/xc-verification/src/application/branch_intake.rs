@@ -349,7 +349,7 @@ impl BranchIntake {
 
         let event = AuditEvent {
             actor_id: reviewer.user_id.to_string(),
-            actor_role: "VERIFICATION_REVIEWER".to_string(),
+            actor_role: reviewer.role.as_str().to_string(),
             scope: cust_org_id.to_string(),
             action: "verificationBranchCaseOpen".to_string(),
             object_ref: final_case.id.to_string(),

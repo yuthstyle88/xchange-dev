@@ -106,7 +106,10 @@ impl CommandAction for VerificationDocumentLinkCommand {
         );
 
         let now = Utc::now();
-        match access.link_for_reviewer(who, session, doc_id, now).await {
+        match access
+            .link_for_reviewer(who, session, doc_id, now, &caller.granted)
+            .await
+        {
             Ok(issued) => Ok(VerificationDocumentLinkOutput {
                 url: issued.url,
                 expires_at: issued.expires_at.to_rfc3339(),
