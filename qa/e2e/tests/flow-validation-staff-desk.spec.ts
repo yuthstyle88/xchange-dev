@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
 import * as staffI18n from '../../../web/src/screens/staff/i18n';
 import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
+import type { BookingSlotsData } from '../../../web/src/shared/api/generated/booking_slots';
+import type { BookingCreateInput, BookingCreateOutput } from '../../../web/src/shared/api/generated/bookings';
 import {
   clockIn,
   closeQueueIfOpened,
@@ -74,21 +76,6 @@ interface ReversalRequestAnswer {
   approvalRequestId?: string;
 }
 
-interface BookingSlotsViewAnswer {
-  data?: {
-    slots?: Array<{
-      id: string;
-      status: string;
-      remaining: number;
-    }>;
-  };
-}
-
-interface BookingCreateAnswer {
-  id?: string;
-  bookingNo?: string;
-  status?: string;
-}
 
 /** Switches `page` to `lang` via `withLang` and reloads `path`, asserting `<html lang>` matches. */
 async function openInLang(page: Page, lang: Lang, path: string): Promise<void> {
@@ -105,17 +92,12 @@ function expectWordedRefusal(msg: string, label: string): void {
   expect(trimmed, `${label} refusal is not generic 500 fallback`).not.toMatch(/^(เซิร์ฟเวอร์ขัดข้อง|Server error)$/);
 }
 
-/** Returns tomorrow's YYYY-MM-DD in Asia/Bangkok so booking cancel/reschedule stays outside the cutoff window. */
-function tomorrowBangkokIsoDate(): string {
-  const bkkToday = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-  const [y, m, d] = bkkToday.split('-').map((n) => Number(n));
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  return next.toISOString().slice(0, 10);
+const HORIZON_DAYS = 14; // deploy/server/seed-test-booking.sh:147
+
+// Date in Asia/Bangkok offset by `daysAhead` days, as the date input wants it (yyyy-mm-dd).
+function bangkokDate(daysAhead: number): string {
+  const now = new Date(Date.now() + 7 * 3600_000 + daysAhead * 24 * 3600_000);
+  return now.toISOString().slice(0, 10);
 }
 
 /** Reads the active OPEN shift for a staff page from GET /api/v3/views/my_shift. */
@@ -789,28 +771,45 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         // ── 4. Desk bookings (`/desk/bookings` — `bookingCancel`, `bookingReschedule`, new booking modal) ──
         // Citations: DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023;
         // desk/bookings/i18n.ts:15,25,50,60; commands/bookings/cancel.rs:104-115.
-        const tomorrow = tomorrowBangkokIsoDate();
-        const slotsRes = await customer.request.get(
-          `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&filter=${encodeURIComponent(JSON.stringify({ date: tomorrow }))}`,
-        );
-        expect(slotsRes.ok(), `GET booking_slots for ${tomorrow}`).toBeTruthy();
-        const slotsBody = (await slotsRes.json()) as BookingSlotsViewAnswer;
-        const openSlot = (slotsBody.data?.slots ?? []).find((s) => s.status === 'OPEN' && s.remaining > 0);
-        expect(openSlot, `open slot on ${tomorrow}`).toBeTruthy();
+        let tomorrow = '';
+        let openSlot: BookingSlotsData['slots'][number] | undefined;
+        const datesTried: string[] = [];
+        for (let d = 1; d <= HORIZON_DAYS; d++) {
+          const date = bangkokDate(d);
+          datesTried.push(date);
+          const slotsRes = await customer.request.get(
+            `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&date=${encodeURIComponent(date)}`,
+          );
+          if (!slotsRes.ok()) continue;
+          const slotsBody = (await slotsRes.json().catch(() => ({}))) as { data?: BookingSlotsData };
+          const slot = (slotsBody.data?.slots ?? []).find((s) => s.available > 0);
+          if (slot) {
+            openSlot = slot;
+            tomorrow = date;
+            break;
+          }
+        }
+        expect(openSlot, `open slot within ${HORIZON_DAYS} days (tried: ${datesTried.join(', ')})`).toBeTruthy();
 
+        const createBody: BookingCreateInput = {
+          branchId: users.branch,
+          slotId: openSlot!.id,
+          currency: 'USD',
+          shopSide: 'SELL',
+          quantity: '100',
+          phone: '0812345678',
+          quoteId: null,
+          referralCode: null,
+          customerId: null,
+          displayName: null,
+        };
         const createBookingRes = await customer.request.post('/api/bookings', {
           headers: { 'Idempotency-Key': `${runMarker}-booking` },
-          data: {
-            branchId: users.branch,
-            slotId: openSlot!.id,
-            currency: 'USD',
-            side: 'SELL',
-            quantity: '100',
-            phone: '0812345678',
-          },
+          data: createBody,
         });
         expect(createBookingRes.ok(), `POST /api/bookings for ${tomorrow}`).toBeTruthy();
-        const createdBooking = (await createBookingRes.json()) as BookingCreateAnswer;
+        const body = (await createBookingRes.json()) as { data?: BookingCreateOutput } & BookingCreateOutput;
+        const createdBooking = body.data ?? body;
         createdBookingId = String(createdBooking.id ?? '');
         expect(createdBookingId, 'createdBookingId').not.toBe('');
 
