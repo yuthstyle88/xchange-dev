@@ -45,6 +45,9 @@ impl SaveActor {
         let standing = Standing::of(actor, now)?;
         let employee_id = match standing.kind {
             StandingKind::Owner => None,
+            StandingKind::Executive => {
+                todo!("#5618 T3: an executive has no employee id, as the owner")
+            }
             StandingKind::Staff(_) => Some(actor.user_id.clone()),
         };
         Some(Self {
@@ -81,6 +84,9 @@ impl SaveActor {
                 ScopedRole::new(AccessRole::Executive, None, since, None),
                 ScopedRole::new(AccessRole::Admin, None, since, None),
             ],
+            StandingKind::Executive => {
+                todo!("#5618 T3: EXECUTIVE organisation-wide, and no ADMIN it does not hold")
+            }
             StandingKind::Staff(role) => {
                 vec![ScopedRole::new(role, Some(branch.clone()), since, None)]
             }

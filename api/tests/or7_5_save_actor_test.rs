@@ -411,6 +411,49 @@ async fn a_teller_saves_as_their_user() {
     shop.finish().await;
 }
 
+/// #5618 (design `org-wide-actor-branch.md` §12, row X-1), added by the sub-controller
+/// (claude/studio-claude-17) before the implementation: an organisation-wide EXECUTIVE alone holds
+/// `ExchangeTransact` (RBAC §11.2) and saves as the owner does, audited as `EXECUTIVE`. Today
+/// `SaveActor::from_actor` answers `None` for it, so create is refused 400 `roleNotAllowedHere`.
+struct ExecutiveAlone;
+
+impl SessionReader for ExecutiveAlone {
+    fn callers<'a>(&'a self, _req: &'a HttpRequest) -> Pin<Box<dyn Future<Output = Callers> + 'a>> {
+        Box::pin(async move {
+            let exec = xc_auth::domain::access::actor::Actor::new(
+                "exec-alone",
+                ORG,
+                vec![ScopedRole::new(
+                    Role::Executive,
+                    None,
+                    chrono::DateTime::<Utc>::UNIX_EPOCH,
+                    None,
+                )],
+                None,
+            )
+            .with_branch(Some(BranchId::new("MAIN")));
+            test_callers::callers(Some(exec), None)
+        })
+    }
+}
+
+#[actix_web::test]
+async fn x1_an_executive_alone_saves_as_executive() {
+    let shop = Shop::start().await;
+    let reader: Arc<dyn SessionReader> = Arc::new(ExecutiveAlone);
+    let got = shop.save_as(reader, "exec-alone", "exec-alone").await;
+    assert_eq!(
+        got,
+        Saved::Completed {
+            status: "COMPLETED".to_owned(),
+            audit: ("exec-alone".to_owned(), "EXECUTIVE".to_owned()),
+            recorded: ("exec-alone".to_owned(), "exec-alone".to_owned()),
+        },
+        "X-1: an EXECUTIVE alone creates, confirms and completes, audited as EXECUTIVE"
+    );
+    shop.finish().await;
+}
+
 // ------------------------------------------------------------ the bridges are gone
 
 /// The five v3 command files that carried `// OR-7 bridge, removed by #1024` (§5, ruling R2).

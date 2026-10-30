@@ -2,14 +2,29 @@
 
 use std::sync::Arc;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::access::{Actor, Standing};
+use xc_auth::domain::access::{Actor, Role, Standing};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
 use crate::domain::draft::rate_engine_error::RateEngineError;
+
+fn executive_org_wide(who: &Actor, now: DateTime<Utc>) -> Result<(), RateEngineError> {
+    who.roles
+        .iter()
+        .any(|r| {
+            r.role == Role::Executive
+                && r.branch.is_none()
+                && r.valid_from <= now
+                && r.valid_to.is_none_or(|to| to > now)
+        })
+        .then_some(())
+        .ok_or_else(|| {
+            RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
+        })
+}
 
 #[derive(Clone)]
 pub struct DenominationGroupService {
@@ -34,11 +49,8 @@ impl DenominationGroupService {
         code: CurrencyCode,
         group: &GroupCode,
     ) -> Result<(), RateEngineError> {
-        let standing = Standing::of(who, Utc::now())
-            .filter(|s| s.is_owner())
-            .ok_or_else(|| {
-                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
-            })?;
+        let now = Utc::now();
+        executive_org_wide(who, now)?;
 
         // Check if group already exists for this currency
         let exists: Option<(i64,)> = sqlx::query_as(
@@ -66,7 +78,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: standing.kind.audit_text().to_string(),
+            actor_role: Standing::audit_text_of(who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupCreate".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
@@ -95,11 +107,8 @@ impl DenominationGroupService {
         provider: &str,
         instrument_key: &str,
     ) -> Result<(), RateEngineError> {
-        let standing = Standing::of(who, Utc::now())
-            .filter(|s| s.is_owner())
-            .ok_or_else(|| {
-                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
-            })?;
+        let now = Utc::now();
+        executive_org_wide(who, now)?;
 
         let provider_trimmed = provider.trim();
         let key_trimmed = instrument_key.trim();
@@ -169,7 +178,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: standing.kind.audit_text().to_string(),
+            actor_role: Standing::audit_text_of(who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupMap".to_string(),
             object_ref: format!("{}/{}/{}", code.as_str(), group.as_str(), provider),
@@ -201,11 +210,8 @@ impl DenominationGroupService {
         code: CurrencyCode,
         group: &GroupCode,
     ) -> Result<(), RateEngineError> {
-        let standing = Standing::of(who, Utc::now())
-            .filter(|s| s.is_owner())
-            .ok_or_else(|| {
-                RateEngineError::OutOfScope("only OWNER may manage denomination groups".to_string())
-            })?;
+        let now = Utc::now();
+        executive_org_wide(who, now)?;
 
         if group.as_str() == "ALL" {
             return Err(RateEngineError::Refused {
@@ -288,7 +294,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: standing.kind.audit_text().to_string(),
+            actor_role: Standing::audit_text_of(who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupRemove".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
