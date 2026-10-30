@@ -788,3 +788,134 @@ Both `class:guarded` (authorization, PII), Gemini 4 Argon, base `main`, branched
 
 - The web: the lists answer fewer rows in the same shape (`AdminUserRow`, `AdminEmployeeRegisterRow`, `AdminUserAuditRow`, `AdminLoginHistoryRow` unchanged), so no FE ticket.
 - The `need_table` rows (#5558), and any other list keyed by the organisation.
+
+## 12. A v3 command does not re-gate with the v2 `Standing` after its permission check (#5618)
+
+> Design by claude/studio-claude-17 (Studio claude-17, sub-controller of #5618 under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `4f662955`. Ticket #5618 §3.
+
+### 12.1 The chain
+
+- `denominationGroupCreate` as an EXECUTIVE alone answers `400 roleNotAllowedHere` (e2e row A, #564 issuecomment-6512214772).
+- The command inherits `rateDraft` (`denomination_groups.rs:56`). EXECUTIVE holds `RatesDraft` (`RATES_STOCK` FULL, RBAC §11.2; `role_grants.rs:167-177`), so `Policy::authorize` passes (`v3/command.rs:369`).
+- `run` then calls `Standing::of(who, ..).ok_or_else(role_not_allowed_here)` (`denomination_groups.rs:70`).
+- `Standing::of` answers `None` for an EXECUTIVE alone (`standing.rs:59-91`): only EXECUTIVE + ADMIN (the owner, B3) or a `STAFF_PRIORITY` role gets a standing.
+- **Root cause:** `Standing` is what a v2 surface knows about a caller (`standing.rs:1`). v3 code reads it after the v3 permission check has decided, and turns its `None` into a refusal. EXECUTIVE is always organisation-wide (`scope_rule.rs:28-31`), and RBAC §11.2 maps V.9's OWNER to EXECUTIVE, so a v3 caller holding the permission and no v2 standing is exactly an EXECUTIVE alone.
+
+### 12.2 The rule
+
+- A v3 command reads **`Standing::acting(actor, now)`**: `Standing::of`, else, for an EXECUTIVE row that is organisation-wide and valid at `now`, the new **`StandingKind::Executive`**, with no branch.
+- `Standing::of`, `is_owner` and every v2 surface are unchanged (B3 stands: OWNER = EXECUTIVE + ADMIN).
+- An audit row's `actor_role` comes from **`Standing::audit_text_of(actor, now)`**: the acting standing's text, else `STAFF`. It never refuses. An executive alone is written `EXECUTIVE`, as `price_source.rs:102` already writes it.
+- Where a v3 command used the standing only as a gate, the gate goes: the permission check decided.
+
+### 12.3 Every `Standing::of` site outside `standing.rs` (13, the ticket's sweep, re-run at `4f662955`)
+
+| # | Site | What the standing is used for | What the permission check already decided | Ruling |
+|---|---|---|---|---|
+| 1–3 | `api/src/presentation/http/v3/commands/denomination_groups.rs:70`, `:146`, `:227` | nothing (the value is dropped) | `rateDraft`: EXECUTIVE, RATE_MANAGER (seed) | **(a) redundant: drop** |
+| 4–6 | `api/crates/xc-rate/src/application/currency/denomination_group_service.rs:37`, `:98`, `:204` | `.filter(is_owner)`, refused `outOfScope`; the audit text | not the group rule: a RATE_MANAGER passes `rateDraft` | **(b) a real rule, restated.** R-3 (#986, `rate-feed-connector.md:17`, §3.2): *"เจ้าของร้าน/แอดมินใน v3"*, the owner creates the groups. The sibling "only OWNER" rule of the same design, `BranchPriceSource`, was already restated as **an organisation-wide EXECUTIVE** (#1021 issuecomment-6116975975 ruling 3, mirroring #1020 ruling 3; `price_source.rs:59-67`, `:129-137`). This one follows it: the owner and an EXECUTIVE alone pass, a RATE_MANAGER and an ADMIN alone stay `outOfScope`. The audit text comes from `audit_text_of`. |
+| 7 | `api/src/presentation/http/v3/commands/exchange_settings_save.rs:129` | the audit text only | `exchangeSettingsSave` → `SystemSettings` (EXECUTIVE, ADMIN), then `BranchScope::All` (`:126`) | **(a) drop the gate**; audit via `audit_text_of` |
+| 8 | `exchange_settings_save.rs:196` | the audit text only | `branchExchangeLimitSave` → `BranchesManage` (EXECUTIVE, ADMIN), then `Locks::One(path branch)` | **(a) drop the gate**; audit via `audit_text_of` |
+| 9 | `api/src/application/workflows/save_step.rs:45` (`SaveActor::from_actor_at`) | who saves an exchange: `employee_id`, the audit text, the kiosk role, the approval requester (`access_actor_at`) | its six v3 callers (`transactions.rs:204`, `complete.rs:81`, `quotes.rs:254`, `reversal_post.rs:89`, `reversal_requests.rs:83`, `binding_quote_issue.rs:295`) passed `ExchangeTransact` / `ReversalRequest` / `BindingQuoteIssue`; EXECUTIVE holds the first two (`CUSTOMERS` FULL) | **(b) identity, kept; built from `Standing::acting`.** An executive alone saves as the owner does: no `employee_id`, kiosk role `Owner`, audit `EXECUTIVE`. As an approval requester it is EXECUTIVE organisation-wide, **not** the owner's EXECUTIVE + ADMIN: `access_actor_at` must not grant a role the caller does not hold. The callers keep their `ok_or_else(role_not_allowed_here)`; only a caller the permission check already refused could reach it. |
+| 10 | `api/src/presentation/http/rpc.rs:271` | `/api/rpc` identity (v2 surface) | — (v2 RPC) | **out of scope, unchanged.** #5484 already gives a staff caller with no standing the owner's standing; since EXECUTIVE is always organisation-wide, that caller is an EXECUTIVE alone. |
+| 11 | `rpc.rs:298` | `/api/staff/rpc` identity (v2 surface) | — | **out of scope, unchanged** (#5484) |
+| 12–13 | `api/src/presentation/pages.rs:27`, `:35` (`Callers::owner_standing`, `staff_standing`) | v2 surfaces: `device_setup.rs:66`, `files.rs:144`, `:262`, `kiosk.rs:98-103`, `:329`, `:481-488`, `payment_methods.rs:124-125`, `pages.rs:319-320`, `:498`, `:638`, `screens.rs:156` | — (no v3 permission check before them) | **out of scope, unchanged.** Not a re-gate after a v3 check. An EXECUTIVE alone is neither owner nor staff there; whether each of those v2 routes should admit it is a separate question (12.9). |
+
+The sweep's `save_step.rs:45` hides six callers, listed in row 9. A sweep of every `role_not_allowed_here` in `api/src/presentation/http/v3` at `4f662955` finds no other identity re-gate: `rate_alert_create.rs:90`, `rate_alert_lifecycle.rs:87/139/191` and `copy_by_email.rs:123` need the caller's own `customer_id`; `org_starting_price_save.rs:79` and `rate_alert_settings_save.rs:56-57` parse ids; `margin_guard_set.rs:58` checks EXECUTIVE itself, which admits this case.
+
+### 12.4 Class diagram
+
+```mermaid
+classDiagram
+  class Standing {
+    <<xc-auth domain/access/standing.rs  CHANGED (skeleton)>>
+    +of(actor, now) Option~Standing~  unchanged
+    +acting(actor, now) Option~Standing~  NEW
+    +audit_text_of(actor, now) &'static str  NEW
+    +is_owner() bool  unchanged
+    +staff_role() Option~Role~
+  }
+  class StandingKind {
+    <<enum>>
+    Owner
+    Executive  NEW
+    Staff(Role)
+    +audit_text() &'static str
+  }
+  class SaveActor {
+    <<api application/workflows/save_step.rs  T3>>
+    +from_actor_at(actor, now) Option~SaveActor~  reads acting
+    +access_actor_at(org, branch, since) Actor
+  }
+  class DenominationGroupService {
+    <<xc-rate application/currency/denomination_group_service.rs  T1>>
+    create_group / map_group / remove_group: org-wide EXECUTIVE, else outOfScope
+  }
+  class DenominationGroupCommands {
+    <<api v3/commands/denomination_groups.rs  T1>>
+    no Standing gate
+  }
+  class ExchangeSettingsCommands {
+    <<api v3/commands/exchange_settings_save.rs  T2>>
+    no Standing gate; audit_text_of
+  }
+  Standing --> StandingKind
+  SaveActor ..> Standing : acting
+  DenominationGroupService ..> Standing : audit_text_of
+  ExchangeSettingsCommands ..> Standing : audit_text_of
+  DenominationGroupCommands --> DenominationGroupService
+```
+
+- `[required]` `StandingKind::Executive`, `Standing::acting(&Actor, DateTime<Utc>) -> Option<Standing>`, `Standing::audit_text_of(&Actor, DateTime<Utc>) -> &'static str`; `StandingKind::Executive.audit_text() == "EXECUTIVE"`. The up-front tests name them.
+- **Why the skeleton carries the core.** `acting` and `audit_text_of` are 20 lines in one file that all three tickets read. Written in the skeleton, the three tickets have disjoint files and run together. `Standing::of` never answers `Executive`, so the skeleton changes no answer.
+- The new variant breaks two exhaustive matches in `save_step.rs` (`:46`, `:79`). The skeleton gives them `todo!("#5618 T3 …")` arms, unreachable until T3 makes `from_actor_at` read `acting`. `kiosk_role` (`kiosk_save_step.rs:40`) has a `_` arm, so it compiles and answers `Other` until T3.
+
+### 12.5 Behaviour table
+
+| Row | Caller | Route or call | Today | Required | Test |
+|---|---|---|---|---|---|
+| S-1..S-7 | EXECUTIVE alone, owner, staff, branch EXECUTIVE, expired, customer | `Standing::acting`, `audit_text_of` | — (new) | as 12.2 | `xc-auth/tests/standing_acting_test.rs` (green on the skeleton) |
+| H-1 | EXECUTIVE@* | `POST /api/denomination-groups` | 400 `roleNotAllowedHere` | 200; audit `EXECUTIVE` | `api/tests/standing_regate_5618_test.rs` |
+| H-2 | EXECUTIVE@* | `…/map`, `…/remove` | 400 `roleNotAllowedHere` | 200 each; audit `EXECUTIVE` | the same file |
+| H-3 | RATE_MANAGER@MAIN | `POST /api/denomination-groups` | 403 `outOfScope` | unchanged | the same file |
+| D-1 | EXECUTIVE alone | `DenominationGroupService` create, map, remove | `outOfScope` | `Ok`; audit `EXECUTIVE` | `xc-rate/tests/denomination_group_executive_test.rs` |
+| D-2 | owner | create | `Ok`, `OWNER` | unchanged | the same file |
+| D-3 | EXECUTIVE at a branch | create | `outOfScope` | unchanged | the same file |
+| D-4 | RATE_MANAGER | create, map, remove | `outOfScope` | unchanged | the same file |
+| D-5 | ADMIN alone, org-wide | create | `outOfScope` | unchanged | the same file |
+| H-4 | EXECUTIVE@* | `PUT /api/exchange-settings` | 400 `roleNotAllowedHere` | 200; audit `EXECUTIVE` | `standing_regate_5618_test.rs` |
+| H-5 | ADMIN@* | the same | 200, `SYSTEM` | unchanged | the same file |
+| H-6 | EXECUTIVE@* | `PUT /api/branches/MAIN/exchange-limit` | 400 `roleNotAllowedHere` | 200; audit `EXECUTIVE` | the same file |
+| H-7 | ADMIN@* | the same | 200, `SYSTEM` | unchanged | the same file |
+| H-8 | TELLER@MAIN | `PUT /api/exchange-settings` | refused by the seam | unchanged | the same file |
+| X-1 | EXECUTIVE alone, session `MAIN` | `POST /api/transactions`, `…/confirm`, `…/complete` | 400 `roleNotAllowedHere` | `COMPLETED`; audit `EXECUTIVE`; `staff_id` = `recorded_by` = the user | `api/tests/or7_5_save_actor_test.rs::x1_…` (added) |
+| K-1 | — | `kiosk_role(StandingKind::Executive)` | `Other` | `Owner` | `kiosk_save_step.rs` `#[cfg(test)]` `an_executive_is_the_kiosk_owner` (added) |
+
+**Tests that pin today's refusal**, swept with `git grep -l 'roleNotAllowedHere\|RoleNotAllowed' -- api/tests api/crates/*/tests` and the commands' names and routes at `4f662955`: none pins an EXECUTIVE alone. The matches are a TELLER or a caller without the permission (`exchange_settings_org_scope_test::e3`, `exchange_settings_view_test::r5`, `tx4_settings_routes_test`, `or7_5_save_actor_test::each_v3_role_…`), and RATE_MANAGER on groups (`denomination_groups_test::only_the_owner_may_change_groups`, `v3_denomination_group_remove_refusals_test::a_non_owner_caller_…`). All of them keep their answer. No test is restated.
+
+### 12.6 Up-front tests and measurements
+
+On branch **`test/5618`** at `86939b0a`, off `origin/main` `4f662955`: the skeleton commit `6c620d16` (12.4), then the test commit `86939b0a`. Measured 2026-10-30 ICT on the Mac Studio with a throwaway PostgreSQL 17:
+- The 22 up-front tests: 15 passed and 7 failed. The 7 are H-1, H-2, H-4, H-6 (400 `roleNotAllowedHere`), D-1 (`outOfScope`), X-1 (`Refused(400, "roleNotAllowedHere")`) and K-1 (`Other`): every failure is an assertion on the answer, none a compile error. S-1..S-7, D-2..D-5, H-3, H-5, H-7 and H-8 pass.
+- With a throwaway T1 + T2 + T3 (not committed): the three done lines of 12.8 together ran 76 tests, 76 passed. The 18 other test files that drive these routes or `SaveActor` with an EXECUTIVE row (`git grep -l -E 'EXECUTIVE@\*"|Role::Executive'` in `api/tests` and `api/crates/*/tests`, intersected with the routes' names) ran 168 tests, 168 passed.
+- `cargo clippy -p xc-auth -p xc-rate -p xchange --all-targets -- -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` are clean on `test/5618`.
+
+### 12.7 Data migration
+
+None. `audit_events.actor_role` is free text; a new value `EXECUTIVE` is already written by `price_source.rs:102`.
+
+### 12.8 Function tickets
+
+All three are `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/5618`. File scopes are disjoint; they run together.
+
+| Ticket | Change | File scope | Done line |
+|---|---|---|---|
+| **T1** denomination groups | drop the three command gates (rows 1–3); restate the service rule as "org-wide EXECUTIVE valid at now, else `outOfScope`" and write the audit text with `audit_text_of` (rows 4–6) | `api/src/presentation/http/v3/commands/denomination_groups.rs`, `api/crates/xc-rate/src/application/currency/denomination_group_service.rs` | `denomination_group_executive_test`, `denomination_groups_test`, `v3_denomination_group_remove_refusals_test`, `standing_regate_5618_test::h1_`, `h2_`, `h3_` green |
+| **T2** exchange settings | drop the two gates; audit via `audit_text_of` (rows 7–8) | `api/src/presentation/http/v3/commands/exchange_settings_save.rs` | `standing_regate_5618_test::h4_`..`h8_`, `exchange_settings_org_scope_test`, `exchange_settings_view_test`, `tx4_settings_routes_test` green |
+| **T3** the saver | `from_actor_at` reads `Standing::acting`; the two `Executive` arms (`employee_id` `None`; `access_actor_at` = EXECUTIVE organisation-wide only); `kiosk_role(Executive) = Owner` (row 9) | `api/src/application/workflows/save_step.rs`, `api/src/application/workflows/kiosk_save_step.rs` | `or7_5_save_actor_test`, the `xchange` lib tests `save_step::` and `kiosk_save_step::` green |
+
+### 12.9 Out of scope, and findings for their own tickets
+
+- `rpc.rs` and `pages.rs` (rows 10–13): v2 surfaces, unchanged.
+- **Finding:** an EXECUTIVE alone is neither `owner_standing` nor `staff_standing` on the v2 routes listed in row 12–13, so e.g. `payment_methods.rs:124` and `device_setup.rs:66` treat it as neither. #5446 / #5480 moved the page gates to `is_staff_caller`; these route-level readers were not swept there. Whether each should admit an executive alone is a separate ticket (proposed to claude/553782, not opened here).
+- **Finding:** the audit `actor_role` is computed four ways in v3 (`audit_text`, `cash_exception_raise.rs:36` first role or `STAFF`, `approval_service.rs:10` a priority list, `price_source.rs:102` a literal). `audit_text_of` is the place they could share; unifying them is a separate ticket.
