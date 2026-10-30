@@ -1027,3 +1027,104 @@ Both `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/5629`. Th
 
 - The eight unchanged readers (13.2). The two teller gates (R-9, R-11) stay teller-only.
 - The literal `"owner"` username the kiosk gives the owner (R-4, R-6) is v2's and is not changed here.
+
+## 14. One rule for an audit row's `actor_role` (#5630)
+
+> Design by claude/studio-claude-17 (sub-controller of #5630 under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `75a687ec`. Ticket #5630 §3; it follows §12.9's second finding.
+
+### 14.1 The question
+
+- An `audit_events` row stores who acted (`actor_id`) and as what (`actor_role`, free text).
+- The web shows that text raw: `AuditSection.tsx:25` (`{e.actorId} · {e.actorRole}`) and `VerificationScreen.tsx:719`.
+- Today the text comes from **13 different rules in two vocabularies** (14.2). So the same person, acting the same way, is written `FRONT` in one place, `TELLER` in another and `TELLER,FINANCE` in a third.
+- #5630 asks for one rule. Two parts of the answer are business choices (14.4); the rest follows from them.
+
+### 14.2 Every writer (`git grep -n actor_role` and `INSERT INTO audit_events` in `api/src` and `api/crates/*/src`, outside tests, at `75a687ec`)
+
+| # | Writer | Rule today | Vocabulary | Values it writes |
+|---|---|---|---|---|
+| W-1 | the exchange workflows: `cancel.rs:93`, `complete.rs:388`, `confirm.rs:188`, `:223`, `create.rs:454` (`SaveActor::audit_role`, `save_step.rs:66`) | the caller's `Standing` (`Standing::acting` since #5618): TELLER first, then BRANCH_MANAGER, RATE_MANAGER, FINANCE, ADMIN, VERIFICATION_REVIEWER, MARKETING; owner first of all | **V.9** (`StandingKind::audit_text`) | `OWNER`, `EXECUTIVE`, `FRONT`, `MANAGER`, `RATES`, `FINANCE`, `SYSTEM`, `DOCUMENT_REVIEW`, `MARKETING` |
+| W-2 | `denomination_group_service.rs:81`, `:181`, `:297`; `exchange_settings_save.rs:143`, `:231` | `Standing::audit_text_of` (#5618) | V.9 | as W-1, else `STAFF` |
+| W-3 | `approval_service.rs:305`, `:467` (`approver_role`, `:10-28`) | the first role held, by EXECUTIVE, FINANCE, BRANCH_MANAGER, RATE_MANAGER, ADMIN, TELLER, VERIFICATION_REVIEWER, MARKETING, CUSTOMER. It ignores validity and branch | **Blueprint** | the role name, else `UNKNOWN` |
+| W-4 | `approval_service.rs:378` (decision by policy) | literal | — | `POLICY` |
+| W-5 | `cash_exception_raise.rs:36`, `cash_exception_review.rs:30` | the first row (`roles.first()`), in whatever order the rows were loaded | Blueprint | the role name, else `STAFF` |
+| W-6 | `phone_verification_service.rs:129` | the first row | Blueprint | the role name, else `""` |
+| W-7 | `contact_verify.rs:204` (raw SQL) | the first row | Blueprint | the role name, else `TELLER` |
+| W-8 | `customer/service.rs:402` (raw SQL, `identityReveal`) | **the grant's first role used** (`grant.roles_used.first()`) | Blueprint | the role name, else `TELLER` |
+| W-9 | `supersede_referral.rs:79` → `capture_service.rs:225` | the grant's first role used | Blueprint | the role name |
+| W-10 | `export_gate.rs:69` | the role that granted the export (`ExportGrant.role`, `:52`) | Blueprint | the role name |
+| W-11 | `document_access.rs:171`, `:242` | the first row | Blueprint | the role name, else `staff_role` / `owner_role` |
+| W-12 | `branch_alert_settings_save.rs:178`, `ledger_adjustment_create.rs:108`, `ledger_adjustment_post.rs:171`, `reconciliation_certify.rs:128` | **every** row's role, de-duplicated, joined with `,` | Blueprint | e.g. `EXECUTIVE,ADMIN` |
+| W-13 | `price_source.rs:102`, `:168` | literal (the check requires an org-wide EXECUTIVE) | Blueprint | `EXECUTIVE` |
+| W-14 | `review_service.rs:190`, `:282`, `:348`, `:412`, `:478`; `branch_intake.rs:352`; `case_service.rs` reviewer arm | literal, whatever the reviewer's own role (the check is the `VerificationReview` permission) | Blueprint | `VERIFICATION_REVIEWER` |
+| W-15 | `case_service.rs` customer arm; `system_phone.rs:119` | literal, for a **customer** or the **system**, not a staff member | — | `CUSTOMER`, `SYSTEM` |
+
+- 14 staff rules, W-1..W-14 (W-4 is a policy, not a person), plus non-staff literals.
+- **Two vocabularies.** W-1 and W-2 write V.9's names. Every other staff writer writes the Blueprint's.
+- **Four ways to choose among several roles:**
+  - a priority list (W-1/W-2, and a different list in W-3);
+  - the first row in load order (W-5, W-6, W-7, W-11);
+  - the role the grant used (W-8, W-9, W-10);
+  - all of them (W-12).
+- **Five different fallbacks:** `STAFF`, `UNKNOWN`, `""`, `TELLER`, `staff_role`/`owner_role`. A fallback of `TELLER` claims a role the caller may not hold.
+
+### 14.3 What reads the text
+
+- **Readers:** `transaction_audit` (`views/transaction_audit.rs:64-81`) and `verification_case` (`views/verification_case.rs:169-198`). Both pass it through unchanged, and the web prints it raw (14.1). No code compares the stored text to a value.
+- **Tests that assert a value:** 11 files, swept with `git grep -l actor_role -- api/tests 'api/crates/*/tests'` at `75a687ec`:
+  - `or7_5_save_actor_test`, `v3_b04_reads_test` and `exchange_transaction_audit_test` pin the V.9 names of W-1;
+  - `standing_regate_5618_test` pins W-2;
+  - `customer_contact_verify_test`, `customer_phone_verification_test`, `customer_system_phone_test`, `v3_export_gate_test`, `v3_referral_routes_test`, `verification_c10_rework_test` and `verification_f02_test` pin Blueprint names or literals.
+- **Stored rows are not rewritten** (#5630 §3). Whatever the answer, rows written before it keep their text, so the screens will show both spellings for history. Rewriting them would be a backfill, which is Data Risk and is not proposed.
+
+### 14.4 Two business questions: answered
+
+**Rulings**, by claude/553782 on #5661, 2026-10-30 ICT (the rulings comment on the PR):
+- **Q-1: A.** The Blueprint role names (`Role::as_str`). This applies RBAC §0 row 1 (`user-management-rbac.md:29`, owner #564): *"V.9's own role names are not imported"*. #1020 ruling 5 kept V.9's spelling only so that OR-7 changed nothing.
+- **Q-2: A.** The role whose row granted the action (`Grant.roles_used`).
+  - Where no grant reaches the writer (W-1 and W-3), use B: the `Standing` order, with the owner written `EXECUTIVE`.
+  - C is not used; W-12 stops joining roles.
+  - The `TELLER` fallback (W-7, W-8) goes; the final fallback is `STAFF`.
+- **Web:** `AuditSection.tsx:25` and `VerificationScreen.tsx:719` print the text raw, and nothing maps a V.9 name, so no web change follows.
+
+The questions as they were put:
+
+
+| # | Question | Options | Recommend | Why |
+|---|---|---|---|---|
+| Q-1 | **Which names?** | **A.** The Blueprint role names: `EXECUTIVE`, `ADMIN`, `TELLER`, `BRANCH_MANAGER`, `RATE_MANAGER`, `FINANCE`, `VERIFICATION_REVIEWER`, `MARKETING` (`Role::as_str`). W-1/W-2 change: `FRONT` → `TELLER`, `OWNER` → see Q-2, and so on. **B.** V.9's names (`StandingKind::audit_text`): `OWNER`, `FRONT`, `MANAGER`, … Every Blueprint writer changes (W-3, W-5..W-14). | **A** | RBAC §0 row 1 (`user-management-rbac.md:29`): *"V.9's own role names are not imported"*. 12 of the 14 staff rules already write Blueprint names. They are the names of the groups the owner edits (§11). #1020 ruling 5 kept the V.9 spelling only so that OR-7 changed nothing; it was not a choice of vocabulary |
+| Q-2 | **Which role, when the caller holds several?** | **A.** The role whose row granted this action (`Grant.roles_used`, as W-8/W-9/W-10 already do). Each writer must be handed the grant or its role. **B.** One role by one fixed priority list: the `Standing` order, with the owner (EXECUTIVE + ADMIN) as `EXECUTIVE`. Works from the actor alone. **C.** Every valid role, joined with `,` (W-12). | **A**, else **B** where no grant reaches the writer | A answers "as what did they act" exactly. A teller who is also FINANCE and approves a reversal is written `FINANCE`, not `TELLER`. B can name a role that had nothing to do with the action. C is honest but not a role. Where the writer sits behind a service that has no grant (W-1 inside the exchange workflow, W-3 inside `ApprovalService`), threading the grant through is a bigger change, so B is the fallback rule there |
+
+Non-staff writers keep their literals: `CUSTOMER`, `SYSTEM`, `POLICY` (W-4, W-15). They name who acted, and that is not a staff role.
+
+### 14.5 The design (Q-1 A, Q-2 A)
+
+- **The core**, `[required]`, in `xc-auth` `domain/access/standing.rs`, exported from `xc_auth::domain::access`:
+  - `pub fn audit_role(roles_used: &[Role], actor: &Actor, now: DateTime<Utc>) -> &'static str`;
+  - `roles_used` not empty ⇒ `roles_used[0].as_str()` (Q-2 A);
+  - else `Standing::acting(actor, now)` (Q-2 B): `Owner` or `Executive` ⇒ `"EXECUTIVE"`, `Staff(r)` ⇒ `r.as_str()`;
+  - else `"STAFF"`;
+  - it never refuses.
+  - `Standing::audit_text_of` (§12, V.9 spelling) is removed by the ticket that moves its last callers (W-2). `StandingKind::audit_text` stays: the kiosk's employee line and the v2 compat snapshots still read it, and they are not audit rows.
+- **Every staff writer, W-1..W-3 and W-5..W-14, calls it.** Each passes `grant.roles_used` where a grant reaches it, and `&[]` otherwise.
+- **The changes this implies, by writer:**
+  - W-12 stops joining;
+  - W-7/W-8 stop falling back to `TELLER`;
+  - W-11 stops writing `staff_role`;
+  - W-14 writes the reviewer's role used, not a literal.
+- **Tests:** the up-front tests pin one row per writer group. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test` and `standing_regate_5618_test` are restated, citing the answer.
+- **Function tickets:** one per crate, so their File scopes stay disjoint and they run together:
+  - `xc-approval` (W-3);
+  - `xc-customer` (W-6, W-7, W-8);
+  - `xc-verification` (W-11, W-14);
+  - `xc-referral` + `supersede_referral` (W-9);
+  - the v3 commands (W-5, W-10, W-12);
+  - `xc-rate` (W-2's service, W-13);
+  - the exchange workflows (W-1).
+  The core is in the skeleton.
+
+The up-front tests go on `test/5630` and the per-crate tickets are released together, after this design merges.
+
+### 14.6 Data migration
+
+None: no schema change, and stored rows are not rewritten (14.3).
