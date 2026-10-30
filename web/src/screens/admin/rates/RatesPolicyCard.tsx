@@ -3,10 +3,18 @@ import type * as table from './i18n';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
+import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
 import { checkDecimal, MONEY, numeric, RATE_PERCENT } from '../../../shared/ui/bounded';
+import * as formulaTable from '../parts/formula-i18n';
+import { FormulaRefusal } from '../parts/FormulaRefusal';
+import { spreadRefusal, type SpreadFailureLine } from '../parts/spread-failure';
+import { EMPTY_OVERRIDE, overrideBlank, overridePayload, type FormulaOverrideState } from './formula-override';
+import { RatesFormulaOverride } from './RatesFormulaOverride';
 import './rates-policy.css';
+
+const ft = screenT('admin.formula', formulaTable);
 
 const STALE_LIMIT_BOUND = numeric(20, 2, 'nonNegative');
 const SHARP_MOVE_BOUND = numeric(9, 4, 'positive');
@@ -220,6 +228,10 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   const [frameErrs, setFrameErrs] = createSignal<Partial<Record<FrameErrorField, keyof typeof table.th>>>({});
   const [sharpMoveErr, setSharpMoveErr] = createSignal<string | null>(null);
   const [maxReferenceAgeErr, setMaxReferenceAgeErr] = createSignal<string | null>(null);
+  const [formulaOverride, setFormulaOverride] = createSignal<FormulaOverrideState>(EMPTY_OVERRIDE);
+  const [overrideReload, setOverrideReload] = createSignal(0);
+  const [refusal, setRefusal] = createSignal<SpreadFailureLine[]>([]);
+  const [formulaErr, setFormulaErr] = createSignal(false);
 
   const syncDomPubCurrencies = () => {
     const scope = sectionRef?.closest('.admin-rates-screen') ?? document;
@@ -249,6 +261,8 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   createEffect(() => {
     const policy = props.policyData()?.policy;
     props.branch();
+    setRefusal([]);
+    setFormulaErr(false);
     syncDomPubCurrencies();
     queueMicrotask(syncDomPubCurrencies);
     if (policy) {
@@ -404,6 +418,13 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       return;
     }
 
+    const state = formulaOverride();
+    if (state.current !== null && overrideBlank(state) !== null) {
+      setFormulaErr(true);
+      return;
+    }
+    setFormulaErr(false);
+
     const parsedAge = parsePositiveWholeHours(maxReferenceAgeHours())!;
     const staleMode = onStale() === '' ? null : onStale();
     const staleLimit = staleMode === 'LIMIT' ? staleLimitThb().trim() : null;
@@ -442,14 +463,32 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       valueTiersOn: props.valueTiersOn(),
       valueTiers: tiersPayload,
       sharpMoveAlertPct: sharpTrim === '' ? null : sharpTrim,
+      ...(state.current !== null ? overridePayload(state) : {}),
     };
 
     try {
-      await props.savePolicyWrite.send(payload);
+      const res = await props.savePolicyWrite.send(payload);
       if (gen !== props.readGen()) return;
+      setRefusal([]);
+      setOverrideReload((n) => n + 1);
+      if (res?.notChecked && res.notChecked.length > 0) {
+        props.toast(ft('savedNotChecked', { list: res.notChecked.map((n) => n.currency).join(', ') }));
+      }
       props.setSimulateResult(null);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
+      let lines: SpreadFailureLine[] | null = null;
+      try {
+        // shortcut: fall back to null while T2 spreadRefusal is an unmerged stub, remove try/catch once #5574 merges
+        lines = spreadRefusal(err);
+      } catch {
+        lines = null;
+      }
+      if (lines) {
+        setRefusal(lines);
+        props.toast(ft('saveRefused'));
+        return;
+      }
       const fe = fieldError(err, {
         buyAdjustPct: props.t('adjustBuyPct'),
         sellAdjustPct: props.t('adjustSellPct'),
@@ -541,6 +580,12 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             </div>
           )}
         </Show>
+        <Show when={formulaErr()}>
+          <div class="form-error" role="alert" data-field-error="formula">
+            {ft('overrideBlank')}
+          </div>
+        </Show>
+        <FormulaRefusal lines={refusal} />
       </div>
 
       <div class="adjust-all-bar adjust-all-bar--policy">
@@ -774,6 +819,16 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
           </tbody>
         </table>
       </div>
+      <RatesFormulaOverride
+        branch={props.branch}
+        state={formulaOverride}
+        setState={(s) => {
+          setFormulaOverride(s);
+          setFormulaErr(false);
+        }}
+        reloadKey={overrideReload}
+        disabled={() => !props.canSavePolicy()}
+      />
     </div>
   );
 }
