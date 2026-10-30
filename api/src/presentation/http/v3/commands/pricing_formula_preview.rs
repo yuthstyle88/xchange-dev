@@ -57,6 +57,7 @@ pub struct FormulaCheckRowDto {
     pub tier: Option<u8>,
     /// `AUTO` · `FOLLOW`.
     pub mode: String,
+    pub unit_size: String,
     /// Decimal strings, normalised; `null` when the side has no price.
     pub buy: Option<String>,
     pub sell: Option<String>,
@@ -235,6 +236,7 @@ impl CommandAction for PricingFormulaPreviewCommand {
                         SpreadMode::Auto => "AUTO".to_owned(),
                         SpreadMode::Follow => "FOLLOW".to_owned(),
                     },
+                    unit_size: r.unit_size.normalize().to_string(),
                     buy: r.buy.map(|d| d.normalize().to_string()),
                     sell: r.sell.map(|d| d.normalize().to_string()),
                     failure,
