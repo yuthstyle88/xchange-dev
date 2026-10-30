@@ -50,7 +50,7 @@ impl DenominationGroupCreateCommand {
 
 impl CommandAction for DenominationGroupCreateCommand {
     const NAME: &'static str = "denominationGroupCreate";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "denominationGroupCreate");
     type Input = DenominationGroupCreateInput;
     type Output = DenominationGroupCreateOutput;
     const ROUTE: &'static str = "/api/denomination-groups";
@@ -125,7 +125,7 @@ impl DenominationGroupMapCommand {
 
 impl CommandAction for DenominationGroupMapCommand {
     const NAME: &'static str = "denominationGroupMap";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "denominationGroupMap");
     type Input = DenominationGroupMapInput;
     type Output = DenominationGroupMapOutput;
     const ROUTE: &'static str = "/api/denomination-groups/map";
@@ -205,7 +205,7 @@ impl DenominationGroupRemoveCommand {
 
 impl CommandAction for DenominationGroupRemoveCommand {
     const NAME: &'static str = "denominationGroupRemove";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "denominationGroupRemove");
     type Input = DenominationGroupRemoveInput;
     type Output = DenominationGroupRemoveOutput;
     const ROUTE: &'static str = "/api/denomination-groups/remove";

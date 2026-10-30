@@ -45,7 +45,7 @@ pub struct PricingModeSaveCommand;
 
 impl CommandAction for PricingModeSaveCommand {
     const NAME: &'static str = "pricingModeSave";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "ratePolicySave");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "pricingModeSave");
     type Input = PricingModeSaveInput;
     type Output = PricingModeSaveOutput;
     const ROUTE: &'static str = "/api/pricing/mode";

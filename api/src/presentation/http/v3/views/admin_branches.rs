@@ -34,7 +34,7 @@ impl AdminBranchesBranchView {
 
 impl BranchView for AdminBranchesBranchView {
     const NAME: &'static str = "admin_branches";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "adminSnapshot");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "admin_branches");
     const VERSIONED: bool = false;
     type Data = AdminBranchesData;
     type Filter = NoFilter;

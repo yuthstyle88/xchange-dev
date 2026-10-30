@@ -31,7 +31,7 @@ impl AdminDenominationGroupsView {
 
 impl BranchView for AdminDenominationGroupsView {
     const NAME: &'static str = "admin_denomination_groups";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "admin_denomination_groups");
     const VERSIONED: bool = false;
     type Data = AdminDenominationGroupsData;
     type Filter = NoFilter;
