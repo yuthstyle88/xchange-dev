@@ -239,14 +239,22 @@ async function fillDenominationsForBalances(
   form: ReturnType<Page['getByTestId']>,
   expectedByCurrency: Record<string, number>,
 ): Promise<void> {
-  const rows = form.locator('[data-denomination-row]');
-  await expect(rows.first(), 'denomination rows loaded').toBeVisible({ timeout: 15_000 });
-  const count = await rows.count();
-
   const remaining: Record<string, number> = {};
   for (const [code, amt] of Object.entries(expectedByCurrency)) {
     if (amt > 0) remaining[code] = Math.round(amt * 100);
   }
+
+  const rows = form.locator('[data-denomination-row]');
+  await expect(rows.first(), 'denomination rows loaded').toBeVisible({ timeout: 15_000 });
+  for (const cur of Object.keys(remaining)) {
+    await expect(
+      rows
+        .filter({ has: form.locator('.xc-shift-denom-currency', { hasText: new RegExp(`^\\s*${cur}\\s*$`) }) })
+        .first(),
+      `denomination rows for ${cur} loaded`,
+    ).toBeVisible({ timeout: 15_000 });
+  }
+  const count = await rows.count();
 
   const denomsByCurrency: Record<
     string,
@@ -261,6 +269,10 @@ async function fillDenominationsForBalances(
     if (!cur || !Number.isFinite(val) || val <= 0) continue;
     if (!denomsByCurrency[cur]) denomsByCurrency[cur] = [];
     denomsByCurrency[cur].push({ index: i, denomMinor: Math.round(val * 100), input: row });
+  }
+
+  for (const cur of Object.keys(remaining)) {
+    expect(denomsByCurrency[cur]?.length ?? 0, `denomination rows present for ${cur}`).toBeGreaterThan(0);
   }
 
   for (const [cur, list] of Object.entries(denomsByCurrency)) {
@@ -281,6 +293,67 @@ async function fillDenominationsForBalances(
 }
 
 test.describe.serial('sick or leaving teller: hand the shift over end to end (#4881)', () => {
+  let tellerA: Page | undefined;
+  let tellerB: Page | undefined;
+  let manager: Page | undefined;
+  let finance: Page | undefined;
+  let approvalRequestId: string | undefined;
+  let flowFinished = false;
+  let started: 'started' | 'alreadyOpen' | undefined;
+  let openedQueue = false;
+
+  test.afterAll(async () => {
+    try {
+      if (approvalRequestId && !flowFinished && finance && manager && hasAccount('finance')) {
+        try {
+          await signIn(finance, 'finance', '/');
+          await finance.goto('/#approvals');
+          const filterBtn = finance.locator('[data-type-filter="COUNT_DIFFERENCE"]');
+          if (await filterBtn.isVisible({ timeout: 10_000 }).catch(() => false)) {
+            await filterBtn.click();
+          }
+          const card = finance.locator(`[data-request="${approvalRequestId}"]`);
+          if (await card.isVisible({ timeout: 5_000 }).catch(() => false)) {
+            const approveBtn = card.getByRole('button', { name: /^(อนุมัติ|Approve)$/ });
+            if (await approveBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+              await posted(finance, /\/api\/approvals\/[^/]+\/decide$/, () => approveBtn.click());
+            }
+          }
+        } catch {
+          // best-effort finance approval
+        }
+        try {
+          await signIn(manager, 'branchManager', '/staff');
+          await verifyCount(manager, 'CLOSE');
+        } catch {
+          // best-effort manager re-verify
+        }
+      }
+      if (manager) {
+        await closeQueueIfOpened(manager, openedQueue).catch(() => {});
+        if (started === 'started') {
+          await cutOff(manager).catch(() => {});
+        }
+      }
+      if (tellerA && tellerB && manager) {
+        await tellerA.goto('/staff').catch(() => {});
+        await tellerB.goto('/staff').catch(() => {});
+        await manager.goto('/staff').catch(() => {});
+        await ensureShiftClosed(tellerA, manager).catch(() => {});
+        await ensureShiftClosed(tellerB, manager).catch(() => {});
+        await clockOutIfClockedIn(tellerA).catch(() => {});
+        await clockOutIfClockedIn(tellerB).catch(() => {});
+      }
+    } finally {
+      await Promise.all([
+        tellerA?.close().catch(() => {}),
+        tellerB?.close().catch(() => {}),
+        manager?.close().catch(() => {}),
+        finance?.close().catch(() => {}),
+      ]);
+    }
+  });
+
   test('teller A opens shift and saves an exchange, hands over to teller B, B accepts and saves an exchange on B shift, B closes shift and branch day closes', async ({
     browser,
   }) => {
@@ -298,251 +371,242 @@ test.describe.serial('sick or leaving teller: hand the shift over end to end (#4
       test.skip(true, reason);
     }
 
-    const tellerA = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
-    const tellerB = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
-    const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    const tellerAPage = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    const tellerBPage = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    const managerPage = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    const financePage = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
+    tellerA = tellerAPage;
+    tellerB = tellerBPage;
+    manager = managerPage;
+    finance = financePage;
 
-    let started: 'started' | 'alreadyOpen' | undefined;
-    let openedQueue = false;
+    await signIn(tellerA, 'teller', '/staff');
+    await signInTeller2(tellerB, '/staff');
+    await signIn(manager, 'branchManager', '/staff');
 
-    try {
-      await signIn(tellerA, 'teller', '/staff');
-      await signInTeller2(tellerB, '/staff');
-      await signIn(manager, 'branchManager', '/staff');
+    // Clean up any leftover open shifts on A or B before starting.
+    await ensureShiftClosed(tellerA, manager);
+    await ensureShiftClosed(tellerB, manager);
 
-      // Clean up any leftover open shifts on A or B before starting.
-      await ensureShiftClosed(tellerA, manager);
-      await ensureShiftClosed(tellerB, manager);
+    const tellerAUserId = await meUserId(tellerA);
+    const tellerBUserId = await meUserId(tellerB);
+    expect(tellerBUserId, 'tellerB is a distinct user from tellerA').not.toBe(tellerAUserId);
 
-      const tellerAUserId = await meUserId(tellerA);
-      const tellerBUserId = await meUserId(tellerB);
-      expect(tellerBUserId, 'tellerB is a distinct user from tellerA').not.toBe(tellerAUserId);
+    // Step 1: Teller A opens a shift with a 1,000 THB float (OPEN count, verified by branchManager) and saves one exchange.
+    await tellerA.getByTestId('shift-open-count').click();
+    const openForm = tellerA.getByTestId('shift-count-form');
+    await expect(openForm, 'teller A shift-count-form visible for OPEN').toBeVisible({ timeout: 15_000 });
+    await fillDenominationsForBalances(openForm, { THB: OPENING_FLOAT_THB });
+    const openCountRes = await posted(tellerA, /^\/api\/cash-counts$/, () =>
+      tellerA!.getByTestId('shift-count-save').click(),
+    );
+    expect(openCountRes.ok, `teller A opening count accepted: ${openCountRes.text}`).toBeTruthy();
 
-      // Step 1: Teller A opens a shift with a 1,000 THB float (OPEN count, verified by branchManager) and saves one exchange.
-      await tellerA.getByTestId('shift-open-count').click();
-      const openForm = tellerA.getByTestId('shift-count-form');
-      await expect(openForm, 'teller A shift-count-form visible for OPEN').toBeVisible({ timeout: 15_000 });
-      await fillDenominationsForBalances(openForm, { THB: OPENING_FLOAT_THB });
-      const openCountRes = await posted(tellerA, /^\/api\/cash-counts$/, () =>
-        tellerA.getByTestId('shift-count-save').click(),
-      );
-      expect(openCountRes.ok, `teller A opening count accepted: ${openCountRes.text}`).toBeTruthy();
-
-      await manager.goto('/staff');
-      const openVerifyRes = await verifyCount(manager, 'OPEN');
-      if (!openVerifyRes.ok) {
-        const errText =
-          (await manager.getByTestId('shift-error').innerText({ timeout: 5_000 }).catch(() => '')).trim() ||
-          openVerifyRes.text;
-        if (
-          /stockInsufficient|ตู้เซฟ|ลิ้นชักไม่พอ|Not enough cash in the safe/i.test(
-            `${errText} ${openVerifyRes.text}`,
-          )
-        ) {
-          test.skip(true, errText);
-        }
-        throw new Error(errText);
+    await manager.goto('/staff');
+    const openVerifyRes = await verifyCount(manager, 'OPEN');
+    if (!openVerifyRes.ok) {
+      const errText =
+        (await manager.getByTestId('shift-error').innerText({ timeout: 5_000 }).catch(() => '')).trim() ||
+        openVerifyRes.text;
+      if (
+        /stockInsufficient|ตู้เซฟ|ลิ้นชักไม่พอ|Not enough cash in the safe/i.test(
+          `${errText} ${openVerifyRes.text}`,
+        )
+      ) {
+        test.skip(true, errText);
       }
-      await tellerA.reload();
-      await expect(tellerA.getByTestId('shift-close-count'), 'teller A shift is OPEN').toBeVisible({ timeout: 20_000 });
-
-      const shiftABefore = await readMyShift(tellerA);
-      expect(shiftABefore?.id, 'teller A has an OPEN shift after OPEN count verification').toBeTruthy();
-      expect(shiftABefore?.status, 'teller A shift status is OPEN').toBe('OPEN');
-      const shiftAId = shiftABefore!.id;
-
-      started = await startService(manager);
-      const startedByThisSpec = started === 'started';
-
-      const currency = users.currency ?? 'USD';
-      const { txId: txAId, openedQueue: openedA } = await saveOneCashBuyExchange(tellerA, 'tellerA', manager);
-      if (openedA) openedQueue = true;
-      console.log(`[#4881] step 1: teller A (${tellerAUserId}) saved exchange ${txAId} on shift ${shiftAId}`);
-
-      const shiftAAfterTx = await readMyShift(tellerA);
-      expect(shiftAAfterTx?.id, 'teller A still holds shift A after saving exchange').toBe(shiftAId);
-      const balancesAAfterTx = balanceMap(shiftAAfterTx!.balances);
-      expect(
-        balancesAAfterTx[currency] ?? 0,
-        `teller A shift ${currency} expected balance increased after BUY exchange`,
-      ).toBeGreaterThan(0);
-
-      // Step 2: Teller A starts a hand-over to teller B, as if leaving sick.
-      await tellerA.goto('/staff');
-      await expect(tellerA.getByTestId('shift-handover'), 'teller A shift-handover button visible').toBeVisible({
-        timeout: 20_000,
-      });
-      await tellerA.getByTestId('shift-handover').click();
-      const handoverForm = tellerA.getByTestId('shift-handover-form');
-      await expect(handoverForm, 'shift-handover-form visible').toBeVisible({ timeout: 15_000 });
-
-      const receiverSelect = handoverForm.getByTestId('shift-receiver');
-      await expect(
-        receiverSelect.locator(`option[value="${tellerBUserId}"]`),
-        'teller B is offered in handover_receivers',
-      ).toHaveCount(1, { timeout: 15_000 });
-      await receiverSelect.selectOption(tellerBUserId);
-
-      await fillDenominationsForBalances(handoverForm, balancesAAfterTx);
-
-      const startHandoverRes = await posted(tellerA, /^\/api\/handovers$/, () =>
-        handoverForm.getByTestId('shift-handover-save').click(),
-      );
-      console.log(`[#4881] step 2: POST /api/handovers ${startHandoverRes.text}`);
-      expect(startHandoverRes.ok, `handoverStart A -> B: ${startHandoverRes.text}`).toBeTruthy();
-      const parsedStart = JSON.parse(startHandoverRes.body || '{}') as HandoverStartAnswer;
-      const handoverId = String(
-        parsedStart.id ?? parsedStart.handoverId ?? parsedStart.data?.id ?? parsedStart.data?.handoverId ?? '',
-      );
-      await shot(tellerA, 'staff', 'sick-teller-1-handover-started');
-
-      // Step 3: B sees it in the pending list, counts and accepts. A's shift is CLOSED and B's is OPEN, with A's cash carried over.
-      await tellerB.goto('/staff');
-      await clockIn(tellerB);
-      await tellerB.reload();
-      const pendingItem = handoverId
-        ? tellerB.locator(`[data-handover-id="${handoverId}"]`)
-        : tellerB.locator('[data-handover-id]').first();
-      await expect(pendingItem, 'pending handover visible to teller B on /staff').toBeVisible({ timeout: 20_000 });
-      const resolvedHandoverId = handoverId || ((await pendingItem.getAttribute('data-handover-id')) ?? '');
-      expect(resolvedHandoverId, 'resolved handoverId for B').not.toBe('');
-
-      const acceptRes = await posted(
-        tellerB,
-        new RegExp(`^/api/handovers/${encodeURIComponent(resolvedHandoverId)}/accept$`),
-        () => pendingItem.getByTestId('shift-accept').click(),
-      );
-      console.log(`[#4881] step 3: POST /api/handovers/${resolvedHandoverId}/accept ${acceptRes.text}`);
-      expect(acceptRes.ok, `handoverAccept by B: ${acceptRes.text}`).toBeTruthy();
-
-      await tellerA.reload();
-      await tellerB.reload();
-      await expect(
-        tellerA.getByTestId('shift-open-count'),
-        'teller A sees shift-open-count on /staff (shift A is CLOSED)',
-      ).toBeVisible({ timeout: 20_000 });
-      await expect(
-        tellerB.getByTestId('shift-close-count'),
-        'teller B sees shift-close-count on /staff (shift B is OPEN)',
-      ).toBeVisible({ timeout: 20_000 });
-
-      const shiftAAfterAccept = await readMyShift(tellerA);
-      expect(shiftAAfterAccept, 'teller A my_shift is null after handover accept').toBeNull();
-
-      const shiftBAfterAccept = await readMyShift(tellerB);
-      expect(shiftBAfterAccept?.id, 'teller B has an OPEN shift after handover accept').toBeTruthy();
-      expect(shiftBAfterAccept?.status, 'teller B shift status is OPEN').toBe('OPEN');
-      const shiftBId = shiftBAfterAccept!.id;
-      expect(shiftBId, 'shift B is a new shift id distinct from shift A').not.toBe(shiftAId);
-
-      const balancesBAfterAccept = balanceMap(shiftBAfterAccept!.balances);
-      expect(
-        balancesBAfterAccept,
-        "teller B's shift carries over teller A's cash balances",
-      ).toEqual(balancesAAfterTx);
-
-      // Also verify through admin_shifts (read by branchManager).
-      const adminShiftsAfterAccept = await readAdminShifts(manager);
-      const rowA = adminShiftsAfterAccept.find((r) => r.id === shiftAId);
-      const rowB = adminShiftsAfterAccept.find((r) => r.id === shiftBId);
-      expect(rowA?.status, `admin_shifts shows shift A (${shiftAId}) CLOSED`).toBe('CLOSED');
-      expect(rowB?.status, `admin_shifts shows shift B (${shiftBId}) OPEN`).toBe('OPEN');
-      expect(
-        balanceMap(rowB!.balances),
-        `admin_shifts shows shift B carries over shift A's cash`,
-      ).toEqual(balancesAAfterTx);
-      await shot(tellerB, 'staff', 'sick-teller-2-handover-accepted');
-
-      // Sick teller A clocks out and leaves.
-      await clockOutIfClockedIn(tellerA);
-
-      // Step 4: B saves an exchange on that shift. It posts to B's shift.
-      const { txId: txBId, openedQueue: openedB } = await saveOneCashBuyExchange(tellerB, 'tellerB', manager);
-      if (openedB) openedQueue = true;
-      console.log(`[#4881] step 4: teller B (${tellerBUserId}) saved exchange ${txBId} on shift ${shiftBId}`);
-
-      const shiftBAfterTx = await readMyShift(tellerB);
-      expect(shiftBAfterTx?.id, 'teller B shift id unchanged after B exchange').toBe(shiftBId);
-      const balancesBAfterTx = balanceMap(shiftBAfterTx!.balances);
-      expect(
-        balancesBAfterTx[currency] ?? 0,
-        `B's exchange posted to B's shift (${currency} increased from ${balancesBAfterAccept[currency]} to ${balancesBAfterTx[currency]})`,
-      ).toBeGreaterThan(balancesBAfterAccept[currency] ?? 0);
-      expect(
-        balancesBAfterTx.THB ?? 0,
-        `B's exchange paid THB from B's shift (${balancesBAfterTx.THB} < ${balancesBAfterAccept.THB})`,
-      ).toBeLessThan(balancesBAfterAccept.THB ?? 0);
-
-      const adminShiftsAfterBTx = await readAdminShifts(manager);
-      const rowAAfterBTx = adminShiftsAfterBTx.find((r) => r.id === shiftAId);
-      const rowBAfterBTx = adminShiftsAfterBTx.find((r) => r.id === shiftBId);
-      expect(
-        balanceMap(rowAAfterBTx!.balances),
-        "A's closed shift balances in admin_shifts remain untouched by B's exchange",
-      ).toEqual(balancesAAfterTx);
-      expect(
-        balanceMap(rowBAfterBTx!.balances),
-        "admin_shifts reflects B's exchange posted to B's shift",
-      ).toEqual(balancesBAfterTx);
-      await shot(tellerB, 'desk', 'sick-teller-3-b-exchange-saved');
-
-      // Step 5: B closes the shift normally (B's CLOSE count, verified by branchManager). The branch day can then close.
-      if (started === 'started') {
-        await cutOff(manager);
-        started = undefined;
-      }
-
-      await tellerB.goto('/staff');
-      await clockIn(tellerB);
-      await tellerB.getByTestId('shift-close-count').click();
-      const closeForm = tellerB.getByTestId('shift-count-form');
-      await expect(closeForm, 'teller B shift-count-form visible for CLOSE').toBeVisible({ timeout: 15_000 });
-      await fillDenominationsForBalances(closeForm, balancesBAfterTx);
-
-      const closeCountRes = await posted(tellerB, /^\/api\/cash-counts$/, () =>
-        tellerB.getByTestId('shift-count-save').click(),
-      );
-      expect(closeCountRes.ok, `teller B closing count accepted: ${closeCountRes.text}`).toBeTruthy();
-
-      await manager.goto('/staff');
-      const verifyRes = await verifyCount(manager, 'CLOSE');
-      expect(verifyRes.ok, `manager verifies B closing count: ${verifyRes.text}`).toBeTruthy();
-
-      await tellerB.reload();
-      await expect(tellerB.getByTestId('shift-open-count'), 'teller B shift is CLOSED').toBeVisible({
-        timeout: 20_000,
-      });
-      await clockOutIfClockedIn(tellerB);
-
-      const adminShiftsFinal = await readAdminShifts(manager);
-      const rowBFinal = adminShiftsFinal.find((r) => r.id === shiftBId);
-      expect(rowBFinal?.status, `admin_shifts shows shift B (${shiftBId}) CLOSED`).toBe('CLOSED');
-
-      if (startedByThisSpec) {
-        await manager.reload();
-        await expect(
-          manager.getByTestId('floor-phase'),
-          'branch day reaches CLOSED after B closes the shift',
-        ).toHaveText(PHASE_CLOSED, { timeout: 20_000 });
-      }
-      await shot(manager, 'staff', 'sick-teller-4-day-closed');
-    } finally {
-      await closeQueueIfOpened(manager, openedQueue).catch(() => {});
-      if (started === 'started') {
-        await cutOff(manager).catch(() => {});
-      }
-      await tellerA.goto('/staff').catch(() => {});
-      await tellerB.goto('/staff').catch(() => {});
-      await manager.goto('/staff').catch(() => {});
-      await ensureShiftClosed(tellerA, manager).catch(() => {});
-      await ensureShiftClosed(tellerB, manager).catch(() => {});
-      await clockOutIfClockedIn(tellerA).catch(() => {});
-      await clockOutIfClockedIn(tellerB).catch(() => {});
-      await Promise.all([
-        tellerA.close().catch(() => {}),
-        tellerB.close().catch(() => {}),
-        manager.close().catch(() => {}),
-      ]);
+      throw new Error(errText);
     }
+    await tellerA.reload();
+    await expect(tellerA.getByTestId('shift-close-count'), 'teller A shift is OPEN').toBeVisible({ timeout: 20_000 });
+
+    const shiftABefore = await readMyShift(tellerA);
+    expect(shiftABefore?.id, 'teller A has an OPEN shift after OPEN count verification').toBeTruthy();
+    expect(shiftABefore?.status, 'teller A shift status is OPEN').toBe('OPEN');
+    const shiftAId = shiftABefore!.id;
+
+    started = await startService(manager);
+    const startedByThisSpec = started === 'started';
+
+    const currency = users.currency ?? 'USD';
+    const { txId: txAId, openedQueue: openedA } = await saveOneCashBuyExchange(tellerA, 'tellerA', manager);
+    if (openedA) openedQueue = true;
+    console.log(`[#4881] step 1: teller A (${tellerAUserId}) saved exchange ${txAId} on shift ${shiftAId}`);
+
+    const shiftAAfterTx = await readMyShift(tellerA);
+    expect(shiftAAfterTx?.id, 'teller A still holds shift A after saving exchange').toBe(shiftAId);
+    const balancesAAfterTx = balanceMap(shiftAAfterTx!.balances);
+    expect(
+      balancesAAfterTx[currency] ?? 0,
+      `teller A shift ${currency} expected balance increased after BUY exchange`,
+    ).toBeGreaterThan(0);
+
+    // Step 2: Teller A starts a hand-over to teller B, as if leaving sick.
+    await tellerA.goto('/staff');
+    await expect(tellerA.getByTestId('shift-handover'), 'teller A shift-handover button visible').toBeVisible({
+      timeout: 20_000,
+    });
+    await tellerA.getByTestId('shift-handover').click();
+    const handoverForm = tellerA.getByTestId('shift-handover-form');
+    await expect(handoverForm, 'shift-handover-form visible').toBeVisible({ timeout: 15_000 });
+
+    const receiverSelect = handoverForm.getByTestId('shift-receiver');
+    await expect(
+      receiverSelect.locator(`option[value="${tellerBUserId}"]`),
+      'teller B is offered in handover_receivers',
+    ).toHaveCount(1, { timeout: 15_000 });
+    await receiverSelect.selectOption(tellerBUserId);
+
+    await fillDenominationsForBalances(handoverForm, balancesAAfterTx);
+
+    const startHandoverRes = await posted(tellerA, /^\/api\/handovers$/, () =>
+      handoverForm.getByTestId('shift-handover-save').click(),
+    );
+    console.log(`[#4881] step 2: POST /api/handovers ${startHandoverRes.text}`);
+    expect(startHandoverRes.ok, `handoverStart A -> B: ${startHandoverRes.text}`).toBeTruthy();
+    const parsedStart = JSON.parse(startHandoverRes.body || '{}') as HandoverStartAnswer;
+    const handoverId = String(
+      parsedStart.id ?? parsedStart.handoverId ?? parsedStart.data?.id ?? parsedStart.data?.handoverId ?? '',
+    );
+    await shot(tellerA, 'staff', 'sick-teller-1-handover-started');
+
+    // Step 3: B sees it in the pending list, counts and accepts. A's shift is CLOSED and B's is OPEN, with A's cash carried over.
+    await tellerB.goto('/staff');
+    await clockIn(tellerB);
+    await tellerB.reload();
+    const pendingItem = handoverId
+      ? tellerB.locator(`[data-handover-id="${handoverId}"]`)
+      : tellerB.locator('[data-handover-id]').first();
+    await expect(pendingItem, 'pending handover visible to teller B on /staff').toBeVisible({ timeout: 20_000 });
+    const resolvedHandoverId = handoverId || ((await pendingItem.getAttribute('data-handover-id')) ?? '');
+    expect(resolvedHandoverId, 'resolved handoverId for B').not.toBe('');
+
+    const acceptRes = await posted(
+      tellerB,
+      new RegExp(`^/api/handovers/${encodeURIComponent(resolvedHandoverId)}/accept$`),
+      () => pendingItem.getByTestId('shift-accept').click(),
+    );
+    console.log(`[#4881] step 3: POST /api/handovers/${resolvedHandoverId}/accept ${acceptRes.text}`);
+    expect(acceptRes.ok, `handoverAccept by B: ${acceptRes.text}`).toBeTruthy();
+
+    await tellerA.reload();
+    await tellerB.reload();
+    await expect(
+      tellerA.getByTestId('shift-open-count'),
+      'teller A sees shift-open-count on /staff (shift A is CLOSED)',
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      tellerB.getByTestId('shift-close-count'),
+      'teller B sees shift-close-count on /staff (shift B is OPEN)',
+    ).toBeVisible({ timeout: 20_000 });
+
+    const shiftAAfterAccept = await readMyShift(tellerA);
+    expect(shiftAAfterAccept, 'teller A my_shift is null after handover accept').toBeNull();
+
+    const shiftBAfterAccept = await readMyShift(tellerB);
+    expect(shiftBAfterAccept?.id, 'teller B has an OPEN shift after handover accept').toBeTruthy();
+    expect(shiftBAfterAccept?.status, 'teller B shift status is OPEN').toBe('OPEN');
+    const shiftBId = shiftBAfterAccept!.id;
+    expect(shiftBId, 'shift B is a new shift id distinct from shift A').not.toBe(shiftAId);
+
+    const balancesBAfterAccept = balanceMap(shiftBAfterAccept!.balances);
+    expect(
+      balancesBAfterAccept,
+      "teller B's shift carries over teller A's cash balances",
+    ).toEqual(balancesAAfterTx);
+
+    // Also verify through admin_shifts (read by branchManager).
+    const adminShiftsAfterAccept = await readAdminShifts(manager);
+    const rowA = adminShiftsAfterAccept.find((r) => r.id === shiftAId);
+    const rowB = adminShiftsAfterAccept.find((r) => r.id === shiftBId);
+    expect(rowA?.status, `admin_shifts shows shift A (${shiftAId}) CLOSED`).toBe('CLOSED');
+    expect(rowB?.status, `admin_shifts shows shift B (${shiftBId}) OPEN`).toBe('OPEN');
+    expect(
+      balanceMap(rowB!.balances),
+      `admin_shifts shows shift B carries over shift A's cash`,
+    ).toEqual(balancesAAfterTx);
+    await shot(tellerB, 'staff', 'sick-teller-2-handover-accepted');
+
+    // Sick teller A clocks out and leaves.
+    await clockOutIfClockedIn(tellerA);
+
+    // Step 4: B saves an exchange on that shift. It posts to B's shift.
+    const { txId: txBId, openedQueue: openedB } = await saveOneCashBuyExchange(tellerB, 'tellerB', manager);
+    if (openedB) openedQueue = true;
+    console.log(`[#4881] step 4: teller B (${tellerBUserId}) saved exchange ${txBId} on shift ${shiftBId}`);
+
+    const shiftBAfterTx = await readMyShift(tellerB);
+    expect(shiftBAfterTx?.id, 'teller B shift id unchanged after B exchange').toBe(shiftBId);
+    const balancesBAfterTx = balanceMap(shiftBAfterTx!.balances);
+    expect(
+      balancesBAfterTx[currency] ?? 0,
+      `B's exchange posted to B's shift (${currency} increased from ${balancesBAfterAccept[currency]} to ${balancesBAfterTx[currency]})`,
+    ).toBeGreaterThan(balancesBAfterAccept[currency] ?? 0);
+    expect(
+      balancesBAfterTx.THB ?? 0,
+      `B's exchange paid THB from B's shift (${balancesBAfterTx.THB} < ${balancesBAfterAccept.THB})`,
+    ).toBeLessThan(balancesBAfterAccept.THB ?? 0);
+
+    const adminShiftsAfterBTx = await readAdminShifts(manager);
+    const rowAAfterBTx = adminShiftsAfterBTx.find((r) => r.id === shiftAId);
+    const rowBAfterBTx = adminShiftsAfterBTx.find((r) => r.id === shiftBId);
+    expect(
+      balanceMap(rowAAfterBTx!.balances),
+      "A's closed shift balances in admin_shifts remain untouched by B's exchange",
+    ).toEqual(balancesAAfterTx);
+    expect(
+      balanceMap(rowBAfterBTx!.balances),
+      "admin_shifts reflects B's exchange posted to B's shift",
+    ).toEqual(balancesBAfterTx);
+    await shot(tellerB, 'desk', 'sick-teller-3-b-exchange-saved');
+
+    // Step 5: B closes the shift normally (B's CLOSE count, verified by branchManager). The branch day can then close.
+    if (started === 'started') {
+      await cutOff(manager);
+      started = undefined;
+    }
+
+    await tellerB.goto('/staff');
+    await clockIn(tellerB);
+    await tellerB.getByTestId('shift-close-count').click();
+    const closeForm = tellerB.getByTestId('shift-count-form');
+    await expect(closeForm, 'teller B shift-count-form visible for CLOSE').toBeVisible({ timeout: 15_000 });
+    await fillDenominationsForBalances(closeForm, balancesBAfterTx);
+
+    const closeCountRes = await posted(tellerB, /^\/api\/cash-counts$/, () =>
+      tellerB!.getByTestId('shift-count-save').click(),
+    );
+    expect(closeCountRes.ok, `teller B closing count accepted: ${closeCountRes.text}`).toBeTruthy();
+
+    await manager.goto('/staff');
+    const verifyRes = await verifyCount(manager, 'CLOSE');
+    try {
+      const parsed = JSON.parse(verifyRes.text) as { approvalRequestId?: string | null };
+      approvalRequestId = parsed.approvalRequestId ?? undefined;
+    } catch {
+      const match = verifyRes.text.match(/"approvalRequestId"\s*:\s*"([^"]+)"/);
+      if (match) approvalRequestId = match[1];
+    }
+    expect(verifyRes.ok, `manager verifies B closing count: ${verifyRes.text}`).toBeTruthy();
+
+    await tellerB.reload();
+    await expect(tellerB.getByTestId('shift-open-count'), 'teller B shift is CLOSED').toBeVisible({
+      timeout: 20_000,
+    });
+    await clockOutIfClockedIn(tellerB);
+
+    const adminShiftsFinal = await readAdminShifts(manager);
+    const rowBFinal = adminShiftsFinal.find((r) => r.id === shiftBId);
+    expect(rowBFinal?.status, `admin_shifts shows shift B (${shiftBId}) CLOSED`).toBe('CLOSED');
+
+    if (startedByThisSpec) {
+      await manager.reload();
+      await expect(
+        manager.getByTestId('floor-phase'),
+        'branch day reaches CLOSED after B closes the shift',
+      ).toHaveText(PHASE_CLOSED, { timeout: 20_000 });
+    }
+    await shot(manager, 'staff', 'sick-teller-4-day-closed');
+    flowFinished = true;
   });
 });
