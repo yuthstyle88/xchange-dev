@@ -4,54 +4,30 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
-import { onFreshNotice } from '../../../shared/ui/notice-bell/notice-feed';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type {
-  CountSubmitInput,
   HandoverStartInput,
   CashRecordInput,
   CashRecordOutput,
   CountVerifyOutput,
   CashLineInput,
 } from '../../../shared/api/generated/cash';
-import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generated/cash_counts';
 import type { CountRejectInput, CountRejected } from '../../../shared/api/generated/staff_corrections';
 import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
-import type { MyShift } from '../../../shared/api/generated/my_shift';
-import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
 import { formatFaceValue } from '../../../shared/ui/currency-count/face-value';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
+import { CountForm, CountWaitingLine } from './CountForm';
+import { countsToVerify, formatCountTime, myWaitingCloseCount, myWaitingOpenCount } from './counts';
 import { th, en } from './i18n';
+import { createWaitingCounts } from './waiting-counts';
 import './shift.css';
 
 export interface ShiftCardProps {
   ctx: StaffCtx;
-}
-
-const COUNT_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Bangkok',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-const COUNT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Bangkok',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-function formatCountTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const [, mm, dd] = COUNT_DAY_FMT.format(d).split('-');
-  const time = COUNT_TIME_FMT.format(d);
-  return `${dd}/${mm} ${time}`;
 }
 
 const COUNT_KINDS = ['OPEN', 'CLOSE', 'HANDOVER_OUT', 'HANDOVER_IN'] as const;
@@ -79,16 +55,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   // #2409: one write at a time; a second click or Enter while one is in flight does nothing.
   const [busy, setBusy] = createSignal<boolean>(false);
 
-  const [cashCounts, setCashCounts] = createSignal<CashCountRow[]>([]);
-  const [countsLoaded, setCountsLoaded] = createSignal(false);
   const [pendingHandovers, setPendingHandovers] = createSignal<HandoverPendingRow[]>([]);
   const [denominations, setDenominations] = createSignal<DenominationRow[]>([]);
   const [handoverReceivers, setHandoverReceivers] = createSignal<HandoverReceiverRow[]>([]);
 
   const [countKind, setCountKind] = createSignal<'OPEN' | 'CLOSE' | null>(null);
-  const [myShift, setMyShift] = createSignal<MyShift | null>(null);
-  const [countQuantities, setCountQuantities] = createSignal<Record<number, string>>({});
-  const [countLineErrors, setCountLineErrors] = createSignal<Record<number, string>>({});
   const [showHandover, setShowHandover] = createSignal<boolean>(false);
   const [selectedReceiver, setSelectedReceiver] = createSignal<string>('');
   const [handoverQuantities, setHandoverQuantities] = createSignal<Record<number, string>>({});
@@ -99,7 +70,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [rejectRowErrors, setRejectRowErrors] = createSignal<Record<string, string>>({});
 
   createEffect(() => {
-    if (countKind() !== null || showHandover() || rejectingId() !== null) {
+    if (showHandover() || rejectingId() !== null) {
       const release = yieldQueueCard();
       onCleanup(release);
     }
@@ -110,30 +81,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const isClockedIn = () => !!props.ctx.floor?.myClockIn;
   const hasOpenShift = () => !!props.ctx.floor?.myShift;
 
-  const loadCashCounts = async () => {
-    if (!canCertify() && !canOperate()) return;
-    try {
-      const res = await api.view<CashCountRow[] | { rows: CashCountRow[] }, Partial<CashCountsFilter>>('cash_counts', {
-        branch: props.ctx.me.branchId,
-        filter: { status: 'WAITING' },
-      });
-      const data = res.data;
-      if (Array.isArray(data)) {
-        setCashCounts(data);
-      } else if (data && Array.isArray((data as { rows: CashCountRow[] }).rows)) {
-        setCashCounts((data as { rows: CashCountRow[] }).rows);
-      }
-      if (errorFrom === 'loadCashCounts') {
-        errorFrom = null;
-        setError(null);
-      }
-    } catch (err: unknown) {
-      errorFrom = 'loadCashCounts';
-      setError(wordedError(err));
-    } finally {
-      setCountsLoaded(true);
-    }
-  };
+  const counts = createWaitingCounts({
+    api,
+    branch: () => props.ctx.me.branchId,
+    enabled: () => canCertify() || canOperate(),
+  });
 
   const loadPendingHandovers = async () => {
     if (!canOperate()) return;
@@ -196,60 +148,18 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   };
 
   onMount(() => {
-    if (canCertify() || canOperate()) {
-      void loadCashCounts();
-    }
     if (canOperate()) {
       void loadPendingHandovers();
       void loadDenominations();
     }
-    const stop = onFreshNotice('cash_count', () => {
-      void loadCashCounts();
-    });
-    onCleanup(stop);
   });
-
-  const loadMyShift = async () => {
-    try {
-      const res = await api.view<MyShift | null>('my_shift');
-      setMyShift(res.data ?? null);
-    } catch {
-      setMyShift(null);
-    }
-  };
 
   const handleOpenCount = (kind: 'OPEN' | 'CLOSE') => {
     setCountKind(kind);
-    setCountLineErrors({});
     setShowHandover(false);
-    setMyShift(null);
-    if (kind === 'CLOSE') {
-      void loadMyShift();
-    }
     if (denominations().length === 0) {
       void loadDenominations();
     }
-  };
-
-  const countLocked = (): string[] => {
-    const codes = ['THB'];
-    if (countKind() === 'CLOSE') {
-      for (const b of myShift()?.balances ?? []) {
-        if (/[1-9]/.test(b.expected) && !codes.includes(b.code)) {
-          codes.push(b.code);
-        }
-      }
-    }
-    return codes;
-  };
-
-  const countExpected = (): Record<string, string> | undefined => {
-    if (countKind() !== 'CLOSE') return undefined;
-    const shift = myShift();
-    if (!shift) return undefined;
-    const out: Record<string, string> = {};
-    for (const b of shift.balances) out[b.code] = b.expected;
-    return out;
   };
 
   const handleOpenHandover = () => {
@@ -260,86 +170,6 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     void loadHandoverReceivers();
     if (denominations().length === 0) {
       void loadDenominations();
-    }
-  };
-
-  const handleCountSubmit = async (e: Event) => {
-    e.preventDefault();
-    const form = e.currentTarget as HTMLFormElement;
-    const kind = countKind();
-    if (busy() || !kind || denominations().length === 0) return;
-
-    const inputs = form.querySelectorAll<HTMLInputElement>('input[data-denomination-id]');
-    const lines: CashLineInput[] = [];
-    const nextQuantities: Record<number, string> = {};
-    const nextErrors: Record<number, string> = {};
-    const labels: Record<string, string> = {};
-    const lineDenomIds: number[] = [];
-
-    inputs.forEach((input) => {
-      const idStr = input.getAttribute('data-denomination-id');
-      if (!idStr) return;
-      const d = denominations().find((x) => String(x.id) === idStr);
-      const id = d ? d.id : +idStr;
-      const qty = input.value.trim();
-      nextQuantities[id] = input.value;
-      if (qty !== '' && d) {
-        const check = checkInteger(qty, 0, 2147483647);
-        if (!check.ok) {
-          nextErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
-          return;
-        }
-        const idx = lines.length;
-        labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
-        lineDenomIds.push(d.id);
-        lines.push({
-          currency: d.currency,
-          denominationId: d.id,
-          qty: check.text,
-        });
-      }
-    });
-
-    setCountQuantities(nextQuantities);
-    if (Object.keys(nextErrors).length > 0) {
-      setCountLineErrors(nextErrors);
-      return;
-    }
-    setCountLineErrors({});
-
-    const body: CountSubmitInput = {
-      branch: props.ctx.me.branchId,
-      kind,
-      shiftId: kind === 'CLOSE' ? (props.ctx.floor?.myShift?.id ?? null) : null,
-      lines,
-      note: null,
-    };
-
-    const cmd = getCmd<CountSubmitInput, { id: string }>('count-submit', 'POST', '/api/cash-counts');
-    setBusy(true);
-    try {
-      await cmd.send(body);
-      setNotice(t('saved'));
-      errorFrom = null;
-      setError(null);
-      setCountKind(null);
-      setCountQuantities({});
-      setCountLineErrors({});
-      await props.ctx.refresh();
-      await loadCashCounts();
-    } catch (err: unknown) {
-      setNotice(null);
-      errorFrom = null;
-      const fe = fieldError(err, labels);
-      const match = fe.field?.match(/^lines\[(\d+)\]\.qty$/);
-      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
-      if (denomId !== undefined) {
-        setCountLineErrors({ [denomId]: fe.message });
-      } else {
-        setError(fe.message);
-      }
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -444,7 +274,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       errorFrom = null;
       setError(null);
       await props.ctx.refresh();
-      await loadCashCounts();
+      await counts.reload();
     } catch (err: unknown) {
       setNotice(null);
       errorFrom = null;
@@ -557,7 +387,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         return next;
       });
       await props.ctx.refresh();
-      await loadCashCounts();
+      await counts.reload();
     } catch (err: unknown) {
       setNotice(null);
       errorFrom = null;
@@ -579,7 +409,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             : fe.message;
         setRejectRowErrors((prev) => ({ ...prev, [id]: rowMsg }));
         if (err.code === 'notWaiting') {
-          await loadCashCounts();
+          await counts.reload();
         }
       } else {
         setRejectRowErrors((prev) => ({ ...prev, [id]: fe.message }));
@@ -588,41 +418,6 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       setBusy(false);
     }
   };
-
-  const isWaitingCount = (c: CashCountRow) => c.status === 'WAITING' && c.verifiedBy === null;
-
-  const countsToVerify = () => {
-    if (!canCertify()) return [];
-    return cashCounts().filter(
-      (c) =>
-        isWaitingCount(c) &&
-        (c.kind === 'OPEN' || c.kind === 'CLOSE') &&
-        c.countedBy !== props.ctx.me.userId
-    );
-  };
-
-  const waitingOpenCount = () => {
-    return cashCounts().find(
-      (c) =>
-        c.kind === 'OPEN' &&
-        c.countedBy === props.ctx.me.userId &&
-        isWaitingCount(c)
-    );
-  };
-
-  const waitingCloseCount = () => {
-    const shiftId = props.ctx.floor?.myShift?.id;
-    if (!shiftId) return undefined;
-    return cashCounts().find(
-      (c) =>
-        c.kind === 'CLOSE' &&
-        c.countedBy === props.ctx.me.userId &&
-        isWaitingCount(c) &&
-        c.shiftId === shiftId
-    );
-  };
-
-  const myCloseWaiting = () => waitingCloseCount() !== undefined;
 
   const handoversToMe = () => {
     if (!canOperate()) return [];
@@ -647,51 +442,49 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         </div>
       </Show>
 
-      <Show when={error()}>
+      <Show when={error() ?? counts.error()}>
         <div data-testid="shift-error" class="xc-shift-error">
-          {error()}
+          {error() ?? counts.error()}
         </div>
       </Show>
 
       <Show when={canOperate() && isClockedIn()}>
         <div class="xc-shift-actions">
-          <Show when={!hasOpenShift() && countsLoaded()}>
+          <Show when={!hasOpenShift() && counts.loaded()}>
             <Show
-              when={!waitingOpenCount()}
+              when={myWaitingOpenCount(counts.rows(), props.ctx.me.userId)}
+              keyed
               fallback={
-                <div role="status" class="xc-shift-close-waiting" data-testid="shift-open-waiting">
-                  {t('openWaiting')} ({formatCountTime(waitingOpenCount()!.countedAt)})
-                </div>
+                <button
+                  type="button"
+                  data-testid="shift-open-count"
+                  class="xc-shift-action-btn"
+                  onClick={() => handleOpenCount('OPEN')}
+                >
+                  {t('openCount')}
+                </button>
               }
             >
-              <button
-                type="button"
-                data-testid="shift-open-count"
-                class="xc-shift-action-btn"
-                onClick={() => handleOpenCount('OPEN')}
-              >
-                {t('openCount')}
-              </button>
+              {(row) => <CountWaitingLine kind="OPEN" row={row} />}
             </Show>
           </Show>
           <Show when={hasOpenShift()}>
-            <Show when={countsLoaded()}>
+            <Show when={counts.loaded()}>
               <Show
-                when={!myCloseWaiting()}
+                when={myWaitingCloseCount(counts.rows(), props.ctx.me.userId, props.ctx.floor?.myShift?.id)}
+                keyed
                 fallback={
-                  <div role="status" class="xc-shift-close-waiting" data-testid="shift-close-waiting">
-                    {t('closeWaiting')} ({formatCountTime(waitingCloseCount()!.countedAt)})
-                  </div>
+                  <button
+                    type="button"
+                    data-testid="shift-close-count"
+                    class="xc-shift-action-btn"
+                    onClick={() => handleOpenCount('CLOSE')}
+                  >
+                    {t('closeCount')}
+                  </button>
                 }
               >
-                <button
-                  type="button"
-                  data-testid="shift-close-count"
-                  class="xc-shift-action-btn"
-                  onClick={() => handleOpenCount('CLOSE')}
-                >
-                  {t('closeCount')}
-                </button>
+                {(row) => <CountWaitingLine kind="CLOSE" row={row} />}
               </Show>
             </Show>
             <button
@@ -706,42 +499,32 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         </div>
       </Show>
 
-      <Show when={countKind() !== null}>
-        <form
-          data-testid="shift-count-form"
-          class="xc-shift-count-form"
-          onSubmit={handleCountSubmit}
-        >
-          <CurrencyCount
-            denominations={denominations()}
-            locked={countLocked()}
-            expected={countExpected()}
-            quantities={countQuantities()}
-            setQuantity={(id, v) => setCountQuantities((prev) => ({ ...prev, [id]: v }))}
-            lineErrors={countLineErrors()}
+      <Show when={countKind()} keyed>
+        {(kind) => (
+          <CountForm
+            ctx={props.ctx}
+            kind={kind}
+            denominations={denominations}
+            busy={busy}
+            setBusy={setBusy}
+            onSaved={async () => {
+              setNotice(t('saved'));
+              errorFrom = null;
+              setError(null);
+              setCountKind(null);
+              await props.ctx.refresh();
+              await counts.reload();
+            }}
+            onCancel={() => setCountKind(null)}
+            onError={(msg) => {
+              if (msg !== null) {
+                setNotice(null);
+              }
+              errorFrom = null;
+              setError(msg);
+            }}
           />
-          <div class="xc-shift-form-actions">
-            <button
-              type="submit"
-              data-testid="shift-count-save"
-              class="xc-shift-save-btn"
-              disabled={busy() || denominations().length === 0}
-            >
-              {t('save')}
-            </button>
-            <button
-              type="button"
-              class="xc-shift-cancel-btn"
-              onClick={() => {
-                setCountKind(null);
-                setCountQuantities({});
-                setCountLineErrors({});
-              }}
-            >
-              {t('cancel')}
-            </button>
-          </div>
-        </form>
+        )}
       </Show>
 
       <Show when={showHandover()}>
@@ -820,11 +603,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         </form>
       </Show>
 
-      <Show when={canCertify() && countsToVerify().length > 0}>
+      <Show when={canCertify() && countsToVerify(counts.rows(), props.ctx.me.userId).length > 0}>
         <div class="xc-shift-section">
           <h3 class="xc-shift-section-title">{t('countsToVerify')}</h3>
           <div class="xc-shift-list">
-            <For each={countsToVerify()}>
+            <For each={countsToVerify(counts.rows(), props.ctx.me.userId)}>
               {(c) => (
                 <div data-count-id={c.id} data-kind={c.kind} class="xc-shift-count-item">
                   <div class="xc-shift-item-info">
