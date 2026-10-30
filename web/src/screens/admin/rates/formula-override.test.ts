@@ -3,7 +3,7 @@
 // your own. Wire meaning: `ratePolicySave` buyFormula/sellFormula absent = keep, null = follow, text = own
 // (api/src/presentation/http/v3/commands/rate_policy_save.rs:74-82, :292-320).
 import { describe, expect, it } from 'vitest';
-import type { BranchFormulaDto } from '../../../shared/api/generated/pricing_formula';
+import { makeBranchFormulaDto } from '../../../shared/testing/fixtures';
 import {
   EMPTY_OVERRIDE,
   initialOverride,
@@ -12,13 +12,13 @@ import {
   type FormulaOverrideState,
 } from './formula-override';
 
-const OWN: BranchFormulaDto = {
+const OWN = makeBranchFormulaDto({
   branch: 'MAIN',
   source: 'BRANCH',
   own: { buyFormula: 'ref_mid - 0.05', sellFormula: 'ref_mid + 0.05' },
-};
-const FOLLOWS_ORG: BranchFormulaDto = { branch: 'MAIN', source: 'ORGANISATION', own: null };
-const FOLLOWS_DEFAULT: BranchFormulaDto = { branch: 'MAIN', source: 'DEFAULT', own: null };
+});
+const FOLLOWS_ORG = makeBranchFormulaDto({ branch: 'MAIN', source: 'ORGANISATION', own: null });
+const FOLLOWS_DEFAULT = makeBranchFormulaDto({ branch: 'MAIN', source: 'DEFAULT', own: null });
 const ORG = { buyFormula: 'ref_buy * 0.997', sellFormula: 'ref_sell * 1.003' };
 
 function state(over: Partial<FormulaOverrideState>): FormulaOverrideState {
