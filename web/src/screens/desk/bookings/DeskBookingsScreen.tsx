@@ -1165,7 +1165,7 @@ export function DeskBookingsScreen(): JSX.Element {
                     type="button"
                     data-action="confirm-reschedule"
                     class="xc-confirm-reschedule xc-btn-primary"
-                    disabled={writing()}
+                    disabled={writing() || !targetSlotId()}
                     onClick={() => handleConfirmReschedule()}
                   >
                     {t('reschedule')}

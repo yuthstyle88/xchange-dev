@@ -43,7 +43,7 @@ impl RateReferenceFetchCommand {
 
 impl CommandAction for RateReferenceFetchCommand {
     const NAME: &'static str = "rateReferenceFetch";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateReferenceFetch");
     type Input = RateReferenceFetchInput;
     type Output = RateReferenceFetchOutput;
     const ROUTE: &'static str = "/api/rate-references/fetch";

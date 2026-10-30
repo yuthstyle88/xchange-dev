@@ -100,6 +100,11 @@ fn kiosk_actor_from_callers(callers: &Callers) -> KioskActor {
             username: "owner".to_string(),
             role: KioskRole::Owner,
         }
+    } else if let Some(exec) = callers.executive_standing() {
+        KioskActor::Staff {
+            username: exec.user_id,
+            role: KioskRole::Owner,
+        }
     } else if let Some(staff) = callers.staff_standing() {
         let role = match staff.staff_role() {
             Some(Role::Teller) => KioskRole::Front,
@@ -484,6 +489,15 @@ async fn handle_kiosk(
                         username: "owner".to_string(),
                         name: "Owner".to_string(),
                         role: "OWNER".to_string(),
+                    }
+                } else if let Some(exec) = callers.executive_standing() {
+                    let exec_names = usernames(pool, std::iter::once(exec.user_id.as_str())).await;
+                    let exec_name = username_or_id(&exec_names, &exec.user_id);
+                    dto_kiosk::EmployeeInfo {
+                        id: exec.user_id,
+                        username: exec_name.clone(),
+                        name: exec_name,
+                        role: exec.kind.audit_text().to_string(),
                     }
                 } else if let Some(staff) = callers.staff_standing() {
                     let staff_names =

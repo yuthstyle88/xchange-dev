@@ -321,10 +321,12 @@ async fn market_rates_refresh_fetches_each_source_and_plans_follow_at_main() {
     room.finish().await;
 }
 
-/// gap 6 (PV-g): away from MAIN the command still fetches but plans nothing (`followResults: []`); a TELLER (no
-/// `MarketRatesRefresh`) is refused `roleNotAllowedHere` by the seam and nothing is fetched.
+/// gap 6 (PV-g), restated for #5558 N-3 (claude/553782, #5558 issuecomment-6515987193): `marketRatesRefresh` is an
+/// organisation-level row, so naming branch B runs it at the org-wide holder's session branch (MAIN here) and the
+/// FOLLOW plan is made; a TELLER (no `MarketRatesRefresh`) is refused `roleNotAllowedHere` by the seam and nothing
+/// is fetched. The `MAIN` gate itself is deleted by a follow-up ticket.
 #[tokio::test]
-async fn market_rates_refresh_plans_only_at_main_and_needs_the_permission() {
+async fn market_rates_refresh_naming_another_branch_plans_at_the_session_branch() {
     let room = Room::start().await;
     room.create_branch(BR_B).await;
     room.policy(BR_B).await;
@@ -351,12 +353,16 @@ async fn market_rates_refresh_plans_only_at_main_and_needs_the_permission() {
     follow_on(&room, "USD").await;
 
     let (at_b, _) = refresh(&room, &owner(), BR_B).await;
-    let out = at_b.ok("marketRatesRefresh at B");
-    assert_eq!(out["followResults"], json!([]), "{}", at_b.text);
+    let out = at_b.ok("marketRatesRefresh naming B");
     assert_eq!(
-        room.follow_result("USD").await,
-        None,
-        "no plan away from MAIN"
+        out["followResults"].as_array().map(Vec::len),
+        Some(1),
+        "{}",
+        at_b.text
+    );
+    assert!(
+        room.follow_result("USD").await.is_some(),
+        "planned at the session branch"
     );
     room.finish().await;
 }

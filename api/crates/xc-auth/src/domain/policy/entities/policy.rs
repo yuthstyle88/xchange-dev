@@ -89,40 +89,16 @@ impl Policy {
     /// The route table itself (§4.2), without the area rows. PL-0b moves today's `need` match
     /// here unchanged.
     pub fn need_table(path: EntryPath, action: &Action) -> Option<Need> {
+        // #5558 (design `org-wide-actor-branch.md` §12): the per-action rows of `Rpc`, `StaffRpc`, `Kiosk` and
+        // `PaymentMethods` moved to area files (`areas/compat_desk.rs`, `branch_admin.rs`, `rates.rs`,
+        // `consent.rs`, `approvals.rs`, `kiosk.rs`, `payment_methods.rs`). What stays answers a whole path, or a
+        // path with a catch-all default (`Devices`, `OwnerRoute`, `UserRoute`), whose named rows an area row could
+        // not take over (`shadowed`).
         let act = action.as_str();
         match path {
-            EntryPath::Rpc => match act {
-                "adminSnapshot" | "adminDeskConfig" | "getConnectionStatus" => {
-                    Some(Need::Permission(Permission::CompatRead))
-                }
-                "me" => Some(Need::Permission(Permission::SignedIn)),
-                "reserveCustomer" | "saveTransaction" => {
-                    Some(Need::Permission(Permission::ExchangeTransact))
-                }
-                "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
-                "adminCreateBranch" => Some(Need::Permission(Permission::BranchesManage)),
-                "adminAbandonRequest" => Some(Need::Permission(Permission::RequestAbandon)),
-                "ratePolicySave" => Some(Need::Permission(Permission::RatePolicySave)),
-                // pricing-tiers.md §15.5 gap 6: the `/pricing` fetch button.
-                "marketRatesRefresh" => Some(Need::Permission(Permission::MarketRatesRefresh)),
-                "approvalDecide" | "approvalRead" => {
-                    Some(Need::Permission(Permission::ApprovalsDecide))
-                }
-                "reversalRequest" => Some(Need::Permission(Permission::ReversalRequest)),
-                "consentPolicy" => Some(Need::Permission(Permission::ConsentPolicyManage)),
-                _ => None,
-            },
-            EntryPath::StaffRpc => match act {
-                "adminSnapshot" | "getConnectionStatus" => {
-                    Some(Need::Permission(Permission::CompatRead))
-                }
-                "adminDeskConfig" | "reserveCustomer" | "saveTransaction" => {
-                    Some(Need::Permission(Permission::ExchangeTransact))
-                }
-                "rateDraft" => Some(Need::Permission(Permission::RatesDraft)),
-                "documents" => Some(Need::Permission(Permission::IdentityDocumentRead)),
-                _ => None,
-            },
+            EntryPath::Rpc | EntryPath::StaffRpc | EntryPath::Kiosk | EntryPath::PaymentMethods => {
+                None
+            }
             EntryPath::Upload => Some(Need::Permission(Permission::ProofUpload)),
             EntryPath::StaffUpload => Some(Need::Permission(Permission::ProofUpload)),
             EntryPath::File => Some(Need::Permission(Permission::FileRead)),
@@ -137,21 +113,6 @@ impl Policy {
                 "printerOnline" => Some(Need::Permission(Permission::DevicePrinterOnline)),
                 _ => Some(Need::Permission(Permission::SignedIn)),
             },
-            EntryPath::Kiosk => match act {
-                // R-8 (owner Q12, design kiosk-shared-phone.md §4.2 D19): only staff issue numbers, so the
-                // kiosk `confirm` needs `QueueOperate`.
-                "rates" | "quote" | "status" | "customerReceipt" | "customerCancel"
-                | "settings" => Some(Need::Public),
-                "manage" | "configure" | "configureSettings" => {
-                    Some(Need::Permission(Permission::RatesDraft))
-                }
-                "notifications" | "list" => Some(Need::Permission(Permission::SignedIn)),
-                "confirm" | "identityChecked" | "publishReceipt" | "get" | "accept" | "cancel"
-                | "issueByToken" | "findByToken" => {
-                    Some(Need::Permission(Permission::QueueOperate))
-                }
-                _ => None,
-            },
             EntryPath::OwnerRoute => match act {
                 "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
                 "queueTicketTake" => Some(Need::Permission(Permission::CustomerSelf)),
@@ -162,11 +123,6 @@ impl Policy {
                 _ => Some(Need::Permission(Permission::SignedIn)),
             },
             EntryPath::Custody => Some(Need::Custody),
-            EntryPath::PaymentMethods => match act {
-                "save" => Some(Need::Permission(Permission::SystemSettings)),
-                "list" => Some(Need::Permission(Permission::SignedIn)),
-                _ => None,
-            },
             EntryPath::DrawerPassport => Some(Need::Permission(Permission::DrawerPassport)),
             EntryPath::DeviceSetup => Some(Need::Permission(Permission::SystemSettings)),
         }

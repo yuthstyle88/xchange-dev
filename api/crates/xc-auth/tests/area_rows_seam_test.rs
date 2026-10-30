@@ -22,6 +22,11 @@
 //! row). `EntryPath::Custody` and `Need::Custody` stay as types (other suites name them; no route
 //! reaches them), so the `Custody` rows are unchanged. On every other path these names fall to the
 //! same catch-all as before; so is every other row.
+//!
+//! Re-expected for #5558 by its ticket author (claude/2ca5874b; `docs/design/org-wide-actor-branch.md`
+//! §12): the per-action rows of `Rpc`, `StaffRpc`, `Kiosk` and `PaymentMethods` move from `need_table` into area
+//! files, so `TODAY` is now what `Policy::need` (area rows, then the table) answers, not `need_table` alone, and
+//! with no area rows `need` is the table alone. Every row of `TODAY` keeps its answer.
 
 use xc_auth::domain::access::Permission;
 use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, RowScope, duplicates, shadowed};
@@ -53,10 +58,10 @@ fn an_area_row_answers_nothing_else() {
         Policy::need_with(&[area], EntryPath::StaffRpc, &Action::new("attachReferral")),
         Policy::need_table(EntryPath::StaffRpc, &Action::new("attachReferral"))
     );
-    // Another action on the same path: the table answers as before.
+    // Another path the table answers (#5558: the Rpc rows live in area files now): as before.
     assert_eq!(
-        Policy::need_with(&[area], EntryPath::Rpc, &Action::new("adminSnapshot")),
-        Some(Need::Permission(Permission::CompatRead))
+        Policy::need_with(&[area], EntryPath::Upload, &Action::new("upload")),
+        Some(Need::Permission(Permission::ProofUpload))
     );
     assert_eq!(
         Policy::need_with(&[area], EntryPath::Rpc, &Action::new("zzNoSuchAction")),
@@ -93,21 +98,23 @@ fn rows_in_a_second_area_file_are_found_too() {
 
 #[test]
 fn need_table_is_todays_route_table_unchanged() {
+    // #5558: `TODAY` is what `Policy::need` answers (area rows, then the table).
     for &(path, action, want) in TODAY {
         assert_eq!(
-            Policy::need_table(path, &Action::new(action)),
+            Policy::need(path, &Action::new(action)),
             want,
-            "need_table({path:?}, {action:?})"
+            "need({path:?}, {action:?})"
         );
     }
 }
 
 #[test]
 fn with_no_area_rows_need_answers_exactly_as_today() {
-    for &(path, action, want) in TODAY {
+    // #5558: with no area rows, `need` is the table alone.
+    for &(path, action, _) in TODAY {
         assert_eq!(
             Policy::need_with(&[], path, &Action::new(action)),
-            want,
+            Policy::need_table(path, &Action::new(action)),
             "need_with([], {path:?}, {action:?})"
         );
         assert_eq!(
@@ -158,13 +165,14 @@ fn shadowed_finds_an_area_row_the_table_already_answers() {
     let a: &[AreaRow] = &[
         NEW_ROW,
         AreaRow {
-            path: EntryPath::Rpc,
-            action: "adminSnapshot",
+            path: EntryPath::DeviceSetup,
+            action: "add",
             need: Need::Public,
             scope: RowScope::Request,
         },
     ];
-    assert_eq!(shadowed(&[a]), vec![(EntryPath::Rpc, "adminSnapshot")]);
+    // #5558: the table answers whole paths only now, so the example names one of them.
+    assert_eq!(shadowed(&[a]), vec![(EntryPath::DeviceSetup, "add")]);
 }
 
 #[test]

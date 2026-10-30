@@ -22,6 +22,8 @@ export default defineConfig({
     baseURL: users.baseUrl,
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
+    // Missing element fails action in 30s so test finally cleanup still runs; calls with own timeout keep it.
+    actionTimeout: 30_000,
   },
   projects: [
     { name: 'phone', testMatch: PHONE, use: { viewport: { width: 430, height: 932 } } },
