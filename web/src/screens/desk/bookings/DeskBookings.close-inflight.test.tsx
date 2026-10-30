@@ -10,6 +10,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 interface WriteCall {
   path: string;
@@ -96,7 +97,7 @@ function makeServer() {
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
 
-  vi.stubGlobal('fetch', fetchFn);
+  vi.stubGlobal('fetch', withBookingSlots(fetchFn));
 
   return {
     writes,
@@ -145,7 +146,7 @@ describe('DeskBookingsScreen.tsx — closing a dialog while its write is in flig
   };
   const closeBtn = (): HTMLButtonElement => {
     const b = Array.from(host.querySelectorAll<HTMLButtonElement>('.xc-modal-actions button')).find(
-      (x) => x.textContent?.trim() === 'Close',
+      (x) => x.textContent?.trim() === 'ปิด',
     );
     expect(b, 'Close button').toBeDefined();
     return b!;
@@ -185,6 +186,8 @@ describe('DeskBookingsScreen.tsx — closing a dialog while its write is in flig
   async function rescheduleAThenOpenB(server: ReturnType<typeof makeServer>): Promise<void> {
     btn('[data-booking-id="bk-1"] button[data-action="reschedule"]').click();
     await vi.waitFor(() => expect(q('button[data-action="confirm-reschedule"]')).not.toBeNull());
+    // #5568: the reschedule slots are read from booking_slots; wait for them before confirming.
+    await vi.waitFor(() => expect((q('#reschedule-slot-select') as HTMLSelectElement | null)?.value).toBeTruthy());
     btn('button[data-action="confirm-reschedule"]').click();
     await vi.waitFor(() => expect(server.held).toHaveLength(1));
     expect(server.writes[0]!.path).toBe('/api/bookings/bk-1/reschedule');
@@ -194,6 +197,8 @@ describe('DeskBookingsScreen.tsx — closing a dialog while its write is in flig
 
     btn('[data-booking-id="bk-2"] button[data-action="reschedule"]').click();
     await vi.waitFor(() => expect(q('button[data-action="confirm-reschedule"]')).not.toBeNull());
+    // #5568: the reschedule slots are read from booking_slots; wait for them before confirming.
+    await vi.waitFor(() => expect((q('#reschedule-slot-select') as HTMLSelectElement | null)?.value).toBeTruthy());
   }
 
   it("row 1: cancel A, close while pending, open Cancel on B, A succeeds — B's dialog stays open with its reason", async () => {

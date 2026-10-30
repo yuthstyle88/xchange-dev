@@ -4,6 +4,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
+import { onFreshNotice } from '../../../shared/ui/notice-bell/notice-feed';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
@@ -79,6 +80,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [busy, setBusy] = createSignal<boolean>(false);
 
   const [cashCounts, setCashCounts] = createSignal<CashCountRow[]>([]);
+  const [countsLoaded, setCountsLoaded] = createSignal(false);
   const [pendingHandovers, setPendingHandovers] = createSignal<HandoverPendingRow[]>([]);
   const [denominations, setDenominations] = createSignal<DenominationRow[]>([]);
   const [handoverReceivers, setHandoverReceivers] = createSignal<HandoverReceiverRow[]>([]);
@@ -128,6 +130,8 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     } catch (err: unknown) {
       errorFrom = 'loadCashCounts';
       setError(wordedError(err));
+    } finally {
+      setCountsLoaded(true);
     }
   };
 
@@ -199,6 +203,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       void loadPendingHandovers();
       void loadDenominations();
     }
+    const stop = onFreshNotice('cash_count', () => {
+      void loadCashCounts();
+    });
+    onCleanup(stop);
   });
 
   const loadMyShift = async () => {
@@ -647,7 +655,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
 
       <Show when={canOperate() && isClockedIn()}>
         <div class="xc-shift-actions">
-          <Show when={!hasOpenShift()}>
+          <Show when={!hasOpenShift() && countsLoaded()}>
             <Show
               when={!waitingOpenCount()}
               fallback={
@@ -667,22 +675,24 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             </Show>
           </Show>
           <Show when={hasOpenShift()}>
-            <Show
-              when={!myCloseWaiting()}
-              fallback={
-                <div role="status" class="xc-shift-close-waiting" data-testid="shift-close-waiting">
-                  {t('closeWaiting')} ({formatCountTime(waitingCloseCount()!.countedAt)})
-                </div>
-              }
-            >
-              <button
-                type="button"
-                data-testid="shift-close-count"
-                class="xc-shift-action-btn"
-                onClick={() => handleOpenCount('CLOSE')}
+            <Show when={countsLoaded()}>
+              <Show
+                when={!myCloseWaiting()}
+                fallback={
+                  <div role="status" class="xc-shift-close-waiting" data-testid="shift-close-waiting">
+                    {t('closeWaiting')} ({formatCountTime(waitingCloseCount()!.countedAt)})
+                  </div>
+                }
               >
-                {t('closeCount')}
-              </button>
+                <button
+                  type="button"
+                  data-testid="shift-close-count"
+                  class="xc-shift-action-btn"
+                  onClick={() => handleOpenCount('CLOSE')}
+                >
+                  {t('closeCount')}
+                </button>
+              </Show>
             </Show>
             <button
               type="button"

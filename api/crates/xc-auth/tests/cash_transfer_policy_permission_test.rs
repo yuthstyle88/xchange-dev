@@ -92,12 +92,20 @@ fn policy_authorize_on_transfer_policy_save_grants_executive_and_finance() {
         "EXECUTIVE must be granted transferPolicySave, got: {grant:?}"
     );
 
-    // §11.2: FINANCE holds Finance FULL (including CashTransferPolicySet), so FINANCE is also granted
-    let finance_actor = staff(Role::Finance, "MAIN");
+    // §11.2: FINANCE holds Finance FULL (including CashTransferPolicySet), so FINANCE is also granted.
+    // Restated for #5526 (org-wide-actor-branch.md §10): the transfer policy is organisation-level, so
+    // the FINANCE row must be organisation-wide; a FINANCE row at one branch is refused outOfScope.
+    let finance_actor = user("U-FINANCE", vec![row(Role::Finance, None)]);
     let grant_finance = Policy::authorize(Some(&finance_actor), EntryPath::Rpc, &action, None, now);
     assert!(
         grant_finance.is_ok(),
         "// §11.2: FINANCE must be granted transferPolicySave, got: {grant_finance:?}"
+    );
+    let branch_finance = staff(Role::Finance, "MAIN");
+    assert_eq!(
+        Policy::authorize(Some(&branch_finance), EntryPath::Rpc, &action, None, now),
+        Err(PolicyError::OutOfScope),
+        "#5526: a FINANCE row at MAIN must receive outOfScope on the organisation-level transferPolicySave"
     );
 
     // Explicitly verify RATE_MANAGER and ADMIN are refused with roleNotAllowedHere

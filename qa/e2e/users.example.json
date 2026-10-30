@@ -40,6 +40,10 @@
     "identifier": "<admin phone from the seed>",
     "password": "<admin password from the seed>"
   },
+  "owner": {
+    "phone": "<owner phone from the seed>",
+    "password": "<owner password from the seed>"
+  },
   "referralCode": "TEST1234",
   "branch": "MAIN",
   "branch2": "TEST2",

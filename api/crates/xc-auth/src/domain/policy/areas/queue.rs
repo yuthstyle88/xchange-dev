@@ -7,7 +7,7 @@
 //! `branch_service_status` (public, C08) and `my_queue_ticket` (the ticket's own customer) have
 //! no row: neither is a staff route.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -17,6 +17,7 @@ const fn queue_operate(action: &'static str) -> AreaRow {
         path: EntryPath::Rpc,
         action,
         need: Need::Permission(Permission::QueueOperate),
+        scope: RowScope::Request,
     }
 }
 
@@ -25,6 +26,7 @@ const fn branch_day(action: &'static str) -> AreaRow {
         path: EntryPath::Rpc,
         action,
         need: Need::Permission(Permission::BranchDayOperate),
+        scope: RowScope::Request,
     }
 }
 
@@ -48,5 +50,6 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "queueTicketTake",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
 ];

@@ -16,6 +16,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import * as texts from './i18n';
+import { withBookingSlots } from './booking-slots.testing';
 
 // ── Mock data matching merged BK-6 generated DTOs ──
 
@@ -140,7 +141,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -310,7 +311,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
 
         return json(404, { error: { code: 'notFound', message: u.pathname } });
       }),
-    );
+    ));
   });
 
   afterEach(() => {
@@ -823,7 +824,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
 
       vi.stubGlobal(
         'fetch',
-        vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
           const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
           const u = new URL(rawUrl, 'http://localhost');
           const method = (init?.method ?? 'GET').toUpperCase();
@@ -844,7 +845,7 @@ describe('BK-8: B02 Teller Desk Bookings Screen (#1409)', () => {
 
           return json(404, { error: 'not found' });
         }),
-      );
+      ));
 
       await boot();
 

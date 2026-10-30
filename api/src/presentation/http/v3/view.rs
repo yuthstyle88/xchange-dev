@@ -608,12 +608,14 @@ async fn handle_branch_view<V: BranchView>(req: &HttpRequest, view: &V) -> HttpR
         Err(e) => return V3Error::from(e).error_response(),
     };
     let branch = grant.branch;
-
-    if let Err(e) = require_branch(req, &branch).await {
+    // #5526: an organisation-level row grants the session branch, so the branch the request named
+    // (if any) is the one checked; for a request-level row the two are the same branch.
+    let checked = query.named_branch.as_ref().unwrap_or(&branch);
+    if let Err(e) = require_branch(req, checked).await {
         return e.error_response();
     }
     if !V::ORG_WIDE
-        && let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await
+        && let Err(e) = require_branch_in_caller_org(req, checked, &caller).await
     {
         return e.error_response();
     }
@@ -727,10 +729,13 @@ async fn handle_paged_view<V: PagedView>(req: &HttpRequest, view: &V) -> HttpRes
         None => None,
     };
 
-    if let Err(e) = require_branch(req, &branch).await {
+    // #5526: an organisation-level row grants the session branch, so the branch the request named
+    // (if any) is the one checked; for a request-level row the two are the same branch.
+    let checked = query.named_branch.as_ref().unwrap_or(&branch);
+    if let Err(e) = require_branch(req, checked).await {
         return e.error_response();
     }
-    if let Err(e) = require_branch_in_caller_org(req, &branch, &caller).await {
+    if let Err(e) = require_branch_in_caller_org(req, checked, &caller).await {
         return e.error_response();
     }
 

@@ -5,7 +5,7 @@
 //! `userRevoke`, `userDisable` and `adminUsers` → `UsersManage`. No invite (owner, 2026-10-10);
 //! `userCreate` is #1157's.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -15,6 +15,14 @@ const fn row(action: &'static str, permission: Permission) -> AreaRow {
         path: EntryPath::Rpc,
         action,
         need: Need::Permission(permission),
+        scope: RowScope::Request,
+    }
+}
+
+const fn org_row(action: &'static str, permission: Permission) -> AreaRow {
+    AreaRow {
+        scope: RowScope::Organisation,
+        ..row(action, permission)
     }
 }
 
@@ -30,12 +38,12 @@ pub const ROWS: &[AreaRow] = &[
     row("userEnable", Permission::UsersManage),
     row("userResetPassword", Permission::UsersManage),
     row("userProfileSave", Permission::UsersManage),
-    row("adminPermissionMatrix", Permission::UsersManage),
+    org_row("adminPermissionMatrix", Permission::UsersManage),
     row("adminUserAudit", Permission::AuditLogsRead),
     row("adminLoginHistory", Permission::AuditLogsRead),
     row("adminEmployeeRegister", Permission::UsersManage),
     // RBAC §11 F12: who may call; the command also requires an EXECUTIVE base (§11.3).
-    row("adminGroupAdd", Permission::UsersManage),
-    row("adminGroupSave", Permission::UsersManage),
-    row("adminGroupDelete", Permission::UsersManage),
+    org_row("adminGroupAdd", Permission::UsersManage),
+    org_row("adminGroupSave", Permission::UsersManage),
+    org_row("adminGroupDelete", Permission::UsersManage),
 ];

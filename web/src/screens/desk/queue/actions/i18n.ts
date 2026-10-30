@@ -5,6 +5,8 @@ export const th = {
   skip: 'ข้าม',
   start: 'เริ่มให้บริการ',
   finish: 'เสร็จสิ้น',
+  release: 'ไม่มีการขาย',
+  releaseConfirm: 'ยืนยันไม่มีการขาย',
   cancel: 'ยกเลิก',
   cancelReason: 'เหตุผลที่ยกเลิก',
   cancelConfirm: 'ยืนยันยกเลิก',
@@ -13,6 +15,7 @@ export const th = {
   'error.counterPaused': 'เคาน์เตอร์พักอยู่ กรุณาเปิดรับคิวก่อน',
   'error.noOpenShift': 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อน',
   'error.staleVersion': 'ข้อมูลคิวเปลี่ยนไปแล้ว กรุณาลองใหม่',
+  'error.ticketHasSale': 'คิวนี้มีรายการขายแล้ว กรุณายกเลิกรายการขายก่อน',
 };
 
 export const en: typeof th = {
@@ -21,6 +24,8 @@ export const en: typeof th = {
   skip: 'Skip',
   start: 'Start',
   finish: 'Finish',
+  release: 'ไม่มีการขาย',
+  releaseConfirm: 'ยืนยันไม่มีการขาย',
   cancel: 'Cancel',
   cancelReason: 'Cancel reason',
   cancelConfirm: 'Confirm cancel',
@@ -29,4 +34,5 @@ export const en: typeof th = {
   'error.counterPaused': 'Counter is paused; resume before calling',
   'error.noOpenShift': 'No open shift; open a shift first',
   'error.staleVersion': 'Ticket state changed; please try again',
+  'error.ticketHasSale': 'คิวนี้มีรายการขายแล้ว กรุณายกเลิกรายการขายก่อน',
 };

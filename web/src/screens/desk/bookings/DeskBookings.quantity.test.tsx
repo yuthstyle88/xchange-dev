@@ -12,6 +12,7 @@ import {
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { th } from './i18n';
+import { withBookingSlots } from './booking-slots.testing';
 
 const BRANCH_ID = 'XC-B01';
 const SLOT_1_ID = '00000000-0000-0000-0000-000000000001';
@@ -74,7 +75,7 @@ describe('DeskBookingsScreen (B02) — New booking quantity validation (#2198 §
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -110,7 +111,7 @@ describe('DeskBookingsScreen (B02) — New booking quantity validation (#2198 §
         }
         return jsonResponse(404, { error: { code: 'notFound', message: u.pathname } });
       }),
-    );
+    ));
   });
 
   afterEach(() => {

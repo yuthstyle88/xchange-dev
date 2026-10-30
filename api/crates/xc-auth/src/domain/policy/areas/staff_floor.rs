@@ -3,7 +3,7 @@
 //! Picked up by `xc-auth/build.rs` to generate `AREA_ROWS`.
 
 use crate::domain::access::Permission;
-use crate::domain::policy::areas::AreaRow;
+use crate::domain::policy::areas::{AreaRow, RowScope};
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 
@@ -17,20 +17,24 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::StaffRpc,
         action: "staffMe",
         need: Need::Permission(Permission::SignedIn),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "staffFloor",
         need: Need::Permission(Permission::AttendanceClock),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "staffHolds",
         need: Need::AnyOf(HOLDS),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "staffAttendance",
         need: Need::Permission(Permission::AttendanceClock),
+        scope: RowScope::Request,
     },
 ];

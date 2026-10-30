@@ -9,6 +9,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 interface WriteCall {
   path: string;
@@ -107,7 +108,7 @@ function makeServer() {
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
 
-  vi.stubGlobal('fetch', fetchFn);
+  vi.stubGlobal('fetch', withBookingSlots(fetchFn));
 
   return {
     writes,
@@ -213,6 +214,8 @@ describe('DeskBookingsScreen.tsx — writes are guarded while in flight (#2411)'
 
     btn('[data-booking-id="bk-1"] button[data-action="reschedule"]').click();
     await vi.waitFor(() => expect(q('button[data-action="confirm-reschedule"]')).not.toBeNull());
+    // #5568: the reschedule slots are read from booking_slots; wait for them before confirming.
+    await vi.waitFor(() => expect((q('#reschedule-slot-select') as HTMLSelectElement | null)?.value).toBeTruthy());
 
     const confirm = btn('button[data-action="confirm-reschedule"]');
     confirm.click();

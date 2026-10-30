@@ -4,7 +4,7 @@
 //! no "a customer or an anonymous app session" row, so the owner is checked by `PlannerService`
 //! against the `DraftOwner` the route builds (the actor's customer, else the `xc_app_sid` session).
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -14,25 +14,30 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "plannerDraftSave",
         need: Need::Public,
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "plannerDraftDelete",
         need: Need::Public,
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "planner_preview",
         need: Need::Public,
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "my_planner_drafts",
         need: Need::Public,
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "appSettingsSave",
         need: Need::Permission(Permission::SystemSettings),
+        scope: RowScope::Organisation,
     },
 ];

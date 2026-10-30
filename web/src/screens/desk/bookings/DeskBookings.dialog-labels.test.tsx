@@ -10,6 +10,7 @@ import {
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { th } from './i18n';
+import { withBookingSlots } from './booking-slots.testing';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -71,7 +72,7 @@ function stubBookingsFetch() {
     return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
   });
 
-  vi.stubGlobal('fetch', fetchFn);
+  vi.stubGlobal('fetch', withBookingSlots(fetchFn));
 }
 
 async function flush(): Promise<void> {

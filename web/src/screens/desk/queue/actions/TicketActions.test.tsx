@@ -11,7 +11,7 @@
 //     WAITING                      → call, cancel
 //     CALLED, mine or manager      → recall, skip, start, cancel
 //     CALLED, another's, no manager→ skip, cancel
-//     SERVING, mine or manager     → finish
+//     SERVING, mine or manager     → finish, release (#5569)
 //     SERVING, another's           → none
 // - A button sends exactly one command through `commands` and calls `onDone()` once after it answers; while it is in
 //   flight every button is disabled.
@@ -72,8 +72,9 @@ describe("TicketActions: which buttons show", () => {
     ["CALLED, mine", "CALLED", "u-me", ME, ["cancel", "recall", "skip", "start"]],
     ["CALLED, another's, manager", "CALLED", "u-other", MANAGER, ["cancel", "recall", "skip", "start"]],
     ["CALLED, another's, no manager", "CALLED", "u-other", ME, ["cancel", "skip"]],
-    ["SERVING, mine", "SERVING", "u-me", ME, ["finish"]],
-    ["SERVING, another's, manager", "SERVING", "u-other", MANAGER, ["finish"]],
+    // #5569 (owner P3 on #5541): SERVING, mine or manager, also offers "release" (ไม่มีการขาย).
+    ["SERVING, mine", "SERVING", "u-me", ME, ["finish", "release"]],
+    ["SERVING, another's, manager", "SERVING", "u-other", MANAGER, ["finish", "release"]],
     ["SERVING, another's", "SERVING", "u-other", ME, []],
   ];
   it.each(cases)("A1 %s", (_label, status, teller, me, want) => {

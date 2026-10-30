@@ -16,6 +16,7 @@ import { makeDeskBookingsData, makeMe, makeMeRole } from '../../../shared/testin
 import { setAudience, setLang } from '../../../shared/i18n';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 const BRANCH_ID = 'XC-B01';
 
@@ -63,7 +64,7 @@ beforeEach(() => {
   vi.stubGlobal('location', { ...window.location, assign, search: `?branch=${BRANCH_ID}`, pathname: '/desk/bookings' });
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const u = new URL(raw, 'http://localhost');
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
@@ -75,7 +76,7 @@ beforeEach(() => {
       if (u.pathname === '/api/kiosk' && body?.action === 'findByToken') return findAnswer();
       return json(404, { error: { code: 'notFound', message: u.pathname } });
     }),
-  );
+  ));
 });
 
 afterEach(() => {

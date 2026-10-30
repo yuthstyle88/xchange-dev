@@ -11,6 +11,7 @@ export function makeFormulaCheckRowDto(o: Partial<FormulaCheckRowDto> = {}): For
     currency: 'USD',
     tier: null,
     mode: 'mode',
+    unitSize: 'unitSize',
     buy: null,
     sell: null,
     failure: null,

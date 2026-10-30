@@ -1,6 +1,6 @@
 //! LY-6 (#1411, design `membership-points.md` §3, §4.6): permission rows for loyalty rule versions.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -10,25 +10,30 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::StaffRpc,
         action: "loyaltyRuleDraft",
         need: Need::Permission(Permission::LoyaltyRulesManage),
+        scope: RowScope::Organisation,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "loyaltyRuleSubmit",
         need: Need::Permission(Permission::LoyaltyRulesManage),
+        scope: RowScope::Organisation,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "loyaltyRuleDraft",
         need: Need::Permission(Permission::LoyaltyRulesManage),
+        scope: RowScope::Organisation,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "loyaltyRuleSubmit",
         need: Need::Permission(Permission::LoyaltyRulesManage),
+        scope: RowScope::Organisation,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "loyalty_rule_versions",
         need: Need::Permission(Permission::LoyaltyRulesManage),
+        scope: RowScope::Organisation,
     },
 ];

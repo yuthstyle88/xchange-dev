@@ -3,7 +3,7 @@
 //!
 //! Picked up by `xc-auth/build.rs` to generate `AREA_ROWS`.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -13,11 +13,13 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::StaffRpc,
         action: "staffCustomers",
         need: Need::Permission(Permission::CustomerHoldPlace),
+        scope: RowScope::Request,
     },
     // BK-10 #1412 ruling (a): verifying the customer's phone at the desk.
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "customerContactVerify",
         need: Need::Permission(Permission::CustomerHoldPlace),
+        scope: RowScope::Request,
     },
 ];

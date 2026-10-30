@@ -3,6 +3,7 @@
 
 use xc_kernel::ids::BranchId;
 
+use crate::domain::policy::areas::RowScope;
 use crate::domain::policy::value_objects::action::Action;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 use crate::domain::policy::value_objects::policy_error::PolicyError;
@@ -69,6 +70,20 @@ impl Policy {
             }
         }
         Self::need_table(path, action)
+    }
+
+    /// What the area row of `(path, action)` acts on (#5526 §10.2). A route-table row, or no row, is `Request`.
+    pub fn scope_with(
+        areas: &[&[crate::domain::policy::areas::AreaRow]],
+        path: EntryPath,
+        action: &Action,
+    ) -> RowScope {
+        let act = action.as_str();
+        areas
+            .iter()
+            .flat_map(|area| area.iter())
+            .find(|row| row.path == path && row.action == act)
+            .map_or(RowScope::Request, |row| row.scope)
     }
 
     /// The route table itself (§4.2), without the area rows. PL-0b moves today's `need` match
@@ -266,11 +281,14 @@ impl Policy {
         };
 
         // 6. Authorizer::check
-        let target = Target::new(
-            &actor.organization_id,
-            named.cloned(),
-            actor.customer_id.as_deref(),
-        );
+        let target = match Self::scope_with(areas, path, action) {
+            RowScope::Request => Target::new(
+                &actor.organization_id,
+                named.cloned(),
+                actor.customer_id.as_deref(),
+            ),
+            RowScope::Organisation => Target::organisation(&actor.organization_id),
+        };
         let non_customer;
         let check_actor = if path == EntryPath::Rpc && action.as_str() == "me" {
             non_customer = Who {

@@ -4,7 +4,7 @@
 //! The organisation's quote lifetime is ADMIN's (T1, `SystemSettings`); a branch's approval limit
 //! is `BranchesManage` (A04), not the exchange permission a teller holds.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -14,10 +14,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "exchangeSettingsSave",
         need: Need::Permission(Permission::SystemSettings),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "branchExchangeLimitSave",
         need: Need::Permission(Permission::BranchesManage),
+        scope: RowScope::Request,
     },
 ];

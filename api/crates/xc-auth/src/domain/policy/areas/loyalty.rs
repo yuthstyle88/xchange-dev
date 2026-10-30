@@ -1,6 +1,6 @@
 //! Permission rows for the loyalty views (LY-5 #1408, design `membership-points.md` §4.6, ruling Q2).
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -12,10 +12,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "my_membership",
         need: Need::Permission(Permission::CustomerSelf),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "customer_tier",
         need: Need::AnyOf(CUSTOMER_TIER),
+        scope: RowScope::Request,
     },
 ];

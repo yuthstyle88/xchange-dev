@@ -63,6 +63,7 @@ async fn b17_the_same_table_as_the_save_and_nothing_written() {
     assert_eq!(body["parseError"], Value::Null);
     let rows = body["rows"].as_array().expect("rows").clone();
     let pfb = row(&rows, PFB, "USD");
+    assert_eq!(pfb["unitSize"], json!("1"));
     assert_eq!(
         (pfb["mode"].clone(), pfb["buy"].clone(), pfb["sell"].clone()),
         (json!("AUTO"), json!("34.05765"), json!("33.55765"))
@@ -72,6 +73,7 @@ async fn b17_the_same_table_as_the_save_and_nothing_written() {
         json!("XC-PFB USD buy 34.05765 > sell 33.55765")
     );
     let main = row(&rows, "MAIN", "USD");
+    assert_eq!(main["unitSize"], json!("1"));
     assert_eq!(
         (
             main["buy"].clone(),
