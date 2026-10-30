@@ -37,6 +37,10 @@ pub enum QueueError {
     /// (`transactions.queue_ticket_id`).
     #[error("ticketHasSale")]
     TicketHasSale,
+    /// #5675: a shift close while the closing teller holds a CALLED or SERVING ticket at their
+    /// counter in that branch (design `queue-tickets.md` §4.7).
+    #[error("ticketStillServing")]
+    TicketStillServing,
 }
 
 impl QueueError {
@@ -53,6 +57,7 @@ impl QueueError {
             Self::NotFound => "notFound",
             Self::OutsideServiceHours => "outsideServiceHours",
             Self::TicketHasSale => "ticketHasSale",
+            Self::TicketStillServing => "ticketStillServing",
         }
     }
 }

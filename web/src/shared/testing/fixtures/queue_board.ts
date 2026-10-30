@@ -12,6 +12,7 @@ export function makeQueueBoardCalled(o: Partial<QueueBoardCalled> = {}): QueueBo
     serviceType: 'serviceType',
     status: 'status',
     tellerId: null,
+    tellerName: null,
     calledAt: null,
     ...o,
   };

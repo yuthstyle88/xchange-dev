@@ -572,9 +572,9 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
           error?: { code?: string; message?: string };
         };
         const code = errBody.error?.code ?? `status-${takeResp.status()}`;
-        // [data-testid="take-number-error"]: web/src/screens/customer/branches/TakeNumber.tsx:99
+        // [data-testid="take-number-message"]: web/src/screens/customer/branches/TakeNumber.tsx:105
         await expect(
-          branchCard.locator('[data-testid="take-number-error"]'),
+          branchCard.locator('[data-testid="take-number-message"]'),
           `worded error shown on take-number refusal (${code})`,
         ).toBeVisible({ timeout: 10_000 });
         console.log(`[customer-extras] queueTicketTake refused with ${code}; skipping`);
@@ -598,8 +598,8 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       await expect(journeyLink, 'journey link visible after taking number').toBeVisible();
       await journeyLink.click();
 
-      // .xc-journey-screen & [data-testid="journey-queue-number"]: web/src/screens/customer/journey/Journey.tsx:194,254
-      const queueNumberEl = page.locator('[data-testid="journey-queue-number"]');
+      // [data-testid="ticket-number"]: web/src/screens/customer/journey/JourneyScreen.tsx:297
+      const queueNumberEl = page.locator('[data-testid="ticket-number"]');
       await expect(queueNumberEl, 'journey screen displays taken queue number').toContainText(
         issued.number,
         { timeout: 15_000 },
@@ -608,7 +608,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       // Reload and read the active ticket back
       await page.reload();
       await expect(
-        page.locator('[data-testid="journey-queue-number"]'),
+        page.locator('[data-testid="ticket-number"]'),
         'taken queue number persists after page.reload()',
       ).toContainText(issued.number, { timeout: 15_000 });
     } finally {

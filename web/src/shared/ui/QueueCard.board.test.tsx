@@ -178,6 +178,7 @@ describe('QueueCard on queue_board data (QU-6 item b)', () => {
           serviceType: 'WALK_IN',
           status: 'SERVING',
           tellerId: 'emp-nok',
+          tellerName: null,
           calledAt: '2026-10-12T01:10:00Z',
         },
       ],

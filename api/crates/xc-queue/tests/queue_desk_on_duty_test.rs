@@ -40,7 +40,23 @@ fn t(user_id: &str) -> Actor {
     teller(user_id, "MAIN")
 }
 
-/// Teller A, on duty, calls w1; then A's shift closes. Answers (A, the called ticket).
+/// #5675 restated the setup (design `queue-tickets.md` §4.7, owner ruling A 2026-10-30): a shift close is now refused
+/// while its teller holds a CALLED or SERVING ticket, so these tests can no longer reach "off duty with a live
+/// ticket" through `close_shift`. They make that state directly, as rows from before #5675 still are: the shift
+/// CLOSED and the counter row gone. What they pin is unchanged: a desk command needs the caller's counter.
+async fn off_duty_with_a_live_ticket(db: &TestDb, teller_id: &str) {
+    db.exec(&format!(
+        "UPDATE shifts SET status = 'CLOSED', closed_at = now(), closed_by = '{teller_id}' \
+         WHERE branch_id = 'MAIN' AND teller_id = '{teller_id}'::uuid AND status = 'OPEN'"
+    ))
+    .await;
+    db.exec(&format!(
+        "DELETE FROM queue_counters WHERE branch_id = 'MAIN' AND teller_id = '{teller_id}'::uuid"
+    ))
+    .await;
+}
+
+/// Teller A, on duty, calls w1; then A goes off duty with w1 still CALLED. Answers (A, the called ticket).
 async fn called_then_off_duty(db: &TestDb, q: &Queue) -> (String, QueueTicket) {
     let a = on_duty(db, q, "MAIN", "Teller A", at(2, 0)).await;
     walk_in(db, "w1", at(3, 0)).await;
@@ -49,7 +65,7 @@ async fn called_then_off_duty(db: &TestDb, q: &Queue) -> (String, QueueTicket) {
         .call_next(&t(&a), &main_branch(), at(3, 10))
         .await
         .expect("call while on duty");
-    close_shift(db, q, "MAIN", &a, at(3, 20)).await;
+    off_duty_with_a_live_ticket(db, &a).await;
     (a, called)
 }
 
@@ -104,7 +120,7 @@ async fn start_needs_an_open_shift() {
     db.finish().await;
 }
 
-/// 4. Finish by a teller whose shift closed while serving: `noOpenShift`; the ticket stays SERVING.
+/// 4. Finish by a teller who went off duty while serving: `noOpenShift`; the ticket stays SERVING.
 #[tokio::test]
 async fn finish_needs_an_open_shift() {
     let (db, q) = open_main().await;
@@ -119,7 +135,7 @@ async fn finish_needs_an_open_shift() {
         .start(&t(&a), &main_branch(), &called.id, at(3, 12))
         .await
         .expect("start");
-    close_shift(&db, &q, "MAIN", &a, at(3, 20)).await;
+    off_duty_with_a_live_ticket(&db, &a).await;
     assert_eq!(
         refused(
             q.desk
