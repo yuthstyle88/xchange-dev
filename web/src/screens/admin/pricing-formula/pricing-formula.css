@@ -1,0 +1,41 @@
+/* Pricing formula FE (docs/design/blueprint/pricing-formula-web.md §1): the organisation formula screen. */
+
+.pricing-formula-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  max-width: 64rem;
+  margin: 0 auto;
+}
+
+.pricing-formula-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pricing-formula-branches {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.pricing-formula-branches th,
+.pricing-formula-branches td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--line, #e2e8f0);
+  text-align: left;
+}
+
+.pricing-formula-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pricing-formula-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
