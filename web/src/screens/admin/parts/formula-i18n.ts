@@ -3,6 +3,8 @@
 // `en` is real English, not a copy of `th`: these parts render on the rates screen, whose English-mode test
 // (`rates/RatesDraft.test.tsx`, "carry no Thai") refuses Thai text in English. Staff screens are TH/EN only.
 
+import { screenT } from '../../../shared/i18n';
+
 export const th = {
   // FormulaEditor (E1–E4)
   buyFormulaLabel: 'สูตรราคารับซื้อ',
@@ -136,3 +138,12 @@ export const en: Record<Key, string> = {
   saveRefused: 'Policy not saved: see the failing prices below',
   savedNotChecked: 'Saved, but not checked: {list}',
 };
+
+/**
+ * The one translator for these texts, for every screen that shows a formula part. The `screenT` call lives here, in
+ * `parts/`, because the namespace guard (`shared/i18n/namespace.test.ts`, design W10) wants each call to name its own
+ * folder (`admin.parts`); the rates card and the pricing-formula screen import this instead of calling `screenT`.
+ * `screenT` looks `admin.parts.<key>` up in `parts/i18n.ts` first, so no key here may also be a key there
+ * (`formula-i18n.test.ts`).
+ */
+export const formulaT = screenT('admin.parts', { th, en });

@@ -7,8 +7,12 @@ import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { ApiError } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
-import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
-import { makeRatePolicyData, makeRatePolicyVersionDto } from '../../../shared/testing/fixtures';
+import {
+  makeRatePolicyData,
+  makeRatePolicyVersionDto,
+  type RatePolicySaveInput,
+  type RatePolicySaveOutput,
+} from '../../../shared/testing/fixtures';
 import type { RatesFormulaOverrideProps } from './RatesFormulaOverride';
 import { RatesPolicyCard } from './RatesPolicyCard';
 import * as ratesTable from './i18n';
