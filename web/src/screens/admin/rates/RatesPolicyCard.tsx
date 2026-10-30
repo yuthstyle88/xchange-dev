@@ -477,13 +477,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       props.setSimulateResult(null);
     } catch (err: unknown) {
       if (gen !== props.readGen()) return;
-      let lines: SpreadFailureLine[] | null = null;
-      try {
-        // shortcut: fall back to null while T2 spreadRefusal is an unmerged stub, remove try/catch once #5574 merges
-        lines = spreadRefusal(err);
-      } catch {
-        lines = null;
-      }
+      const lines = spreadRefusal(err);
       if (lines) {
         setRefusal(lines);
         props.toast(ft('saveRefused'));
