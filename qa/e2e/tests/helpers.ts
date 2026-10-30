@@ -669,3 +669,46 @@ export async function cutOff(manager: Page): Promise<void> {
   expect(res.ok, `cutOff accepted: ${errText || res.text}`).toBeTruthy();
 }
 
+/**
+ * Opens MAIN's queue on `/desk/queue` if it is closed; returns true if this call opened it.
+ * (flow-desk-kiosk-cancel.spec.ts:91-110; CounterBar.tsx:114-126; POST /api/queue/open).
+ */
+export async function ensureQueueOpen(manager: Page): Promise<boolean> {
+  await manager.goto('/desk/queue');
+  const openQueueBtn = manager.locator('button[name="openQueue"]');
+  await expect(openQueueBtn, 'branch manager openQueue button (CounterBar.tsx:114-126)').toBeVisible({
+    timeout: 20_000,
+  });
+
+  const statusViewRes = await manager.request.get(
+    `/api/v3/views/branch_service_status?branch=${encodeURIComponent(users.branch)}`,
+  );
+  expect(
+    statusViewRes.ok(),
+    `GET /api/v3/views/branch_service_status: ${statusViewRes.status()} ${await statusViewRes.text().catch(() => '')}`,
+  ).toBeTruthy();
+  const statusViewBody = (await statusViewRes.json()) as { data?: { queueOpen?: boolean } };
+  if (!statusViewBody.data?.queueOpen) {
+    const openRes = await posted(manager, /^\/api\/queue\/open$/, () => openQueueBtn.click());
+    expect(openRes.ok, `open queue accepted: ${openRes.text}`).toBeTruthy();
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Closes MAIN's queue on `/desk/queue` if opened is true.
+ * (flow-desk-kiosk-cancel.spec.ts:288-297; CounterBar.tsx:127-139; POST /api/queue/close).
+ */
+export async function closeQueueIfOpened(manager: Page, opened: boolean): Promise<void> {
+  if (!opened) return;
+  await manager.goto('/desk/queue');
+  const closeQueueBtn = manager.locator('button[name="closeQueue"]');
+  await expect(closeQueueBtn, 'branch manager closeQueue button (CounterBar.tsx:127-139)').toBeVisible({
+    timeout: 20_000,
+  });
+  const closeRes = await posted(manager, /^\/api\/queue\/close$/, () => closeQueueBtn.click());
+  expect(closeRes.ok, `close queue accepted: ${closeRes.text}`).toBeTruthy();
+}
+
+

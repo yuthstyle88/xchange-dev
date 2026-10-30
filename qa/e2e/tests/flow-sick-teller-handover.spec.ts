@@ -3,7 +3,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import {
   clockIn,
+  closeQueueIfOpened,
   cutOff,
+  ensureQueueOpen,
   ensureShiftClosed,
   hasAccount,
   posted,
@@ -155,7 +157,11 @@ async function clockOutIfClockedIn(page: Page): Promise<void> {
 }
 
 /** Saves one cash BUY exchange of `EXCHANGE_AMOUNT` on `/desk?branch=...` and returns the completed transaction id. */
-async function saveOneCashBuyExchange(tellerPage: Page, label: string): Promise<string> {
+async function saveOneCashBuyExchange(
+  tellerPage: Page,
+  label: string,
+  manager?: Page,
+): Promise<{ txId: string; openedQueue: boolean }> {
   const currency = users.currency ?? 'USD';
   await tellerPage.goto('/desk?branch=' + users.branch);
   await expect(
@@ -180,6 +186,7 @@ async function saveOneCashBuyExchange(tellerPage: Page, label: string): Promise<
 
   const confirmBookingBtn = tellerPage.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
   await expect(confirmBookingBtn, `[${label}] booking step confirm button`).toBeVisible({ timeout: 15_000 });
+  const openedQueue = manager ? await ensureQueueOpen(manager) : false;
   await confirmBookingBtn.click();
 
   const methodSelect = tellerPage.locator('select[name="method"]');
@@ -224,7 +231,7 @@ async function saveOneCashBuyExchange(tellerPage: Page, label: string): Promise<
   await expect(tellerPage.locator('section.desk-form strong').first()).toHaveText(/^XC-\d{8}-\d{6}$/, {
     timeout: 20_000,
   });
-  return txId;
+  return { txId, openedQueue };
 }
 
 /** Fills the count or handover denomination inputs so they match `expectedByCurrency` from `my_shift`. */
@@ -296,6 +303,7 @@ test.describe.serial('sick or leaving teller: hand the shift over end to end (#4
     const manager = await browser.newPage({ baseURL: users.baseUrl, viewport: { width: 1280, height: 900 } });
 
     let started: 'started' | 'alreadyOpen' | undefined;
+    let openedQueue = false;
 
     try {
       await signIn(tellerA, 'teller', '/staff');
@@ -347,7 +355,8 @@ test.describe.serial('sick or leaving teller: hand the shift over end to end (#4
       const startedByThisSpec = started === 'started';
 
       const currency = users.currency ?? 'USD';
-      const txAId = await saveOneCashBuyExchange(tellerA, 'tellerA');
+      const { txId: txAId, openedQueue: openedA } = await saveOneCashBuyExchange(tellerA, 'tellerA', manager);
+      if (openedA) openedQueue = true;
       console.log(`[#4881] step 1: teller A (${tellerAUserId}) saved exchange ${txAId} on shift ${shiftAId}`);
 
       const shiftAAfterTx = await readMyShift(tellerA);
@@ -448,7 +457,8 @@ test.describe.serial('sick or leaving teller: hand the shift over end to end (#4
       await clockOutIfClockedIn(tellerA);
 
       // Step 4: B saves an exchange on that shift. It posts to B's shift.
-      const txBId = await saveOneCashBuyExchange(tellerB, 'tellerB');
+      const { txId: txBId, openedQueue: openedB } = await saveOneCashBuyExchange(tellerB, 'tellerB', manager);
+      if (openedB) openedQueue = true;
       console.log(`[#4881] step 4: teller B (${tellerBUserId}) saved exchange ${txBId} on shift ${shiftBId}`);
 
       const shiftBAfterTx = await readMyShift(tellerB);
@@ -517,6 +527,7 @@ test.describe.serial('sick or leaving teller: hand the shift over end to end (#4
       }
       await shot(manager, 'staff', 'sick-teller-4-day-closed');
     } finally {
+      await closeQueueIfOpened(manager, openedQueue).catch(() => {});
       if (started === 'started') {
         await cutOff(manager).catch(() => {});
       }
