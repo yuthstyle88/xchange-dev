@@ -6,6 +6,7 @@ import {
   hasAccount,
   mePermissions,
   posted,
+  sameOriginHeaders,
   shot,
   signIn,
   STAFF_LANGS,
@@ -696,7 +697,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
 
       // pricingApprove (b): 4 invalid input cases against POST /api/pricing/approve (pricing_approve.rs:124-218).
       // (TierEditor's approve button is disabled on main until #4324 populates pricing_board.suggestion.)
-      const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
+      const sameOrigin = sameOriginHeaders();
       const approveUrl = `/api/pricing/approve?branch=${encodeURIComponent(users.branch)}`;
       const validTiers = [
         { tierNo: 1, buy: '32.10', sell: '32.60' },
@@ -1144,10 +1145,7 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
 
     // Same-origin headers required by api/src/presentation/extractors/origin.rs:33 and command.rs:256
     // (see flow-desk-kiosk-cancel.spec.ts:59) so requests reach Policy::authorize instead of 400 originRejected.
-    const sameOrigin = {
-      'x-xchange-request': '1',
-      origin: new URL(users.baseUrl).origin,
-    };
+    const sameOrigin = sameOriginHeaders();
     const branch = encodeURIComponent(users.branch);
 
     const checks: Array<{

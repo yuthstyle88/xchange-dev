@@ -16,7 +16,7 @@
 // - api/crates/xc-verification/src/application/case_service.rs:195-209
 //   first bytes checked for PNG signature [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] (1 B–15 MB)
 import { expect, test, type Page } from '@playwright/test';
-import { hasAccount, mePermissions, posted, shot, signIn, users, type Role } from './helpers';
+import { hasAccount, mePermissions, posted, shot, signIn, users, writeHeaders, type Role } from './helpers';
 
 /** 1x1 transparent PNG (67 bytes; starts with PNG signature 89 50 4E 47 0D 0A 1A 0A, case_service.rs:199-201). */
 const TINY_PNG = Buffer.from(
@@ -48,11 +48,7 @@ async function revokeVerifiedCase(customer: Page, admin: Page): Promise<{ ok: bo
   const perms = await mePermissions(admin);
   test.skip(!perms.includes('VerificationReview'), 'executive lacks VerificationReview');
   const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
-    headers: {
-      'x-xchange-request': '1',
-      origin: new URL(users.baseUrl).origin,
-      'idempotency-key': `f9-revoke-${id}-${expectedVersion}-${Date.now()}`,
-    },
+    headers: writeHeaders(`f9-revoke-${id}-${expectedVersion}-${Date.now()}`),
     data: {
       id,
       expectedVersion,

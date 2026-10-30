@@ -16,7 +16,7 @@
 //   .xc-slots-loading (:575), input[name="rescheduleSlot"] (:593-596),
 //   [data-action="confirm-reschedule"] (:628)
 import { expect, test, type Browser, type Page } from '@playwright/test';
-import { hasAccount, posted, shot, signIn, users } from './helpers';
+import { hasAccount, posted, sameOriginHeaders, shot, signIn, users } from './helpers';
 
 const HORIZON_DAYS = 14; // deploy/server/seed-test-booking.sh:147
 
@@ -346,7 +346,7 @@ test.describe.serial('F21 booking reschedule', () => {
             } catch (cardErr) {
               const res = await cleanPage.request.post(`/api/bookings/${encodeURIComponent(bookingId)}/cancel`, {
                 // command.rs:259 same_origin needs the marker header and Origin (origin.rs:33-48).
-                headers: { 'x-xchange-request': '1', Origin: new URL(users.baseUrl).origin },
+                headers: sameOriginHeaders(),
               });
               if (!res.ok()) {
                 throw cardErr;

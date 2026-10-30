@@ -55,6 +55,7 @@ import {
   STAFF_LANGS,
   users,
   withLang,
+  writeHeaders,
   type Role,
 } from './helpers';
 
@@ -111,11 +112,7 @@ async function revokeVerifiedCase(
   const perms = await mePermissions(admin);
   test.skip(!perms.includes('VerificationReview'), 'executive lacks VerificationReview');
   const res = await admin.request.post(`/api/operations/verification/cases/${encodeURIComponent(id)}/revoke`, {
-    headers: {
-      'x-xchange-request': '1',
-      origin: new URL(users.baseUrl).origin,
-      'idempotency-key': `${RUN_MARKER}-revoke-${id}-${expectedVersion}-${Date.now()}`,
-    },
+    headers: writeHeaders(`${RUN_MARKER}-revoke-${id}-${expectedVersion}-${Date.now()}`),
     data: {
       id,
       expectedVersion,
