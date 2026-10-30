@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
+import * as staffI18n from '../../../web/src/screens/staff/i18n';
 import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
 import {
   clockIn,
@@ -605,8 +606,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         expect(completeRes.ok, `POST /api/transactions/${txId}/complete`).toBeTruthy();
 
         // ── 2. Refunds: `reversalRequest` (`/desk/transactions/{id}`) and `reversalPost` (`/desk?branch=MAIN`) ──
-        // Citations: TransactionScreen.tsx:147-162,181,215,225-230; ReasonDialog.tsx:32-50;
-        // RefundsStep.tsx:14,54-55,76,87-96,128-136; refunds/i18n.ts:20,47.
+        // Citations: TransactionScreen.tsx:181,244,260-273; ReasonDialog.tsx:36-42,46-76;
+        // RefundsStep.tsx:14,54-55,76,87-96,128-136; refunds/i18n.ts:20,47; staff/i18n.ts:10,25.
+        // Reason dialog client-side check: ReasonDialog.tsx:37-40 (`if (props.required && reason().trim().length === 0) { setError(t('reasonRequired')); return; }`).
         for (const lang of STAFF_LANGS) {
           await openInLang(teller, lang, `/desk/transactions/${txId}`);
           const requestBtn = teller.locator('button[data-action="request-reversal"]');
@@ -614,33 +616,60 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             timeout: 20_000,
           });
 
-          // Cases 1–3 on `reversalRequest`: empty (''), whitespace ('   '), and >500 chars ('x'.repeat(505)).
-          for (const badReason of ['', '   ', 'x'.repeat(505)]) {
-            await requestBtn.click();
-            const reasonDialog = teller.locator('dialog.xc-dialog');
-            await expect(reasonDialog, 'ReasonDialog open (ReasonDialog.tsx:32)').toBeVisible({ timeout: 10_000 });
-            const reasonInput = reasonDialog.locator('input[type="text"]');
+          const reasonDialog = teller.locator('dialog.xc-dialog');
+          const reasonInput = reasonDialog.locator('input[type="text"]');
+          const confirmBtn = reasonDialog.locator('.xc-dialog-actions button').last();
+
+          // Open ReasonDialog once for client-side and server-side invalid reason assertions.
+          await requestBtn.click();
+          await expect(reasonDialog, 'ReasonDialog open (ReasonDialog.tsx:46)').toBeVisible({ timeout: 10_000 });
+
+          // Cases 1–2 on `reversalRequest`: empty ('') and whitespace ('   ') reasons refuse client-side.
+          // Dialog refuses locally without sending POST, shows reasonRequired alert, keeps input.
+          for (const badReason of ['', '   ']) {
             await reasonInput.fill(badReason);
             await expect(reasonInput, 'ReasonDialog input holds typed value before confirm').toHaveValue(badReason);
 
-            const revRes = await posted(
-              teller,
-              new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/reversal-requests$`),
-              () => reasonDialog.locator('.xc-dialog-actions button').last().click(),
-            );
-            expect(revRes.ok, `reversalRequest (${badReason.length} chars, ${lang}) refused`).toBe(false);
-            expect(revRes.text, 'reversalRequest status').toMatch(/^400\b/);
-
-            const dtxMsg = teller.locator('.xc-dtx-message[role="status"]');
-            await expect(dtxMsg, `dtx refusal message visible (${lang}, TransactionScreen.tsx:181)`).toBeVisible({
-              timeout: 10_000,
-            });
-            expectWordedRefusal(await dtxMsg.innerText(), `reversalRequest (${lang})`);
-            await expect(
-              teller.locator('button[data-action="request-reversal"]'),
-              'request-reversal button still available because no reversal was created',
-            ).toBeVisible();
+            let revPosts = 0;
+            const onRevReq = (req: { method(): string; url(): string }) => {
+              if (
+                req.method() === 'POST' &&
+                new URL(req.url()).pathname === `/api/transactions/${encodeURIComponent(txId)}/reversal-requests`
+              ) {
+                revPosts++;
+              }
+            };
+            teller.on('request', onRevReq);
+            try {
+              await confirmBtn.click();
+              const dialogErr = reasonDialog.locator('[role="alert"]');
+              await expect(dialogErr, `dialog field error visible for ${JSON.stringify(badReason)} (${lang})`).toBeVisible({
+                timeout: 10_000,
+              });
+              await expect(dialogErr, `reasonRequired text for ${JSON.stringify(badReason)} (${lang})`).toHaveText(
+                staffI18n[lang === 'th' ? 'th' : 'en'].reasonRequired,
+              );
+              expectWordedRefusal(await dialogErr.innerText(), `reversal reason ${JSON.stringify(badReason)} (${lang})`);
+            } finally {
+              teller.off('request', onRevReq);
+            }
+            expect(revPosts, `reversalRequest (${JSON.stringify(badReason)}, ${lang}) sends no POST`).toBe(0);
+            await expect(reasonInput, 'ReasonDialog input keeps value after refusal').toHaveValue(badReason);
           }
+
+          // Case 3 on `reversalRequest`: >500 chars never leaves the page. The input caps at 500
+          // (TransactionScreen.tsx:264 `maxLength={500}`; ReasonDialog.tsx:52), and 500 chars is a
+          // valid reason, so confirming would create a reversal. The server's own 1–500 bound
+          // (reversal_request.rs:59) is not reachable from this form.
+          await reasonInput.fill('x'.repeat(505));
+          await expect(reasonInput, 'ReasonDialog input caps the reason at 500 chars').toHaveValue('x'.repeat(500));
+          await expect(reasonDialog.getByText('500 / 500'), 'ReasonDialog counter at the cap').toBeVisible();
+          await reasonDialog.locator('.xc-dialog-actions button').first().click();
+          await expect(reasonDialog, 'ReasonDialog closes on cancel').toBeHidden({ timeout: 10_000 });
+          await expect(
+            teller.locator('button[data-action="request-reversal"]'),
+            'request-reversal button still available because no reversal was created',
+          ).toBeVisible();
         }
         await shot(teller, 'desk', 'validation-reversal-request');
 
