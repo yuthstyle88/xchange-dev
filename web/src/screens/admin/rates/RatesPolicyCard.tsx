@@ -3,7 +3,6 @@ import type * as table from './i18n';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type { RatePolicyData, ValueTierDto } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
-import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
 import { checkDecimal, MONEY, numeric, RATE_PERCENT } from '../../../shared/ui/bounded';
@@ -14,7 +13,7 @@ import { EMPTY_OVERRIDE, overrideBlank, overridePayload, type FormulaOverrideSta
 import { RatesFormulaOverride } from './RatesFormulaOverride';
 import './rates-policy.css';
 
-const ft = screenT('admin.formula', formulaTable);
+const ft = formulaTable.formulaT;
 
 const STALE_LIMIT_BOUND = numeric(20, 2, 'nonNegative');
 const SHARP_MOVE_BOUND = numeric(9, 4, 'positive');
