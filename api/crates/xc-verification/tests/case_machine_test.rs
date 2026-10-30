@@ -30,6 +30,7 @@ fn make_case(status: CaseStatus) -> VerificationCase {
 
 fn reviewer() -> ReviewerActor {
     ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: Uuid::new_v4(),
         scope: ReviewerScope::Organization {
             organization_id: Uuid::new_v4(),

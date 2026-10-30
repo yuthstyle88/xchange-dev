@@ -15,6 +15,7 @@ use serde::Serialize;
 use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
@@ -58,6 +59,7 @@ impl ContactVerify {
 
     /// Verifies `phone` as `customer_id`'s phone inside the caller's transaction, as `who` acting
     /// at `branch`.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
@@ -66,7 +68,9 @@ impl ContactVerify {
         customer_id: &'a str,
         phone: &'a str,
         now: DateTime<Utc>,
+        roles_used: &'a [Role],
     ) -> BoxFuture<'a, Result<ContactSummary, ContactVerifyError>> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         Box::pin(async move {
             let customer_org: Option<Uuid> =
                 sqlx::query_scalar("SELECT organization_id FROM customers WHERE id = $1")

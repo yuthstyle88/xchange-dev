@@ -71,7 +71,7 @@ impl CommandAction for CustomerPhoneStartCommand {
         let now = Utc::now();
 
         let res = service
-            .start_in_tx(tx, who, branch, &input.id, &input.phone, now)
+            .start_in_tx(tx, who, branch, &input.id, &input.phone, now, &[])
             .await
             .map_err(map_phone_error)?;
 

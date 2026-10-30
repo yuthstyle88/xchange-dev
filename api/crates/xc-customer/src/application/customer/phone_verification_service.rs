@@ -10,6 +10,7 @@ use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::Role;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::pii::{IdentityType, LookupHasher, PiiCipher};
@@ -163,15 +164,18 @@ impl PhoneVerificationService {
         customer_id: &str,
         phone: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneStartResult, PhoneVerificationError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let mut tx = self.repo.pool().begin().await?;
         let res = self
-            .start_in_tx(&mut tx, actor, branch, customer_id, phone, now)
+            .start_in_tx(&mut tx, actor, branch, customer_id, phone, now, &[])
             .await?;
         tx.commit().await?;
         Ok(res)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_in_tx(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -180,7 +184,9 @@ impl PhoneVerificationService {
         customer_id: &str,
         phone: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneStartResult, PhoneVerificationError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let org_id = Uuid::parse_str(&actor.organization_id)
             .map_err(|_| PhoneVerificationError::NotFound)?;
         let teller_user_id = Uuid::parse_str(&actor.user_id)
@@ -373,6 +379,7 @@ impl PhoneVerificationService {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn confirm(
         &self,
         actor: &Actor,
@@ -381,10 +388,21 @@ impl PhoneVerificationService {
         challenge_id: Uuid,
         code: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneConfirmResult, PhoneVerificationError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let mut tx = self.repo.pool().begin().await?;
         let res = self
-            .confirm_in_tx(&mut tx, actor, branch, customer_id, challenge_id, code, now)
+            .confirm_in_tx(
+                &mut tx,
+                actor,
+                branch,
+                customer_id,
+                challenge_id,
+                code,
+                now,
+                &[],
+            )
             .await?;
         tx.commit().await?;
         Ok(res)
@@ -400,7 +418,9 @@ impl PhoneVerificationService {
         challenge_id: Uuid,
         code: &str,
         now: DateTime<Utc>,
+        roles_used: &[Role],
     ) -> Result<PhoneConfirmResult, PhoneVerificationError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let org_id = Uuid::parse_str(&actor.organization_id)
             .map_err(|_| PhoneVerificationError::NotFound)?;
         let teller_user_id = Uuid::parse_str(&actor.user_id)

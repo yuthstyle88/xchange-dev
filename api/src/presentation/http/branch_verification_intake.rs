@@ -231,6 +231,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
     };
 
     let reviewer = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id,
         scope: reviewer_scope,
     };

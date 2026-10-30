@@ -71,7 +71,7 @@ impl CommandAction for CustomerContactVerifyCommand {
             xc_customer::application::customer::contact_verify::ContactVerify::new(branch_tx);
         let now = chrono::Utc::now();
         let res = service
-            .verify_in(tx, who, branch, &input.customer_id, &input.phone, now)
+            .verify_in(tx, who, branch, &input.customer_id, &input.phone, now, &[])
             .await;
 
         match res {

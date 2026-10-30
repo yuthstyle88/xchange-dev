@@ -339,6 +339,7 @@ impl Db {
         let branch_id = self.branch(org).await;
         (
             ReviewerActor {
+                role: xc_auth::domain::access::Role::VerificationReviewer,
                 user_id,
                 scope: ReviewerScope::Branch {
                     organization_id: Uuid::parse_str(org).expect("uuid"),
@@ -352,6 +353,7 @@ impl Db {
     async fn org_scoped_reviewer(&self, org: &str) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Organization {
                 organization_id: Uuid::parse_str(org).expect("uuid"),

@@ -82,7 +82,7 @@ impl CommandAction for DenominationGroupCreateCommand {
         })?;
 
         self.service
-            .create_group(tx, who, code, &group)
+            .create_group(tx, who, code, &group, &[])
             .await
             .map_err(map_rate_engine_error)?;
 
@@ -164,6 +164,7 @@ impl CommandAction for DenominationGroupMapCommand {
                 &group,
                 &input.provider,
                 &input.instrument_key,
+                &[],
             )
             .await
             .map_err(map_rate_engine_error)?;
@@ -237,7 +238,7 @@ impl CommandAction for DenominationGroupRemoveCommand {
         })?;
 
         self.service
-            .remove_group(tx, who, code, &group)
+            .remove_group(tx, who, code, &group, &[])
             .await
             .map_err(map_rate_engine_error)?;
 

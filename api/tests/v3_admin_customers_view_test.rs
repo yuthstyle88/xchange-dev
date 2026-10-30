@@ -536,7 +536,7 @@ impl Room {
             .run(&here, move |tx| {
                 Box::pin(async move {
                     service
-                        .verify_in(tx, &who, &acting, &customer, "081-234-5678", t)
+                        .verify_in(tx, &who, &acting, &customer, "081-234-5678", t, &[])
                         .await
                         .map_err(|e| pos_error::AppError::Internal(format!("{e:?}")))
                 })

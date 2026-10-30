@@ -376,6 +376,8 @@ async fn handle_command<C: CommandAction>(
         Ok(g) => g,
         Err(e) => return V3Error::from(e).error_response(),
     };
+    // #5630 (§14.5): the audit writers read the granting roles from the caller.
+    caller.granted = grant.roles_used.clone();
     let branch = grant.branch;
     // #5526: an organisation-level row grants the session branch, so the branch the request named
     // (if any) is the one checked; for a request-level row the two are the same branch.

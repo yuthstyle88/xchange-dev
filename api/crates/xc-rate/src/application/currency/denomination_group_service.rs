@@ -48,7 +48,9 @@ impl DenominationGroupService {
         who: &Actor,
         code: CurrencyCode,
         group: &GroupCode,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 
@@ -98,6 +100,7 @@ impl DenominationGroupService {
     }
 
     /// Maps a denomination group to a board rate row (instrument_key).
+    #[allow(clippy::too_many_arguments)]
     pub async fn map_group(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -106,7 +109,9 @@ impl DenominationGroupService {
         group: &GroupCode,
         provider: &str,
         instrument_key: &str,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 
@@ -209,7 +214,9 @@ impl DenominationGroupService {
         who: &Actor,
         code: CurrencyCode,
         group: &GroupCode,
+        roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
+        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 

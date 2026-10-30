@@ -28,5 +28,9 @@ pub(crate) fn reviewer_actor(who: &Actor, now: DateTime<Utc>) -> Result<Reviewer
             }
         }
     };
-    Ok(ReviewerActor { user_id, scope })
+    Ok(ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
+        user_id,
+        scope,
+    })
 }
