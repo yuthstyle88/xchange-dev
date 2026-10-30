@@ -1,0 +1,149 @@
+// Pricing formula FE (docs/design/blueprint/pricing-formula-web.md §2): the text of the shared formula parts — the
+// editor, the live preview table and the save refusal — used by the `pricing-formula` menu and the rates policy card.
+// `en` is real English, not a copy of `th`: these parts render on the rates screen, whose English-mode test
+// (`rates/RatesDraft.test.tsx`, "carry no Thai") refuses Thai text in English. Staff screens are TH/EN only.
+
+import { screenT } from '../../../shared/i18n';
+
+export const th = {
+  // FormulaEditor (E1–E4)
+  buyFormulaLabel: 'สูตรราคารับซื้อ',
+  sellFormulaLabel: 'สูตรราคาขาย',
+  inputsTitle: 'ค่าที่ใช้ในสูตรได้',
+  useDefault: 'ใช้สูตรมาตรฐานของระบบ',
+  syntaxHelp: 'ใช้ได้: ตัวเลข + - * / วงเล็บ min(a, b) max(a, b) และชื่อค่าด้านล่าง ระบบปัดเศษให้เอง',
+  'input.ref_buy': 'ราคารับซื้อของเรทอ้างอิง (ต่อหน่วยของสกุลเงิน)',
+  'input.ref_sell': 'ราคาขายของเรทอ้างอิง (ต่อหน่วยของสกุลเงิน)',
+  'input.ref_mid': 'ค่ากลางของเรทอ้างอิง (ซื้อ + ขาย) ÷ 2',
+  'input.buy_pct': 'ส่วนปรับราคารับซื้อของนโยบาย (%)',
+  'input.sell_pct': 'ส่วนปรับราคาขายของนโยบาย (%)',
+  'input.tier_buy_pct': 'ส่วนต่างรับซื้อของระดับมูลค่า (%)',
+  'input.tier_sell_pct': 'ส่วนต่างขายของระดับมูลค่า (%)',
+
+  // FormulaError codes (E3, S10)
+  'code.syntax': 'เขียนสูตรไม่ถูกต้อง',
+  'code.unknownInput': 'มีชื่อค่าที่ระบบไม่รู้จัก',
+  'code.missingInput': 'เรทอ้างอิงไม่มีค่าที่สูตรใช้',
+  'code.divideByZero': 'สูตรหารด้วยศูนย์',
+  'code.overflow': 'ผลลัพธ์ใหญ่เกินกว่าที่ระบบคำนวณได้',
+  'code.notPositive': 'ผลลัพธ์ต้องมากกว่า 0',
+  'code.tooLong': 'สูตรยาวเกิน 500 ตัวอักษร',
+  'code.tooDeep': 'สูตรซ้อนวงเล็บเกิน 16 ชั้น',
+
+  // FormulaPreviewTable (T1r–T5r)
+  previewTitle: 'ตัวอย่างราคาจากสูตรนี้ (ยังไม่บันทึก)',
+  previewPending: 'กำลังคำนวณ…',
+  previewFixFirst: 'แก้สูตรให้ถูกก่อน แล้วตัวอย่างจะแสดง',
+  previewOk: 'ผ่าน',
+  unitNote:
+    'ค่าคงที่ในสูตรคิดต่อหน่วยของสกุลเงินนั้น เช่น 0.05 คือ 5 สตางค์ต่อ 1 USD แต่เป็น 5 สตางค์ต่อ 100 JPY',
+  unitPer: 'ต่อ {unit} {currency}',
+  notCheckedTitle: 'ยังไม่ได้ตรวจ (ไม่มีเรทอ้างอิง)',
+  colBranch: 'สาขา',
+  colCurrency: 'สกุลเงิน',
+  colUnit: 'หน่วย',
+  colTier: 'ระดับ',
+  colMode: 'โหมด',
+  colBuy: 'ราคารับซื้อ',
+  colSell: 'ราคาขาย',
+  colResult: 'ผล',
+  colProblem: 'ปัญหา',
+  modeAuto: 'อัตโนมัติ (AUTO)',
+  modeFollow: 'ตามตลาด (FOLLOW)',
+  dash: '—',
+
+  // FormulaRefusal (R1) and failureText (S10)
+  refusalTitle: 'บันทึกไม่ได้ เพราะราคาต่อไปนี้ไม่ผ่านการตรวจ',
+  buyAboveSell: 'ราคารับซื้อ {buy} สูงกว่าราคาขาย {sell}',
+  outsideGuardBuy: 'ราคารับซื้อ {price} อยู่นอกกรอบ {min} ถึง {max} ({pct} %)',
+  outsideGuardSell: 'ราคาขาย {price} อยู่นอกกรอบ {min} ถึง {max} ({pct} %)',
+
+  // RatesFormulaOverride (V1–V8)
+  overrideOpen: 'สูตรคำนวณราคาของสาขานี้',
+  overrideTitle: 'สูตรคำนวณราคา',
+  overrideFollow: 'ใช้สูตรขององค์กร',
+  overrideOwn: 'ใช้สูตรของสาขานี้เอง',
+  overrideOrgText: 'สูตรขององค์กรที่สาขานี้ใช้',
+  overridePreviewNote: 'ตัวอย่างใช้ % และระดับมูลค่าที่บันทึกไว้แล้วของสาขา',
+  overrideBlank: 'กรอกสูตรให้ครบทั้งราคารับซื้อและราคาขาย',
+  overrideSaveHint: 'กดบันทึกนโยบายเพื่อบันทึกสูตรของสาขา',
+  'source.BRANCH': 'สูตรของสาขา',
+  'source.ORGANISATION': 'สูตรขององค์กร',
+  'source.DEFAULT': 'สูตรมาตรฐานของระบบ',
+  loadFailed: 'โหลดสูตรไม่ได้',
+
+  // RatesPolicyCard (C4, C6)
+  saveRefused: 'บันทึกนโยบายไม่ได้ ดูรายการราคาที่ไม่ผ่านด้านล่าง',
+  savedNotChecked: 'บันทึกแล้ว แต่ยังไม่ได้ตรวจ: {list}',
+};
+
+export type Key = keyof typeof th;
+
+export const en: Record<Key, string> = {
+  buyFormulaLabel: 'Buy price formula',
+  sellFormulaLabel: 'Sell price formula',
+  inputsTitle: 'Values a formula may use',
+  useDefault: 'Use the system default formula',
+  syntaxHelp: 'Allowed: numbers, + - * /, parentheses, min(a, b), max(a, b) and the names below. The system rounds.',
+  'input.ref_buy': 'Reference buy rate (per currency unit)',
+  'input.ref_sell': 'Reference sell rate (per currency unit)',
+  'input.ref_mid': 'Reference mid rate (buy + sell) ÷ 2',
+  'input.buy_pct': 'Policy buy adjustment (%)',
+  'input.sell_pct': 'Policy sell adjustment (%)',
+  'input.tier_buy_pct': 'Value tier buy margin (%)',
+  'input.tier_sell_pct': 'Value tier sell margin (%)',
+  'code.syntax': 'The formula is not written correctly',
+  'code.unknownInput': 'The formula names a value the system does not know',
+  'code.missingInput': 'The reference rate lacks a value the formula uses',
+  'code.divideByZero': 'The formula divides by zero',
+  'code.overflow': 'The result is too large to compute',
+  'code.notPositive': 'The result must be above 0',
+  'code.tooLong': 'The formula is longer than 500 characters',
+  'code.tooDeep': 'The formula nests more than 16 parentheses',
+  previewTitle: 'Prices from this formula (not saved)',
+  previewPending: 'Calculating…',
+  previewFixFirst: 'Fix the formula and the preview will show',
+  previewOk: 'Passes',
+  unitNote: 'A constant counts per the currency unit: 0.05 is 5 satang per 1 USD, but 5 satang per 100 JPY',
+  unitPer: 'per {unit} {currency}',
+  notCheckedTitle: 'Not checked (no reference rate)',
+  colBranch: 'Branch',
+  colCurrency: 'Currency',
+  colUnit: 'Unit',
+  colTier: 'Tier',
+  colMode: 'Mode',
+  colBuy: 'Buy',
+  colSell: 'Sell',
+  colResult: 'Result',
+  colProblem: 'Problem',
+  modeAuto: 'Automatic (AUTO)',
+  modeFollow: 'Market (FOLLOW)',
+  dash: '—',
+  refusalTitle: 'Not saved: these prices fail the check',
+  buyAboveSell: 'Buy {buy} is above sell {sell}',
+  outsideGuardBuy: 'Buy {price} is outside the guard {min} to {max} ({pct} %)',
+  outsideGuardSell: 'Sell {price} is outside the guard {min} to {max} ({pct} %)',
+  overrideOpen: "This branch's price formula",
+  overrideTitle: 'Price formula',
+  overrideFollow: "Use the organisation's formula",
+  overrideOwn: "Use this branch's own formula",
+  overrideOrgText: "The organisation's formula this branch uses",
+  overridePreviewNote: "The preview uses the branch's saved percentages and value tiers",
+  overrideBlank: 'Enter both the buy and the sell formula',
+  overrideSaveHint: "Press save policy to save the branch's formula",
+  'source.BRANCH': "The branch's own formula",
+  'source.ORGANISATION': "The organisation's formula",
+  'source.DEFAULT': 'The system default formula',
+  loadFailed: 'Could not load the formula',
+  saveRefused: 'Policy not saved: see the failing prices below',
+  savedNotChecked: 'Saved, but not checked: {list}',
+};
+
+/**
+ * The one translator for these texts, for every screen that shows a formula part. The `screenT` call lives here, in
+ * `parts/`, because the namespace guard (`shared/i18n/namespace.test.ts`, design W10) wants each call to name its own
+ * folder (`admin.parts`); the rates card and the pricing-formula screen import this instead of calling `screenT`.
+ * `screenT` looks `admin.parts.<key>` up in `parts/i18n.ts` first, so no key here may also be a key there
+ * (`formula-i18n.test.ts`).
+ */
+export const formulaT = screenT('admin.parts', { th, en });

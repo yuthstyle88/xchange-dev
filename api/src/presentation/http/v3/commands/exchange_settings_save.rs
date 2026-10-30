@@ -33,7 +33,7 @@ use crate::presentation::dto::v3::exchange_settings::{
     BranchExchangeLimitDto, ExchangeSettingsDto,
 };
 use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, Locks, out_of_scope, role_not_allowed_here, server_error,
+    CommandAction, CommandEndpoint, Locks, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -123,14 +123,14 @@ impl CommandAction for ExchangeSettingsSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        if BranchScope::of(who, Permission::SystemSettings, Utc::now()) != BranchScope::All {
+        let now = Utc::now();
+        if BranchScope::of(who, Permission::SystemSettings, now) != BranchScope::All {
             return Err(out_of_scope());
         }
-        let standing = Standing::of(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
         let org = organization_of(tx, branch).await?;
         let before = self.settings.get_ttl_in(tx, org).await.map_err(refusal)?;
         self.settings
-            .set_ttl_in(tx, org, input.quote_ttl_seconds, &who.user_id, Utc::now())
+            .set_ttl_in(tx, org, input.quote_ttl_seconds, &who.user_id, now)
             .await
             .map_err(refusal)?;
         let after = self.settings.get_ttl_in(tx, org).await.map_err(refusal)?;
@@ -140,7 +140,7 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: standing.kind.audit_text().to_owned(),
+                actor_role: Standing::audit_text_of(who, now).to_owned(),
                 scope: "organization".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: org.to_string(),
@@ -193,7 +193,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let standing = Standing::of(who, Utc::now()).ok_or_else(role_not_allowed_here)?;
+        let now = Utc::now();
         let target = BranchId::new(input.id.clone());
         let limit = match input.approval_limit_thb.as_deref() {
             None => None,
@@ -213,7 +213,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             .await
             .map_err(refusal)?;
         self.settings
-            .set_approval_limit_in(tx, org, &target, limit, &who.user_id, Utc::now())
+            .set_approval_limit_in(tx, org, &target, limit, &who.user_id, now)
             .await
             .map_err(refusal)?;
         let after = self
@@ -228,7 +228,7 @@ impl CommandAction for BranchExchangeLimitSaveCommand {
             &org.to_string(),
             AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: standing.kind.audit_text().to_owned(),
+                actor_role: Standing::audit_text_of(who, now).to_owned(),
                 scope: "branch".to_owned(),
                 action: Self::NAME.to_owned(),
                 object_ref: target.as_str().to_owned(),

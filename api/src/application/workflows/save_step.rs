@@ -42,9 +42,9 @@ impl SaveActor {
         actor: &xc_auth::domain::access::Actor,
         now: DateTime<Utc>,
     ) -> Option<Self> {
-        let standing = Standing::of(actor, now)?;
+        let standing = Standing::acting(actor, now)?;
         let employee_id = match standing.kind {
-            StandingKind::Owner => None,
+            StandingKind::Owner | StandingKind::Executive => None,
             StandingKind::Staff(_) => Some(actor.user_id.clone()),
         };
         Some(Self {
@@ -81,6 +81,9 @@ impl SaveActor {
                 ScopedRole::new(AccessRole::Executive, None, since, None),
                 ScopedRole::new(AccessRole::Admin, None, since, None),
             ],
+            StandingKind::Executive => {
+                vec![ScopedRole::new(AccessRole::Executive, None, since, None)]
+            }
             StandingKind::Staff(role) => {
                 vec![ScopedRole::new(role, Some(branch.clone()), since, None)]
             }
@@ -198,6 +201,11 @@ mod tests {
                 ScopedRole::new(AccessRole::Executive, None, since, None),
                 ScopedRole::new(AccessRole::Admin, None, since, None),
             ]
+        );
+        let executive = saver(StandingKind::Executive).access_actor_at("org", &b1, since);
+        assert_eq!(
+            executive.roles,
+            vec![ScopedRole::new(AccessRole::Executive, None, since, None)]
         );
     }
 }

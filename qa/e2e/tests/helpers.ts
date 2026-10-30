@@ -426,9 +426,13 @@ export async function posted(
 export async function clockIn(page: Page): Promise<string> {
   const clock = page.getByTestId('floor-clock');
   await expect(clock, 'the floor card clock button').toBeVisible({ timeout: 20_000 });
-  const shiftButton = page.getByTestId('shift-open-count').or(page.getByTestId('shift-close-count')).first();
-  if (await shiftButton.isVisible().catch(() => false)) return 'already clocked in';
+  const floorRes = await page.request.get(`/api/v3/views/staff_floor?branch=${encodeURIComponent(users.branch)}`);
+  expect(floorRes.ok(), `GET /api/v3/views/staff_floor: ${floorRes.status()}`).toBeTruthy();
+  const floor = (await floorRes.json()) as { data?: { myClockIn?: string | null } };
+  if (floor.data?.myClockIn) return 'already clocked in';
   const res = await posted(page, /^\/api\/attendance$/, () => clock.click());
+  // Callers go on to press a shift button, so wait for one after a real clock-in (deciding is done above, from the view).
+  const shiftButton = page.getByTestId('shift-open-count').or(page.getByTestId('shift-close-count')).first();
   await expect(shiftButton, `shift buttons after clock-in (POST /api/attendance ${res.text})`).toBeVisible({ timeout: 20_000 });
   return `clocked in: POST /api/attendance ${res.text}`;
 }
@@ -515,15 +519,50 @@ export async function verifyCount(page: Page, kind: 'OPEN' | 'CLOSE'): Promise<{
 /** If an earlier run left the teller's shift open, close and verify it first so the flow starts from a closed shift. */
 export async function ensureShiftClosed(teller: Page, manager: Page): Promise<void> {
   console.log(`[shift] ${await clockIn(teller)}`);
-  if (await teller.getByTestId('shift-close-count').isVisible().catch(() => false)) {
-    console.log('[shift] leftover open shift found; closing it first');
+  const floorRes = await teller.request.get(`/api/v3/views/staff_floor?branch=${encodeURIComponent(users.branch)}`);
+  expect(floorRes.ok(), `GET /api/v3/views/staff_floor: ${floorRes.status()}`).toBeTruthy();
+  const floor = (await floorRes.json()) as { data?: { myShift?: { id: string } | null } };
+  const shiftId = floor.data?.myShift?.id;
+  if (!shiftId) return;
+
+  console.log('[shift] leftover open shift found; closing it first');
+  const countsRes = await teller.request.get(
+    `/api/v3/views/cash_counts?branch=${encodeURIComponent(users.branch)}&shift=${encodeURIComponent(shiftId)}`,
+  );
+  expect(countsRes.ok(), `GET /api/v3/views/cash_counts: ${countsRes.status()}`).toBeTruthy();
+  type CountRow = { id: string; kind: string; status: string };
+  // The view answers either rows or `{ rows }` (ShiftCard.tsx:116-124 reads both).
+  const counts = (await countsRes.json()) as { data?: CountRow[] | { rows?: CountRow[] } };
+  const rows = Array.isArray(counts.data) ? counts.data : (counts.data?.rows ?? []);
+  const closeCount = rows.find((c) => c.kind === 'CLOSE' && c.status === 'WAITING');
+  if (closeCount) {
+    const aprRes = await manager.request.get(
+      `/api/v3/views/approval_requests?branch=${encodeURIComponent(users.branch)}&status=PENDING`,
+    );
+    expect(aprRes.ok(), `GET /api/v3/views/approval_requests: ${aprRes.status()}`).toBeTruthy();
+    const apr = (await aprRes.json()) as {
+      data?: { requests?: Array<{ id: string; objectId?: string; idempotencyKey?: string }> };
+    };
+    const pending = (apr.data?.requests ?? []).find(
+      (r) => r.objectId === closeCount.id || r.idempotencyKey === `count-difference:${closeCount.id}`,
+    );
+    if (pending) {
+      throw new Error(`shift ${shiftId} CLOSE count ${closeCount.id} is waiting on finance approval ${pending.id}`);
+    }
+  } else {
     const count = await submitCount(teller, 'close');
     expect(count.ok, `leftover closing count accepted: ${count.text}`).toBeTruthy();
-    const verify = await verifyCount(manager, 'CLOSE');
-    expect(verify.ok, `leftover closing count verified: ${verify.text}`).toBeTruthy();
-    await teller.reload();
-    await expect(teller.getByTestId('shift-open-count'), 'the leftover shift is closed').toBeVisible({ timeout: 20_000 });
   }
+
+  const verify = await verifyCount(manager, 'CLOSE');
+  if (verify.text.includes('AWAITING_FINANCE')) {
+    const match = verify.text.match(/"approvalRequestId":\s*"([^"]+)"/);
+    const approvalId = match ? match[1] : '';
+    throw new Error(`shift ${shiftId} CLOSE count is waiting on finance approval ${approvalId}`);
+  }
+  expect(verify.ok, `leftover closing count verified: ${verify.text}`).toBeTruthy();
+  await teller.reload();
+  await expect(teller.getByTestId('shift-open-count'), 'the leftover shift is closed').toBeVisible({ timeout: 20_000 });
 }
 
 /**

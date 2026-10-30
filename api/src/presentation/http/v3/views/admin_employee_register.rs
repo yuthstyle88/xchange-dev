@@ -11,8 +11,9 @@ use chrono::Utc;
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, BranchScope, Permission};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::infrastructure::access::push_user_in_scope;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -51,36 +52,45 @@ impl PagedView for AdminEmployeeRegisterPagedView {
     fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _filter: &Self::Filter,
         before: Option<RowId>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
+        // #5557: a branch-scoped holder sees only the users its rows cover (owner B-2, #5526).
+        let now = Utc::now();
+        let scope = BranchScope::of(who, Permission::UsersManage, now);
         async move {
-            let users: Vec<UserSqlRow> = sqlx::query_as(
+            let mut builder = sqlx::QueryBuilder::<sqlx::Postgres>::new(
                 "SELECT u.id::text, u.employee_code, u.name, u.position, u.department, u.tell_code, u.status \
-                 FROM users u JOIN branches b ON b.id = $1 AND u.organization_id = b.organization_id \
-                 WHERE $2::text IS NULL \
+                 FROM users u JOIN branches b ON b.id = ",
+            );
+            builder.push_bind(&branch);
+            builder.push(" AND u.organization_id = b.organization_id WHERE (");
+            builder.push_bind(before.as_deref());
+            builder.push(
+                "::text IS NULL \
                     OR ( \
                         (u.employee_code IS NULL, COALESCE(u.employee_code, ''), u.name, u.id::text) > \
                         (SELECT p.employee_code IS NULL, COALESCE(p.employee_code, ''), p.name, p.id::text \
-                         FROM users p JOIN branches pb ON pb.id = $1 AND p.organization_id = pb.organization_id \
-                         WHERE p.id::text = $2) \
-                    ) \
-                 ORDER BY u.employee_code IS NULL, u.employee_code, u.name, u.id \
-                 LIMIT $3",
-            )
-            .bind(&branch)
-            .bind(before.as_deref())
-            .bind(i64::from(limit))
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
+                         FROM users p JOIN branches pb ON pb.id = ",
+            );
+            builder.push_bind(&branch);
+            builder.push(" AND p.organization_id = pb.organization_id WHERE p.id::text = ");
+            builder.push_bind(before.as_deref());
+            builder.push(")))");
+            push_user_in_scope(&mut builder, &scope, "u.id", now);
+            builder.push(" ORDER BY u.employee_code IS NULL, u.employee_code, u.name, u.id LIMIT ");
+            builder.push_bind(i64::from(limit));
+            let users: Vec<UserSqlRow> = builder
+                .build_query_as()
+                .fetch_all(&pool)
+                .await
+                .map_err(AppError::Database)?;
 
             let ids: Vec<String> = users.iter().map(|u| u.0.clone()).collect();
-            let now = Utc::now();
             let roles: Vec<RoleSqlRow> = sqlx::query_as(
                 "SELECT user_id::text, role_code, branch_id \
                  FROM user_roles \

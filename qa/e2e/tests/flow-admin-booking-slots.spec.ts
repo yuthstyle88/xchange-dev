@@ -232,17 +232,18 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
       //    pick an OPEN slot with reserved: 0 on a date >= 7 days ahead so F1, F17 and F21 are untouched.
       const slotItems = page.locator('.slots-list .slot-item');
       await expect(slotItems.first(), 'at least one booking slot row').toBeVisible({ timeout: 15_000 });
-      const slotCount = await slotItems.count();
-      for (let i = 0; i < slotCount; i++) {
-        const item = slotItems.nth(i);
-        const dateText = ((await item.locator('.slot-date').innerText()) || '').trim();
-        const statusText = ((await item.locator('.slot-status').innerText()) || '').trim();
-        const reservedText = ((await item.locator('.slot-reserved').innerText()) || '').trim();
-        if (dateText >= minSlotDate && statusText === 'OPEN' && /:\s*0$/.test(reservedText)) {
-          closedSlotId = (await item.getAttribute('data-slot-id')) ?? '';
-          if (closedSlotId) break;
+      closedSlotId = await slotItems.evaluateAll((els, minDate) => {
+        for (const el of els) {
+          const dateText = (el.querySelector('.slot-date')?.textContent ?? '').trim();
+          const statusText = (el.querySelector('.slot-status')?.textContent ?? '').trim();
+          const reservedText = (el.querySelector('.slot-reserved')?.textContent ?? '').trim();
+          if (dateText >= minDate && statusText === 'OPEN' && /:\s*0$/.test(reservedText)) {
+            const id = el.getAttribute('data-slot-id') ?? '';
+            if (id) return id;
+          }
         }
-      }
+        return '';
+      }, minSlotDate);
       expect(closedSlotId, `an OPEN unreserved slot on or after ${minSlotDate}`).toBeTruthy();
 
       const targetSlot = page.locator(`.slots-list .slot-item[data-slot-id="${closedSlotId}"]`);

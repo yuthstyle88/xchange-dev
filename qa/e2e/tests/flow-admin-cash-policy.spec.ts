@@ -2,9 +2,9 @@
 // (design docs/design/qa-e2e.md §9.1–§9.4). This file is the ticket's whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test, type Page } from '@playwright/test';
-import { hasAccount, mePermissions, posted, shot, signIn, users, withLang } from './helpers';
+import { hasAccount, mePermissions, posted, shot, signIn, type Role, users, withLang } from './helpers';
 
-const adminPath = (hash: string) => `/?branch=${encodeURIComponent(users.branch)}#${hash}`;
+const adminPath = (hash: string, branch = users.branch) => `/?branch=${encodeURIComponent(branch)}#${hash}`;
 
 // Worded refusal strings from each screen's i18n.ts table:
 // - web/src/screens/admin/cash-limits/i18n.ts:13,29
@@ -184,7 +184,13 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('denominationGroupCreate + denominationGroupMap + denominationGroupRemove: create, map board key, reload read-back, and remove', async ({
     page,
   }) => {
-    await signIn(page, 'executive', adminPath('denomination-groups'));
+    // denominationGroupCreate inherits rateDraft (RatesDraft) and also needs a Standing (denomination_groups.rs:56,70):
+    // among the seeded roles only `owner` (EXECUTIVE + ADMIN org-wide) has both; `admin` lacks RatesDraft and an
+    // EXECUTIVE alone has no Standing.
+    test.skip(!hasAccount('owner'), 'no owner account in users.json: run scripts/reseed.sh');
+    await signIn(page, 'owner', adminPath('denomination-groups'));
+    const perms = await mePermissions(page);
+    test.skip(!perms.includes('RatesDraft'), 'owner lacks RatesDraft');
     await page.goto(adminPath('denomination-groups'));
     const currency = await selectFirstDenomCurrency(page);
 
@@ -253,43 +259,58 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('transferReconcile (POST /api/cash-transfers/{id}/reconcile): happy path and reload read-back when a RECEIVED row exists', async ({
     page,
   }) => {
-    const role = hasAccount('finance') ? 'finance' : 'executive';
-    await signIn(page, role, adminPath('cash'));
+    const candidates: Array<{ role: Role; branch: string }> = [
+      { role: hasAccount('finance') ? 'finance' : 'executive', branch: users.branch },
+      ...(users.branch2 && hasAccount('finance2') ? [{ role: 'finance2' as const, branch: users.branch2 }] : []),
+    ];
 
-    const meRes = await page.request.get('/api/v3/views/me');
-    expect(meRes.ok(), `GET /api/v3/views/me: ${meRes.status()}`).toBeTruthy();
-    const meBody = (await meRes.json().catch(() => ({}))) as { data?: { id?: string } };
-    const myUserId = meBody.data?.id ?? '';
-    expect(myUserId, 'signed-in user id from /api/v3/views/me').toBeTruthy();
-
-    await page.goto('about:blank');
-    const viewLoaded = page.waitForResponse(
-      (r) =>
-        r.request().method() === 'GET' &&
-        new URL(r.url()).pathname === '/api/v3/views/cash_transfers' &&
-        r.ok(),
-      { timeout: 20_000 },
-    );
-    await page.goto(adminPath('cash'));
-    const viewRes = await viewLoaded;
-
-    // web/src/screens/admin/cash/CashFlows.tsx:412,497,522,561
-    await expect(page.locator('.cash-flows')).toBeVisible({ timeout: 20_000 });
+    let eligible: { id: string } | undefined;
     const transfersSection = page.locator('[data-section="transfers"]');
-    await expect(transfersSection).toBeVisible({ timeout: 20_000 });
-    await expect(transfersSection.locator('table.transfers-table tbody tr, .empty').first()).toBeVisible({
-      timeout: 20_000,
-    });
 
-    const viewBody = (await viewRes.json().catch(() => ({}))) as {
-      data?: Array<{ id: string; status: string; createdBy: string }>;
-    };
-    const transfers = Array.isArray(viewBody.data) ? viewBody.data : [];
-    const eligible = transfers.find((t) => t.status === 'RECEIVED' && t.createdBy !== myUserId);
+    for (const c of candidates) {
+      await signIn(page, c.role, adminPath('cash', c.branch));
+
+      const meRes = await page.request.get('/api/v3/views/me');
+      expect(meRes.ok(), `GET /api/v3/views/me: ${meRes.status()}`).toBeTruthy();
+      const meBody = (await meRes.json().catch(() => ({}))) as { data?: { id?: string } };
+      const myUserId = meBody.data?.id ?? '';
+      expect(myUserId, 'signed-in user id from /api/v3/views/me').toBeTruthy();
+
+      await page.goto('about:blank');
+      const viewLoaded = page.waitForResponse(
+        (r) =>
+          r.request().method() === 'GET' &&
+          new URL(r.url()).pathname === '/api/v3/views/cash_transfers' &&
+          r.ok(),
+        { timeout: 20_000 },
+      );
+      await page.goto(adminPath('cash', c.branch));
+      const viewRes = await viewLoaded;
+
+      // web/src/screens/admin/cash/CashFlows.tsx:412,497,522,561
+      await expect(page.locator('.cash-flows')).toBeVisible({ timeout: 20_000 });
+      await expect(transfersSection).toBeVisible({ timeout: 20_000 });
+      await expect(transfersSection.locator('table.transfers-table tbody tr, .empty').first()).toBeVisible({
+        timeout: 20_000,
+      });
+
+      const viewBody = (await viewRes.json().catch(() => ({}))) as {
+        data?: Array<{ id: string; status: string; createdBy: string; fromBranchId?: string; fromBranch?: string }>;
+      };
+      const transfers = Array.isArray(viewBody.data) ? viewBody.data : [];
+      // Reconcile authorizes on the source branch: transfer_flow.rs:802 `Target::at_branch(&organization_id, sent.from_branch)`
+      eligible = transfers.find(
+        (t) =>
+          t.status === 'RECEIVED' &&
+          t.createdBy !== myUserId &&
+          (t.fromBranchId ?? t.fromBranch) === c.branch,
+      );
+      if (eligible) break;
+    }
 
     if (!eligible) {
-      console.log('[qa-r9-5] transferReconcile: skipping — no RECEIVED transfer by another user');
-      test.skip(true, 'no RECEIVED transfer by another user');
+      console.log('[qa-r9-5] transferReconcile: skipping — no RECEIVED transfer from a branch the signed-in finance covers');
+      test.skip(true, 'no RECEIVED transfer from a branch the signed-in finance covers');
       return;
     }
 

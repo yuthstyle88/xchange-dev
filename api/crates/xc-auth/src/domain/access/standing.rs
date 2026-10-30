@@ -13,6 +13,11 @@
 //! - else (EXECUTIVE alone, CUSTOMER, nothing valid) → no standing.
 //!
 //! The audit text of a standing keeps v3's spelling ([`StandingKind::audit_text`]).
+//!
+//! #5618: a v3 command has already passed its permission check, so it must not refuse the caller
+//! again because `Standing::of` has no answer. It reads [`Standing::acting`]: `Standing::of`, else an
+//! org-wide EXECUTIVE alone acts as [`StandingKind::Executive`] (V.9's OWNER maps to EXECUTIVE,
+//! RBAC §11.2). `Standing::of` and `is_owner` are unchanged (B3: OWNER = EXECUTIVE + ADMIN).
 
 use chrono::{DateTime, Utc};
 use xc_kernel::ids::BranchId;
@@ -38,6 +43,9 @@ pub const STAFF_PRIORITY: [Role; 7] = [
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StandingKind {
     Owner,
+    /// #5618: an org-wide EXECUTIVE with no org-wide ADMIN and no staff role. Only [`Standing::acting`]
+    /// answers it; `Standing::of` never does.
+    Executive,
     /// Staff, with the role that decided the standing (one of [`STAFF_PRIORITY`]).
     Staff(Role),
 }
@@ -92,14 +100,37 @@ impl Standing {
         None
     }
 
+    /// #5618: the standing a v3 command acts with once its permission check has passed:
+    /// [`Standing::of`], else, for an org-wide EXECUTIVE valid at `now`, [`StandingKind::Executive`]
+    /// with no branch. A branch-scoped EXECUTIVE gets no `Executive` standing.
+    pub fn acting(actor: &Actor, now: DateTime<Utc>) -> Option<Standing> {
+        Standing::of(actor, now).or_else(|| {
+            actor
+                .roles
+                .iter()
+                .any(|r| r.role == Role::Executive && r.branch.is_none() && valid_at(r, now))
+                .then(|| Standing {
+                    user_id: actor.user_id.clone(),
+                    kind: StandingKind::Executive,
+                    branch: None,
+                })
+        })
+    }
+
+    /// #5618: the audit `actor_role` text of a v3 caller: its [`Standing::acting`] text, else `STAFF`.
+    /// It never refuses; the permission check has already decided.
+    pub fn audit_text_of(actor: &Actor, now: DateTime<Utc>) -> &'static str {
+        Standing::acting(actor, now).map_or("STAFF", |s| s.kind.audit_text())
+    }
+
     pub fn is_owner(&self) -> bool {
         self.kind == StandingKind::Owner
     }
 
-    /// The staff role; `None` for the owner.
+    /// The staff role; `None` for the owner and for an executive.
     pub fn staff_role(&self) -> Option<Role> {
         match self.kind {
-            StandingKind::Owner => None,
+            StandingKind::Owner | StandingKind::Executive => None,
             StandingKind::Staff(role) => Some(role),
         }
     }
@@ -109,10 +140,12 @@ impl StandingKind {
     /// The audit `actor_role` text, spelled as v3 stored it (unchanged by OR-7: the stored text stays what
     /// it was, `or7_5_save_actor_test.rs:458`, ruling 5 on #1020): OWNER, FRONT (TELLER), MANAGER
     /// (BRANCH_MANAGER), RATES (RATE_MANAGER), FINANCE, SYSTEM (ADMIN), DOCUMENT_REVIEW
-    /// (VERIFICATION_REVIEWER). A role outside [`STAFF_PRIORITY`] never reaches a standing.
+    /// (VERIFICATION_REVIEWER). #5618: EXECUTIVE (an executive without ADMIN, as `price_source.rs`
+    /// already writes it). A role outside [`STAFF_PRIORITY`] never reaches a staff standing.
     pub fn audit_text(self) -> &'static str {
         match self {
             StandingKind::Owner => "OWNER",
+            StandingKind::Executive => "EXECUTIVE",
             StandingKind::Staff(Role::Teller) => "FRONT",
             StandingKind::Staff(Role::BranchManager) => "MANAGER",
             StandingKind::Staff(Role::RateManager) => "RATES",

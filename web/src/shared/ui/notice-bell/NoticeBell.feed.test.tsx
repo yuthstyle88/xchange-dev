@@ -33,7 +33,7 @@ function fakeClient(script: Array<ViewAnswer<MyNotificationsData | undefined>>) 
   };
 }
 
-function item(seq: number, objectType: string | null): MyNotificationItem {
+function item(seq: number, objectType: string | null) {
   return makeMyNotificationItem({
     id: `n-${seq}`,
     seq,

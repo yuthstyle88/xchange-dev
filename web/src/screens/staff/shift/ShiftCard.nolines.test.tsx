@@ -238,7 +238,8 @@ describe('Staff shift count: empty denominations guard (#2239)', () => {
     input12.dispatchEvent(new Event('input', { bubbles: true }));
 
     const saveBtn = must<HTMLButtonElement>(tid('shift-count-save'));
-    expect(saveBtn.disabled).toBe(false);
+    // #5639 N2b (#5631): a CLOSE count can be saved only once my_shift has answered.
+    await vi.waitFor(() => expect(saveBtn.disabled).toBe(false));
     saveBtn.click();
 
     await vi.waitFor(() => {
@@ -265,7 +266,8 @@ describe('Staff shift count: empty denominations guard (#2239)', () => {
     input11.dispatchEvent(new Event('input', { bubbles: true }));
 
     const saveBtn = must<HTMLButtonElement>(tid('shift-count-save'));
-    expect(saveBtn.disabled).toBe(false);
+    // #5639 N2b (#5631): a CLOSE count can be saved only once my_shift has answered.
+    await vi.waitFor(() => expect(saveBtn.disabled).toBe(false));
     saveBtn.click();
 
     await vi.waitFor(() => {

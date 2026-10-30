@@ -39,7 +39,7 @@ fn request_id<'a>(ctx: &SaveContext<'a>) -> Option<&'a str> {
 /// The kiosk role of a standing. A role with no part at the kiosk desk is `Other`.
 fn kiosk_role(kind: StandingKind) -> KioskRole {
     match kind {
-        StandingKind::Owner => KioskRole::Owner,
+        StandingKind::Owner | StandingKind::Executive => KioskRole::Owner,
         StandingKind::Staff(AuthRole::Teller) => KioskRole::Front,
         StandingKind::Staff(AuthRole::BranchManager) => KioskRole::Manager,
         StandingKind::Staff(AuthRole::RateManager) => KioskRole::Rates,
@@ -169,9 +169,17 @@ mod tests {
 
     /// The kiosk role of every standing: unchanged from the v3 role it maps from (OR-7 R7 #3167).
     #[test]
+    /// #5618 (design `org-wide-actor-branch.md` §12, row K-1), added by the sub-controller before the
+    /// implementation: an executive alone is the kiosk's owner, as V.9's OWNER maps to EXECUTIVE.
+    fn an_executive_is_the_kiosk_owner() {
+        assert_eq!(kiosk_role(StandingKind::Executive), KioskRole::Owner);
+    }
+
+    #[test]
     fn kiosk_role_of_each_standing() {
         for (kind, role) in [
             (StandingKind::Owner, KioskRole::Owner),
+            (StandingKind::Executive, KioskRole::Owner),
             (StandingKind::Staff(AuthRole::Teller), KioskRole::Front),
             (
                 StandingKind::Staff(AuthRole::BranchManager),

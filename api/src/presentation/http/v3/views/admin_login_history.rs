@@ -9,7 +9,7 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, BranchScope, Permission};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::user::user_repository::UserRepository;
 use xc_auth::infrastructure::user::PgUserRepository;
@@ -39,13 +39,16 @@ impl PagedView for AdminLoginHistoryPagedView {
     fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _filter: &Self::Filter,
         before: Option<RowId>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<Self::Row>>> + Send {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
+        // #5557: a branch-scoped holder sees only the rows of users its rows cover (owner B-2, #5526).
+        let now = Utc::now();
+        let scope = BranchScope::of(who, Permission::AuditLogsRead, now);
         async move {
             let mut tx = pool.begin().await.map_err(AppError::Database)?;
             let session_org: Option<String> =
@@ -60,7 +63,7 @@ impl PagedView for AdminLoginHistoryPagedView {
             };
 
             let entries = PgUserRepository::new()
-                .list_logins(&mut tx, &session_org, before.as_deref(), limit)
+                .list_logins(&mut tx, &session_org, &scope, now, before.as_deref(), limit)
                 .await?;
 
             tx.commit().await.map_err(AppError::Database)?;

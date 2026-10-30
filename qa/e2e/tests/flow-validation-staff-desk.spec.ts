@@ -43,7 +43,7 @@ import {
 // Selector citations (file:line on main):
 //   - web/src/screens/desk/DeskPage.tsx:28 (`.desk-page`)
 //   - web/src/screens/desk/steps/rate/step.tsx:54-98,126-137 (`form.desk-form`, `select[name="type"]`, `select[name="currency"]`, `input[name="amount"]`, `.desk-error`, `[role="alert"].desk-error`, `button[type="submit"]`)
-//   - web/src/screens/desk/steps/customer/step.tsx:169 (`button[name="skipCustomer"]`)
+//   - web/src/screens/desk/steps/customer/step.tsx:332 (`getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ })`)
 //   - web/src/screens/desk/steps/booking/step.tsx:54 (`button` confirm booking)
 //   - web/src/screens/desk/steps/payment/step.tsx:135,168,209,224,230 (`select[name="method"]`, `input[name="account"]`, `input[name="paymentChecked"]`, `[role="alert"].desk-error`, `button[type="submit"]`)
 //   - web/src/screens/desk/steps/receipt/step.tsx:32-34 (`section.desk-form strong`)
@@ -56,7 +56,7 @@ import {
 //   - web/src/screens/staff/transfers/TransfersCard.tsx:361-493 (`[data-card="transfers"]`, `[data-testid="transfer-new"]`, `[data-testid="transfer-error"]`, `[data-testid="transfer-form"]`, `[data-testid="transfer-kind"]`, `[data-testid="transfer-note"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="transfer-save"]`)
 //   - web/src/screens/staff/floor/FloorCard.tsx:242-248,293-326 (`.xc-floor-card`, `[data-testid="floor-error"]`, `[data-testid="floor-target-form"]`, `input[data-currency="USD"]`, `[data-testid="floor-target-save"]`)
 //   - web/src/screens/desk/queue/counter/CounterBar.tsx:68-74,114-139,151-157 (`button[name="issueWalkIn"]`, `button[name="openQueue"]`, `button[name="closeQueue"]`, `.desk-error[role="alert"]`)
-//   - web/src/screens/desk/bookings/DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023 (`[data-screen="desk-bookings"]`, `input[name="date"]`, `[data-action="new-booking"]`, `.xc-modal-overlay`, `select[name="currency"]`, `input[name="quantity"]`, `[data-action="submit-booking"]`, `[role="alert"].field-error`, `[data-booking-id]`, `[data-action="cancel"]`, `input[name="reason"]`, `[data-action="confirm-cancel"]`, `[data-action="reschedule"]`, `select[name="targetSlotId"]`, `[data-action="confirm-reschedule"]`, `[role="alert"].xc-error-banner`)
+//   - web/src/screens/desk/bookings/DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023 (`[data-screen="desk-bookings"]`, `[data-action="new-booking"]`, `.xc-modal-overlay`, `select[name="currency"]`, `input[name="quantity"]`, `[data-action="submit-booking"]`, `[role="alert"].field-error`, `[data-booking-id]`, `[data-action="cancel"]`, `input[name="reason"]`, `[data-action="confirm-cancel"]`, `[data-action="reschedule"]`, `select[name="targetSlotId"]`, `[data-action="confirm-reschedule"]`, `[role="alert"].xc-error-banner`)
 
 const EXCHANGE_AMOUNT = '1';
 
@@ -461,7 +461,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           ).toBeVisible({ timeout: 10_000 });
           expectWordedRefusal(await alertErr.innerText(), `desk empty amount (${lang})`);
           await expect(amountInput, 'amount input stays empty').toHaveValue('');
-          await expect(teller.locator('button[name="skipCustomer"]')).toHaveCount(0);
+          await expect(teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ })).toHaveCount(0);
 
           // Cases 2–5: '0' (zero), '-50' (negative), '10.12345' (too many decimals), '999999999999999' (over limit).
           for (const badAmount of ['0', '-50', '10.12345', '999999999999999']) {
@@ -485,7 +485,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
               // Submitting with an invalid quote stays on step 0; no customer/payment step or transactionCreate.
               await submitBtn.click();
               await expect(currencySelect, 'still on rate step 0 after invalid submit').toBeVisible();
-              await expect(teller.locator('button[name="skipCustomer"]')).toHaveCount(0);
+              await expect(teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ })).toHaveCount(0);
             } finally {
               teller.off('request', onQuoteReq);
             }
@@ -512,8 +512,8 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(teller.locator('.desk-rate-line strong')).toBeVisible({ timeout: 15_000 });
           await teller.locator('form.desk-form button[type="submit"]').click();
 
-          const skipBtn = teller.locator('button[name="skipCustomer"]');
-          await expect(skipBtn, 'skipCustomer visible (steps/customer/step.tsx:169)').toBeVisible({ timeout: 15_000 });
+          const skipBtn = teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ });
+          await expect(skipBtn, 'skipCustomer visible (steps/customer/step.tsx:332)').toBeVisible({ timeout: 15_000 });
           const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
           expect(reserveRes.ok, `reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
@@ -761,10 +761,6 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(deskBookings, 'desk-bookings screen visible (DeskBookingsScreen.tsx:368)').toBeVisible({
             timeout: 20_000,
           });
-
-          const dateInput = manager.locator('input[name="date"]');
-          await dateInput.fill(tomorrow);
-          await dateInput.dispatchEvent('input');
 
           // Part A: New Booking modal (`[data-action="new-booking"]`) with invalid quantities ('0', '-10', '1.5').
           await manager.locator('[data-action="new-booking"]').click();

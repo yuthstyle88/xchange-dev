@@ -11,8 +11,8 @@ import {
   makeMe,
   makeMeRole,
   makeQuoteDto,
+  type BookingSlotItemDto,
 } from '../../../shared/testing/fixtures';
-import type { BookingSlotItemDto } from '../../../shared/api/generated/booking_slots';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 

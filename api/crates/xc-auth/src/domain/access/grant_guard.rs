@@ -40,8 +40,8 @@ impl GrantGuard {
         action: &AccountAction,
         owners_left: usize,
     ) -> Result<(), GrantRefusal> {
-        use super::Role;
         use super::scope_rule::ScopeRule;
+        use super::{BranchScope, Role};
         use crate::domain::user::UserStatus;
         use chrono::Utc;
 
@@ -55,24 +55,20 @@ impl GrantGuard {
             .cloned()
             .collect();
 
-        let admin_scopes: Vec<Option<&xc_kernel::ids::BranchId>> = actor_live
-            .iter()
-            .filter(|r| r.role == Role::Admin)
-            .map(|r| r.branch.as_ref())
-            .collect();
-        if admin_scopes.is_empty() {
+        let scope =
+            BranchScope::of_rows(actor_live.iter().copied().filter(|r| r.role == Role::Admin));
+        if scope == BranchScope::Branches(Vec::new()) {
             return Err(GrantRefusal::NoScope);
         }
-        let actor_has_org_admin = admin_scopes.contains(&None);
+        let actor_has_org_admin = scope == BranchScope::All;
         let actor_has_exec = actor_live.iter().any(|r| r.role == Role::Executive);
         let actor_is_owner = actor_has_org_admin && actor_has_exec;
 
-        let covers = |branch: Option<&xc_kernel::ids::BranchId>| {
-            actor_has_org_admin || (branch.is_some() && admin_scopes.contains(&branch))
-        };
         let in_scope = match action {
-            AccountAction::Grant(r) | AccountAction::Revoke(r) => covers(r.branch.as_ref()),
-            _ => target_live.iter().all(|r| covers(r.branch.as_ref())),
+            AccountAction::Grant(r) | AccountAction::Revoke(r) => {
+                scope.covers_row(r.branch.as_ref())
+            }
+            _ => scope.covers_user(target_live.iter().map(|r| r.branch.as_ref())),
         };
         if !in_scope {
             return Err(GrantRefusal::NoScope);

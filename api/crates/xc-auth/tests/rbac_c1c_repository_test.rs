@@ -4,8 +4,10 @@
 mod account_common;
 
 use account_common::{TestDb, at, unique};
+use chrono::Utc;
 use pos_error::AppError;
 use serde_json::json;
+use xc_auth::domain::access::BranchScope;
 use xc_auth::domain::user::{LoginEntry, UserAuditEntry, UserProfile, UserRepository};
 use xc_auth::infrastructure::user::PgUserRepository;
 
@@ -281,7 +283,7 @@ async fn list_audit_three_rows_newest_first_joins_names_and_maps_fields() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_audit(&mut tx, &org, None, 10)
+        .list_audit(&mut tx, &org, &BranchScope::All, Utc::now(), None, 10)
         .await
         .expect("list_audit");
     assert_eq!(
@@ -374,7 +376,7 @@ async fn list_audit_with_before_returns_only_older_rows() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_audit(&mut tx, &org, Some(&id2), 10)
+        .list_audit(&mut tx, &org, &BranchScope::All, Utc::now(), Some(&id2), 10)
         .await
         .expect("list_audit before 2nd row");
     assert_eq!(rows.len(), 1);
@@ -384,6 +386,8 @@ async fn list_audit_with_before_returns_only_older_rows() {
         .list_audit(
             &mut tx,
             &org,
+            &BranchScope::All,
+            Utc::now(),
             Some("00000000-0000-0000-0000-000000000000"),
             10,
         )
@@ -412,7 +416,7 @@ async fn list_audit_excludes_other_organisation() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_audit(&mut tx, &org_a, None, 10)
+        .list_audit(&mut tx, &org_a, &BranchScope::All, Utc::now(), None, 10)
         .await
         .expect("list_audit org A");
     assert!(rows.is_empty());
@@ -437,7 +441,7 @@ async fn list_logins_with_null_user_id_returns_none_user_fields() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_logins(&mut tx, &org, None, 10)
+        .list_logins(&mut tx, &org, &BranchScope::All, Utc::now(), None, 10)
         .await
         .expect("list_logins");
     assert_eq!(
@@ -507,7 +511,7 @@ async fn list_logins_paging_and_organisation_filter() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let all = PgUserRepository
-        .list_logins(&mut tx, &org_a, None, 10)
+        .list_logins(&mut tx, &org_a, &BranchScope::All, Utc::now(), None, 10)
         .await
         .expect("list all org_a");
     assert_eq!(
@@ -541,14 +545,21 @@ async fn list_logins_paging_and_organisation_filter() {
     );
 
     let older = PgUserRepository
-        .list_logins(&mut tx, &org_a, Some(&id2), 10)
+        .list_logins(
+            &mut tx,
+            &org_a,
+            &BranchScope::All,
+            Utc::now(),
+            Some(&id2),
+            10,
+        )
         .await
         .expect("list before 2nd row");
     assert_eq!(older.len(), 1);
     assert_eq!(older[0].id, id1);
 
     let limited = PgUserRepository
-        .list_logins(&mut tx, &org_a, None, 2)
+        .list_logins(&mut tx, &org_a, &BranchScope::All, Utc::now(), None, 2)
         .await
         .expect("list limit 2");
     assert_eq!(limited.len(), 2);
@@ -557,6 +568,8 @@ async fn list_logins_paging_and_organisation_filter() {
         .list_logins(
             &mut tx,
             &org_a,
+            &BranchScope::All,
+            Utc::now(),
             Some("00000000-0000-0000-0000-000000000000"),
             10,
         )

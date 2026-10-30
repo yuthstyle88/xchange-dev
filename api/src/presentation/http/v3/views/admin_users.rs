@@ -11,8 +11,9 @@ use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, BranchScope, Permission};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::infrastructure::access::push_user_in_scope;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
@@ -48,7 +49,7 @@ impl PagedView for AdminUsersPagedView {
     fn page(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         filter: &Self::Filter,
         before: Option<RowId>,
         limit: u16,
@@ -56,6 +57,9 @@ impl PagedView for AdminUsersPagedView {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
         let filter = filter.clone();
+        // #5557: a branch-scoped holder sees only the users its rows cover (owner B-2, #5526).
+        let now = Utc::now();
+        let scope = BranchScope::of(who, Permission::UsersManage, now);
         async move {
             type UserSqlRow = (
                 String,
@@ -73,6 +77,7 @@ impl PagedView for AdminUsersPagedView {
             );
             builder.push_bind(&branch);
             builder.push(" AND u.organization_id = b.organization_id WHERE 1=1");
+            push_user_in_scope(&mut builder, &scope, "u.id", now);
 
             if let Some(ref before_id) = before {
                 builder.push(

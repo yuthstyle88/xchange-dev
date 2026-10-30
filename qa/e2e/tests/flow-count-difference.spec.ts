@@ -23,9 +23,38 @@ test.describe.serial('F7 count difference', () => {
   let teller: Page | undefined;
   let manager: Page | undefined;
   let finance: Page | undefined;
+  let approvalRequestId: string | undefined;
+  let flowFinished = false;
 
   test.afterAll(async () => {
     try {
+      if (approvalRequestId && !flowFinished && finance && manager) {
+        try {
+          await signIn(finance, 'finance', '/');
+          await finance.goto('/#approvals');
+          const filterBtn = finance.locator('[data-type-filter="COUNT_DIFFERENCE"]');
+          if (await filterBtn.isVisible({ timeout: 10_000 }).catch(() => false)) {
+            await filterBtn.click();
+          }
+          const card = finance.locator(`[data-request="${approvalRequestId}"]`);
+          if (await card.isVisible({ timeout: 5_000 }).catch(() => false)) {
+            const approveBtn = card.getByRole('button', { name: /^(อนุมัติ|Approve)$/ });
+            if (await approveBtn.isVisible({ timeout: 5_000 }).catch(() => false)) {
+              await posted(finance, /\/api\/approvals\/[^/]+\/decide$/, () =>
+                approveBtn.click(),
+              );
+            }
+          }
+        } catch {
+          // best-effort finance approval
+        }
+        try {
+          await signIn(manager, 'branchManager', '/staff');
+          await verifyCount(manager, 'CLOSE');
+        } catch {
+          // best-effort manager re-verify
+        }
+      }
       if (teller && manager) {
         await signIn(teller, 'teller', '/staff');
         await signIn(manager, 'branchManager', '/staff');
@@ -75,11 +104,22 @@ test.describe.serial('F7 count difference', () => {
     expect(firstVerify.ok, `first CLOSE verify returned 200: ${firstVerify.text}`).toBeTruthy();
     expect(firstVerify.text).toContain('AWAITING_FINANCE');
     expect(firstVerify.text).toContain('approvalRequestId');
+    try {
+      const parsed = JSON.parse(firstVerify.text) as { approvalRequestId?: string | null };
+      approvalRequestId = parsed.approvalRequestId ?? undefined;
+    } catch {
+      const match = firstVerify.text.match(/"approvalRequestId"\s*:\s*"([^"]+)"/);
+      if (match) approvalRequestId = match[1];
+    }
     await expect(managerPage.getByTestId('shift-notice')).toBeVisible();
 
-    // 4. Teller reloads -> shift-close-count is still visible (shift stays OPEN).
+    // 4. Teller reloads -> wait for cash_counts response -> shift-close-waiting is visible (shift stays OPEN).
+    const cashCounts = tellerPage.waitForResponse(
+      (r) => r.url().includes('cash_counts') && r.status() === 200,
+    );
     await tellerPage.reload();
-    await expect(tellerPage.getByTestId('shift-close-count'), 'shift stays OPEN while awaiting finance').toBeVisible({
+    await cashCounts;
+    await expect(tellerPage.getByTestId('shift-close-waiting'), 'shift stays OPEN while awaiting finance').toBeVisible({
       timeout: 20_000,
     });
 
@@ -103,7 +143,7 @@ test.describe.serial('F7 count difference', () => {
     await filterBtn.click();
 
     const card = financePage
-      .locator('[data-request]')
+      .locator(approvalRequestId ? `[data-request="${approvalRequestId}"]` : '[data-request]')
       .filter({ has: financePage.locator('[data-request-type="COUNT_DIFFERENCE"]') })
       .filter({ has: financePage.getByRole('button', { name: /^(อนุมัติ|Approve)$/ }) })
       .first();
@@ -128,5 +168,6 @@ test.describe.serial('F7 count difference', () => {
       tellerPage.getByTestId('floor-clock').click(),
     );
     expect(out.ok, `teller clocked out: ${out.text}`).toBeTruthy();
+    flowFinished = true;
   });
 });
