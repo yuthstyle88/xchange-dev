@@ -1,6 +1,6 @@
 //! `marketRatesRefresh` (pricing-tiers.md §15.5 gap 6): the `/pricing` fetch button. Runs `MarketRefresh::tick` over
-//! `AppState::market_sources` (TT and Super Rich), then one FOLLOW plan per FOLLOW currency when the caller's branch
-//! is MAIN. Gated on `MarketRatesRefresh` (`pricing.market:refresh`). `rateReferenceFetch` stays BoT.
+//! `AppState::market_sources` (TT and Super Rich), then one FOLLOW plan per FOLLOW currency. Gated on
+//! `MarketRatesRefresh` (`pricing.market:refresh`). `rateReferenceFetch` stays BoT.
 //!
 //! SKELETON (XC-V9-PRICING): `run` is PV-g's. Types, route and registration stay.
 
@@ -55,7 +55,7 @@ pub struct MarketRefreshSourceDto {
 #[ts(export_to = "market_rates_refresh.ts")]
 pub struct MarketRatesRefreshOutput {
     pub sources: Vec<MarketRefreshSourceDto>,
-    /// One per FOLLOW currency planned (empty away from MAIN).
+    /// One per FOLLOW currency planned.
     pub follow_results: Vec<PricingFollowResultDto>,
 }
 
@@ -74,7 +74,7 @@ impl CommandAction for MarketRatesRefreshCommand {
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        branch: &BranchId,
+        _branch: &BranchId,
         _who: &Actor,
         _input: Self::Input,
         _key: IdempotencyKey,
@@ -103,47 +103,44 @@ impl CommandAction for MarketRatesRefreshCommand {
             .collect();
 
         let mut follow_results = Vec::new();
-        if branch.as_str() == "MAIN" {
-            let currencies = PgPricingModeStore
-                .following_in(tx)
-                .await
-                .map_err(map_rate_engine_error)?;
-            if !currencies.is_empty() {
-                let draft_service = Arc::new(RateDraftService::new(
-                    self.state.db.clone(),
-                    make_approval_service(self.state.db.clone()),
-                ));
-                let publish_service = Arc::new(PublishService::new(self.state.db.clone()));
-                let tier_publisher =
-                    Arc::new(TierSetPublisher::new(draft_service, publish_service));
-                let branch_push = Arc::new(BranchPush::new(
-                    self.state.db.clone(),
-                    tier_publisher.clone(),
-                    Arc::new(PgTierSetStore),
-                    Arc::new(PgBranchPolicyStore),
-                ));
-                let pricing_loop = MarketPricingLoop::new(
-                    self.state.db.clone(),
-                    refresh,
-                    tier_publisher,
-                    branch_push,
-                );
-                for currency in currencies {
-                    let res = pricing_loop
-                        .plan_currency(currency, now)
-                        .await
-                        .map_err(map_rate_engine_error)?;
-                    follow_results.push(PricingFollowResultDto {
-                        currency: res.currency.as_str().to_string(),
-                        status: res.status.as_str().to_string(),
-                        reasons: res
-                            .reasons
-                            .into_iter()
-                            .map(|r| r.as_str().to_string())
-                            .collect(),
-                        planned_at: res.planned_at.to_rfc3339(),
-                    });
-                }
+        let currencies = PgPricingModeStore
+            .following_in(tx)
+            .await
+            .map_err(map_rate_engine_error)?;
+        if !currencies.is_empty() {
+            let draft_service = Arc::new(RateDraftService::new(
+                self.state.db.clone(),
+                make_approval_service(self.state.db.clone()),
+            ));
+            let publish_service = Arc::new(PublishService::new(self.state.db.clone()));
+            let tier_publisher = Arc::new(TierSetPublisher::new(draft_service, publish_service));
+            let branch_push = Arc::new(BranchPush::new(
+                self.state.db.clone(),
+                tier_publisher.clone(),
+                Arc::new(PgTierSetStore),
+                Arc::new(PgBranchPolicyStore),
+            ));
+            let pricing_loop = MarketPricingLoop::new(
+                self.state.db.clone(),
+                refresh,
+                tier_publisher,
+                branch_push,
+            );
+            for currency in currencies {
+                let res = pricing_loop
+                    .plan_currency(currency, now)
+                    .await
+                    .map_err(map_rate_engine_error)?;
+                follow_results.push(PricingFollowResultDto {
+                    currency: res.currency.as_str().to_string(),
+                    status: res.status.as_str().to_string(),
+                    reasons: res
+                        .reasons
+                        .into_iter()
+                        .map(|r| r.as_str().to_string())
+                        .collect(),
+                    planned_at: res.planned_at.to_rfc3339(),
+                });
             }
         }
 
