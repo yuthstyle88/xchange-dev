@@ -25,8 +25,10 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as phoneI18n from '../../../web/src/screens/desk/loyalty/phone/i18n';
 import {
+  closeQueueIfOpened,
   closeShift,
   cutOff,
+  ensureQueueOpen,
   hasAccount,
   openShift,
   posted,
@@ -197,6 +199,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
       await openShift(teller, manager);
       let started: 'started' | 'alreadyOpen' | undefined;
       let completedTxId: string | undefined;
+      let openedQueue = false;
 
       try {
         started = await startService(manager);
@@ -307,6 +310,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         // 3. Complete the 1-USD Cash exchange so ReceiptStep renders ReferralCodeField (receipt/step.tsx:40).
         const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ }); // booking/step.tsx:54
         await expect(confirmBookingBtn).toBeVisible({ timeout: 15_000 });
+        openedQueue = await ensureQueueOpen(manager);
         await confirmBookingBtn.click();
 
         const methodSelect = teller.locator('select[name="method"]'); // payment/step.tsx:135
@@ -425,6 +429,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         await test.info().attach('primary-error', { body: String((err as Error)?.stack ?? err), contentType: 'text/plain' });
         throw err;
       } finally {
+        await closeQueueIfOpened(manager, openedQueue).catch(() => {});
         if (completedTxId) {
           await reverseCompletedExchange(teller, finance, completedTxId);
         }
