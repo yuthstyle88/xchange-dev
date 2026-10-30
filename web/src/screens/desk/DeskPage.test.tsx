@@ -6,6 +6,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLang } from '../../shared/i18n';
 import { warmModules } from '../../shared/testing/warm-modules';
+import { withOpenShift } from './shift/open-shift.testing';
 
 const HEADING_STEP_0 = 'เลือกเรทและจำนวนเงิน';
 const SUMMARY = 'สรุปรายการ';
@@ -47,7 +48,8 @@ function fakeServer() {
     }
     return json(404, { error: { code: 'notFound', message: 'nf' } });
   });
-  vi.stubGlobal('fetch', fn);
+  // #5641: the caller has an open shift, so main.tsx offers the exchange steps (desk-shift-open.md §3 T4).
+  vi.stubGlobal('fetch', withOpenShift(fn));
   return { calls };
 }
 
