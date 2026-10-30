@@ -4,6 +4,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
+import { onFreshNotice } from '../../../shared/ui/notice-bell/notice-feed';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type {
   CountSubmitInput,
@@ -199,6 +200,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       void loadPendingHandovers();
       void loadDenominations();
     }
+    const stop = onFreshNotice('cash_count', () => {
+      void loadCashCounts();
+    });
+    onCleanup(stop);
   });
 
   const loadMyShift = async () => {
