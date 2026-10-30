@@ -102,7 +102,9 @@ function activeRoleTag(row: Locator, roleCode: string): Locator {
 
 async function restoreMarketingUser(page: Page, targetUserId: string): Promise<void> {
   try {
-    if (hasAccount('executive')) {
+    if (hasAccount('owner')) {
+      await signIn(page, 'owner', '/#users');
+    } else if (hasAccount('executive')) {
       await signIn(page, 'executive', '/#users');
     }
     const req = page.request;
@@ -176,7 +178,11 @@ async function cleanupMatrixGroup(page: Page, groupCode: string): Promise<void> 
 
 test.describe('QA-R9-1 admin user management and permission groups', () => {
   test.afterAll(async ({ browser }) => {
-    if ((!hasAccount('admin') && !hasAccount('executive')) || !hasAccount('marketing')) return;
+    if (
+      (!hasAccount('admin') && !hasAccount('executive') && !hasAccount('owner')) ||
+      !hasAccount('marketing')
+    )
+      return;
     const context = await browser.newContext({ baseURL: users.baseUrl });
     try {
       const targetUserId = cachedMarketingUserId ?? (await getMarketingUserId(browser));
@@ -194,7 +200,6 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
     browser,
   }) => {
     test.skip(!hasAccount('admin'), 'no admin account in users.json: run scripts/reseed.sh');
-    test.skip(!hasAccount('executive'), 'no executive account in users.json: run scripts/reseed.sh');
     test.skip(!hasAccount('marketing'), 'no marketing account in users.json: run scripts/reseed.sh');
 
     const targetUserId = await getMarketingUserId(browser);
@@ -296,94 +301,74 @@ test.describe('QA-R9-1 admin user management and permission groups', () => {
       });
 
       // 4. userSuspend (POST /api/users/suspend, UsersScreen.tsx:87,484,709)
-      test.skip(
-        true,
-        'no users.json account holds org-wide ADMIN + EXECUTIVE (userEnable needs both, grant_guard.rs:58-64,102-104)',
+      test.skip(!hasAccount('owner'), 'no owner account in users.json: run scripts/reseed.sh');
+      await signIn(page, 'owner', '/#users');
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const rowBeforeSuspend = await ensureUserRow(screen, targetUserId);
+
+      const rowAfterSuspendWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowBeforeSuspend.locator('button[data-users-action="suspend"]').click(), // UsersScreen.tsx:709
       );
-      try {
-        const rowAfterSuspendWrite = await completeRowWrite(screen, targetUserId, () =>
-          rowAfterRevoke.locator('button[data-users-action="suspend"]').click(), // UsersScreen.tsx:709
-        );
-        await expect(
-          rowAfterSuspendWrite.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:500,670
-        ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        rowAfterSuspendWrite.locator('.users-status-badge.users-status-suspended'), // UsersScreen.tsx:500,670
+      ).toBeVisible({ timeout: 15_000 });
 
-        // Reload and verify SUSPENDED persists.
-        await page.reload();
-        await expect(screen).toBeVisible({ timeout: 20_000 });
-        const rowAfterSuspend = await ensureUserRow(screen, targetUserId);
-        await expect(
-          rowAfterSuspend.locator('.users-status-badge.users-status-suspended'),
-        ).toBeVisible({ timeout: 15_000 });
+      // Reload and verify SUSPENDED persists.
+      await page.reload();
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const rowAfterSuspend = await ensureUserRow(screen, targetUserId);
+      await expect(
+        rowAfterSuspend.locator('.users-status-badge.users-status-suspended'),
+      ).toBeVisible({ timeout: 15_000 });
 
-        // 5. userResume (POST /api/users/resume, UsersScreen.tsx:88,486,729)
-        const rowAfterResumeWrite = await completeRowWrite(screen, targetUserId, () =>
-          rowAfterSuspend.locator('button[data-users-action="resume"]').click(), // UsersScreen.tsx:729
-        );
-        await expect(
-          rowAfterResumeWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
-        ).toBeVisible({ timeout: 15_000 });
+      // 5. userResume (POST /api/users/resume, UsersScreen.tsx:88,486,729)
+      const rowAfterResumeWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterSuspend.locator('button[data-users-action="resume"]').click(), // UsersScreen.tsx:729
+      );
+      await expect(
+        rowAfterResumeWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+      ).toBeVisible({ timeout: 15_000 });
 
-        // Reload and verify ACTIVE persists after resume.
-        await page.reload();
-        await expect(screen).toBeVisible({ timeout: 20_000 });
-        const rowAfterResume = await ensureUserRow(screen, targetUserId);
-        await expect(
-          rowAfterResume.locator('.users-status-badge.users-status-active'),
-        ).toBeVisible({ timeout: 15_000 });
+      // Reload and verify ACTIVE persists after resume.
+      await page.reload();
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const rowAfterResume = await ensureUserRow(screen, targetUserId);
+      await expect(
+        rowAfterResume.locator('.users-status-badge.users-status-active'),
+      ).toBeVisible({ timeout: 15_000 });
 
-        // 6. userDisable (POST /api/users/disable, UsersScreen.tsx:86,482,717)
-        test.skip(
-          true,
-          'no users.json account holds org-wide ADMIN + EXECUTIVE (userEnable needs both, grant_guard.rs:58-64,102-104)',
-        );
-        try {
-          const rowAfterDisableWrite = await completeRowWrite(screen, targetUserId, () =>
-            rowAfterResume.locator('button.users-btn-disable').click(), // UsersScreen.tsx:717
-          );
-          await expect(
-            rowAfterDisableWrite.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:502,670
-          ).toBeVisible({ timeout: 15_000 });
+      // 6. userDisable (POST /api/users/disable, UsersScreen.tsx:86,482,717)
+      const rowAfterDisableWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterResume.locator('button.users-btn-disable').click(), // UsersScreen.tsx:717
+      );
+      await expect(
+        rowAfterDisableWrite.locator('.users-status-badge.users-status-disabled'), // UsersScreen.tsx:502,670
+      ).toBeVisible({ timeout: 15_000 });
 
-          // Reload and verify DISABLED persists.
-          await page.reload();
-          await expect(screen).toBeVisible({ timeout: 20_000 });
-          const rowAfterDisable = await ensureUserRow(screen, targetUserId);
-          await expect(
-            rowAfterDisable.locator('.users-status-badge.users-status-disabled'),
-          ).toBeVisible({ timeout: 15_000 });
+      // Reload and verify DISABLED persists.
+      await page.reload();
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const rowAfterDisable = await ensureUserRow(screen, targetUserId);
+      await expect(
+        rowAfterDisable.locator('.users-status-badge.users-status-disabled'),
+      ).toBeVisible({ timeout: 15_000 });
 
-          // 7. userEnable (POST /api/users/enable, UsersScreen.tsx:89,488,741)
-          test.skip(
-            true,
-            'no users.json account holds org-wide ADMIN + EXECUTIVE (userEnable needs both, grant_guard.rs:58-64,102-104)',
-          );
-          await signIn(page, 'executive', '/#users');
-          const execScreen = page.locator('.users-screen');
-          await expect(execScreen).toBeVisible({ timeout: 20_000 });
-          const rowToEnable = await ensureUserRow(execScreen, targetUserId);
+      // 7. userEnable (POST /api/users/enable, UsersScreen.tsx:89,488,741)
+      const rowAfterEnableWrite = await completeRowWrite(screen, targetUserId, () =>
+        rowAfterDisable.locator('button[data-users-action="enable"]').click(), // UsersScreen.tsx:741
+      );
+      await expect(
+        rowAfterEnableWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
+      ).toBeVisible({ timeout: 15_000 });
 
-          const rowAfterEnableWrite = await completeRowWrite(execScreen, targetUserId, () =>
-            rowToEnable.locator('button[data-users-action="enable"]').click(), // UsersScreen.tsx:741
-          );
-          await expect(
-            rowAfterEnableWrite.locator('.users-status-badge.users-status-active'), // UsersScreen.tsx:494,670
-          ).toBeVisible({ timeout: 15_000 });
-
-          // Reload and verify ACTIVE persists after enable.
-          await page.reload();
-          await expect(execScreen).toBeVisible({ timeout: 20_000 });
-          const rowAfterEnable = await ensureUserRow(execScreen, targetUserId);
-          await expect(
-            rowAfterEnable.locator('.users-status-badge.users-status-active'),
-          ).toBeVisible({ timeout: 15_000 });
-          await shot(page, 'admin-users', 'r9-1-user-status-restored');
-        } finally {
-          await restoreMarketingUser(page, targetUserId);
-        }
-      } finally {
-        await restoreMarketingUser(page, targetUserId);
-      }
+      // Reload and verify ACTIVE persists after enable.
+      await page.reload();
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const rowAfterEnable = await ensureUserRow(screen, targetUserId);
+      await expect(
+        rowAfterEnable.locator('.users-status-badge.users-status-active'),
+      ).toBeVisible({ timeout: 15_000 });
+      await shot(page, 'admin-users', 'r9-1-user-status-restored');
     } finally {
       await restoreMarketingUser(page, targetUserId);
     }
