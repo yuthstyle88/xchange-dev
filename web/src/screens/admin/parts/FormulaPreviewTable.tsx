@@ -16,15 +16,8 @@ export interface FormulaPreviewTableProps {
 const t = screenT('admin.formula', table);
 
 function formatFailure(failure: string): string {
-  try {
-    const parsed = parseSpreadFailure(failure);
-    if (parsed) {
-      return failureText(parsed);
-    }
-  } catch {
-    // If parseSpreadFailure throws
-  }
-  return failure;
+  const parsed = parseSpreadFailure(failure);
+  return parsed ? failureText(parsed) : failure;
 }
 
 export function FormulaPreviewTable(props: FormulaPreviewTableProps): JSX.Element {
