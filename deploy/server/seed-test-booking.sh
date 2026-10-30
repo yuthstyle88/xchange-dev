@@ -344,8 +344,8 @@ EXECUTIVE_PW="$(new_password)"
 EXECUTIVE_SUB="$(identity_register "$EXECUTIVE_PHONE" "$EXECUTIVE_PW")"
 if [ -n "$EXECUTIVE_SUB" ]; then
   q "WITH u AS (
-       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
-       VALUES (gen_random_uuid(), '$ORG_ID', '$EXECUTIVE_SUB', 'Test Executive', 'ACTIVE', 1, now(), '$OWNER_ID')
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, last_branch_id)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$EXECUTIVE_SUB', 'Test Executive', 'ACTIVE', 1, now(), '$OWNER_ID', '$BRANCH')
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
      SELECT id, 'EXECUTIVE', '$ORG_ID', NULL FROM u;" >/dev/null
@@ -360,8 +360,8 @@ ADMIN_PW="$(new_password)"
 ADMIN_SUB="$(identity_register "$ADMIN_PHONE" "$ADMIN_PW")"
 if [ -n "$ADMIN_SUB" ]; then
   q "WITH u AS (
-       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
-       VALUES (gen_random_uuid(), '$ORG_ID', '$ADMIN_SUB', 'Test Admin', 'ACTIVE', 1, now(), '$OWNER_ID')
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, last_branch_id)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$ADMIN_SUB', 'Test Admin', 'ACTIVE', 1, now(), '$OWNER_ID', '$BRANCH')
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
      SELECT id, 'ADMIN', '$ORG_ID', NULL FROM u;" >/dev/null
@@ -376,13 +376,13 @@ OWNER_TEST_PW="$(new_password)"
 OWNER_TEST_SUB="$(identity_register "$OWNER_TEST_PHONE" "$OWNER_TEST_PW")"
 if [ -n "$OWNER_TEST_SUB" ]; then
   q "WITH u AS (
-       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
-       VALUES (gen_random_uuid(), '$ORG_ID', '$OWNER_TEST_SUB', 'Test Owner', 'ACTIVE', 1, now(), '$OWNER_ID')
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, last_branch_id)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$OWNER_TEST_SUB', 'Test Owner', 'ACTIVE', 1, now(), '$OWNER_ID', '$BRANCH')
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
-     SELECT id, 'EXECUTIVE', '$ORG_ID', NULL FROM u
+     SELECT id, 'EXECUTIVE', '$ORG_ID'::uuid, NULL FROM u
      UNION ALL
-     SELECT id, 'ADMIN', '$ORG_ID', NULL FROM u;" >/dev/null
+     SELECT id, 'ADMIN', '$ORG_ID'::uuid, NULL FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    owner created: $OWNER_TEST_PHONE  password $OWNER_TEST_PW"
 else
   [ "$JSON" = 0 ] || die "an account already existed ($OWNER_TEST_PHONE), so its password is unknown; run again (new random phones)"
