@@ -260,7 +260,7 @@ function OperatorCard(props: { session: SessionStore }): JSX.Element {
                     return (
                       <div class="queue-card-worker">
                         {t('queue.card.workerLine', {
-                          staff: w.tellerId ?? t('queue.card.noData'),
+                          staff: w.tellerName ?? t('queue.card.noData'),
                           queue: w.displayNumber,
                           time: stamp(),
                         })}
