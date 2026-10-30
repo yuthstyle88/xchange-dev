@@ -21,6 +21,9 @@ pub struct Caller {
     pub user: Option<Actor>,
     pub app_session: Option<AppSession>,
     pub session_hash: Option<String>,
+    /// #5630 (§14.5): the roles of the rows that granted this request (`Grant.roles_used`), set by the command
+    /// transport after `Policy::authorize`; empty until then. An audit writer passes it to `access::audit_role`.
+    pub granted: Vec<xc_auth::domain::access::Role>,
 }
 
 /// Resolves the caller for a v3 route, checking policy admission.
@@ -114,5 +117,6 @@ pub(crate) async fn authenticate_caller(
         user,
         app_session,
         session_hash,
+        granted: Vec::new(),
     })
 }

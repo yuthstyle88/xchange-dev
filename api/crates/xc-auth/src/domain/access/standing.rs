@@ -157,6 +157,21 @@ impl StandingKind {
     }
 }
 
+/// #5630 (design `org-wide-actor-branch.md` §14.5): the audit `actor_role` of a staff caller, in the
+/// Blueprint's role names (`Role::as_str`, ruling Q-1 A). The role whose row granted the action, when the writer
+/// has the grant (`roles_used`, ruling Q-2 A); else the caller's [`Standing::acting`], the owner and an
+/// executive written `EXECUTIVE` (Q-2 B); else `STAFF`. It never refuses.
+pub fn audit_role(roles_used: &[Role], actor: &Actor, now: DateTime<Utc>) -> &'static str {
+    if let Some(role) = roles_used.first() {
+        return role.as_str();
+    }
+    match Standing::acting(actor, now).map(|s| s.kind) {
+        Some(StandingKind::Owner | StandingKind::Executive) => Role::Executive.as_str(),
+        Some(StandingKind::Staff(role)) => role.as_str(),
+        None => "STAFF",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
