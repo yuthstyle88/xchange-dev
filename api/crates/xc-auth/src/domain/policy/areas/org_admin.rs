@@ -19,6 +19,13 @@ const fn row(action: &'static str, permission: Permission) -> AreaRow {
     }
 }
 
+const fn org_row(action: &'static str, permission: Permission) -> AreaRow {
+    AreaRow {
+        scope: RowScope::Organisation,
+        ..row(action, permission)
+    }
+}
+
 pub const ROWS: &[AreaRow] = &[
     row("branchSave", Permission::BranchesManage),
     row("adminBranchesProfile", Permission::BranchesManage),
@@ -31,12 +38,12 @@ pub const ROWS: &[AreaRow] = &[
     row("userEnable", Permission::UsersManage),
     row("userResetPassword", Permission::UsersManage),
     row("userProfileSave", Permission::UsersManage),
-    row("adminPermissionMatrix", Permission::UsersManage),
+    org_row("adminPermissionMatrix", Permission::UsersManage),
     row("adminUserAudit", Permission::AuditLogsRead),
     row("adminLoginHistory", Permission::AuditLogsRead),
     row("adminEmployeeRegister", Permission::UsersManage),
     // RBAC §11 F12: who may call; the command also requires an EXECUTIVE base (§11.3).
-    row("adminGroupAdd", Permission::UsersManage),
-    row("adminGroupSave", Permission::UsersManage),
-    row("adminGroupDelete", Permission::UsersManage),
+    org_row("adminGroupAdd", Permission::UsersManage),
+    org_row("adminGroupSave", Permission::UsersManage),
+    org_row("adminGroupDelete", Permission::UsersManage),
 ];
