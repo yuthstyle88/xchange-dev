@@ -962,3 +962,62 @@ fn the_access_check_names_the_permission_and_no_role() {
         "the owner door compares Actor.customer_id"
     );
 }
+
+// ── #5630 W-11 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the
+// sub-controller claude/studio-claude-17 before the implementation ──
+
+async fn link_roles(db: &Db) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT actor_role FROM audit_events WHERE action = 'verification_document.link' ORDER BY id",
+    )
+    .fetch_all(&db.pool)
+    .await
+    .expect("read audit_events")
+}
+
+/// W11-1: a TELLER who is also an organisation-wide VERIFICATION_REVIEWER: the row says the role that granted
+/// `VerificationReview`, not the first row (`TELLER`).
+#[tokio::test]
+async fn w11_1_a_reviewer_link_writes_the_granting_role() {
+    let db = Db::start().await;
+    let doc = db.document(ORG_1, None).await;
+    let user = db.user(ORG_1).await;
+    let branch = db.branch(ORG_1).await;
+    let mut actor = staff(user, ORG_1, Role::Teller, Some(&branch));
+    actor.roles.push(ScopedRole::new(
+        Role::VerificationReviewer,
+        None,
+        yesterday(),
+        None,
+    ));
+    db.access()
+        .link_for_reviewer(
+            &actor,
+            SESSION,
+            doc.id,
+            now(),
+            &[Role::VerificationReviewer],
+        )
+        .await
+        .expect("the reviewer gets a link");
+    assert_eq!(
+        link_roles(&db).await,
+        vec!["VERIFICATION_REVIEWER".to_owned()],
+        "W11-1"
+    );
+    db.finish().await;
+}
+
+/// W11-2: the case's own customer: `CUSTOMER` (a non-staff writer keeps its literal, §14.4).
+#[tokio::test]
+async fn w11_2_an_owner_link_writes_customer() {
+    let db = Db::start().await;
+    let doc = db.document(ORG_1, None).await;
+    let owner = customer_actor(doc.owner.user, ORG_1, &doc.owner.id);
+    db.access()
+        .link_for_owner(&owner, SESSION, doc.id, now(), &[])
+        .await
+        .expect("the owner gets a link");
+    assert_eq!(link_roles(&db).await, vec!["CUSTOMER".to_owned()], "W11-2");
+    db.finish().await;
+}

@@ -2374,3 +2374,42 @@ async fn test_route_wrong_codes_commit_attempts_and_lock_challenge() {
         "exactly 6 audit rows: 1 sent + 4 wrongCode + 1 locked"
     );
 }
+
+// ── #5630 W-6 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the
+// sub-controller claude/studio-claude-17 before the implementation: the audit row's `actor_role` is the role whose
+// row granted the action (`roles_used`), not the actor's first row. ──
+
+#[tokio::test]
+async fn w6_the_audit_role_is_the_granting_role_not_the_first_row() {
+    let db = Db::start().await;
+    let fake_sms = Arc::new(FakeSmsSender::new());
+    let service = db.service(fake_sms.clone());
+    let org = xc_org();
+    let branch = BranchId::new("MAIN");
+    let (mut teller, _) = db.teller(org, "MAIN").await;
+    // First row TELLER, second row FINANCE; the grant names FINANCE.
+    teller.roles.push(ScopedRole::new(
+        Role::Finance,
+        Some(BranchId::new("MAIN")),
+        DateTime::<Utc>::UNIX_EPOCH,
+        None,
+    ));
+    let customer_id = db.customer(org, "th").await;
+    service
+        .start(
+            &teller,
+            &branch,
+            &customer_id,
+            "0812345678",
+            at(0),
+            &[Role::Finance],
+        )
+        .await
+        .expect("start succeeds");
+    let roles: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT actor_role FROM audit_events ORDER BY id ASC")
+            .fetch_all(&db.pool)
+            .await
+            .expect("read audit_events");
+    assert_eq!(roles, vec![Some("FINANCE".to_owned())], "W-6");
+}

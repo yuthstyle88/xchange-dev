@@ -1319,3 +1319,26 @@ async fn stale_version_when_expected_version_does_not_match() {
 
     db.finish().await;
 }
+
+/// #5630 W-14 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the
+/// sub-controller claude/studio-claude-17 before the implementation: a review action is audited under the role whose
+/// row granted `VerificationReview` (`ReviewerActor.role`), not the literal `VERIFICATION_REVIEWER`. A BRANCH_MANAGER
+/// holds `VerificationReview` (DOCUMENTS FULL, RBAC §11.2).
+#[tokio::test]
+async fn w14_a_review_is_audited_under_the_granting_role() {
+    let db = Db::start().await;
+    let mut reviewer = db.org_reviewer(ORG_1).await;
+    reviewer.role = xc_auth::domain::access::Role::BranchManager;
+    let customer = db.customer(ORG_1).await;
+    let case = db
+        .insert_case(ORG_1, &customer.id, "SUBMITTED", None, 1)
+        .await;
+    db.service()
+        .start_review(&reviewer, case, 1)
+        .await
+        .expect("start_review");
+    let events = db.audit_events_for_case(case).await;
+    assert_eq!(events.len(), 1, "W-14: {events:?}");
+    assert_eq!(events[0].1, "BRANCH_MANAGER", "W-14");
+    db.finish().await;
+}
