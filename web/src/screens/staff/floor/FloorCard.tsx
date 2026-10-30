@@ -4,8 +4,6 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import type {
-  AttendanceClockInput,
-  AttendanceClockOutput,
   DayStartServiceInput,
   DayStartServiceOutput,
   DayCutoffInput,
@@ -18,6 +16,7 @@ import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ConfirmDialog } from '../parts/ConfirmDialog';
 import { formatAmount } from '../../../shared/ui/currency-count/face-value';
+import { ClockButton } from './ClockButton';
 import { th, en } from './i18n';
 import './floor.css';
 
@@ -60,11 +59,6 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
   const t = screenT('staff.floor', { th, en });
   const api = new ApiClient();
 
-  const clockCmd = command<AttendanceClockInput, AttendanceClockOutput>(
-    api,
-    'POST',
-    '/api/attendance',
-  );
   const startCmd = command<DayStartServiceInput, DayStartServiceOutput>(
     api,
     'POST',
@@ -129,26 +123,6 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
       props.ctx.floor?.safe,
     )
   );
-
-  const handleClock = async () => {
-    if (busy()) return;
-    setBusy(true);
-    try {
-      setError(null);
-      const direction = props.ctx.floor?.myClockIn ? 'OUT' : 'IN';
-      await clockCmd.send({
-        branch: props.ctx.me.branchId,
-        direction,
-      });
-      setNotice(t('saved'));
-      await props.ctx.refresh();
-    } catch (e: unknown) {
-      setNotice(null);
-      setError(wordedError(e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const handleStartService = async () => {
     if (busy()) return;
@@ -253,15 +227,13 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
       </div>
 
       <div class="xc-floor-actions">
-        <button
-          type="button"
-          data-testid="floor-clock"
-          class="xc-floor-clock-btn"
-          disabled={busy()}
-          onClick={handleClock}
-        >
-          {props.ctx.floor?.myClockIn ? t('clockOut') : t('clockIn')}
-        </button>
+        <ClockButton
+          ctx={props.ctx}
+          busy={busy}
+          setBusy={setBusy}
+          onNotice={setNotice}
+          onError={setError}
+        />
 
         <Show when={can(props.ctx.me, 'BranchDayOperate')}>
           <Show when={props.ctx.floor?.phase === 'READY'}>
