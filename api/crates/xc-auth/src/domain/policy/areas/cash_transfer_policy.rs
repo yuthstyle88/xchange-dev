@@ -12,5 +12,5 @@ pub const ROWS: &[AreaRow] = &[AreaRow {
     path: EntryPath::Rpc,
     action: "transferPolicySave",
     need: Need::Permission(Permission::CashTransferPolicySet),
-    scope: RowScope::Request,
+    scope: RowScope::Organisation,
 }];

@@ -93,7 +93,7 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "bookingPolicySet",
         need: Need::Permission(Permission::BranchesManage),
-        scope: RowScope::Request,
+        scope: RowScope::Organisation,
     },
     // Views
     AreaRow {

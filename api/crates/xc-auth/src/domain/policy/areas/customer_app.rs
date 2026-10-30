@@ -38,6 +38,6 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "appSettingsSave",
         need: Need::Permission(Permission::SystemSettings),
-        scope: RowScope::Request,
+        scope: RowScope::Organisation,
     },
 ];

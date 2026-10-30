@@ -12,12 +12,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "orgStartingPriceSave",
         need: Need::Permission(Permission::OrgStartingPricesManage),
-        scope: RowScope::Request,
+        scope: RowScope::Organisation,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "orgStartingPrices",
         need: Need::Permission(Permission::OrgStartingPricesManage),
-        scope: RowScope::Request,
+        scope: RowScope::Organisation,
     },
 ];
