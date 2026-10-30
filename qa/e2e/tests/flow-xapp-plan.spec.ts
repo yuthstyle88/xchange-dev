@@ -8,7 +8,7 @@
 // - customer/journey/JourneyScreen.tsx:396 [data-testid="draft-card"]
 // - customer/journey/PlanDelete.tsx:58 [data-action="delete-plan"]
 import { expect, test } from '@playwright/test';
-import { hasAccount, posted, shot, signIn, users } from './helpers';
+import { hasAccount, posted, shot, signIn, users, writeHeaders } from './helpers';
 
 interface PlannerDraftAnswer {
   id?: string;
@@ -24,7 +24,7 @@ test.describe('QA-F14b flow: save and delete customer journey plan', () => {
     const id = createdDraftId;
     createdDraftId = '';
     const res = await page.request.post(`/api/app/planner-drafts/${encodeURIComponent(id)}/delete`, {
-      headers: { 'x-xchange-request': '1', 'idempotency-key': crypto.randomUUID(), 'content-type': 'application/json' },
+      headers: { ...writeHeaders(crypto.randomUUID()), 'content-type': 'application/json' },
       data: { id },
     });
     expect(res.ok() || res.status() === 404, `cleanup delete of plan ${id}: ${res.status()}`).toBeTruthy();

@@ -72,10 +72,10 @@
 //
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test } from '@playwright/test';
-import { type Lang, signIn, users, withLang } from './helpers';
+import { type Lang, sameOriginHeaders, signIn, users, withLang } from './helpers';
 
 const LANGS: readonly Lang[] = ['th', 'en'];
-const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
+const sameOrigin = sameOriginHeaders();
 
 test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
   for (const lang of LANGS) {
