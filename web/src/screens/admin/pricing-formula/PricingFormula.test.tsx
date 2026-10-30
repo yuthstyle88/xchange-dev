@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { PricingFormulaData } from '../../../shared/api/generated/pricing_formula';
+import { makeOrganisationFormulaDto, makePricingFormulaData, type PricingFormulaData } from '../../../shared/testing/fixtures';
 import type { AdminMenuProps } from '../menus';
 import { previewCalls, resetFormulaStubs } from '../parts/formula-stubs.testing';
 import { toast } from '../parts/toast';
@@ -27,9 +27,9 @@ const DEFAULT = {
   sellFormula: 'ref_sell * (1 + (sell_pct + tier_sell_pct) / 100)',
 };
 
-function data(over: Partial<PricingFormulaData> = {}): PricingFormulaData {
-  return {
-    organisation: {
+function data(over: Partial<PricingFormulaData> = {}) {
+  return makePricingFormulaData({
+    organisation: makeOrganisationFormulaDto({
       id: 'f-3',
       version: 3,
       buyFormula: 'ref_mid - 0.05',
@@ -37,7 +37,7 @@ function data(over: Partial<PricingFormulaData> = {}): PricingFormulaData {
       validFrom: '2026-10-29T10:00:00Z',
       approvedBy: 'exec-1',
       reason: 'narrow',
-    },
+    }),
     default: DEFAULT,
     inputs: ['ref_buy', 'ref_sell', 'ref_mid', 'buy_pct', 'sell_pct', 'tier_buy_pct', 'tier_sell_pct'].map((name) => ({
       name,
@@ -48,7 +48,7 @@ function data(over: Partial<PricingFormulaData> = {}): PricingFormulaData {
       { branch: 'B3', source: 'DEFAULT', own: null },
     ],
     ...over,
-  };
+  });
 }
 
 function json(body: unknown, status = 200): Response {
