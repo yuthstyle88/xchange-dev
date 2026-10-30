@@ -11,7 +11,7 @@ use super::user::User;
 use super::user_history::{LoginEntry, UserAuditEntry};
 use super::user_profile::UserProfile;
 use super::user_status::UserStatus;
-use crate::domain::access::ScopedRole;
+use crate::domain::access::{BranchScope, ScopedRole};
 
 pub trait UserRepository: Send + Sync + 'static {
     fn find_by_id(
@@ -110,21 +110,27 @@ pub trait UserRepository: Send + Sync + 'static {
     ) -> impl Future<Output = AppResult<()>> + Send;
 
     /// `user_audit` rows of the organisation, newest first (`at DESC, id DESC`); `before` is the
-    /// last row's `id` of the previous page (C1c, read by F4a).
+    /// last row's `id` of the previous page (C1c, read by F4a). Only rows whose subject is a user `scope` covers at
+    /// `now` (`BranchScope::covers_user`, #5557).
     fn list_audit(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         organization_id: &str,
+        scope: &BranchScope,
+        now: DateTime<Utc>,
         before: Option<&str>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<UserAuditEntry>>> + Send;
 
     /// `login_history` rows of the organisation, newest first (`at DESC, id DESC`); `before` is
-    /// the last row's `id` of the previous page (C1c, read by F4b).
+    /// the last row's `id` of the previous page (C1c, read by F4b). Only rows whose user `scope` covers at `now`
+    /// (`BranchScope::covers_user`, #5557).
     fn list_logins(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         organization_id: &str,
+        scope: &BranchScope,
+        now: DateTime<Utc>,
         before: Option<&str>,
         limit: u16,
     ) -> impl Future<Output = AppResult<Vec<LoginEntry>>> + Send;

@@ -9,6 +9,8 @@
 mod account_common;
 
 use account_common::{TestDb, at, unique};
+use chrono::Utc;
+use xc_auth::domain::access::BranchScope;
 use xc_auth::domain::user::UserRepository;
 use xc_auth::infrastructure::user::PgUserRepository;
 
@@ -62,13 +64,27 @@ async fn list_audit_with_malformed_before_returns_empty() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_audit(&mut tx, &org, Some("not-a-uuid"), 10)
+        .list_audit(
+            &mut tx,
+            &org,
+            &BranchScope::All,
+            Utc::now(),
+            Some("not-a-uuid"),
+            10,
+        )
         .await
         .expect("list_audit with malformed cursor");
     assert!(rows.is_empty(), "expected empty rows, got: {:?}", rows);
     // 36 characters of the right alphabet, but not a uuid (reviewer row).
     let rows = PgUserRepository
-        .list_audit(&mut tx, &org, Some(&"-".repeat(36)), 10)
+        .list_audit(
+            &mut tx,
+            &org,
+            &BranchScope::All,
+            Utc::now(),
+            Some(&"-".repeat(36)),
+            10,
+        )
         .await
         .expect("list_audit with a 36-hyphen cursor");
     assert!(rows.is_empty(), "expected empty rows, got: {:?}", rows);
@@ -96,7 +112,14 @@ async fn list_logins_with_malformed_before_returns_empty() {
 
     let mut tx = db.pool.begin().await.expect("begin");
     let rows = PgUserRepository
-        .list_logins(&mut tx, &org, Some("not-a-uuid"), 10)
+        .list_logins(
+            &mut tx,
+            &org,
+            &BranchScope::All,
+            Utc::now(),
+            Some("not-a-uuid"),
+            10,
+        )
         .await
         .expect("list_logins with malformed cursor");
     assert!(rows.is_empty(), "expected empty rows, got: {:?}", rows);
@@ -139,13 +162,27 @@ async fn before_valid_uuid_of_no_row_returns_empty() {
     let no_row_uuid = "00000000-0000-0000-0000-000000000099";
 
     let audit_rows = PgUserRepository
-        .list_audit(&mut tx, &org, Some(no_row_uuid), 10)
+        .list_audit(
+            &mut tx,
+            &org,
+            &BranchScope::All,
+            Utc::now(),
+            Some(no_row_uuid),
+            10,
+        )
         .await
         .expect("list_audit valid uuid of no row");
     assert!(audit_rows.is_empty());
 
     let login_rows = PgUserRepository
-        .list_logins(&mut tx, &org, Some(no_row_uuid), 10)
+        .list_logins(
+            &mut tx,
+            &org,
+            &BranchScope::All,
+            Utc::now(),
+            Some(no_row_uuid),
+            10,
+        )
         .await
         .expect("list_logins valid uuid of no row");
     assert!(login_rows.is_empty());
@@ -189,7 +226,7 @@ async fn before_none_and_valid_existing_id_returns_expected_rows() {
 
     // before = None -> returns all rows newest first
     let all = PgUserRepository
-        .list_audit(&mut tx, &org, None, 10)
+        .list_audit(&mut tx, &org, &BranchScope::All, Utc::now(), None, 10)
         .await
         .expect("list_audit before None");
     assert_eq!(all.len(), 2);
@@ -198,7 +235,7 @@ async fn before_none_and_valid_existing_id_returns_expected_rows() {
 
     // before = id2 -> returns only id1
     let older = PgUserRepository
-        .list_audit(&mut tx, &org, Some(&id2), 10)
+        .list_audit(&mut tx, &org, &BranchScope::All, Utc::now(), Some(&id2), 10)
         .await
         .expect("list_audit before id2");
     assert_eq!(older.len(), 1);

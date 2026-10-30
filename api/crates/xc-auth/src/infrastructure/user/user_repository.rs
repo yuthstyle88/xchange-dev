@@ -5,12 +5,13 @@ use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Row, Transaction};
 use xc_kernel::ids::BranchId;
 
-use crate::domain::access::{Role, ScopedRole};
+use crate::domain::access::{BranchScope, Role, ScopedRole};
 use crate::domain::user::user::User;
 use crate::domain::user::user_history::{LoginEntry, UserAuditEntry};
 use crate::domain::user::user_profile::UserProfile;
 use crate::domain::user::user_repository::UserRepository;
 use crate::domain::user::user_status::UserStatus;
+use crate::infrastructure::access::push_user_in_scope;
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct PgUserRepository;
@@ -396,6 +397,8 @@ impl UserRepository for PgUserRepository {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         organization_id: &str,
+        scope: &BranchScope,
+        now: DateTime<Utc>,
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<UserAuditEntry>> {
@@ -403,7 +406,7 @@ impl UserRepository for PgUserRepository {
             // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
             return Ok(Vec::new());
         }
-        let rows = sqlx::query(
+        let mut builder = sqlx::QueryBuilder::<Postgres>::new(
             r#"
             SELECT a.id::text AS id,
                    a.at,
@@ -418,18 +421,22 @@ impl UserRepository for PgUserRepository {
             FROM user_audit a
             LEFT JOIN users actor ON actor.id::text = a.actor_id
             LEFT JOIN users subj ON subj.id::text = a.subject_id
-            WHERE a.organization_id = $1::uuid
-              AND ($2::uuid IS NULL OR (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = $2::uuid))
-            ORDER BY a.at DESC, a.id DESC
-            LIMIT $3
-            "#,
-        )
-        .bind(organization_id)
-        .bind(before)
-        .bind(i64::from(limit))
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
+            WHERE a.organization_id = "#,
+        );
+        builder.push_bind(organization_id);
+        builder.push("::uuid AND (");
+        builder.push_bind(before);
+        builder.push("::uuid IS NULL OR (a.at, a.id) < (SELECT at, id FROM user_audit WHERE id = ");
+        builder.push_bind(before);
+        builder.push("::uuid))");
+        push_user_in_scope(&mut builder, scope, "subj.id", now);
+        builder.push(" ORDER BY a.at DESC, a.id DESC LIMIT ");
+        builder.push_bind(i64::from(limit));
+        let rows = builder
+            .build()
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
 
         Ok(rows
             .into_iter()
@@ -452,6 +459,8 @@ impl UserRepository for PgUserRepository {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         organization_id: &str,
+        scope: &BranchScope,
+        now: DateTime<Utc>,
         before: Option<&str>,
         limit: u16,
     ) -> AppResult<Vec<LoginEntry>> {
@@ -459,7 +468,7 @@ impl UserRepository for PgUserRepository {
             // A malformed cursor reads as "nothing older" (#3213); it never reaches the `::uuid` cast.
             return Ok(Vec::new());
         }
-        let rows = sqlx::query(
+        let mut builder = sqlx::QueryBuilder::<Postgres>::new(
             r#"
             SELECT l.id::text AS id,
                    l.at,
@@ -469,18 +478,23 @@ impl UserRepository for PgUserRepository {
                    l.result
             FROM login_history l
             LEFT JOIN users u ON u.id = l.user_id
-            WHERE l.organization_id = $1::uuid
-              AND ($2::uuid IS NULL OR (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = $2::uuid))
-            ORDER BY l.at DESC, l.id DESC
-            LIMIT $3
-            "#,
-        )
-        .bind(organization_id)
-        .bind(before)
-        .bind(i64::from(limit))
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
+            WHERE l.organization_id = "#,
+        );
+        builder.push_bind(organization_id);
+        builder.push("::uuid AND (");
+        builder.push_bind(before);
+        builder
+            .push("::uuid IS NULL OR (l.at, l.id) < (SELECT at, id FROM login_history WHERE id = ");
+        builder.push_bind(before);
+        builder.push("::uuid))");
+        push_user_in_scope(&mut builder, scope, "l.user_id", now);
+        builder.push(" ORDER BY l.at DESC, l.id DESC LIMIT ");
+        builder.push_bind(i64::from(limit));
+        let rows = builder
+            .build()
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
 
         Ok(rows
             .into_iter()
