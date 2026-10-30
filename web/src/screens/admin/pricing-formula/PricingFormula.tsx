@@ -23,7 +23,7 @@ import * as table from './i18n';
 import './pricing-formula.css';
 
 const t = screenT('admin.pricing-formula', table);
-const tf = screenT('admin.formula', formulaTable);
+const tf = formulaTable.formulaT;
 
 export function PricingFormula(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
