@@ -58,6 +58,7 @@ import {
 //   - web/src/screens/staff/transfers/TransfersCard.tsx:361-493 (`[data-card="transfers"]`, `[data-testid="transfer-new"]`, `[data-testid="transfer-error"]`, `[data-testid="transfer-form"]`, `[data-testid="transfer-kind"]`, `[data-testid="transfer-note"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="transfer-save"]`)
 //   - web/src/screens/staff/floor/FloorCard.tsx:242-248,293-326 (`.xc-floor-card`, `[data-testid="floor-error"]`, `[data-testid="floor-target-form"]`, `input[data-currency="USD"]`, `[data-testid="floor-target-save"]`)
 //   - web/src/screens/desk/queue/counter/CounterBar.tsx:68-74,114-139,151-157 (`button[name="issueWalkIn"]`, `button[name="openQueue"]`, `button[name="closeQueue"]`, `.desk-error[role="alert"]`)
+//   - web/src/screens/desk/queue/queue-commands.ts:16,59 (`POST /api/queue/tickets/{id}/release`, verb `release`)
 //   - web/src/screens/desk/bookings/DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023 (`[data-screen="desk-bookings"]`, `[data-action="new-booking"]`, `.xc-modal-overlay`, `select[name="currency"]`, `input[name="quantity"]`, `[data-action="submit-booking"]`, `[role="alert"].field-error`, `[data-booking-id]`, `[data-action="cancel"]`, `input[name="reason"]`, `[data-action="confirm-cancel"]`, `[data-action="reschedule"]`, `select[name="targetSlotId"]`, `[data-action="confirm-reschedule"]`, `[role="alert"].xc-error-banner`)
 
 const EXCHANGE_AMOUNT = '1';
@@ -428,6 +429,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
       let started: 'started' | 'alreadyOpen' | undefined;
       let createdBookingId: string | null = null;
       let openedQueue = false;
+      const servedTicketIds: string[] = [];
 
       try {
         started = await startService(manager);
@@ -499,7 +501,8 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
 
         // Advance with a valid quote to test payment-step refusals in `th` and `en` before `transactionCreate`/`transactionConfirm`,
         // then complete the exchange so we can test `reversalRequest` and `reversalPost` refusals.
-        for (const lang of STAFF_LANGS) {
+        for (let i = 0; i < STAFF_LANGS.length; i++) {
+          const lang = STAFF_LANGS[i];
           await openInLang(teller, lang, '/desk?branch=' + users.branch);
           await expect(
             teller.locator(`select[name="currency"] option[value="${currency}"]`),
@@ -525,7 +528,12 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             timeout: 15_000,
           });
           if (await ensureQueueOpen(manager)) openedQueue = true;
-          await confirmBookingBtn.click();
+          const serveRes = await posted(teller, /^\/api\/queue\/tickets\/serve$/, () => confirmBookingBtn.click());
+          expect(serveRes.ok, `serve walk-in (${lang}): ${serveRes.text}`).toBeTruthy();
+          const servedTicket = JSON.parse(serveRes.body) as { id?: string };
+          const servedTicketId = String(servedTicket.id ?? '');
+          expect(servedTicketId, 'served walk-in ticket id').not.toBe('');
+          servedTicketIds.push(servedTicketId);
 
           const methodSelect = teller.locator('select[name="method"]');
           await expect(methodSelect, 'payment step visible (steps/payment/step.tsx:135)').toBeVisible({
@@ -558,6 +566,24 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(accountField, 'account input preserved after dismissed confirm').toHaveValue(
             savedAccount || 'Cash',
           );
+
+          if (i < STAFF_LANGS.length - 1) {
+            // End of pass: release the served ticket through POST /api/queue/tickets/{id}/release (#5541;
+            // web/src/screens/desk/queue/queue-commands.ts:16,59 verb 'release') so the next language pass
+            // can serve without 409 alreadyServing.
+            const releaseRes = await teller.request.post(
+              `/api/queue/tickets/${encodeURIComponent(servedTicketId)}/release`,
+              {
+                headers: {
+                  'Idempotency-Key': `${runMarker}-release-${servedTicketId}`,
+                  'x-xchange-request': '1', // api/src/presentation/extractors/origin.rs:4
+                  origin: new URL(users.baseUrl).origin,
+                },
+                data: { id: servedTicketId },
+              },
+            );
+            expect(releaseRes.ok(), `release ticket ${servedTicketId} (${lang}): ${releaseRes.status()}`).toBeTruthy();
+          }
         }
 
         // Complete the exchange on the last open payment form so `/desk/transactions/{id}` mounts `request-reversal`.
@@ -841,6 +867,18 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         }
         await shot(manager, 'desk', 'validation-desk-bookings');
       } finally {
+        for (const ticketId of servedTicketIds) {
+          await teller.request
+            .post(`/api/queue/tickets/${encodeURIComponent(ticketId)}/release`, {
+              headers: {
+                'Idempotency-Key': `${runMarker}-cleanup-release-${ticketId}`,
+                'x-xchange-request': '1',
+                origin: new URL(users.baseUrl).origin,
+              },
+              data: { id: ticketId },
+            })
+            .catch(() => {});
+        }
         await closeQueueIfOpened(manager, openedQueue).catch(() => {});
         if (createdBookingId) {
           await manager.request
