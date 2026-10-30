@@ -15,6 +15,7 @@ const OWN_ERROR_KEYS = {
   counterPaused: 'error.counterPaused',
   noOpenShift: 'error.noOpenShift',
   staleVersion: 'error.staleVersion',
+  ticketHasSale: 'error.ticketHasSale',
 } as const satisfies Record<string, keyof typeof th>;
 
 function refusalMessage(err: unknown): string {
@@ -45,6 +46,7 @@ export interface TicketActionsProps {
 export function TicketActions(props: TicketActionsProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const [cancelling, setCancelling] = createSignal(false);
+  const [releasing, setReleasing] = createSignal(false);
   const [reason, setReason] = createSignal('');
   const [error, setError] = createSignal<string | null>(null);
 
@@ -64,6 +66,8 @@ export function TicketActions(props: TicketActionsProps): JSX.Element {
     return [];
   };
 
+  const canRelease = () => props.ticket.status === 'SERVING' && mineOrManager();
+
   const canCancel = () =>
     props.ticket.status === 'WAITING' || props.ticket.status === 'CALLED';
 
@@ -74,6 +78,7 @@ export function TicketActions(props: TicketActionsProps): JSX.Element {
     try {
       await work();
       setCancelling(false);
+      setReleasing(false);
       setReason('');
       props.onDone();
     } catch (err) {
@@ -107,6 +112,30 @@ export function TicketActions(props: TicketActionsProps): JSX.Element {
             </button>
           )}
         </For>
+        <Show when={canRelease()}>
+          <button
+            type="button"
+            name="release"
+            disabled={busy()}
+            onClick={() => {
+              setError(null);
+              setCancelling(false);
+              setReleasing(true);
+            }}
+          >
+            {t('release')}
+          </button>
+        </Show>
+        <Show when={releasing() && canRelease()}>
+          <button
+            type="button"
+            name="releaseConfirm"
+            disabled={busy()}
+            onClick={() => void run(() => props.commands.ticket('release', props.ticket.id))}
+          >
+            {t('releaseConfirm')}
+          </button>
+        </Show>
         <Show when={canCancel()}>
           <button
             type="button"
@@ -114,6 +143,7 @@ export function TicketActions(props: TicketActionsProps): JSX.Element {
             disabled={busy()}
             onClick={() => {
               setError(null);
+              setReleasing(false);
               setCancelling(true);
             }}
           >

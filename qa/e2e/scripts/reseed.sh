@@ -19,5 +19,6 @@ node -e '
     ", teller2 " + (fresh.teller2 || {}).phone +
     ", branch manager " + (fresh.branchManager || {}).phone +
     ", admin " + (fresh.admin?.identifier || fresh.admin?.phone || "") +
-    ", executive " + (fresh.executive?.phone || ""));
+    ", executive " + (fresh.executive?.phone || "") +
+    ", owner " + (fresh.owner?.phone || ""));
 ' "$NEW" "$HERE/users.json"

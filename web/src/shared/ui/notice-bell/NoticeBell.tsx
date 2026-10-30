@@ -5,6 +5,7 @@ import { screenT } from '../../i18n';
 import { ViewPoller } from '../../live/view-poller';
 import * as table from './i18n';
 import './notice-bell.css';
+import { publishFreshNotices } from './notice-feed';
 
 const t = screenT('noticeBell', table);
 
@@ -59,9 +60,19 @@ export function NoticeBell(props: {
 
       if (seenFirst) {
         const fresh = items
-          .filter((item) => item.seq > highestSeq && item.object?.objectType === 'cash_count')
+          .filter((item) => item.seq > highestSeq)
           .sort((a, b) => a.seq - b.seq);
+        if (fresh.length > 0) {
+          publishFreshNotices(
+            fresh.map((item) => ({
+              seq: item.seq,
+              objectType: item.object?.objectType ?? null,
+              objectId: item.object?.objectId ?? null,
+            }))
+          );
+        }
         for (const item of fresh) {
+          if (item.object?.objectType !== 'cash_count') continue;
           const id = ++nextToastId;
           setToasts((prev) => [...prev, { id, title: item.title, body: item.body }]);
           const timer = setTimeout(() => {

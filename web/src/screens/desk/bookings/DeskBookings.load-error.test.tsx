@@ -10,6 +10,7 @@ import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { th } from './i18n';
+import { withBookingSlots } from './booking-slots.testing';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -83,7 +84,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
   it('row 1: the first desk_bookings read fails 500 -> an error banner with Retry is shown; not blank', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -96,7 +97,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -115,7 +116,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -132,7 +133,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -152,7 +153,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -169,7 +170,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -194,7 +195,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
     const seenSince: Array<string | null> = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -216,7 +217,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -252,7 +253,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
   it('row 5: the first read is refused roleNotAllowed -> the refusal, as today', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -265,7 +266,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -281,7 +282,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -295,7 +296,7 @@ describe('DeskBookingsScreen (B02) — §9 load-error behaviour (#2163)', () => 
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();

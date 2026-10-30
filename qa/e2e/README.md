@@ -48,3 +48,4 @@ Do these by hand and attach the screenshots.
 
 - Never run the suite against a host (E-3). Check with `npx playwright test --list` and `npx tsc -p .`; both work without `users.json`, falling back to `users.example.json`.
 - Import only from `./helpers`. Never edit `helpers.ts`; a missing helper goes on your ticket.
+- Use `owner` for steps that need ADMIN + EXECUTIVE, such as `userEnable`.

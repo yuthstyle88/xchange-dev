@@ -13,6 +13,7 @@ import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
 import { th } from './i18n';
+import { withBookingSlots } from './booking-slots.testing';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -96,7 +97,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -113,7 +114,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -134,7 +135,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
     const seenSince: Array<string | null> = [];
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -155,7 +156,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -176,7 +177,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
     let bookingsCall = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -196,7 +197,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -220,7 +221,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
     let checkInCalls = 0;
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -251,7 +252,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -284,7 +285,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
   it('row 5: roleNotAllowed -> The refusal block (kept)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -297,7 +298,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -314,7 +315,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -339,7 +340,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -387,7 +388,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
 
     vi.stubGlobal(
       'fetch',
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -412,7 +413,7 @@ describe('DeskBookingsScreen (B02) — §8 & §9 read error recovery (#2195)', (
         }
         return jsonResponse(404, { error: { code: 'notFound', message: 'Not found' } });
       }),
-    );
+    ));
 
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();

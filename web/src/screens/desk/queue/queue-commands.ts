@@ -13,7 +13,7 @@ import type {
 } from '../../../shared/api/generated/queue';
 
 /** The per-ticket verbs of `POST /api/queue/tickets/{id}/<verb>` (`queue.rs:335-351`). */
-export type TicketVerb = 'call' | 'recall' | 'skip' | 'start' | 'finish';
+export type TicketVerb = 'call' | 'recall' | 'skip' | 'start' | 'finish' | 'release';
 
 export interface QueueCommands {
   /** `POST /api/queue/tickets`: a walk-in ticket issued at the desk (`queue.rs:236`). */

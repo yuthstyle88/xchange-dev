@@ -10,6 +10,7 @@ import {
 import { setAudience, setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
 import { DeskBookingsScreen } from './DeskBookingsScreen';
+import { withBookingSlots } from './booking-slots.testing';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -118,7 +119,7 @@ describe('DeskBookingsScreen (B02) — §9 read-order sequence guard (#2216)', (
 
     vi.stubGlobal(
       'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      withBookingSlots(vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const rawUrl = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
         const u = new URL(rawUrl, 'http://localhost');
         const method = (init?.method ?? 'GET').toUpperCase();
@@ -138,7 +139,7 @@ describe('DeskBookingsScreen (B02) — §9 read-order sequence guard (#2216)', (
         }
         return Promise.resolve(jsonResponse(404, { error: { code: 'notFound', message: u.pathname } }));
       }),
-    );
+    ));
   });
 
   afterEach(() => {
