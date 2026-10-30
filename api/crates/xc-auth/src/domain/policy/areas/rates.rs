@@ -14,6 +14,13 @@ const fn row(path: EntryPath, action: &'static str, need: Need) -> AreaRow {
     }
 }
 
+const fn org_row(path: EntryPath, action: &'static str, need: Need) -> AreaRow {
+    AreaRow {
+        scope: RowScope::Organisation,
+        ..row(path, action, need)
+    }
+}
+
 const fn p(permission: Permission) -> Need {
     Need::Permission(permission)
 }
@@ -26,7 +33,7 @@ pub const ROWS: &[AreaRow] = &[
         "ratePolicySave",
         p(Permission::RatePolicySave),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "marketRatesRefresh",
         p(Permission::MarketRatesRefresh),
@@ -36,33 +43,33 @@ pub const ROWS: &[AreaRow] = &[
         "rateReferenceFetch",
         p(Permission::RatesDraft),
     ),
-    row(EntryPath::Rpc, "pricing_formula", p(Permission::RatesDraft)),
-    row(
+    org_row(EntryPath::Rpc, "pricing_formula", p(Permission::RatesDraft)),
+    org_row(
         EntryPath::Rpc,
         "pricingFormulaSave",
         p(Permission::RatePolicySave),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "pricingModeSave",
         p(Permission::RatePolicySave),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "denominationGroupCreate",
         p(Permission::RatesDraft),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "denominationGroupMap",
         p(Permission::RatesDraft),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "denominationGroupRemove",
         p(Permission::RatesDraft),
     ),
-    row(
+    org_row(
         EntryPath::Rpc,
         "admin_denomination_groups",
         p(Permission::RatesDraft),
