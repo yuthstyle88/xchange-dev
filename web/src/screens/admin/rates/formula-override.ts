@@ -22,19 +22,35 @@ export const EMPTY_OVERRIDE: FormulaOverrideState = {
 };
 
 export function initialOverride(entry: BranchFormulaDto, org: FormulaTextsDto): FormulaOverrideState {
-  void entry;
-  void org;
-  throw new Error('todo: pricing-formula-web T8 initialOverride');
+  if (entry.source === 'BRANCH' && entry.own) {
+    return { current: entry, choice: 'BRANCH', buy: entry.own.buyFormula, sell: entry.own.sellFormula };
+  }
+  return { current: entry, choice: 'ORGANISATION', buy: org.buyFormula, sell: org.sellFormula };
 }
 
 export function overridePayload(
   s: FormulaOverrideState,
 ): Pick<RatePolicySaveInput, 'buyFormula' | 'sellFormula'> {
-  void s;
-  throw new Error('todo: pricing-formula-web T8 overridePayload');
+  if (!s.current) return {};
+  if (s.choice === 'ORGANISATION') {
+    return s.current.source === 'BRANCH' ? { buyFormula: null, sellFormula: null } : {};
+  }
+  const buyFormula = s.buy.trim();
+  const sellFormula = s.sell.trim();
+  if (
+    s.current.source === 'BRANCH' &&
+    s.current.own &&
+    buyFormula === s.current.own.buyFormula.trim() &&
+    sellFormula === s.current.own.sellFormula.trim()
+  ) {
+    return {};
+  }
+  return { buyFormula, sellFormula };
 }
 
 export function overrideBlank(s: FormulaOverrideState): 'buyFormula' | 'sellFormula' | null {
-  void s;
-  throw new Error('todo: pricing-formula-web T8 overrideBlank');
+  if (s.choice !== 'BRANCH') return null;
+  if (!s.buy.trim()) return 'buyFormula';
+  if (!s.sell.trim()) return 'sellFormula';
+  return null;
 }
