@@ -175,7 +175,12 @@ export interface RatesFormulaOverrideProps {
 (`Rates.tsx:340`, `admin-settings-bounds.test.tsx:666-700`) compile untouched.
 
 **Text and look are in the skeleton, not in the tickets:** every string lives in `parts/formula-i18n.ts`
-(screen key `admin.formula`) and `pricing-formula/i18n.ts` (`admin.pricing-formula`). Staff screens are TH/EN only:
+and `pricing-formula/i18n.ts` (`admin.pricing-formula`). The formula texts are read only through
+`formulaT` (exported by `parts/formula-i18n.ts`, `screenT('admin.parts', …)`), never by a `screenT` call of the
+consumer's own: the namespace guard (`shared/i18n/namespace.test.ts`, W10) wants every call to name its own folder, and
+a shared `admin.formula` key failed it from `parts/`, `rates/` and `pricing-formula/` (measured on all nine heads
+together, 2026-10-30). `parts/formula-i18n.test.ts` keeps its keys apart from `parts/i18n.ts`, which `screenT` reads first.
+Tests build view and command objects with `shared/testing/fixtures` factories (`no-inline-dto.guard.test.ts`, §4.3). Staff screens are TH/EN only:
 `collectScreens` refuses a `zh` export on an admin table ("is a staff screen: TH/EN only", measured on the skeleton), so
 there is no `zh`. `pricing-formula/i18n.ts` has `en` copied from `th` (owner 2026-10-28: translation is a later ticket).
 `parts/formula-i18n.ts` has real English in `en`, because these parts render on the rates screen and
