@@ -1,10 +1,9 @@
 // Pricing formula FE T2 (docs/design/blueprint/pricing-formula-web.md §2, §3 S1–S10): read the save check's failure
 // lines (`SpreadFailure::describe`, api/crates/xc-rate/src/application/formula/spread_check.rs:92-130) into rows.
 import { ApiError } from '../../../shared/api/client';
-import { screenT } from '../../../shared/i18n';
 import * as table from './formula-i18n';
 
-const t = screenT('admin.formula', table);
+const t = table.formulaT;
 
 const HEAD = /^(\S+) (\S+)(?: tier (\d+))?( FOLLOW)? (.+)$/;
 const BUY_ABOVE_SELL = /^buy (\S+) > sell (\S+)$/;
