@@ -288,7 +288,7 @@ else
   FINANCE_PW="(unchanged: $FINANCE_PHONE was already registered)"
 fi
 
-say "6d. test marketing $MARKETING_PHONE (MARKETING on $BRANCH: smokes #campaigns, #campaign-performance, #members)"
+say "6d. test marketing $MARKETING_PHONE (MARKETING organisation-wide: smokes #campaigns, #campaign-performance, #members)"
 MARKETING_PW="$(new_password)"
 MARKETING_SUB="$(identity_register "$MARKETING_PHONE" "$MARKETING_PW")"
 if [ -n "$MARKETING_SUB" ]; then
@@ -297,7 +297,7 @@ if [ -n "$MARKETING_SUB" ]; then
        VALUES (gen_random_uuid(), '$ORG_ID', '$MARKETING_SUB', 'Test Marketing', 'ACTIVE', 1, now(), '$OWNER_ID')
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
-     SELECT id, 'MARKETING', '$ORG_ID', '$BRANCH' FROM u;" >/dev/null
+     SELECT id, 'MARKETING', '$ORG_ID', NULL FROM u;" >/dev/null
   [ "$JSON" = 1 ] || echo "    marketing created: $MARKETING_PHONE  password $MARKETING_PW"
 else
   [ "$JSON" = 0 ] || die "an account already existed ($MARKETING_PHONE), so its password is unknown; run again (new random phones)"

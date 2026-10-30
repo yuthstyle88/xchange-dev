@@ -5,7 +5,7 @@
 //! Picked up by `xc-auth/build.rs` to generate `AREA_ROWS`.
 
 use crate::domain::access::Permission;
-use crate::domain::policy::areas::AreaRow;
+use crate::domain::policy::areas::{AreaRow, RowScope};
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 
@@ -23,77 +23,92 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "countSubmit",
         need: Need::AnyOf(COUNT_SUBMIT),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "countVerify",
         need: Need::Permission(Permission::ShiftCloseCertify),
+        scope: RowScope::Request,
     },
     // staff-corrections §4 B: the same people as verify.
     AreaRow {
         path: EntryPath::Rpc,
         action: "countReject",
         need: Need::Permission(Permission::ShiftCloseCertify),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "handoverStart",
         need: Need::Permission(Permission::ShiftOperate),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "handoverAccept",
         need: Need::Permission(Permission::ShiftOperate),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "handoverReject",
         need: Need::Permission(Permission::ShiftOperate),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "transferCreate",
         need: Need::Permission(Permission::CashManage),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "transferSubmit",
         need: Need::Permission(Permission::CashManage),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "transferDispatch",
         need: Need::Permission(Permission::CashManage),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "transferReceive",
         need: Need::AnyOf(TRANSFER_RECEIVE),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "transferReconcile",
         need: Need::Permission(Permission::FinanceReconcile),
+        scope: RowScope::Request,
     },
     // views (§4.7)
     AreaRow {
         path: EntryPath::Rpc,
         action: "myShift",
         need: Need::Permission(Permission::ShiftOperate),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "handoversPending",
         need: Need::Permission(Permission::ShiftOperate),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "cashCounts",
         need: Need::AnyOf(CASH_COUNTS),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "cashTransfers",
         need: Need::Permission(Permission::CashManage),
+        scope: RowScope::Request,
     },
 ];

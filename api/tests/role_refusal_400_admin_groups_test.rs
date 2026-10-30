@@ -220,12 +220,17 @@ async fn admin_group_add_refuses_non_executive_with_400_role_not_allowed() {
     db.finish().await;
 
     for (who, status, body) in answers {
+        // #5526: groups are organisation-level, so the branch EXECUTIVE is refused 403 outOfScope.
+        let (want_status, want_code) = if who == "ADMIN@*" {
+            (StatusCode::BAD_REQUEST, "roleNotAllowed")
+        } else {
+            (StatusCode::FORBIDDEN, "outOfScope")
+        };
         assert_eq!(
-            status,
-            StatusCode::BAD_REQUEST,
+            status, want_status,
             "{who} on /api/admin/groups/add: {body}"
         );
-        assert_eq!(body["error"]["code"], json!("roleNotAllowed"));
+        assert_eq!(body["error"]["code"], json!(want_code));
     }
 }
 
@@ -251,12 +256,17 @@ async fn admin_group_save_refuses_non_executive_with_400_role_not_allowed() {
     db.finish().await;
 
     for (who, status, body) in answers {
+        // #5526: groups are organisation-level, so the branch EXECUTIVE is refused 403 outOfScope.
+        let (want_status, want_code) = if who == "ADMIN@*" {
+            (StatusCode::BAD_REQUEST, "roleNotAllowed")
+        } else {
+            (StatusCode::FORBIDDEN, "outOfScope")
+        };
         assert_eq!(
-            status,
-            StatusCode::BAD_REQUEST,
+            status, want_status,
             "{who} on /api/admin/groups/save: {body}"
         );
-        assert_eq!(body["error"]["code"], json!("roleNotAllowed"));
+        assert_eq!(body["error"]["code"], json!(want_code));
     }
 }
 
@@ -280,11 +290,16 @@ async fn admin_group_delete_refuses_non_executive_with_400_role_not_allowed() {
     db.finish().await;
 
     for (who, status, body) in answers {
+        // #5526: groups are organisation-level, so the branch EXECUTIVE is refused 403 outOfScope.
+        let (want_status, want_code) = if who == "ADMIN@*" {
+            (StatusCode::BAD_REQUEST, "roleNotAllowed")
+        } else {
+            (StatusCode::FORBIDDEN, "outOfScope")
+        };
         assert_eq!(
-            status,
-            StatusCode::BAD_REQUEST,
+            status, want_status,
             "{who} on /api/admin/groups/delete: {body}"
         );
-        assert_eq!(body["error"]["code"], json!("roleNotAllowed"));
+        assert_eq!(body["error"]["code"], json!(want_code));
     }
 }

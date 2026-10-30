@@ -253,7 +253,7 @@ async fn call(
 }
 
 // M1: RATE_MANAGER on MAIN calls PUT /api/margin-guard with {"maxSpreadShare": "1"}
-// -> 400 roleNotAllowedHere; margin_guards has no row.
+// -> 403 outOfScope (#5526: the margin guard is organisation-level); margin_guards has no row.
 #[actix_web::test]
 async fn m1_rate_manager_cannot_set_margin_guard() {
     let room = Room::start().await;
@@ -269,14 +269,14 @@ async fn m1_rate_manager_cannot_set_margin_guard() {
 
     assert_eq!(
         ans.status,
-        StatusCode::BAD_REQUEST,
-        "M1: marginGuardSet must refuse branch RATE_MANAGER with 400: {}",
+        StatusCode::FORBIDDEN,
+        "M1: marginGuardSet must refuse branch RATE_MANAGER with 403 (#5526: organisation-level row): {}",
         ans.text
     );
     assert_eq!(
         ans.code(),
-        "roleNotAllowedHere",
-        "M1: expected roleNotAllowedHere, got: {}",
+        "outOfScope",
+        "M1: expected outOfScope, got: {}",
         ans.text
     );
 
@@ -325,14 +325,14 @@ async fn m2_rate_manager_cannot_disable_existing_margin_guard() {
 
     assert_eq!(
         ans.status,
-        StatusCode::BAD_REQUEST,
-        "M2: marginGuardSet must refuse branch RATE_MANAGER disabling guard with 400: {}",
+        StatusCode::FORBIDDEN,
+        "M2: marginGuardSet must refuse branch RATE_MANAGER disabling guard with 403 (#5526: organisation-level row): {}",
         ans.text
     );
     assert_eq!(
         ans.code(),
-        "roleNotAllowedHere",
-        "M2: expected roleNotAllowedHere, got: {}",
+        "outOfScope",
+        "M2: expected outOfScope, got: {}",
         ans.text
     );
 
@@ -438,14 +438,14 @@ async fn m5_expired_executive_with_active_rate_manager_cannot_set_margin_guard()
 
     assert_eq!(
         ans.status,
-        StatusCode::BAD_REQUEST,
-        "M5: marginGuardSet must refuse expired EXECUTIVE + active RATE_MANAGER with 400: {}",
+        StatusCode::FORBIDDEN,
+        "M5: marginGuardSet must refuse expired EXECUTIVE + active RATE_MANAGER with 403 (#5526: organisation-level row): {}",
         ans.text
     );
     assert_eq!(
         ans.code(),
-        "roleNotAllowedHere",
-        "M5: expected roleNotAllowedHere, got: {}",
+        "outOfScope",
+        "M5: expected outOfScope, got: {}",
         ans.text
     );
 

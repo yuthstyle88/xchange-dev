@@ -5,7 +5,7 @@
 //! `userRevoke`, `userDisable` and `adminUsers` → `UsersManage`. No invite (owner, 2026-10-10);
 //! `userCreate` is #1157's.
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -15,6 +15,7 @@ const fn row(action: &'static str, permission: Permission) -> AreaRow {
         path: EntryPath::Rpc,
         action,
         need: Need::Permission(permission),
+        scope: RowScope::Request,
     }
 }
 

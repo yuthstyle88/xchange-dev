@@ -26,7 +26,7 @@ mod policy_common;
 
 use policy_common::*;
 use xc_auth::domain::access::RoleGrants;
-use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow};
+use xc_auth::domain::policy::areas::{AREA_ROWS, AreaRow, RowScope};
 
 const HOLDS: &[Permission] = &[
     Permission::CustomerHoldPlace,
@@ -40,31 +40,37 @@ const ROWS: &[AreaRow] = &[
         path: EntryPath::StaffRpc,
         action: "zzAnyOfHolds",
         need: Need::AnyOf(HOLDS),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "zzOnlyHoldPlace",
         need: Need::Permission(Permission::CustomerHoldPlace),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "zzOnlyReview",
         need: Need::Permission(Permission::VerificationReview),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "zzAnyOfHolds",
         need: Need::AnyOf(HOLDS),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "zzOnlyHoldPlace",
         need: Need::Permission(Permission::CustomerHoldPlace),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::StaffRpc,
         action: "zzAnyOfNothing",
         need: Need::AnyOf(&[]),
+        scope: RowScope::Request,
     },
 ];
 

@@ -2,7 +2,7 @@
 //!
 //! Entering and reading org starting prices needs `OrgStartingPricesManage` (EXECUTIVE only).
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
@@ -12,10 +12,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "orgStartingPriceSave",
         need: Need::Permission(Permission::OrgStartingPricesManage),
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "orgStartingPrices",
         need: Need::Permission(Permission::OrgStartingPricesManage),
+        scope: RowScope::Request,
     },
 ];

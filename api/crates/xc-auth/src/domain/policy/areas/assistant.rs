@@ -5,7 +5,7 @@
 //! `AssistantService` against the `DraftOwner` the route builds (the actor's customer, else the
 //! `xc_app_sid` session).
 
-use super::AreaRow;
+use super::{AreaRow, RowScope};
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 
@@ -14,10 +14,12 @@ pub const ROWS: &[AreaRow] = &[
         path: EntryPath::Rpc,
         action: "assistantAsk",
         need: Need::Public,
+        scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "my_assistant_conversation",
         need: Need::Public,
+        scope: RowScope::Request,
     },
 ];

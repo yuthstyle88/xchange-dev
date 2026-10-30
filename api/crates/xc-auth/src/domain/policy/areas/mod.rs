@@ -14,6 +14,19 @@ pub struct AreaRow {
     pub path: EntryPath,
     pub action: &'static str,
     pub need: Need,
+    /// What the row acts on (#5526, design `org-wide-actor-branch.md` §10): `Request` checks the target the
+    /// request names (a branch, or none); `Organisation` checks `Target::organisation`, which only an
+    /// organisation-wide row passes.
+    pub scope: RowScope,
+}
+
+/// The kind of object an area row's action acts on (#5526 §10.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RowScope {
+    /// The object is on the branch the request names, or on none (`Target::new(org, named, ..)`, as before #5526).
+    Request,
+    /// The object belongs to the whole organisation (`Target::organisation(org)`).
+    Organisation,
 }
 
 include!(concat!(env!("OUT_DIR"), "/area_rows.rs"));
