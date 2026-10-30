@@ -191,7 +191,7 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
 
     let now = Utc::now();
     let action = Action::new(COMMAND_NAME);
-    let _grant = match Policy::authorize(Some(user), EntryPath::Rpc, &action, None, now) {
+    let grant = match Policy::authorize(Some(user), EntryPath::Rpc, &action, None, now) {
         Ok(g) => g,
         Err(e) => return refuse(e.status(), e.code(), &e.to_string()),
     };
@@ -231,7 +231,11 @@ async fn open_branch_case(req: HttpRequest, payload: web::Payload) -> HttpRespon
     };
 
     let reviewer = ReviewerActor {
-        role: xc_auth::domain::access::Role::VerificationReviewer,
+        role: grant
+            .roles_used
+            .first()
+            .copied()
+            .unwrap_or(xc_auth::domain::access::Role::VerificationReviewer),
         user_id,
         scope: reviewer_scope,
     };

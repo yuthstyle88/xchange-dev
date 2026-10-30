@@ -107,7 +107,7 @@ impl CommandAction for VerificationDocumentLinkCommand {
 
         let now = Utc::now();
         match access
-            .link_for_reviewer(who, session, doc_id, now, &[])
+            .link_for_reviewer(who, session, doc_id, now, &caller.granted)
             .await
         {
             Ok(issued) => Ok(VerificationDocumentLinkOutput {
