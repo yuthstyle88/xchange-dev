@@ -3,7 +3,7 @@
 // Written by ticket #4291 (QA-R9-7); this file is its whole File scope.
 // Import only from '@playwright/test' and './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test, type Page } from '@playwright/test';
-import { hasAccount, mePermissions, shot, signIn, users, withLang } from './helpers';
+import { hasAccount, mePermissions, sameOriginHeaders, shot, signIn, users, withLang } from './helpers';
 
 // Expected i18n copy for consent and retention (`web/src/screens/admin/consent/i18n.ts:7, 10, 22, 25`).
 const CONSENT_TEXTS = {
@@ -362,10 +362,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     // 403 outOfScope, api/src/presentation/http/v3/error.rs:80-115) before the input is parsed
     // (`api/src/presentation/http/v3/command.rs:367` before `:383`). Every payload is also invalid, so a broken
     // permission check still writes nothing: no branch change, no published text, no armed purge (§9.2).
-    const sameOriginHeaders = {
-      'x-xchange-request': '1',
-      origin: new URL(users.baseUrl).origin,
-    };
+    const sameOrigin = sameOriginHeaders();
     const assertTellerRoleRefused = async (
       res: { status(): number; json(): Promise<unknown> },
       label: string,
@@ -387,7 +384,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     const branchRes = await page.request.put('/api/branches/profile', {
       headers: {
         'idempotency-key': `qa-r9-7-branch-${Date.now()}`,
-        ...sameOriginHeaders,
+        ...sameOrigin,
       },
       data: {
         branch: users.branch,
@@ -403,7 +400,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     const consentRes = await page.request.post('/api/consent-texts', {
       headers: {
         'idempotency-key': `qa-r9-7-consent-${Date.now()}`,
-        ...sameOriginHeaders,
+        ...sameOrigin,
       },
       data: {
         branch: users.branch,
@@ -417,7 +414,7 @@ test.describe('QA-R9-7 flow: branch profile (`branchSave`); consent text and ret
     const retentionRes = await page.request.put('/api/retention-policies/IDENTITY_VALUE', {
       headers: {
         'idempotency-key': `qa-r9-7-retention-${Date.now()}`,
-        ...sameOriginHeaders,
+        ...sameOrigin,
       },
       data: {
         branch: users.branch,
