@@ -1,13 +1,11 @@
-import { batch, createSignal, For, onMount, Show, type JSX } from 'solid-js';
+import { For, onMount, Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
-import { wordedError } from '../../shared/i18n/worded-error';
-import { ApiClient, ApiError } from '../../shared/api/client';
-import type { StaffMeView } from '../../shared/api/generated/staff_me';
-import type { StaffFloorView } from '../../shared/api/generated/staff_floor';
+import type { ApiClient } from '../../shared/api/client';
 import type { StaffCard, StaffCtx } from './cards';
 import { can } from './parts/can';
 import { th, en } from './i18n';
 import { AppShell } from '../../shared/ui/AppShell';
+import { createStaffContext } from './staff-context';
 import './staff.css';
 
 export interface StaffPageProps {
@@ -28,50 +26,16 @@ function formatBangkokTime(iso: string): string {
 
 export function StaffPage(props: StaffPageProps): JSX.Element {
   const t = screenT('staff', { th, en });
-  const [me, setMe] = createSignal<StaffMeView | undefined>(undefined);
-  const [floor, setFloor] = createSignal<StaffFloorView | undefined>(undefined);
-  const [floorError, setFloorError] = createSignal<string | undefined>(undefined);
-
-  let seq = 0;
-
-  const refresh = async (): Promise<void> => {
-    const mine = ++seq;
-    let meData: StaffMeView | undefined;
-    try {
-      const meRes = await props.api.view<StaffMeView>('staff_me');
-      if (mine !== seq) return;
-      meData = meRes.data;
-    } catch (err: unknown) {
-      if (mine !== seq) return;
-      if (err instanceof ApiError && err.status === 401 && err.code === 'signIn') {
-        props.navigate('/login?next=%2Fstaff');
-        return;
-      }
-      setFloorError(wordedError(err));
-      return;
-    }
-
-    let floorData: StaffFloorView | undefined;
-    let floorErr: string | undefined;
-    try {
-      const floorRes = await props.api.view<StaffFloorView>('staff_floor');
-      if (mine !== seq) return;
-      floorData = floorRes.data;
-    } catch (err: unknown) {
-      if (mine !== seq) return;
-      floorErr = wordedError(err);
-    }
-
-    batch(() => {
-      if (meData) {
-        setMe(meData);
-      }
-      if (floorData !== undefined) {
-        setFloor(floorData);
-      }
-      setFloorError(floorErr);
-    });
-  };
+  const {
+    me,
+    floor,
+    error: floorError,
+    refresh,
+  } = createStaffContext({
+    api: props.api,
+    signInUrl: '/login?next=%2Fstaff',
+    navigate: props.navigate,
+  });
 
   onMount(() => {
     void refresh();
