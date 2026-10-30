@@ -1106,22 +1106,41 @@ Non-staff writers keep their literals: `CUSTOMER`, `SYSTEM`, `POLICY` (W-4, W-15
   - else `"STAFF"`;
   - it never refuses.
   - `Standing::audit_text_of` (§12, V.9 spelling) is removed by the ticket that moves its last callers (W-2). `StandingKind::audit_text` stays: the kiosk's employee line and the v2 compat snapshots still read it, and they are not audit rows.
-- **Every staff writer, W-1..W-3 and W-5..W-14, calls it.** Each passes `grant.roles_used` where a grant reaches it, and `&[]` otherwise.
-- **The changes this implies, by writer:**
-  - W-12 stops joining;
-  - W-7/W-8 stop falling back to `TELLER`;
-  - W-11 stops writing `staff_role`;
-  - W-14 writes the reviewer's role used, not a literal.
-- **Tests:** the up-front tests pin one row per writer group. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test` and `standing_regate_5618_test` are restated, citing the answer.
-- **Function tickets:** one per crate, so their File scopes stay disjoint and they run together:
-  - `xc-approval` (W-3);
-  - `xc-customer` (W-6, W-7, W-8);
-  - `xc-verification` (W-11, W-14);
-  - `xc-referral` + `supersede_referral` (W-9);
-  - the v3 commands (W-5, W-10, W-12);
-  - `xc-rate` (W-2's service, W-13);
-  - the exchange workflows (W-1).
-  The core is in the skeleton.
+- **How the grant reaches a v3 command.** `CommandAction::run(tx, branch, who, input, key)` gets no grant (`v3/command.rs:102-109`), and 107 commands implement it, so its signature does not change. Instead:
+  - `[required]` `Caller` (`v3/caller.rs:20`) gains `pub granted: Vec<Role>`. It is empty where `Caller` is built (`caller.rs:113`, `views/my_assistant_conversation.rs:50`, `views/my_planner_drafts.rs:44`).
+  - The transport sets it to `grant.roles_used` after `Policy::authorize` (`command.rs:369`), before `run_as`.
+  - A command that writes an audit row implements `run_as` instead of `run` and reads `caller.granted`. The other 100 commands are untouched.
+  - All of this is in the skeleton. It changes no answer: nothing reads `granted` yet.
+- **Each writer, under the rulings:**
+
+| # | Writer | Grant reaches it? | Rule | Today → after (examples) |
+|---|---|---|---|---|
+| W-1 | the exchange workflows (`SaveActor::audit_role`) | no: the save step has the actor only | B | `FRONT` → `TELLER`, `MANAGER` → `BRANCH_MANAGER`, `RATES` → `RATE_MANAGER`, `SYSTEM` → `ADMIN`, `DOCUMENT_REVIEW` → `VERIFICATION_REVIEWER`, `OWNER` → `EXECUTIVE` |
+| W-2 | `denomination_groups.rs` → `DenominationGroupService` ×3; `exchange_settings_save.rs` ×2 | yes, through `Caller.granted`; the service gains a `roles_used: &[Role]` argument | A | owner `OWNER` → `EXECUTIVE` (its `RatesDraft` / `SystemSettings` row); `ADMIN@*` `SYSTEM` → `ADMIN` |
+| W-3 | `ApprovalService` decisions (`approval_service.rs:305`, `:467`) | no: `ApprovalService` has the actor only | B | a FINANCE + TELLER decider: `EXECUTIVE`-first list → the `Standing` order (`TELLER`) |
+| W-5 | `cash_exception_raise.rs`, `cash_exception_review.rs` | yes, `Caller.granted` | A | first row → the granting row |
+| W-6 | `PhoneVerificationService` via `customer_phone_start.rs` / `customer_phone_confirm.rs` | yes, `Caller.granted`; the service gains `roles_used` | A | first row, else `""` → granting row, else `STAFF` |
+| W-7 | `contact_verify.rs` via `customer_contact_verify.rs` | yes, the same | A | first row, else `TELLER` → granting row, else `STAFF` |
+| W-8 | `customer/service.rs` `identityReveal` | yes, already | A | only the fallback: `TELLER` → `STAFF` |
+| W-9 | `supersede_referral.rs` → `capture_service.rs` | yes, already | A | unchanged values; it calls the core |
+| W-10 | `export_gate.rs` | yes, already | A | unchanged values; it calls the core |
+| W-11 | `DocumentAccess` via `verification_document_link.rs` / `verification_my_document_link.rs` | yes, `Caller.granted`; `link_for_*` gain `roles_used` | A | first row, else `staff_role` / `owner_role` → granting row, else `STAFF` |
+| W-12 | `branch_alert_settings_save.rs`, `ledger_adjustment_create.rs`, `ledger_adjustment_post.rs`, `reconciliation_certify.rs` | yes, `Caller.granted` | A | `EXECUTIVE,ADMIN` → the one granting role |
+| W-13 | `price_source.rs` ×2 | the service checks EXECUTIVE itself | B | unchanged: `EXECUTIVE`; it calls the core |
+| W-14 | `ReviewService` ×5 via `verification_case_approve.rs` / `_reject.rs` / …; `branch_intake.rs:352` via `branch_verification_intake.rs:194` (its `_grant`) | yes; the services gain `roles_used` | A | literal `VERIFICATION_REVIEWER` → the granting row (`VERIFICATION_REVIEWER` for the built-in group) |
+
+- `Standing::audit_text_of` is deleted by T5, which moves all of its callers (W-2) in one ticket.
+- **Tests:** the up-front tests pin one row per writer. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test`, `standing_regate_5618_test` and `denomination_group_executive_test` are restated, citing the rulings.
+- **Function tickets**, Gemini 4 Argon, `class:guarded`, branched from `test/5630`, File scopes disjoint (each crate's writers with the v3 files that call them):
+
+| Ticket | Writers | File scope (summary) |
+|---|---|---|
+| T1 approval | W-3 | `api/crates/xc-approval/src/application/approval_service.rs` |
+| T2 customer | W-6, W-7, W-8 | `xc-customer` `phone_verification_service.rs`, `contact_verify.rs`, `customer/service.rs`; `customer_phone_start.rs`, `customer_phone_confirm.rs`, `customer_contact_verify.rs` |
+| T3 verification | W-11, W-14 | `xc-verification` `document_access.rs`, `review_service.rs`, `branch_intake.rs`, `case_service.rs`; the verification commands that call them; `branch_verification_intake.rs` |
+| T4 v3 commands | W-5, W-9, W-10, W-12 | `cash_exception_raise.rs`, `cash_exception_review.rs`, `supersede_referral.rs`, `xc-referral` `capture_service.rs`, `export_gate.rs`, the four W-12 commands |
+| T5 the #5618 writers | W-2, W-13; deletes `audit_text_of` | `denomination_groups.rs`, `denomination_group_service.rs`, `exchange_settings_save.rs`, `price_source.rs`, `standing.rs` |
+| T6 the exchange save | W-1 | `api/src/application/workflows/save_step.rs` |
 
 The up-front tests go on `test/5630` and the per-crate tickets are released together, after this design merges.
 
