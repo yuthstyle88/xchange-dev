@@ -2,30 +2,11 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_kernel::ids::BranchId;
-
-fn approver_role(who: &Actor) -> &'static str {
-    const DECIDER_PRIORITY: [Role; 9] = [
-        Role::Executive,
-        Role::Finance,
-        Role::BranchManager,
-        Role::RateManager,
-        Role::Admin,
-        Role::Teller,
-        Role::VerificationReviewer,
-        Role::Marketing,
-        Role::Customer,
-    ];
-    for role in DECIDER_PRIORITY {
-        if who.roles.iter().any(|r| r.role == role) {
-            return role.as_str();
-        }
-    }
-    "UNKNOWN"
-}
 
 use crate::application::registry::ApprovalRegistry;
 use crate::domain::approval_repository::ApprovalRepository;
@@ -286,15 +267,10 @@ impl ApprovalService {
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
+        let role = audit_role(&[], who, Utc::now());
+
         self.repository
-            .insert_decision(
-                tx,
-                request_id,
-                &who.user_id,
-                approver_role(who),
-                outcome,
-                reason,
-            )
+            .insert_decision(tx, request_id, &who.user_id, role, outcome, reason)
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
@@ -302,7 +278,7 @@ impl ApprovalService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: approver_role(who).to_string(),
+            actor_role: role.to_string(),
             scope: request.type_name.clone(),
             action: format!("approval.{}", outcome.as_str().to_lowercase()),
             object_ref: request.object_id.clone(),
@@ -448,15 +424,10 @@ impl ApprovalService {
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
+        let role = audit_role(&[], who, Utc::now());
+
         self.repository
-            .insert_decision(
-                tx,
-                request_id,
-                &who.user_id,
-                approver_role(who),
-                outcome,
-                reason,
-            )
+            .insert_decision(tx, request_id, &who.user_id, role, outcome, reason)
             .await
             .map_err(|e| ApprovalError::Database(e.to_string()))?;
 
@@ -464,7 +435,7 @@ impl ApprovalService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: approver_role(who).to_string(),
+            actor_role: role.to_string(),
             scope: request.type_name.clone(),
             action: format!("approval.{}", outcome.as_str().to_lowercase()),
             object_ref: request.object_id.clone(),
