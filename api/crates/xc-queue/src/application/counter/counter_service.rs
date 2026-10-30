@@ -13,6 +13,7 @@ use xc_kernel::ids::BranchId;
 use crate::application::status::status_service::StatusService;
 use crate::domain::counter::counter::{Counter, CounterStatus};
 use crate::domain::repository::QueueRepository;
+use crate::domain::ticket::queue_error::QueueError;
 
 #[derive(Clone)]
 pub struct CounterService {
@@ -192,6 +193,10 @@ impl CounterService {
 
     /// Called by the shift's close, in its transaction: deletes the teller's counter and
     /// refreshes the status.
+    ///
+    /// #5675 (design `queue-tickets.md` §4.7, owner ruling A): refused with
+    /// `QueueError::TicketStillServing` while the teller holds a CALLED or SERVING ticket in
+    /// `branch`; the refusal rolls the whole close back.
     pub async fn on_shift_closed(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -199,6 +204,21 @@ impl CounterService {
         teller_id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
+        let has_live_ticket: bool = sqlx::query_scalar(
+            "SELECT EXISTS (\
+                SELECT 1 FROM queue_tickets \
+                WHERE branch_id = $1 AND counter_teller_id = $2::uuid AND status IN ('CALLED', 'SERVING')\
+             )",
+        )
+        .bind(branch.as_str())
+        .bind(teller_id)
+        .fetch_one(&mut **tx)
+        .await?;
+
+        if has_live_ticket {
+            return Err(QueueError::TicketStillServing.into());
+        }
+
         sqlx::query("DELETE FROM queue_counters WHERE branch_id = $1 AND teller_id = $2::uuid")
             .bind(branch.as_str())
             .bind(teller_id)

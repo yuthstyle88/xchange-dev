@@ -63,6 +63,7 @@ export const zh: Record<Key, string> = {
   'error.holdsCash': '此人仍持有现金或有未完成的交接',
   'error.notBound': '此账户尚不能登录，请先启用',
   'error.userNotActive': '此账户未在使用中',
+  'error.ticketStillServing': 'ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)',
   'queue.state.waiting': '等待处理',
   'queue.state.working': '正在处理',
   'queue.state.completed': '已完成',

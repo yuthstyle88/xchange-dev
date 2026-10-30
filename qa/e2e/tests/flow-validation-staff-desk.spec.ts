@@ -1,10 +1,16 @@
 import { expect, test, type Page } from '@playwright/test';
+import * as deskBookingsI18n from '../../../web/src/screens/desk/bookings/i18n';
 import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
+import * as staffI18n from '../../../web/src/screens/staff/i18n';
 import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
+import type { BookingSlotsData } from '../../../web/src/shared/api/generated/booking_slots';
+import type { BookingCreateInput, BookingCreateOutput } from '../../../web/src/shared/api/generated/bookings';
 import {
   clockIn,
+  closeQueueIfOpened,
   closeShift,
   cutOff,
+  ensureQueueOpen,
   ensureShiftClosed,
   hasAccount,
   HTML_LANG,
@@ -12,10 +18,11 @@ import {
   posted,
   shot,
   signIn,
-   STAFF_LANGS,
+  STAFF_LANGS,
   startService,
   users,
   withLang,
+  writeHeaders,
   type Lang,
   type Role,
 } from './helpers';
@@ -56,6 +63,7 @@ import {
 //   - web/src/screens/staff/transfers/TransfersCard.tsx:361-493 (`[data-card="transfers"]`, `[data-testid="transfer-new"]`, `[data-testid="transfer-error"]`, `[data-testid="transfer-form"]`, `[data-testid="transfer-kind"]`, `[data-testid="transfer-note"]`, `[data-denomination-row]`, `input[data-denomination-id]`, `[data-testid="transfer-save"]`)
 //   - web/src/screens/staff/floor/FloorCard.tsx:242-248,293-326 (`.xc-floor-card`, `[data-testid="floor-error"]`, `[data-testid="floor-target-form"]`, `input[data-currency="USD"]`, `[data-testid="floor-target-save"]`)
 //   - web/src/screens/desk/queue/counter/CounterBar.tsx:68-74,114-139,151-157 (`button[name="issueWalkIn"]`, `button[name="openQueue"]`, `button[name="closeQueue"]`, `.desk-error[role="alert"]`)
+//   - web/src/screens/desk/queue/queue-commands.ts:16,59 (`POST /api/queue/tickets/{id}/release`, verb `release`)
 //   - web/src/screens/desk/bookings/DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023 (`[data-screen="desk-bookings"]`, `[data-action="new-booking"]`, `.xc-modal-overlay`, `select[name="currency"]`, `input[name="quantity"]`, `[data-action="submit-booking"]`, `[role="alert"].field-error`, `[data-booking-id]`, `[data-action="cancel"]`, `input[name="reason"]`, `[data-action="confirm-cancel"]`, `[data-action="reschedule"]`, `select[name="targetSlotId"]`, `[data-action="confirm-reschedule"]`, `[role="alert"].xc-error-banner`)
 
 const EXCHANGE_AMOUNT = '1';
@@ -70,21 +78,6 @@ interface ReversalRequestAnswer {
   approvalRequestId?: string;
 }
 
-interface BookingSlotsViewAnswer {
-  data?: {
-    slots?: Array<{
-      id: string;
-      status: string;
-      remaining: number;
-    }>;
-  };
-}
-
-interface BookingCreateAnswer {
-  id?: string;
-  bookingNo?: string;
-  status?: string;
-}
 
 /** Switches `page` to `lang` via `withLang` and reloads `path`, asserting `<html lang>` matches. */
 async function openInLang(page: Page, lang: Lang, path: string): Promise<void> {
@@ -101,17 +94,12 @@ function expectWordedRefusal(msg: string, label: string): void {
   expect(trimmed, `${label} refusal is not generic 500 fallback`).not.toMatch(/^(เซิร์ฟเวอร์ขัดข้อง|Server error)$/);
 }
 
-/** Returns tomorrow's YYYY-MM-DD in Asia/Bangkok so booking cancel/reschedule stays outside the cutoff window. */
-function tomorrowBangkokIsoDate(): string {
-  const bkkToday = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(new Date());
-  const [y, m, d] = bkkToday.split('-').map((n) => Number(n));
-  const next = new Date(Date.UTC(y, m - 1, d + 1));
-  return next.toISOString().slice(0, 10);
+const HORIZON_DAYS = 14; // deploy/server/seed-test-booking.sh:147
+
+// Date in Asia/Bangkok offset by `daysAhead` days, as the date input wants it (yyyy-mm-dd).
+function bangkokDate(daysAhead: number): string {
+  const now = new Date(Date.now() + 7 * 3600_000 + daysAhead * 24 * 3600_000);
+  return now.toISOString().slice(0, 10);
 }
 
 /** Reads the active OPEN shift for a staff page from GET /api/v3/views/my_shift. */
@@ -213,11 +201,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         // ── 2. Holds form (`/staff` — `holdCreate`) ──
         // Citations: HoldsCard.tsx:97-123,153-208; holds/i18n.ts:7,16; commands/branch_day.rs:344-375.
         const reserveRes = await manager.request.post('/api/rpc', {
-          headers: {
-            'Idempotency-Key': `${runMarker}-reserve-hold-cust`,
-            'x-xchange-request': '1',
-            Origin: new URL(users.baseUrl).origin,
-          },
+          headers: writeHeaders(`${runMarker}-reserve-hold-cust`),
           data: {
             action: 'reserveCustomer',
             payload: {
@@ -419,12 +403,14 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
       await signIn(teller, 'teller', '/staff');
       await signIn(manager, 'branchManager', '/staff');
       await signIn(finance, 'finance', '/staff');
-      await signIn(customer, 'customer', '/bookings');
+      await signIn(customer, 'customer', '/app/bookings');
 
       await openShift(teller, manager);
       let shiftOpened = true;
       let started: 'started' | 'alreadyOpen' | undefined;
       let createdBookingId: string | null = null;
+      let openedQueue = false;
+      const servedTicketIds: string[] = [];
 
       try {
         started = await startService(manager);
@@ -496,7 +482,8 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
 
         // Advance with a valid quote to test payment-step refusals in `th` and `en` before `transactionCreate`/`transactionConfirm`,
         // then complete the exchange so we can test `reversalRequest` and `reversalPost` refusals.
-        for (const lang of STAFF_LANGS) {
+        for (let i = 0; i < STAFF_LANGS.length; i++) {
+          const lang = STAFF_LANGS[i];
           await openInLang(teller, lang, '/desk?branch=' + users.branch);
           await expect(
             teller.locator(`select[name="currency"] option[value="${currency}"]`),
@@ -521,7 +508,13 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(confirmBookingBtn, 'booking step visible (steps/booking/step.tsx:54)').toBeVisible({
             timeout: 15_000,
           });
-          await confirmBookingBtn.click();
+          if (await ensureQueueOpen(manager)) openedQueue = true;
+          const serveRes = await posted(teller, /^\/api\/queue\/tickets\/serve$/, () => confirmBookingBtn.click());
+          expect(serveRes.ok, `serve walk-in (${lang}): ${serveRes.text}`).toBeTruthy();
+          const servedTicket = JSON.parse(serveRes.body) as { id?: string };
+          const servedTicketId = String(servedTicket.id ?? '');
+          expect(servedTicketId, 'served walk-in ticket id').not.toBe('');
+          servedTicketIds.push(servedTicketId);
 
           const methodSelect = teller.locator('select[name="method"]');
           await expect(methodSelect, 'payment step visible (steps/payment/step.tsx:135)').toBeVisible({
@@ -554,6 +547,20 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(accountField, 'account input preserved after dismissed confirm').toHaveValue(
             savedAccount || 'Cash',
           );
+
+          if (i < STAFF_LANGS.length - 1) {
+            // End of pass: release the served ticket through POST /api/queue/tickets/{id}/release (#5541;
+            // web/src/screens/desk/queue/queue-commands.ts:16,59 verb 'release') so the next language pass
+            // can serve without 409 alreadyServing.
+            const releaseRes = await teller.request.post(
+              `/api/queue/tickets/${encodeURIComponent(servedTicketId)}/release`,
+              {
+                headers: writeHeaders(`${runMarker}-release-${servedTicketId}`),
+                data: { id: servedTicketId },
+              },
+            );
+            expect(releaseRes.ok(), `release ticket ${servedTicketId} (${lang}): ${releaseRes.status()}`).toBeTruthy();
+          }
         }
 
         // Complete the exchange on the last open payment form so `/desk/transactions/{id}` mounts `request-reversal`.
@@ -575,8 +582,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         expect(completeRes.ok, `POST /api/transactions/${txId}/complete`).toBeTruthy();
 
         // ── 2. Refunds: `reversalRequest` (`/desk/transactions/{id}`) and `reversalPost` (`/desk?branch=MAIN`) ──
-        // Citations: TransactionScreen.tsx:147-162,181,215,225-230; ReasonDialog.tsx:32-50;
-        // RefundsStep.tsx:14,54-55,76,87-96,128-136; refunds/i18n.ts:20,47.
+        // Citations: TransactionScreen.tsx:181,244,260-273; ReasonDialog.tsx:36-42,46-76;
+        // RefundsStep.tsx:14,54-55,76,87-96,128-136; refunds/i18n.ts:20,47; staff/i18n.ts:10,25.
+        // Reason dialog client-side check: ReasonDialog.tsx:37-40 (`if (props.required && reason().trim().length === 0) { setError(t('reasonRequired')); return; }`).
         for (const lang of STAFF_LANGS) {
           await openInLang(teller, lang, `/desk/transactions/${txId}`);
           const requestBtn = teller.locator('button[data-action="request-reversal"]');
@@ -584,33 +592,60 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             timeout: 20_000,
           });
 
-          // Cases 1–3 on `reversalRequest`: empty (''), whitespace ('   '), and >500 chars ('x'.repeat(505)).
-          for (const badReason of ['', '   ', 'x'.repeat(505)]) {
-            await requestBtn.click();
-            const reasonDialog = teller.locator('dialog.xc-dialog');
-            await expect(reasonDialog, 'ReasonDialog open (ReasonDialog.tsx:32)').toBeVisible({ timeout: 10_000 });
-            const reasonInput = reasonDialog.locator('input[type="text"]');
+          const reasonDialog = teller.locator('dialog.xc-dialog');
+          const reasonInput = reasonDialog.locator('input[type="text"]');
+          const confirmBtn = reasonDialog.locator('.xc-dialog-actions button').last();
+
+          // Open ReasonDialog once for client-side and server-side invalid reason assertions.
+          await requestBtn.click();
+          await expect(reasonDialog, 'ReasonDialog open (ReasonDialog.tsx:46)').toBeVisible({ timeout: 10_000 });
+
+          // Cases 1–2 on `reversalRequest`: empty ('') and whitespace ('   ') reasons refuse client-side.
+          // Dialog refuses locally without sending POST, shows reasonRequired alert, keeps input.
+          for (const badReason of ['', '   ']) {
             await reasonInput.fill(badReason);
             await expect(reasonInput, 'ReasonDialog input holds typed value before confirm').toHaveValue(badReason);
 
-            const revRes = await posted(
-              teller,
-              new RegExp(`^/api/transactions/${encodeURIComponent(txId)}/reversal-requests$`),
-              () => reasonDialog.locator('.xc-dialog-actions button').last().click(),
-            );
-            expect(revRes.ok, `reversalRequest (${badReason.length} chars, ${lang}) refused`).toBe(false);
-            expect(revRes.text, 'reversalRequest status').toMatch(/^400\b/);
-
-            const dtxMsg = teller.locator('.xc-dtx-message[role="status"]');
-            await expect(dtxMsg, `dtx refusal message visible (${lang}, TransactionScreen.tsx:181)`).toBeVisible({
-              timeout: 10_000,
-            });
-            expectWordedRefusal(await dtxMsg.innerText(), `reversalRequest (${lang})`);
-            await expect(
-              teller.locator('button[data-action="request-reversal"]'),
-              'request-reversal button still available because no reversal was created',
-            ).toBeVisible();
+            let revPosts = 0;
+            const onRevReq = (req: { method(): string; url(): string }) => {
+              if (
+                req.method() === 'POST' &&
+                new URL(req.url()).pathname === `/api/transactions/${encodeURIComponent(txId)}/reversal-requests`
+              ) {
+                revPosts++;
+              }
+            };
+            teller.on('request', onRevReq);
+            try {
+              await confirmBtn.click();
+              const dialogErr = reasonDialog.locator('[role="alert"]');
+              await expect(dialogErr, `dialog field error visible for ${JSON.stringify(badReason)} (${lang})`).toBeVisible({
+                timeout: 10_000,
+              });
+              await expect(dialogErr, `reasonRequired text for ${JSON.stringify(badReason)} (${lang})`).toHaveText(
+                staffI18n[lang === 'th' ? 'th' : 'en'].reasonRequired,
+              );
+              expectWordedRefusal(await dialogErr.innerText(), `reversal reason ${JSON.stringify(badReason)} (${lang})`);
+            } finally {
+              teller.off('request', onRevReq);
+            }
+            expect(revPosts, `reversalRequest (${JSON.stringify(badReason)}, ${lang}) sends no POST`).toBe(0);
+            await expect(reasonInput, 'ReasonDialog input keeps value after refusal').toHaveValue(badReason);
           }
+
+          // Case 3 on `reversalRequest`: >500 chars never leaves the page. The input caps at 500
+          // (TransactionScreen.tsx:264 `maxLength={500}`; ReasonDialog.tsx:52), and 500 chars is a
+          // valid reason, so confirming would create a reversal. The server's own 1–500 bound
+          // (reversal_request.rs:59) is not reachable from this form.
+          await reasonInput.fill('x'.repeat(505));
+          await expect(reasonInput, 'ReasonDialog input caps the reason at 500 chars').toHaveValue('x'.repeat(500));
+          await expect(reasonDialog.getByText('500 / 500'), 'ReasonDialog counter at the cap').toBeVisible();
+          await reasonDialog.locator('.xc-dialog-actions button').first().click();
+          await expect(reasonDialog, 'ReasonDialog closes on cancel').toBeHidden({ timeout: 10_000 });
+          await expect(
+            teller.locator('button[data-action="request-reversal"]'),
+            'request-reversal button still available because no reversal was created',
+          ).toBeVisible();
         }
         await shot(teller, 'desk', 'validation-reversal-request');
 
@@ -730,28 +765,45 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         // ── 4. Desk bookings (`/desk/bookings` — `bookingCancel`, `bookingReschedule`, new booking modal) ──
         // Citations: DeskBookingsScreen.tsx:368-380,522-535,601-615,618-860,863-1023;
         // desk/bookings/i18n.ts:15,25,50,60; commands/bookings/cancel.rs:104-115.
-        const tomorrow = tomorrowBangkokIsoDate();
-        const slotsRes = await customer.request.get(
-          `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&filter=${encodeURIComponent(JSON.stringify({ date: tomorrow }))}`,
-        );
-        expect(slotsRes.ok(), `GET booking_slots for ${tomorrow}`).toBeTruthy();
-        const slotsBody = (await slotsRes.json()) as BookingSlotsViewAnswer;
-        const openSlot = (slotsBody.data?.slots ?? []).find((s) => s.status === 'OPEN' && s.remaining > 0);
-        expect(openSlot, `open slot on ${tomorrow}`).toBeTruthy();
+        let tomorrow = '';
+        let openSlot: BookingSlotsData['slots'][number] | undefined;
+        const datesTried: string[] = [];
+        for (let d = 1; d <= HORIZON_DAYS; d++) {
+          const date = bangkokDate(d);
+          datesTried.push(date);
+          const slotsRes = await customer.request.get(
+            `/api/v3/views/booking_slots?branch=${encodeURIComponent(users.branch)}&date=${encodeURIComponent(date)}`,
+          );
+          if (!slotsRes.ok()) continue;
+          const slotsBody = (await slotsRes.json().catch(() => ({}))) as { data?: BookingSlotsData };
+          const slot = (slotsBody.data?.slots ?? []).find((s) => s.available > 0);
+          if (slot) {
+            openSlot = slot;
+            tomorrow = date;
+            break;
+          }
+        }
+        expect(openSlot, `open slot within ${HORIZON_DAYS} days (tried: ${datesTried.join(', ')})`).toBeTruthy();
 
+        const createBody: BookingCreateInput = {
+          branchId: users.branch,
+          slotId: openSlot!.id,
+          currency: 'USD',
+          shopSide: 'SELL',
+          quantity: '100',
+          phone: '0812345678',
+          quoteId: null,
+          referralCode: null,
+          customerId: null,
+          displayName: null,
+        };
         const createBookingRes = await customer.request.post('/api/bookings', {
-          headers: { 'Idempotency-Key': `${runMarker}-booking` },
-          data: {
-            branchId: users.branch,
-            slotId: openSlot!.id,
-            currency: 'USD',
-            side: 'SELL',
-            quantity: '100',
-            phone: '0812345678',
-          },
+          headers: writeHeaders(`${runMarker}-booking`),
+          data: createBody,
         });
         expect(createBookingRes.ok(), `POST /api/bookings for ${tomorrow}`).toBeTruthy();
-        const createdBooking = (await createBookingRes.json()) as BookingCreateAnswer;
+        const body = (await createBookingRes.json()) as { data?: BookingCreateOutput } & BookingCreateOutput;
+        const createdBooking = body.data ?? body;
         createdBookingId = String(createdBooking.id ?? '');
         expect(createdBookingId, 'createdBookingId').not.toBe('');
 
@@ -782,7 +834,9 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             expectWordedRefusal(await fieldErr.innerText(), `desk new-booking quantity ${badQty} (${lang})`);
             await expect(qtyInput, `quantity input keeps '${badQty}' (${lang})`).toHaveValue(badQty);
           }
-          await modal.locator('[data-action="close-modal"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
 
           // Part B: Cancel booking dialog (`[data-action="cancel"]`, `bookingCancel`) with empty ('') and whitespace ('   ') reasons.
           const bookingRow = manager.locator(`[data-booking-id="${createdBookingId}"]`);
@@ -812,17 +866,21 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             );
             await expect(cancelReasonInput, 'cancel reason input keeps value').toHaveValue(badReason);
           }
-          await modal.locator('[data-action="close-cancel"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
 
           // Also verify server-side `bookingCancel` (`POST /api/bookings/{id}/cancel`) refuses whitespace reason.
           const apiCancelRes = await manager.request.post(
             `/api/bookings/${encodeURIComponent(createdBookingId)}/cancel`,
             {
-              headers: { 'Idempotency-Key': `${runMarker}-bad-cancel-${lang}` },
+              headers: writeHeaders(`${runMarker}-bad-cancel-${lang}`),
               data: { reason: '   ' },
             },
           );
           expect(apiCancelRes.status(), 'bookingCancel whitespace reason HTTP 400').toBe(400);
+          const cancelBody = (await apiCancelRes.json()) as { error?: { code?: string } };
+          expect(cancelBody.error?.code, 'bookingCancel whitespace reason error.code').toBe('validationFailed');
 
           // Part C: Reschedule dialog (`[data-action="reschedule"]`, `bookingReschedule`) with no target slot selected ('').
           await bookingRow.locator('[data-action="reschedule"]').click();
@@ -833,14 +891,25 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
             modal.locator('[data-action="confirm-reschedule"]'),
             'confirm-reschedule disabled when targetSlotId is empty (DeskBookingsScreen.tsx:954)',
           ).toBeDisabled();
-          await modal.locator('[data-action="close-reschedule"]').click();
+          await modal
+            .getByRole('button', { name: deskBookingsI18n[lang === 'th' ? 'th' : 'en'].close, exact: true })
+            .click();
         }
         await shot(manager, 'desk', 'validation-desk-bookings');
       } finally {
+        for (const ticketId of servedTicketIds) {
+          await teller.request
+            .post(`/api/queue/tickets/${encodeURIComponent(ticketId)}/release`, {
+              headers: writeHeaders(`${runMarker}-cleanup-release-${ticketId}`),
+              data: { id: ticketId },
+            })
+            .catch(() => {});
+        }
+        await closeQueueIfOpened(manager, openedQueue).catch(() => {});
         if (createdBookingId) {
           await manager.request
             .post(`/api/bookings/${encodeURIComponent(createdBookingId)}/cancel`, {
-              headers: { 'Idempotency-Key': `${runMarker}-cleanup-cancel` },
+              headers: writeHeaders(`${runMarker}-cleanup-cancel`),
               data: { reason: `${runMarker}-cleanup` },
             })
             .catch(() => {});

@@ -95,9 +95,12 @@ async fn pricing_mode_save_at_main_writes_the_mode_and_bumps_the_revision() {
     room.finish().await;
 }
 
-/// PV-f: FOLLOW lives at MAIN only (`H:` §6) — `pricingModeSave` naming another branch is `validationFailed`.
+/// PV-f, restated for #5558 N-5 (claude/553782, #5558 issuecomment-6515987193): `pricingModeSave` is an
+/// organisation-level row, so the branch the caller names no longer reaches the command; an org-wide holder runs
+/// at its session branch (MAIN here) and the organisation's mode is saved. The `MAIN` gate itself is deleted by a
+/// follow-up ticket.
 #[tokio::test]
-async fn pricing_mode_save_at_another_branch_is_validation_failed() {
+async fn pricing_mode_save_naming_another_branch_runs_at_the_session_branch() {
     let room = Room::start().await;
     room.create_branch(BR_B).await;
     let a = command(
@@ -108,8 +111,17 @@ async fn pricing_mode_save_at_another_branch_is_validation_failed() {
         json!({ "currency": "USD", "mode": "FOLLOW" }),
     )
     .await;
-    a.refused(400, "validationFailed", "FOLLOW away from MAIN");
-    assert_eq!(room.count("pricing_modes").await, 0, "nothing written");
+    assert_eq!(
+        a.ok("pricingModeSave naming B")["saved"],
+        json!(true),
+        "{}",
+        a.text
+    );
+    assert_eq!(
+        room.count("pricing_modes").await,
+        1,
+        "the organisation's mode is written"
+    );
     room.finish().await;
 }
 

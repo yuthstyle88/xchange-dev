@@ -104,7 +104,8 @@ function answer(
       displayNumber: w.queue ?? w.displayNumber,
       serviceType: 'WALK_IN',
       status: w.status ?? 'SERVING',
-      tellerId: w.staff ?? w.tellerId ?? null,
+      tellerId: w.tellerId ?? (w.staff ? `u-${w.staff}` : null),
+      tellerName: w.staff ?? w.tellerName ?? null,
       calledAt: w.startedAt ?? w.calledAt ?? null,
     }));
   const waiting =
@@ -336,5 +337,21 @@ describe('the workers list in the expanded card (QF8)', () => {
     );
     expect(anywhere, 'the Q-1 line is on the page exactly once, in the card').toHaveLength(1);
     expect(card().contains(anywhere[0]!)).toBe(true);
+  });
+
+  it('K8: a row with no tellerName shows noData, never the tellerId (F-2, F-3)', async () => {
+    await mountCard();
+    answer({
+      workingCount: 2,
+      working: [
+        { id: 'K8a', queue: 'Q-8', tellerId: 'u-anon', tellerName: null, startedAt: null },
+        { id: 'K8b', queue: 'Q-9', tellerId: null, tellerName: null, startedAt: null },
+      ],
+    });
+    await flush();
+    expect(lines().map((l) => l.textContent?.trim())).toEqual([
+      'ยังไม่มีข้อมูล กำลังทำรายการ Q-8 · เริ่ม ยังไม่มีข้อมูล',
+      'ยังไม่มีข้อมูล กำลังทำรายการ Q-9 · เริ่ม ยังไม่มีข้อมูล',
+    ]);
   });
 });

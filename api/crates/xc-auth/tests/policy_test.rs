@@ -78,6 +78,17 @@ fn retired_by_bk11(route: &str) -> bool {
     route == "POST /api/bookings"
 }
 
+/// How many mapped cases name adminCreateBranch (#5558 N-2 makes its row organisation-level).
+const ORG_5558_CASES: usize = 22;
+
+/// Known difference: #5558 N-2 (claude/553782, #5558 issuecomment-6515987193) makes `adminCreateBranch`
+/// an organisation-level row: a branch-scoped grant no longer reaches it, and an org-wide holder runs at
+/// its session branch. The fixtures keep v2's branch answers; what Policy answers now is pinned by
+/// `org_level_rows_branch_admin_test.rs`, not by the replay.
+fn organisation_level_by_5558(name: &str) -> bool {
+    name == "adminCreateBranch"
+}
+
 fn front() -> Actor {
     staff(Role::Teller, B2)
 }
@@ -519,6 +530,7 @@ fn every_mapped_case_is_answered_as_mapped() {
     let mut retired = 0;
     let mut retired_ca10 = 0;
     let mut retired_bk11 = 0;
+    let mut org_5558 = 0;
     for c in m
         .cases
         .iter()
@@ -531,6 +543,12 @@ fn every_mapped_case_is_answered_as_mapped() {
             // known difference: BK-11 #1413 deletes v2's owner bookings route (design §6)
             asked_n += 1;
             retired_bk11 += 1;
+            continue;
+        }
+        if organisation_level_by_5558(&name) {
+            // known difference: #5558 N-2, organisation-level row
+            asked_n += 1;
+            org_5558 += 1;
             continue;
         }
         if retired_by_ca10(&name) {
@@ -571,6 +589,10 @@ fn every_mapped_case_is_answered_as_mapped() {
     assert_eq!(
         retired_bk11, BK11_RETIRED_CASES,
         "the mapped cases of the route BK-11 retires"
+    );
+    assert_eq!(
+        org_5558, ORG_5558_CASES,
+        "the mapped cases of adminCreateBranch (#5558 N-2)"
     );
     assert!(
         wrong.is_empty(),
@@ -644,7 +666,11 @@ fn every_call_runs_on_the_branch_named_in_scope() {
         .filter(|c| c.owner.is_none())
     {
         let name = asked(&c.route, &c.path, &c.action);
-        if retired_by_re7(&name) || retired_by_ca10(&name) || retired_by_bk11(&c.route) {
+        if retired_by_re7(&name)
+            || retired_by_ca10(&name)
+            || retired_by_bk11(&c.route)
+            || organisation_level_by_5558(&name)
+        {
             // known difference: RE-7 #604 removes adminSaveRate (rates.md §9), CA-10 #626 the
             // direct shift actions and `ops*` (cash-shift-transfer.md §6); counted, not asked
             if c.branch.is_some() {
@@ -689,7 +715,10 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
         // shift actions and `ops*` (cash-shift-transfer.md §6); BK-11 #1413 the v2 owner bookings route
         .filter(|c| {
             let name = asked(&c.route, &c.path, &c.action);
-            !retired_by_re7(&name) && !retired_by_ca10(&name) && !retired_by_bk11(&c.route)
+            !retired_by_re7(&name)
+                && !retired_by_ca10(&name)
+                && !retired_by_bk11(&c.route)
+                && !organisation_level_by_5558(&name)
         })
     {
         for home in ["MAIN", B9, "B1700000000000-x"] {
@@ -1018,10 +1047,12 @@ fn what_each_role_may_write_on_both_paths() {
         assert_eq!(allowed_roles(on, "adminSnapshot").len(), 7);
         assert_eq!(allowed_roles(on, "getConnectionStatus").len(), 7);
     }
-    // C4 and §11.2: BranchesManage (USER_MANAGEMENT FULL) is EXECUTIVE's and ADMIN's; the bridge has no row for it
+    // C4 and §11.2: BranchesManage (USER_MANAGEMENT FULL) is EXECUTIVE's and ADMIN's; the bridge has no row for it.
+    // #5558 N-2: the row is organisation-level, so ADMIN held at B2 alone is refused; an org-wide ADMIN is
+    // granted (`org_level_rows_branch_admin_test.rs`).
     assert_eq!(
         allowed_roles(EntryPath::Rpc, "adminCreateBranch"),
-        ["EXECUTIVE", "ADMIN"]
+        ["EXECUTIVE"]
     );
     assert!(allowed_roles(EntryPath::StaffRpc, "adminCreateBranch").is_empty());
     // RequestAbandon (v3-only): EXECUTIVE, the B1 translation of OWNER

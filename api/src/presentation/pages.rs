@@ -36,6 +36,16 @@ impl Callers {
             .filter(|standing| !standing.is_owner())
     }
 
+    /// #5629: an organisation-wide EXECUTIVE with no ADMIN and no staff role
+    /// (`Standing::acting` ⇒ `StandingKind::Executive`), which `owner_standing` and
+    /// `staff_standing` both answer `None` for. Design `org-wide-actor-branch.md` §13.
+    pub fn executive_standing(&self) -> Option<xc_auth::domain::access::Standing> {
+        self.user
+            .as_ref()
+            .and_then(|user| xc_auth::domain::access::Standing::acting(user, chrono::Utc::now()))
+            .filter(|standing| standing.kind == xc_auth::domain::access::StandingKind::Executive)
+    }
+
     /// Whether the request carries a signed-in staff caller (§11.8).
     pub fn signed_in(&self) -> bool {
         let now = chrono::Utc::now();

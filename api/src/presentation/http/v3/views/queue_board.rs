@@ -36,6 +36,7 @@ type CalledRow = (
     String,
     String,
     Option<String>,
+    Option<String>,
     Option<DateTime<Utc>>,
 );
 
@@ -85,11 +86,11 @@ impl BranchView for QueueBoardView {
             .fetch_all(&pool)
             .await?;
             let called: Vec<CalledRow> = sqlx::query_as(
-                "SELECT id::text, display_number, service_type, status, counter_teller_id::text, \
-                        called_at \
-                   FROM queue_tickets \
-                  WHERE branch_id = $1 AND status IN ('CALLED', 'SERVING') \
-                  ORDER BY called_at, display_number",
+                "SELECT t.id::text, t.display_number, t.service_type, t.status, t.counter_teller_id::text, \
+                        NULLIF(btrim(u.name), ''), t.called_at \
+                   FROM queue_tickets t LEFT JOIN users u ON u.id = t.counter_teller_id \
+                  WHERE t.branch_id = $1 AND t.status IN ('CALLED', 'SERVING') \
+                  ORDER BY t.called_at, t.display_number",
             )
             .bind(&branch)
             .fetch_all(&pool)
@@ -117,13 +118,22 @@ impl BranchView for QueueBoardView {
                 called: called
                     .into_iter()
                     .map(
-                        |(id, display_number, service_type, status, teller_id, called_at)| {
+                        |(
+                            id,
+                            display_number,
+                            service_type,
+                            status,
+                            teller_id,
+                            teller_name,
+                            called_at,
+                        )| {
                             QueueBoardCalled {
                                 id,
                                 display_number,
                                 service_type,
                                 status,
                                 teller_id,
+                                teller_name,
                                 called_at: called_at.map(|t| t.to_rfc3339()),
                             }
                         },

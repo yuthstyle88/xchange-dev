@@ -1106,25 +1106,194 @@ Non-staff writers keep their literals: `CUSTOMER`, `SYSTEM`, `POLICY` (W-4, W-15
   - else `"STAFF"`;
   - it never refuses.
   - `Standing::audit_text_of` (§12, V.9 spelling) is removed by the ticket that moves its last callers (W-2). `StandingKind::audit_text` stays: the kiosk's employee line and the v2 compat snapshots still read it, and they are not audit rows.
-- **Every staff writer, W-1..W-3 and W-5..W-14, calls it.** Each passes `grant.roles_used` where a grant reaches it, and `&[]` otherwise.
-- **The changes this implies, by writer:**
-  - W-12 stops joining;
-  - W-7/W-8 stop falling back to `TELLER`;
-  - W-11 stops writing `staff_role`;
-  - W-14 writes the reviewer's role used, not a literal.
-- **Tests:** the up-front tests pin one row per writer group. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test` and `standing_regate_5618_test` are restated, citing the answer.
-- **Function tickets:** one per crate, so their File scopes stay disjoint and they run together:
-  - `xc-approval` (W-3);
-  - `xc-customer` (W-6, W-7, W-8);
-  - `xc-verification` (W-11, W-14);
-  - `xc-referral` + `supersede_referral` (W-9);
-  - the v3 commands (W-5, W-10, W-12);
-  - `xc-rate` (W-2's service, W-13);
-  - the exchange workflows (W-1).
-  The core is in the skeleton.
+- **How the grant reaches a v3 command.** `CommandAction::run(tx, branch, who, input, key)` gets no grant (`v3/command.rs:102-109`), and 107 commands implement it, so its signature does not change. Instead:
+  - `[required]` `Caller` (`v3/caller.rs:20`) gains `pub granted: Vec<Role>`. It is empty where `Caller` is built (`caller.rs:113`, `views/my_assistant_conversation.rs:50`, `views/my_planner_drafts.rs:44`).
+  - The transport sets it to `grant.roles_used` after `Policy::authorize` (`command.rs:369`), before `run_as`.
+  - A command that writes an audit row implements `run_as` instead of `run` and reads `caller.granted`. The other 100 commands are untouched.
+  - All of this is in the skeleton. It changes no answer: nothing reads `granted` yet.
+- **Each writer, under the rulings:**
+
+| # | Writer | Grant reaches it? | Rule | Today → after (examples) |
+|---|---|---|---|---|
+| W-1 | the exchange workflows (`SaveActor::audit_role`) | no: the save step has the actor only | B | `FRONT` → `TELLER`, `MANAGER` → `BRANCH_MANAGER`, `RATES` → `RATE_MANAGER`, `SYSTEM` → `ADMIN`, `DOCUMENT_REVIEW` → `VERIFICATION_REVIEWER`, `OWNER` → `EXECUTIVE` |
+| W-2 | `denomination_groups.rs` → `DenominationGroupService` ×3; `exchange_settings_save.rs` ×2 | yes, through `Caller.granted`; the service gains a `roles_used: &[Role]` argument | A | owner `OWNER` → `EXECUTIVE` (its `RatesDraft` / `SystemSettings` row); `ADMIN@*` `SYSTEM` → `ADMIN` |
+| W-3 | `ApprovalService` decisions (`approval_service.rs:305`, `:467`) | no: `ApprovalService` has the actor only | B | a FINANCE + TELLER decider: `EXECUTIVE`-first list → the `Standing` order (`TELLER`) |
+| W-5 | `cash_exception_raise.rs`, `cash_exception_review.rs` | yes, `Caller.granted` | A | first row → the granting row |
+| W-6 | `PhoneVerificationService` via `customer_phone_start.rs` / `customer_phone_confirm.rs` | yes, `Caller.granted`; the service gains `roles_used` | A | first row, else `""` → granting row, else `STAFF` |
+| W-7 | `contact_verify.rs` via `customer_contact_verify.rs` | yes, the same | A | first row, else `TELLER` → granting row, else `STAFF` |
+| W-8 | `customer/service.rs` `identityReveal` | yes, already | A | only the fallback: `TELLER` → `STAFF` |
+| W-9 | `supersede_referral.rs` → `capture_service.rs` | yes, already | A | unchanged values; it calls the core |
+| W-10 | `export_gate.rs` | yes, already | A | unchanged values; it calls the core |
+| W-11 | `DocumentAccess` via `verification_document_link.rs` / `verification_my_document_link.rs` | yes, `Caller.granted`; `link_for_*` gain `roles_used` | A | first row, else `staff_role` / `owner_role` → granting row, else `STAFF` |
+| W-12 | `branch_alert_settings_save.rs`, `ledger_adjustment_create.rs`, `ledger_adjustment_post.rs`, `reconciliation_certify.rs` | yes, `Caller.granted` | A | `EXECUTIVE,ADMIN` → the one granting role |
+| W-13 | `price_source.rs` ×2 | the service checks EXECUTIVE itself | B | unchanged: `EXECUTIVE`; it calls the core |
+| W-14 | `ReviewService` ×5 via `verification_case_approve.rs` / `_reject.rs` / …; `branch_intake.rs:352` via `branch_verification_intake.rs:194` (its `_grant`) | yes; the services gain `roles_used` | A | literal `VERIFICATION_REVIEWER` → the granting row (`VERIFICATION_REVIEWER` for the built-in group) |
+
+- **As built on `test/5630`** (skeleton `2c04df2b`, `045fbea1`, `99c93b3d`; up-front tests `7b8af7af`, `4183ef26`). Two details differ from the table above:
+  - **W-14:** the reviewer's granting role travels as a field, `ReviewerActor.role: Role`, not as an argument. `ReviewService` (5 methods), `BranchIntake::open` and `CaseService`'s reviewer arm all take a `ReviewerActor`. The two production builders (`v3/verification_reviewer.rs`, `branch_verification_intake.rs`) set it, and so do the 24 test literals (`Role::VerificationReviewer` in the skeleton).
+  - **W-5:** `cash_exception_raise` / `_review` run their own `Authorizer::check` for `FinanceReconcile` (`cash_exception_raise.rs:148`). That check's `roles_used` is the granting role, not `Caller.granted`, which is the transport's `CompatRead` (`adminSnapshot`).
+  - Everything else is as the table says: `roles_used: &[Role]` is the **last** argument of the W-2, W-6, W-7 and W-11 write methods. Every caller passes `&[]` in the skeleton, which is behaviour-neutral: 32 files are identical once whitespace and the insertions are removed, and the touched suites run 241 green.
+- `Standing::audit_text_of` is deleted by T5, which moves all of its callers (W-2) in one ticket.
+- **Tests:** the up-front tests pin one row per writer. The V.9-name assertions in `or7_5_save_actor_test`, `v3_b04_reads_test`, `exchange_transaction_audit_test`, `standing_regate_5618_test` and `denomination_group_executive_test` are restated, citing the rulings.
+- **Function tickets**, Gemini 4 Argon, `class:guarded`, branched from `test/5630`, File scopes disjoint (each crate's writers with the v3 files that call them):
+
+| Ticket | Writers | File scope (summary) |
+|---|---|---|
+| T1 approval | W-3 | `api/crates/xc-approval/src/application/approval_service.rs` |
+| T2 customer | W-6, W-7, W-8 | `xc-customer` `phone_verification_service.rs`, `contact_verify.rs`, `customer/service.rs`; `customer_phone_start.rs`, `customer_phone_confirm.rs`, `customer_contact_verify.rs` |
+| T3 verification | W-11, W-14 | `xc-verification` `document_access.rs`, `review_service.rs`, `branch_intake.rs`, `case_service.rs`; the verification commands that call them; `branch_verification_intake.rs` |
+| T4 v3 commands | W-5, W-9, W-10, W-12 | `cash_exception_raise.rs`, `cash_exception_review.rs`, `supersede_referral.rs`, `xc-referral` `capture_service.rs`, `export_gate.rs`, the four W-12 commands |
+| T5 the #5618 writers | W-2, W-13; deletes `audit_text_of` | `denomination_groups.rs`, `denomination_group_service.rs`, `exchange_settings_save.rs`, `price_source.rs`, `standing.rs` |
+| T6 the exchange save | W-1 | `api/src/application/workflows/save_step.rs` |
 
 The up-front tests go on `test/5630` and the per-crate tickets are released together, after this design merges.
 
 ### 14.6 Data migration
 
 None: no schema change, and stored rows are not rewritten (14.3).
+
+## 15. The route table's rows move to area files and are classified (#5558)
+
+> Design by claude/2ca5874b (BE lane, under claude/553782), 2026-10-30 ICT. Measured on `origin/main` `fd78337d`. Ticket #5558 §3; it follows #5526's B-4 (10.8).
+> The batch (15.6) went to claude/553782 at #5558 issuecomment-6513222613. claude/553782 answered at #5558 issuecomment-6515987193 (2026-10-30 12:49 ICT), accepting every recommendation. Under the owner's delegation that is a security decision: a branch-scoped grant must not act on an organisation-wide object. The owner's role tables still decide **which** role may act; these answers decide only **where**.
+
+### 15.1 Why the rows move
+
+`Policy::need_with` reads the area rows first, then `need_table` (`policy.rs:58-73`). `scope_with` answers `Request` for any `(path, action)` that has no area row (`policy.rs:76-87`). So #5526's `RowScope` field cannot mark a `need_table` row (#5526 B-4). #5558 moves every per-action row into an area file. Then `scope` can mark it, and §10's method applies to it.
+
+### 15.2 The move (skeleton) and the class diagram
+
+```mermaid
+classDiagram
+    class Policy {
+        +need_with(areas, path, action) Option~Need~
+        +need_table(path, action) Option~Need~
+        +scope_with(areas, path, action) RowScope
+    }
+    class AreaRow {
+        path: EntryPath
+        action: &str
+        need: Need
+        scope: RowScope
+    }
+    class compat_desk { ROWS }
+    class branch_admin { ROWS }
+    class rates { ROWS }
+    class consent { ROWS }
+    class approvals { ROWS }
+    class kiosk { ROWS }
+    class payment_methods { ROWS }
+    Policy ..> AreaRow : AREA_ROWS (build.rs)
+    compat_desk ..> AreaRow
+    branch_admin ..> AreaRow
+    rates ..> AreaRow
+    consent ..> AreaRow
+    approvals ..> AreaRow
+    kiosk ..> AreaRow
+    payment_methods ..> AreaRow
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| The `Rpc`, `StaffRpc`, `Kiosk` and `PaymentMethods` rows of `need_table`, unchanged in `need`, all `Request` | new `api/crates/xc-auth/src/domain/policy/areas/compat_desk.rs`, `branch_admin.rs`, `rates.rs`, `consent.rs`, `approvals.rs`, `kiosk.rs`, `payment_methods.rs` | skeleton on `test/5558` | `AREA_ROWS` (generated by `xc-auth/build.rs`; no shared registration line) |
+| `need_table` keeps only the whole-path rows (`Upload`, `StaffUpload`, `File`, `StaffFile`, `StaffDesk`, `Custody`, `DrawerPassport`, `DeviceSetup`) and the three paths with a catch-all default (`Devices`, `OwnerRoute`, `UserRoute`) | `policy.rs` | skeleton | — |
+| Own rows for the organisation-level routes that borrowed a branch row (15.3), same `Need`, `Request` | `areas/branch_admin.rs`, `areas/rates.rs`; the `INHERITS` line of `views/admin_branches.rs`, `views/admin_denomination_groups.rs`, `views/pricing_formula.rs`, `commands/denomination_groups.rs` (×3), `commands/rate_reference_fetch.rs`, `commands/pricing_formula_save.rs`, `commands/pricing_mode_save.rs` | skeleton | — |
+| `scope: RowScope::Organisation` on the rows of 15.4 | each ticket's area file | **T1, T2, T3** | — |
+
+- **Why `Devices`, `OwnerRoute` and `UserRoute` stay whole:** `shadowed()` counts a catch-all answer as answered (`area_rows_seam_test::shadowed_counts_a_catch_all_answer_as_answered`), so a named row of those paths cannot move while the default stays.
+  - Their defaults are reached by no production route (`git grep -P 'EntryPath::(OwnerRoute|UserRoute)\b' -- api/src` names only `/api/reference-rates`, `queueTicketTake` and `documents`). `Devices`' default answers `snapshot` for the device views.
+  - But 11 `policy_test` / `policy_route_table_test` cases call them with other names. Removing the defaults is a separate proposal (15.8). Every route of the three paths acts on a branch (15.3), so leaving them changes nothing for #5558.
+- **Measured on the skeleton:** `xc-auth` ran 487/487, and the 63 api test files that name an entry path, `INHERITS` or `need` ran 839/839 (2026-10-30 ICT, on `882467d1`). `area_rows_seam_test` is restated (15.5): `TODAY` is now what `Policy::need` answers, with every row unchanged.
+
+### 15.3 Each row's routes, and what they act on
+
+Method: for every route that `INHERITS` a row, or authorizes on it, the handler was followed to its SQL (a read of about 60 route files on `882467d1`; the rows below cite the deciding lines). Spot-checked: `views/admin_branches.rs:53`, `commands/pricing_mode_save.rs:62`, `commands/pricing_formula_save.rs:74-81`, `xc-rate/src/infrastructure/branch/branch_repository.rs:159`, `commands/denomination_groups.rs:56`.
+
+| Row | Routes | What they act on | Kind |
+|---|---|---|---|
+| `adminSnapshot` | 21: compat snapshot, 18 `admin_*` / stock / published-rate views and actions | every one by `branch_id`, except `admin_branches` (all branches of the org, `admin_branches.rs:53`) and `profit_summary` (no table) | Request; `admin_branches` gets its own row (N-8) |
+| `adminDeskConfig`, `getConnectionStatus`, `adminAbandonRequest`, `reversalRequest` | compat and v3 | the branch (desk config, abandon, `reversals.branch_id`) or nothing | Request |
+| `me` | `views/me.rs:100` | the caller's own user | Request |
+| `reserveCustomer`, `saveTransaction` | compat save, `complete`, `transactions`, `quotes`, phone verification, passport read | the branch's transactions and quotes; customers are org-keyed but the action is desk work at a branch | Request |
+| `rateDraft` | 14 | the branch's drafts, policies, publications, price source; except `denomination_groups` ×3 and `admin_denomination_groups` (`denominations`, no org column), `rate_reference_fetch` (global batches), `pricing_formula` (org formula) | Request; those 6 get their own rows (N-4, N-6, N-7) |
+| `ratePolicySave` | 9 | the branch's policies and settings; except `pricing_formula_save` (org formula, inline org-wide EXECUTIVE check `:74-81`) and `pricing_mode_save` (global `pricing_modes`, `branch == "MAIN"` gate `:62`); `pricing_formula_preview` depends on its input's scope | Request; those 2 get their own rows (N-4, N-5) |
+| `marketRatesRefresh` | `commands/market_rates_refresh.rs:68` | the global market feed, gated on `MAIN` | N-3 |
+| `approvalDecide`, `approvalRead` | `approval_decide.rs:54`, `views/approval_requests.rs:41` | each request's own branch, re-checked per type (`approval_service.rs:257`) | Request |
+| `consentPolicy` | consent text publish, retention, the consent view | org-keyed (`consent_service.rs:84`, `retention_job.rs:85`) | N-1 |
+| `adminCreateBranch` | compat `rpc.rs:256` | a new branch of the organisation | N-2 |
+| `documents` (StaffRpc), Kiosk, PaymentMethods | | the branch | Request |
+| `Devices`, `OwnerRoute`, `UserRoute`, `Upload`, `StaffUpload`, `File`, `StaffFile`, `DeviceSetup`, `DrawerPassport` (stay in `need_table`) | | the branch, or the caller's own file | Request |
+
+### 15.4 Classification
+
+Decided at #5558 issuecomment-6515987193. The answers decide only the scope; each row's `Need` (which permission) is unchanged.
+
+| # | Row (area file) | Scope | Why |
+|---|---|---|---|
+| N-1 | `consentPolicy` (`consent.rs`) | **Organisation** | consent text and retention are org-keyed (`consent_service.rs:84`, `retention_job.rs:85`) |
+| N-2 | `adminCreateBranch` (`branch_admin.rs`) | **Organisation** | it creates a branch of the organisation; no existing branch is acted on |
+| N-3 | `marketRatesRefresh` (`rates.rs`) | **Organisation** | the market feed is one for the organisation |
+| N-4 | `pricing_formula`, `pricingFormulaSave` (`rates.rs`, own rows) | **Organisation** | the organisation's formula (`pricing_formula_save.rs:74-81`) |
+| N-5 | `pricingModeSave` (`rates.rs`, own row) | **Organisation** | `pricing_modes` is one per currency for all (#5666) |
+| N-6 | `denominationGroupCreate`, `denominationGroupMap`, `denominationGroupRemove`, `admin_denomination_groups` (`rates.rs`, own rows) | **Organisation** | `denominations` has no branch (#5666) |
+| N-7 | `rateReferenceFetch` (`rates.rs`, own row) | Request | a read-only fetch that the branch draft screen needs |
+| N-8 | `admin_branches` (`branch_admin.rs`, own row) | Request | filtering it to the caller's own branches is a follow-up (15.10), as #5557 did for marketing |
+| — | every other row of the seven area files (15.3) | Request | each acts on one branch, or on the caller's own record |
+
+The `MAIN` gate (N-3, N-5) and the inline EXECUTIVE check (N-4) stay in this change, and a follow-up deletes them (15.10). While they stay, an org-wide holder whose session branch is not `MAIN` is still refused `validationFailed` by `pricingModeSave`, and `marketRatesRefresh` plans nothing for them.
+
+### 15.5 Tests that pin today's answer
+
+**Method.** A throwaway marked the 10 rows the batch recommends (N-1..N-6) `Organisation` on the skeleton. It ran the whole `xc-auth` crate and the 74 api test files that name one of their routes (2026-10-30 ICT): `xc-auth` 483/487, api 549/551. The 6 that failed are the pins below.
+
+| Test | Today's answer | Answer after #5558 | Restated on `test/5558` as |
+|---|---|---|---|
+| `xc-auth` `policy_test::every_mapped_case_is_answered_as_mapped` | 22 v2-mapped `adminCreateBranch` cases replayed as granted at the named branch | a branch-scoped grant is refused; an org-wide holder runs at its session branch | counted, not replayed (`organisation_level_by_5558`, `ORG_5558_CASES = 22`), like RE-7/CA-10/BK-11; the new answer is pinned by `org_level_rows_branch_admin_test` |
+| `policy_test::every_call_runs_on_the_branch_named_in_scope` | OWNER naming `B9` runs on `B9` | runs on `MAIN` (session branch) | same skip; totals `(448, 76)` unchanged |
+| `policy_test::which_branch_an_employee_belongs_to_changes_no_answer` | SYSTEM of MAIN/B9/… granted | refused out of scope | same skip |
+| `policy_test::what_each_role_may_write_on_both_paths` | `adminCreateBranch` roles `["EXECUTIVE", "ADMIN"]` (each held at B2) | `["EXECUTIVE"]`: ADMIN held at B2 alone no longer reaches it | expected `["EXECUTIVE"]`; **red until T3** |
+| api `v9_pricing_follow_test::pricing_mode_save_at_another_branch_is_validation_failed` | OWNER naming B → `validationFailed` (MAIN gate) | the named branch no longer reaches the command; it runs at MAIN and saves | `pricing_mode_save_naming_another_branch_runs_at_the_session_branch`; **red until T1** |
+| api `v9_pricing_board_test::market_rates_refresh_plans_only_at_main_and_needs_the_permission` | OWNER naming B → `followResults: []` | runs at MAIN, plans USD | `market_rates_refresh_naming_another_branch_plans_at_the_session_branch`; **red until T1** |
+
+- **`area_rows_seam_test`** (four cases) pins `need_table`'s own contents, PL-0b's snapshot. It is restated on `test/5558` the way RE-7 and CA-10 restated it: `TODAY` is now what `Policy::need` answers, and with no area rows `need` is the table alone. Every row of `TODAY` keeps its answer.
+
+### 15.6 For the owner: the batch
+
+Sent to claude/553782 at #5558 issuecomment-6513222613 (2026-10-30 ICT, F-2 corrected there at 13:30 ICT) and answered at #5558 issuecomment-6515987193: every recommendation was accepted (15.4). The answer also accepted:
+- deleting `EntryPath::Custody`, `EntryPath::StaffDesk`, and the `OwnerRoute _ => UsersManage` and `UserRoute _ => SignedIn` defaults;
+- making `Devices`' `snapshot` an explicit row, so that an unknown action is refused, not granted by a default (F-3, 15.10);
+- giving each organisation-level route its own row instead of the borrowed branch row (done in the skeleton, 15.2).
+
+F-1 and F-2 are opened as #5665 and #5666.
+
+### 15.7 Up-front tests and measurements
+
+On branch **`test/5558`** `aa191e62`, off `origin/main` `fd78337d`: the skeleton commit `460be5d7` (15.2), then the test commit `aa191e62`.
+- `api/crates/xc-auth/tests/org_level_rows_rates_test.rs` (T1), `org_level_rows_consent_test.rs` (T2) and `org_level_rows_branch_admin_test.rs` (T3) use #5526's template: `a1` (exactly these rows are `Organisation`), `a2`/`a3` (a branch holder is refused), `a4` (an org-wide holder is granted the session branch), `a5` (every other row of the file still grants a branch holder).
+- Measured on `aa191e62` (2026-10-30 ICT): the whole `xc-auth` crate ran 518, with 505 passed and 13 failed. The 13 are the 12 `a1`..`a4` up-front cases and `policy_test::what_each_role_may_write_on_both_paths`; the 3 `a5` cases pass. The 74 api files ran 551, with 549 passed and 2 failed: the two restated v9 tests. All 15 fail on the answer, none on setup. With the throwaway marks (`Organisation` on the 10 rows of N-1..N-6), every one passes: `xc-auth` 518/518 and api 551/551.
+- `bash scripts/fmt-included.sh origin/main` and `cargo clippy -p xc-auth --tests -- -D warnings` are clean.
+- Restated on the same commit (15.5): `policy_test` (4 cases), `v9_pricing_follow_test` (1) and `v9_pricing_board_test` (1). On the skeleton, `what_each_role_may_write_on_both_paths` and the two v9 tests fail on the answer, and the other three `policy_test` cases pass. With the throwaway marks all pass.
+
+### 15.8 Function tickets
+
+All `class:guarded`, Gemini 4 Argon, base `main`, from `test/5558` (`Test branch: test/5558`). Scopes are disjoint, so they run together. They merge back to back: once the first squash-merges with the skeleton, each later one is replayed onto main (cherry-pick of its own commit) and its done line re-run.
+
+| Ticket | File scope (one file each) | Change | Done line (tests by name) |
+|---|---|---|---|
+| T1 rates | `api/crates/xc-auth/src/domain/policy/areas/rates.rs` | `scope: RowScope::Organisation` on the 8 rows of N-3..N-6 (`org_row`, as #5526's area files do); N-7 stays `Request` | `org_level_rows_rates_test` 5/5; api `pricing_formula_save_command_test`, `v3_admin_denomination_groups_view_test`, `v3_denomination_group_remove_refusals_test`, `v9_pricing_board_test`, `v9_pricing_follow_test` all pass |
+| T2 consent | `api/crates/xc-auth/src/domain/policy/areas/consent.rs` | `consentPolicy` → `Organisation` (N-1) | `org_level_rows_consent_test` 5/5; api `consent_retention_test`, `s6_public_consent_texts_test` all pass |
+| T3 branch admin | `api/crates/xc-auth/src/domain/policy/areas/branch_admin.rs` | `adminCreateBranch` → `Organisation` (N-2); `admin_branches` stays `Request` | `org_level_rows_branch_admin_test` 5/5, `policy_test` all pass; api `create_branch_race_test`, `rpc_test`, `v3_admin_branches_view_test` all pass |
+
+Each ticket also runs `bash scripts/fmt-included.sh origin/main` (area files are `include!`d) and `cargo clippy -p xc-auth --tests -- -D warnings`. No ticket edits a provided test.
+
+### 15.9 Data migration
+
+None. Rows of the policy table are code; no table, column or row changes.
+
+### 15.10 Out of scope, and follow-ups
+
+- **F-1 (#5665), multi-organisation defect:** `adminCreateBranch` inserts `branches` with no `organization_id` (`xc-rate/src/infrastructure/branch/branch_repository.rs:159`). The column's default (`20261011100000_organizations.sql:13`) puts every new branch in the seeded organisation, and the name and count checks are global (`:135`, `:143`).
+- **F-2 (#5666):** `pricing_modes` has no organisation column (`20261226100000_v9_pricing.sql:22-28`). `denominations` and `rate_reference_batches` have one, but their writers never set it (`denomination_group_service.rs:71`, `pg_reference_batch_store.rs:84`, `org_starting_price_save.rs:185`).
+- **F-3 (accepted at #5558 issuecomment-6515987193, ticket to cut):** delete the catch-all defaults `OwnerRoute _ => UsersManage` and `UserRoute _ => SignedIn` (`policy.rs:119`, `:123`), make `Devices`' `snapshot` a named row in place of `_ => SignedIn` (`:114`), and delete `EntryPath::Custody` and `EntryPath::StaffDesk` (`entry_path.rs:12`, `:17`; no `authorize` caller). It is larger than one area file. Besides `policy.rs` and `entry_path.rs`, it touches the v2 fixtures that name the two paths (`tests/fixtures/blueprint_policy_cases.json`, `v2_policy_cases.json`), their generators (`api/tools/policy-map.mjs`, `v2-fixtures/gen_policy.mjs`), `area_rows_seam_test` (98 lines) and the 11 policy tests that call the defaults. So it is its own ticket, after T1–T3.
+- **F-4 (ruled a follow-up at #5558 issuecomment-6515987193 for N-3, N-4, N-5):** delete the `branch == "MAIN"` gates (`market_rates_refresh.rs:106`, `pricing_mode_save.rs:62`) and `pricing_formula_save`'s inline org-wide EXECUTIVE check (`:74-81`), now that the rows say `Organisation`. It goes after T1.
+- **F-5 (N-8 follow-up):** filter `admin_branches` to the caller's own branches with `BranchScope` (#5557's §11).

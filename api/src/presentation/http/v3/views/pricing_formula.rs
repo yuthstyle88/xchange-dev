@@ -101,7 +101,7 @@ struct OrgFormulaRow {
 
 impl BranchView for PricingFormulaView {
     const NAME: &'static str = "pricing_formula";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "rateDraft");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "pricing_formula");
     const VERSIONED: bool = false;
     type Data = PricingFormulaData;
     type Filter = NoFilter;
