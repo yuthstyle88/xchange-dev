@@ -249,6 +249,7 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     // RBAC §11.9 (AP-0): EXECUTIVE +4, BRANCH_MANAGER +3, FINANCE +2 approval kinds (48 -> 52, 31 -> 34, 20 -> 22).
     // #5095 (owner, 2026-10-25): EXECUTIVE and ADMIN gain ShiftCloseCertify (52 -> 53, 9 -> 10).
     // Staff corrections SC-D2: EXECUTIVE, ADMIN and BRANCH_MANAGER gain AttendanceCloseFor (53 -> 54, 10 -> 11, 34 -> 35).
+    // #5733 (owner ruling A): EXECUTIVE gains PricingFormulaSave (54 -> 55).
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -257,7 +258,7 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 54),      // #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor
+            ("EXECUTIVE", 55), // #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor; #5733: +PricingFormulaSave
             ("ADMIN", 11), // #4155 W/A1: -OverviewRead; #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor
             ("RATE_MANAGER", 29), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
             ("BRANCH_MANAGER", 36), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; BQ-7: +BindingQuoteIssue; SC-D2: +AttendanceCloseFor
