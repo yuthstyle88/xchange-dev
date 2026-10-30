@@ -660,7 +660,20 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
       await expect(page.locator('.desk-page')).toHaveCount(0); // DeskPage.tsx:31
     }
 
-    // Backend gate: direct POSTs as customer to all 6 commands in scope are refused with 401 or 403.
+    // Backend gate: direct POSTs as customer to all 6 commands in scope are refused with 401, 403,
+    // or 400 roleNotAllowedHere (EntryPath::Rpc -> PolicyError::RoleNotAllowedHere -> 400, policy_error.rs:110).
+    const assertCustomerRefused = async (
+      res: { status(): number; json(): Promise<unknown> },
+      label: string,
+    ): Promise<void> => {
+      const status = res.status();
+      expect([400, 401, 403], `${label} as customer returned ${status}`).toContain(status);
+      if (status === 400) {
+        const body = (await res.json().catch(() => ({}))) as { error?: { code?: string } };
+        // PolicyError::RoleNotAllowedHere maps to HTTP 400 (policy_error.rs:110).
+        expect(body.error?.code, `${label} as customer 400 error.code`).toBe('roleNotAllowedHere');
+      }
+    };
     const headers = {
       Origin: users.baseUrl,
       'x-xchange-request': '1',
@@ -672,49 +685,40 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-draft` },
       data: { branch: users.branch, side: 'BUY', currency: 'USD', amount: '1' },
     });
-    expect([401, 403], `POST /api/tx-drafts as customer returned ${draftRes.status()}`).toContain(draftRes.status());
+    await assertCustomerRefused(draftRes, 'POST /api/tx-drafts');
 
     const refRes = await page.request.post(`/api/transactions/${nilUuid}/referral`, {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-ref` },
       data: { branch: users.branch, referralCode: VALID_REFERRAL_CODE },
     });
-    expect([401, 403], `POST /api/transactions/{id}/referral as customer returned ${refRes.status()}`).toContain(
-      refRes.status(),
-    );
+    await assertCustomerRefused(refRes, 'POST /api/transactions/{id}/referral');
 
     const pauseRes = await page.request.post('/api/queue/counter/pause', {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pause` },
       data: { branch: users.branch },
     });
-    expect([401, 403], `POST /api/queue/counter/pause as customer returned ${pauseRes.status()}`).toContain(
-      pauseRes.status(),
-    );
+    await assertCustomerRefused(pauseRes, 'POST /api/queue/counter/pause');
 
     const resumeRes = await page.request.post('/api/queue/counter/resume', {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-resume` },
       data: { branch: users.branch },
     });
-    expect([401, 403], `POST /api/queue/counter/resume as customer returned ${resumeRes.status()}`).toContain(
-      resumeRes.status(),
-    );
+    await assertCustomerRefused(resumeRes, 'POST /api/queue/counter/resume');
 
     const phoneStartRes = await page.request.post('/api/customers/CX-00000001/phone-verifications', {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pstart` },
       data: { phone: TEST_PHONE },
     });
-    expect(
-      [401, 403],
-      `POST /api/customers/{id}/phone-verifications as customer returned ${phoneStartRes.status()}`,
-    ).toContain(phoneStartRes.status());
+    await assertCustomerRefused(phoneStartRes, 'POST /api/customers/{id}/phone-verifications');
 
     const phoneConfirmRes = await page.request.post(`/api/customers/CX-00000001/phone-verifications/${nilUuid}/confirm`, {
       headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pconfirm` },
       data: { code: '000000' },
     });
-    expect(
-      [401, 403],
-      `POST /api/customers/{id}/phone-verifications/{challengeId}/confirm as customer returned ${phoneConfirmRes.status()}`,
-    ).toContain(phoneConfirmRes.status());
+    await assertCustomerRefused(
+      phoneConfirmRes,
+      'POST /api/customers/{id}/phone-verifications/{challengeId}/confirm',
+    );
 
     await shot(page, 'desk', 'r9-9-customer-refused');
   });
