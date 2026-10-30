@@ -137,6 +137,15 @@ impl Standing {
 }
 
 impl StandingKind {
+    /// #5630 (§14.5, ruling Q-1 A): the standing in the Blueprint's role names, for an audit row written without a
+    /// grant: the owner and an executive are `EXECUTIVE`, staff their role (`Role::as_str`).
+    pub fn blueprint_name(self) -> &'static str {
+        match self {
+            StandingKind::Owner | StandingKind::Executive => Role::Executive.as_str(),
+            StandingKind::Staff(role) => role.as_str(),
+        }
+    }
+
     /// The audit `actor_role` text, spelled as v3 stored it (unchanged by OR-7: the stored text stays what
     /// it was, `or7_5_save_actor_test.rs:458`, ruling 5 on #1020): OWNER, FRONT (TELLER), MANAGER
     /// (BRANCH_MANAGER), RATES (RATE_MANAGER), FINANCE, SYSTEM (ADMIN), DOCUMENT_REVIEW
@@ -165,11 +174,7 @@ pub fn audit_role(roles_used: &[Role], actor: &Actor, now: DateTime<Utc>) -> &'s
     if let Some(role) = roles_used.first() {
         return role.as_str();
     }
-    match Standing::acting(actor, now).map(|s| s.kind) {
-        Some(StandingKind::Owner | StandingKind::Executive) => Role::Executive.as_str(),
-        Some(StandingKind::Staff(role)) => role.as_str(),
-        None => "STAFF",
-    }
+    Standing::acting(actor, now).map_or("STAFF", |s| s.kind.blueprint_name())
 }
 
 #[cfg(test)]
