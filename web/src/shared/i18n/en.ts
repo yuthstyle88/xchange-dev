@@ -63,6 +63,7 @@ export const en: Record<Key, string> = {
   'error.holdsCash': 'This person still holds cash or a hand-over in progress',
   'error.notBound': 'This account cannot sign in yet; activate it first',
   'error.userNotActive': 'This account is not active',
+  'error.ticketStillServing': 'ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)',
   'queue.state.waiting': 'Waiting',
   'queue.state.working': 'In progress',
   'queue.state.completed': 'Completed',
