@@ -78,14 +78,15 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
   test('(a) happy path: /#members segmentDefine and segmentSnapshot persist across reload, and /#loyalty drafts and submits a rule version', async ({
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json: run scripts/reseed.sh');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
     const marker = `qa-r9-3-${Date.now()}`;
 
-    await signIn(page, 'admin', '/#members');
+    await signIn(page, role, '/#members');
     const perms = await mePermissions(page);
 
     // ── Part 1: /#members segmentDefine + segmentSnapshot + reload read-back ──
-    test.skip(!perms.includes('MarketingMembers'), 'signed-in admin lacks MarketingMembers');
+    test.skip(!perms.includes('MarketingMembers'), `signed-in ${role} lacks MarketingMembers`);
     await page.goto('/#members');
     const membersScreen = page.locator('.xc-campaigns-screen');
     const nameInput = page.locator('#segment-name');
@@ -161,7 +162,7 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
 
     // ── Part 2: /#loyalty loyaltyRuleDraft + loyaltyRuleSubmit + reload read-back ──
     if (!perms.includes('LoyaltyRulesManage')) {
-      console.log('[R9-3] signed-in admin lacks LoyaltyRulesManage; skipping /#loyalty part');
+      console.log(`[R9-3] signed-in ${role} lacks LoyaltyRulesManage; skipping /#loyalty part`);
       return;
     }
 
@@ -233,12 +234,13 @@ test.describe.serial('QA-R9-3 admin loyalty rules and member segments', () => {
   test('(b) invalid inputs: 5 cases across /#members and /#loyalty refused with worded messages in th and en, keeping typed values', async ({
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json: run scripts/reseed.sh');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    test.skip(!hasAccount(role), `no ${role} account in users.json: run scripts/reseed.sh`);
     const marker = `qa-r9-3-invalid-${Date.now()}`;
 
-    await signIn(page, 'admin', '/#members');
+    await signIn(page, role, '/#members');
     const perms = await mePermissions(page);
-    test.skip(!perms.includes('MarketingMembers'), 'signed-in admin lacks MarketingMembers');
+    test.skip(!perms.includes('MarketingMembers'), `signed-in ${role} lacks MarketingMembers`);
 
     for (const lang of STAFF_LANGS) {
       const langKey = lang as 'th' | 'en';
