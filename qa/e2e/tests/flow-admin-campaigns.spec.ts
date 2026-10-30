@@ -66,6 +66,7 @@ import {
   STAFF_LANGS,
   users,
   withLang,
+  writeHeaders,
   type Lang,
   type Role,
 } from './helpers';
@@ -253,10 +254,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
     // Direct command call as teller is refused with 400 (roleNotAllowed) or 403 (outOfScope).
     const res = await page.request.post('/api/campaigns', {
       headers: {
+        ...writeHeaders(`qa-r9-2-teller-${Date.now()}`),
         'content-type': 'application/json',
-        'idempotency-key': `qa-r9-2-teller-${Date.now()}`,
-        'x-xchange-request': '1',
-        origin: new URL(users.baseUrl).origin,
       },
       data: {
         name: `${MARKER_PREFIX}-teller-${Date.now()}`,
@@ -667,10 +666,8 @@ test.describe.serial('QA-R9-2 flow: admin campaigns and coupons', () => {
         await marketing.request
           .post(`/api/campaigns/${encodeURIComponent(campaignId)}/pause`, {
             headers: {
+              ...writeHeaders(`qa-r9-2-cleanup-pause-${Date.now()}`),
               'content-type': 'application/json',
-              'idempotency-key': `qa-r9-2-cleanup-pause-${Date.now()}`,
-              'x-xchange-request': '1',
-              origin: new URL(users.baseUrl).origin,
             },
             data: { campaignId },
           })
