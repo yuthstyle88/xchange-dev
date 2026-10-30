@@ -4,7 +4,6 @@
 import { createEffect, createSignal, on, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type { FormulaTextsDto, PricingFormulaData } from '../../../shared/api/generated/pricing_formula';
-import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { FormulaEditor } from '../parts/FormulaEditor';
 import * as formulaI18n from '../parts/formula-i18n';
@@ -13,7 +12,7 @@ import { FormulaPreviewTable } from '../parts/FormulaPreviewTable';
 import { EMPTY_OVERRIDE, initialOverride, type FormulaOverrideState } from './formula-override';
 import '../parts/formula.css';
 
-const t = screenT('admin.formula', formulaI18n);
+const t = formulaI18n.formulaT;
 
 const EMPTY_TEXTS: FormulaTextsDto = { buyFormula: '', sellFormula: '' };
 
