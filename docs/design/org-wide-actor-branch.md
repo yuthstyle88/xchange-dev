@@ -1297,3 +1297,59 @@ None. Rows of the policy table are code; no table, column or row changes.
 - **F-3 (accepted at #5558 issuecomment-6515987193, ticket to cut):** delete the catch-all defaults `OwnerRoute _ => UsersManage` and `UserRoute _ => SignedIn` (`policy.rs:119`, `:123`), make `Devices`' `snapshot` a named row in place of `_ => SignedIn` (`:114`), and delete `EntryPath::Custody` and `EntryPath::StaffDesk` (`entry_path.rs:12`, `:17`; no `authorize` caller). It is larger than one area file. Besides `policy.rs` and `entry_path.rs`, it touches the v2 fixtures that name the two paths (`tests/fixtures/blueprint_policy_cases.json`, `v2_policy_cases.json`), their generators (`api/tools/policy-map.mjs`, `v2-fixtures/gen_policy.mjs`), `area_rows_seam_test` (98 lines) and the 11 policy tests that call the defaults. So it is its own ticket, after T1–T3.
 - **F-4 (ruled a follow-up at #5558 issuecomment-6515987193 for N-3, N-4, N-5):** delete the `branch == "MAIN"` gates (`market_rates_refresh.rs:106`, `pricing_mode_save.rs:62`) and `pricing_formula_save`'s inline org-wide EXECUTIVE check (`:74-81`), now that the rows say `Organisation`. It goes after T1.
 - **F-5 (N-8 follow-up):** filter `admin_branches` to the caller's own branches with `BranchScope` (#5557's §11).
+
+### 15.11 F-1 part 1 (#5665): a new branch joins the caller's organisation
+
+Survey: main `61382f2f`, 2026-10-30. This part touches no schema. Name uniqueness and the 20-branch limit are part 2, which waits for the owner (#564 issuecomment-6520441281, D3 and D4). Until then `name_taken` and `count` stay global and unchanged.
+
+**Root cause.** `PgBranchRepository::insert` (`api/crates/xc-rate/src/infrastructure/branch/branch_repository.rs:150-172`) names no `organization_id`, so the column default `00000000-0000-0000-0000-000000000001` (`api/migrations/20261011100000_organizations.sql:13`) fills it. Nothing upstream carries an organisation:
+- `BranchService::create` (`api/crates/xc-rate/src/application/branch/service.rs:56`) takes only `CreateBranch`, the actor's name and `now`.
+- `CompatRpc::dispatch` (`api/src/application/compat/rpc.rs:208-216`) takes no organisation.
+- The `/api/rpc` handler (`api/src/presentation/http/rpc.rs:178-182`) already holds the caller's `Actor` (`auth_user`, with `organization_id`) and drops it.
+
+**The organisation comes from the caller, never from the branch the request was sent from.** An organisation-wide caller may have no branch of its own: `caller_of_staff_rpc` falls back to `FALLBACK_BRANCH` (`rpc.rs:304-306`), so the sending branch can belong to another organisation. The up-front test `a_branch_created_with_no_session_branch_belongs_to_the_callers_organisation` pins this.
+
+```mermaid
+classDiagram
+  class rpc_handler["presentation/http/rpc.rs handler"] {
+    auth_user: Option~&Actor~
+    +dispatch(..., organization_id: Option~&str~, ...)
+  }
+  class CompatRpc["CompatRpc (application/compat/rpc.rs)"] {
+    +dispatch(route, action, payload, caller, organization_id: Option~&str~, session_user, branch, now)
+  }
+  class BranchService["BranchService (xc-rate application/branch/service.rs)"] {
+    +create_in(cmd: CreateBranch, organization_id: &str, actor: &str, now) AppResult~Branch~
+    +create(cmd: CreateBranch, actor: &str, now) AppResult~Branch~
+  }
+  class BranchRepository["BranchRepository trait (xc-rate domain/branch/repositories/branch_repository.rs)"] {
+    +organization_of(tx, id: &BranchId) AppResult~Option~String~~
+    +insert(tx, id, name, organization_id: &str, created_at, created_by, request_id) AppResult~()~
+  }
+  class PgBranchRepository["PgBranchRepository (xc-rate infrastructure/branch/branch_repository.rs)"]
+  rpc_handler --> CompatRpc : organization_id = auth_user.map(organization_id)
+  CompatRpc --> BranchService : adminCreateBranch → create_in
+  BranchService --> BranchRepository : insert(organization_id)
+  PgBranchRepository ..|> BranchRepository
+```
+
+| Item | File | Provides | Used by |
+|---|---|---|---|
+| `[required]` `organization_id: Option<&str>` parameter of `CompatRpc::dispatch`, placed right after `caller`. The `adminCreateBranch` arm (`:256-264`) refuses `None` with `RpcRefusal::not_signed_in(route)` (as `rpc.rs:155` does), and never falls back to a default | `api/src/application/compat/rpc.rs` | the caller's organisation | its `adminCreateBranch` arm |
+| `[required]` the handler passes `auth_user.map(\|a\| a.organization_id.as_str())`, the `Actor` of the same session cookie. No seeded constant and no default | `api/src/presentation/http/rpc.rs` | — | `dispatch` (`:227`, its only caller) |
+| `[required]` `BranchService::create_in(cmd, organization_id, actor, now)`, the body of today's `create` with `organization_id` handed to `insert` | `api/crates/xc-rate/src/application/branch/service.rs` | the production path | `adminCreateBranch` |
+| `[proposed]` `BranchService::create(cmd, actor, now)` stays with the same signature, for its existing callers (only tests: `branches_test`, `branch_lock_test`, `create_branch_race_test`, `snapshot_*` and others, which must not be edited). It is `create_in` with `organization_of(cmd.from_branch)`, read inside the same transaction | same file | — | tests |
+| `[required]` `BranchRepository::insert` gains `organization_id: &str`, and the `INSERT` names the column. `[proposed]` `organization_of(tx, id)` | `api/crates/xc-rate/src/domain/branch/repositories/branch_repository.rs` | — | `BranchService` |
+| `[required]` `PgBranchRepository::insert` binds it, and `organization_of` reads `branches.organization_id` | `api/crates/xc-rate/src/infrastructure/branch/branch_repository.rs` | the SQL | — |
+
+`PgBranchRepository` is the only `BranchRepository` implementation (`git grep "impl BranchRepository for"` on `61382f2f`: 1 hit).
+
+**Data migration.** None:
+1. Existing rows keep their `organization_id`. All of them are in the seeded organisation, the only one today.
+2. No backfill: nothing changes in existing rows. Only rows inserted from now on name the column.
+3. Deploy order is free. The column and its default exist since `20261011100000`, so old and new binaries both work with today's schema.
+4. Nothing to lose on `down`, because there is no migration.
+
+**Up-front tests** (branch `test/5665`, file `api/tests/create_branch_organisation_test.rs`, over HTTP with a real session, both red on `61382f2f` with `left: Some("00000000-0000-0000-0000-000000000001")`):
+- `a_branch_created_from_organisation_bs_branch_belongs_to_organisation_b`
+- `a_branch_created_with_no_session_branch_belongs_to_the_callers_organisation`
