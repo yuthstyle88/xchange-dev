@@ -13,9 +13,9 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 
@@ -45,11 +45,13 @@ impl ExportGate {
         let refused = || V3Error::from(PolicyError::OutOfScope);
         let grant = Authorizer::check(Some(actor), Permission::ReportsExport, &target, now)
             .map_err(|_| refused())?;
-        let role = grant.roles_used.first().ok_or_else(refused)?;
+        if grant.roles_used.is_empty() {
+            return Err(refused());
+        }
         Ok(ExportGrant {
             actor_id: actor.user_id.clone(),
             organization_id: actor.organization_id.clone(),
-            role: role.as_str().to_owned(),
+            role: audit_role(&grant.roles_used, actor, now).to_owned(),
             branch: branch.clone(),
         })
     }

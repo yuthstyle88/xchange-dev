@@ -18,8 +18,9 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_cash::application::adjustment::adjustment_service::{
     AdjustmentRefusal, LedgerAdjustmentService,
 };
@@ -32,11 +33,11 @@ use crate::presentation::dto::v3::ledger_adjustment_create::{
     LedgerAdjustmentCreateInput, LedgerAdjustmentCreateOutput, LedgerAdjustmentEvidence,
     LedgerAdjustmentLine,
 };
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
-use crate::presentation::http::v3::me::me_roles;
 
 pub const AUDIT_ACTION: &str = "LEDGER_ADJUSTMENT_CREATE";
 
@@ -66,12 +67,27 @@ impl CommandAction for LedgerAdjustmentCreateCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let payload = serde_json::to_value(&input).map_err(|_| server_error())?;
         let created = match self
             .service
@@ -94,18 +110,13 @@ impl CommandAction for LedgerAdjustmentCreateCommand {
             Err(_) => return Err(server_error()),
         };
 
-        let mut roles: Vec<String> = me_roles(who, Utc::now())
-            .into_iter()
-            .map(|r| r.role)
-            .collect();
-        roles.dedup();
         PgAuditLog::new(self.pool.clone())
             .append_in(
                 tx,
                 &who.organization_id,
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
-                    actor_role: roles.join(","),
+                    actor_role: audit_role(&caller.granted, who, Utc::now()).to_owned(),
                     scope: "branch".to_owned(),
                     action: AUDIT_ACTION.to_owned(),
                     object_ref: format!("ledger_adjustment:{}", created.id),

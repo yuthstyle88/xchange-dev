@@ -12,8 +12,9 @@ use uuid::Uuid;
 use xc_approval::domain::audit_log::AuditEvent;
 use xc_approval::domain::audit_log::AuditLog;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Bound, Sign};
 
@@ -25,10 +26,10 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::branch_alert_settings::{
     BranchAlertSettingsData, BranchAlertSettingsSaveInput,
 };
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input;
-use crate::presentation::http::v3::me::me_roles;
 
 pub struct BranchAlertSettingsSaveCommand {
     pool: PgPool,
@@ -50,12 +51,27 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         // Step 1: Validation
         if input.stale_data_minutes.is_some_and(|m| m <= 0) {
             return Err(V3Error::new(
@@ -161,13 +177,6 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
         };
         let after = Some(serde_json::to_value(&after_data).map_err(|_| server_error())?);
 
-        // The audit row records the caller's valid-now Blueprint roles (design §3.3), not a v2 role:
-        // an EXECUTIVE-only or ADMIN-only caller has no v2 role, and both may save (EX-1).
-        let mut roles: Vec<String> = me_roles(who, chrono::Utc::now())
-            .into_iter()
-            .map(|r| r.role)
-            .collect();
-        roles.dedup();
         let audit_log = PgAuditLog::new(self.pool.clone());
         audit_log
             .append_in(
@@ -175,7 +184,7 @@ impl CommandAction for BranchAlertSettingsSaveCommand {
                 &org_id.to_string(),
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
-                    actor_role: roles.join(","),
+                    actor_role: audit_role(&caller.granted, who, chrono::Utc::now()).to_owned(),
                     scope: "branch".to_owned(),
                     action: "BRANCH_ALERT_SETTINGS_SAVE".to_owned(),
                     object_ref: format!("branch:{}", branch.as_str()),
