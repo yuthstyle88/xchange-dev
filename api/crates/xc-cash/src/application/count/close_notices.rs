@@ -92,6 +92,35 @@ impl CloseNotices {
         self.send_notice_in(tx, &request).await
     }
 
+    pub async fn notify_verified_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        count: &CashCount,
+    ) -> AppResult<()> {
+        let bkk = count.counted_at.with_timezone(&xc_kernel::time::bangkok());
+        let params = NotificationParams::new()
+            .text("kind", count.kind.as_str())
+            .display(
+                "branch",
+                DisplayValue::server_id(count.branch_id.as_str())
+                    .map_err(|e| AppError::Internal(e.to_string()))?,
+            )
+            .display("counted_on", DisplayValue::date(bkk.date_naive()))
+            .text("counted_time", bkk.format("%H:%M").to_string());
+        let request = NotificationRequest::with_params(
+            count.counted_by.clone(),
+            format!("count-verified:{}", count.id),
+            "count_verified",
+            Some(NotificationObject {
+                object_type: "cash_count".to_string(),
+                object_id: count.id.clone(),
+            }),
+            params,
+        )
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+        self.send_notice_in(tx, &request).await
+    }
+
     async fn send_notice_in(
         &self,
         tx: &mut Transaction<'_, Postgres>,

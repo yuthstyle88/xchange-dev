@@ -20,12 +20,18 @@
 //! the acting user.
 //!
 //! What this file pins ([required]):
-//! - N1: an OPEN count's submit and verify send nothing.
+//! - N1: an OPEN count's submit and verify send no shift-close notice; the verify's only notice is `count_verified`
+//!   to the counting teller (#5643).
 //! - N2: a CLOSE count's submit sends `close_count_waiting` to the branch's manager and the Executive, and not to the
 //!   counting teller nor to another branch's manager.
 //! - N3: certifying that CLOSE count sends `shift_close_certified` to the Executive and to the branch's other manager,
-//!   and not to the certifying manager, the teller, nor another branch's manager.
-//! - N4: each notice names the count (`cash_count`, its id) and carries `branch` and `shift` params.
+//!   and not to the certifying manager, the teller, nor another branch's manager. The teller gets `count_verified`
+//!   instead (#5643).
+//! - N4: each shift-close notice names the count (`cash_count`, its id) and carries `branch` and `shift` params.
+//!
+//! Restated by claude/studio-claude-16 for #5643 (design `docs/design/blueprint/cash-count-notices.md`): a verified
+//! count now also sends `count_verified` to whoever counted it, so N1 and N3 expect that one notice, and N4 leaves it
+//! to `count_verify_notice_test.rs`. Nothing else in this file changed.
 //! - N5: without `with_notices`, a CLOSE count's submit and verify behave as before and send nothing.
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; nothing here skips.
@@ -327,10 +333,10 @@ async fn n1_an_open_count_sends_nothing() {
     let rec = Arc::new(Recorder::default());
     let counts = CashCountService::pg(f.db.pool.clone()).with_notices(rec.clone());
     open_shift(&f, &counts).await;
-    assert!(
-        rec.sent().is_empty(),
-        "OPEN submit/verify sent {:?}",
-        rec.sent()
+    assert_eq!(
+        rec.sent(),
+        pairs("count_verified", &[&f.teller]),
+        "OPEN submit/verify sends no shift-close notice, only the teller's count_verified (#5643)"
     );
 }
 
@@ -368,10 +374,13 @@ async fn n3_a_certified_close_count_notifies_the_executive_and_the_other_manager
         .await
         .expect("M certifies the exact CLOSE count");
 
+    let mut expected = pairs("shift_close_certified", &[&f.manager2, &f.executive]);
+    expected.extend(pairs("count_verified", &[&f.teller]));
+    expected.sort();
     assert_eq!(
         rec.sent(),
-        pairs("shift_close_certified", &[&f.manager2, &f.executive]),
-        "not the certifying manager, not the teller, not B2's manager"
+        expected,
+        "not the certifying manager, not the teller, not B2's manager; the teller gets count_verified (#5643)"
     );
     let _ = &f.other_manager;
     let _ = &f.teller;
@@ -391,7 +400,7 @@ async fn n4_each_notice_names_the_count_and_carries_branch_and_shift() {
 
     let sent = rec.sent.lock().unwrap().clone();
     assert!(!sent.is_empty());
-    for r in &sent {
+    for r in sent.iter().filter(|r| r.template_key() != "count_verified") {
         let object = r.object().expect("the notice names its object");
         assert_eq!(object.object_type, "cash_count");
         assert_eq!(object.object_id, close);
