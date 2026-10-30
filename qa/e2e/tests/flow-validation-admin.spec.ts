@@ -351,15 +351,16 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
   test('1. /#rates: rateDraftCreate, rateDraftEdit, and ratePolicySave refuse invalid inputs in th and en and never submit or publish a draft', async ({
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    test.skip(!hasAccount(role), `no ${role} account in users.json`);
     const runTag = `qa-r9-validation-admin-${Date.now()}`;
     const log = watchConsole(page);
 
-    await signIn(page, 'admin', '/');
+    await signIn(page, role, '/');
     const perms = await mePermissions(page);
     test.skip(
       !perms.includes('RatesDraft') || !perms.includes('RatePolicySave'),
-      `admin lacks RatesDraft or RatePolicySave (${perms.join(', ')})`,
+      `${role} lacks RatesDraft or RatePolicySave (${perms.join(', ')})`,
     );
 
     const forbiddenDraftSubmissions: string[] = [];
@@ -624,13 +625,14 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
     browser,
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    test.skip(!hasAccount(role), `no ${role} account in users.json`);
     const runTag = `qa-r9-validation-admin-${Date.now()}`;
     const log = watchConsole(page);
 
-    await signIn(page, 'admin', '/');
+    await signIn(page, role, '/');
     const perms = await mePermissions(page);
-    test.skip(!perms.includes('ApprovalsDecide'), `admin lacks ApprovalsDecide (${perms.join(', ')})`);
+    test.skip(!perms.includes('ApprovalsDecide'), `${role} lacks ApprovalsDecide (${perms.join(', ')})`);
 
     const { createdReqId } = await ensurePendingApprovalRequest(browser, page, runTag);
 
@@ -706,16 +708,14 @@ test.describe.serial('QA-R9-14: invalid input on the admin forms (rate drafts ne
     browser,
     page,
   }) => {
-    test.skip(!hasAccount('admin'), 'no admin account in users.json');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    test.skip(!hasAccount(role), `no ${role} account in users.json`);
     const runTag = `qa-r9-validation-admin-${Date.now()}`;
     const log = watchConsole(page);
 
-    await signIn(page, 'admin', '/operations/verification');
+    await signIn(page, role, '/operations/verification');
     const perms = await mePermissions(page);
-    test.skip(
-      !perms.includes('VerificationQueueRead') || !perms.includes('VerificationDecide'),
-      `admin lacks VerificationQueueRead or VerificationDecide (${perms.join(', ')})`,
-    );
+    test.skip(!perms.includes('VerificationReview'), `${role} lacks VerificationReview (${perms.join(', ')})`);
 
     const { targetCaseId, createdForTest } = await ensureDecidableVerificationCase(browser, page);
     test.skip(!targetCaseId, 'no decidable verification case in queue and could not open one');
