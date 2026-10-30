@@ -919,3 +919,111 @@ All three are `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/
 - `rpc.rs` and `pages.rs` (rows 10–13): v2 surfaces, unchanged.
 - **Finding:** an EXECUTIVE alone is neither `owner_standing` nor `staff_standing` on the v2 routes listed in row 12–13, so e.g. `payment_methods.rs:124` and `device_setup.rs:66` treat it as neither. #5446 / #5480 moved the page gates to `is_staff_caller`; these route-level readers were not swept there. Whether each should admit an executive alone is a separate ticket (proposed to claude/553782, not opened here).
 - **Finding:** the audit `actor_role` is computed four ways in v3 (`audit_text`, `cash_exception_raise.rs:36` first role or `STAFF`, `approval_service.rs:10` a priority list, `price_source.rs:102` a literal). `audit_text_of` is the place they could share; unifying them is a separate ticket.
+
+## 13. The v2 route readers and an EXECUTIVE alone (#5629)
+
+> Design by claude/studio-claude-17 (sub-controller of #5629 under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `29aa1183`. Ticket #5629 §3; it follows §12.9's first finding.
+
+### 13.1 The question
+
+- `Callers::owner_standing` is `Standing::of(user)` filtered to the owner. `staff_standing` is `Standing::of(staff_user)` filtered to staff (`pages.rs:24-38`).
+- For an EXECUTIVE alone (organisation-wide, no ADMIN), both answer `None` (§12.1).
+- The v2 routes below read them **before** any v3 permission check, so what they do with "neither" is a rule, not a redundant gate (#5629 §2).
+- Each row asks whether the route should treat an EXECUTIVE alone as the owner. That is the rule §12 applied to v3 (V.9's OWNER maps to EXECUTIVE, RBAC §11.2), and #5618 K-1 already set kiosk role `Owner` for it.
+
+### 13.2 Every reader (`git grep -n -E 'owner_standing\(\)|staff_standing\(\)' -- api/src` at `29aa1183`, 17 call sites in 11 readers)
+
+| # | Reader | What it guards | EXECUTIVE alone today | Owner today | Required | Source |
+|---|---|---|---|---|---|---|
+| R-1 | `device_setup.rs:66` `device_agents_page_handler` | the pairing page `GET /_xc/device-agents`; its API `POST /api/device-setup` needs `SystemSettings` (`policy.rs:171`) | **303 `/login`**, though the API admits it | 200 | **B-1** (business question, 13.6). Recommended: 200, as the owner | the AG design calls it "the owner's page" (`device_setup_http_test.rs:2`) |
+| R-2 | `files.rs:144` `upload`: `is_staff` | which upload path: staff (session branch) or owner/customer (`?branch=`) | the owner's path (it is not staff) | the owner's path | **unchanged** | already as the owner |
+| R-3 | `files.rs:262-263` `file`: `is_owner` | which read: `open_owned` (the caller's own uploads) or `open_in_branch` | the owner's path (`user` is set and `staff_standing` is `None`) | the owner's path | **unchanged** | already as the owner |
+| R-4 | `kiosk.rs:97-118` `kiosk_actor_from_callers` | the actor the kiosk service is given | **`KioskActor::Customer`**: a staff `cancel` is refused `notCancellable` (`kiosk_machine.rs:319-325`), `get` and `publishReceipt` `staffRequired` (`:343-375`), though the policy admits the action (`QueueOperate`, `policy.rs:149-152`) | `Staff { username: "owner", role: Owner }` | **`Staff { username: <its user id>, role: Owner }`** | #5618 K-1: kiosk role `Owner` for `StandingKind::Executive`. Its own id, not the literal `owner`: it is one user among several, as the save step records it (#5618 X-1) |
+| R-5 | `kiosk.rs:329` the named-branch rule | whether a named `branchId` is authorised, or replaced by the staff branch | the named branch (it is not staff) | the named branch | **unchanged** | already as the owner. Only a password session reaches the replacement, and since OR-7.m w2 none signs in |
+| R-6 | `kiosk.rs:481-503` `notifications`' employee line | who the notification screen says is signed in | **500** (neither arm ⇒ `kiosk_server_error`) | `{ id: "owner", username: "owner", name: "Owner", role: "OWNER" }` | **`{ id: <user id>, username/name: <users.name>, role: "EXECUTIVE" }`** | as R-4. The role is `audit_text()` of its standing, as the staff arm writes (`:496`) |
+| R-7 | `payment_methods.rs:124-133` | the D-4 scope check: a staff member naming another branch ⇒ 403 | not checked (it is not staff) | not checked | **unchanged** | already as the owner. `save` still needs `SystemSettings` (`policy.rs:166`) |
+| R-8 | `pages.rs:319-352` `devices_receipt_handler` | the receipt's branch: the URL's, or the staff branch | the URL's branch | the URL's branch | **unchanged** | already as the owner |
+| R-9 | `pages.rs:498-502` `DeskVariant` pages | a teller-only page | to `/staff` | to `/staff` | **unchanged** | teller only, by design |
+| R-10 | `pages.rs:637-660` `page_branch` (`Gate::Branch`, `screens.rs:142-151`) | a page's branch: the query's, or the staff branch | the query's | the query's | **unchanged** | already as the owner |
+| R-11 | `screens.rs:153-161` `Gate::Front` | a teller-only screen | to `/staff` | to `/staff` | **unchanged** | teller only, by design |
+
+**So three readers change** (R-1, R-4, R-6). Six already treat an EXECUTIVE alone as the owner, because they branch on "not staff" (R-2, R-3, R-5, R-7, R-8, R-10). The two teller gates (R-9, R-11) stay closed to it, as they are to the owner.
+
+### 13.3 Class diagram
+
+```mermaid
+classDiagram
+  class Callers {
+    <<api presentation/pages.rs  CHANGED (skeleton)>>
+    +owner_standing() Option~Standing~  unchanged
+    +staff_standing() Option~Standing~  unchanged
+    +executive_standing() Option~Standing~  NEW
+  }
+  class Standing {
+    <<xc-auth  #5618>>
+    +acting(actor, now) Option~Standing~
+  }
+  class kiosk_rs {
+    <<api presentation/http/kiosk.rs  T1>>
+    kiosk_actor_from_callers: Executive arm
+    notifications: Executive employee line
+  }
+  class device_setup_rs {
+    <<api presentation/http/device_setup.rs  T2>>
+    device_agents_page_handler: owner or executive (B-1)
+  }
+  Callers ..> Standing : acting(user), kind == Executive
+  kiosk_rs ..> Callers
+  device_setup_rs ..> Callers
+```
+
+- `[required]` `Callers::executive_standing(&self) -> Option<Standing>`: `Standing::acting(user, now)` with `kind == StandingKind::Executive`, read from `user` as `owner_standing` is. It is on `test/5629`.
+- **Why one reader, not three hand-written checks:** "an organisation-wide EXECUTIVE valid at now" is already written once, in `Standing::acting` (§12.2). The readers ask `Callers` for it, just as they ask for the owner and for staff.
+- `owner_standing` and `staff_standing` keep their answers. The eight unchanged readers are not touched.
+
+### 13.4 Behaviour table
+
+| Row | Caller | Route | Today | Required | Test |
+|---|---|---|---|---|---|
+| K-1 | EXECUTIVE alone | `/api/kiosk` `notifications` | 500 | 200; employee `{ id: user id, username/name: users.name, role: EXECUTIVE }` | `api/tests/kiosk_executive_alone_test.rs` |
+| K-2 | owner | the same | 200, `owner` / `OWNER` | unchanged | the same file |
+| K-3 | EXECUTIVE alone | `manage` | 200 | unchanged (it does not read the actor) | the same file |
+| K-4 | EXECUTIVE alone | `list` | 200 | unchanged | the same file |
+| K-5 | EXECUTIVE alone | `cancel` a WAITING request, reason `DUPLICATE` | 400 `คำขอนี้ยกเลิกไม่ได้` (`notCancellable`) | 200, the request `CANCELLED` | the same file |
+| P-1 | EXECUTIVE alone | `GET /_xc/device-agents` | 303 `/login` | 200, HTML, `no-store` (B-1 recommended answer) | `api/tests/device_agents_page_executive_test.rs` |
+| P-2 | owner; every staff role of `one_of_each_role` | the same | 200; 303 | unchanged | the same file, and `device_setup_http_test::the_owner_s_page_is_served_to_the_owner_only` |
+
+**Tests that pin today's answer**, swept with `git grep -l -E 'device-agents|"notifications"|kiosk_actor_from_callers' -- api/tests` at `29aa1183`: `device_setup_http_test::the_owner_s_page_…` (owner 200, staff 303) and `kiosk_http_test` (owner and staff). Under the recommended B-1, none has an EXECUTIVE alone, and none flips. Under B-1 option A, the `SYSTEM` (ADMIN at `MAIN`) row of `the_owner_s_page_…` flips to 200 and is restated.
+
+### 13.5 Up-front tests and measurements
+
+On `test/5629` at `1538f15b`, off `origin/main` `29aa1183`: the skeleton `afb540be`, then the tests. Measured 2026-10-30 ICT on the Mac Studio with a throwaway PostgreSQL 17:
+- The 7 up-front tests: 4 passed and 3 failed. The failures are K-1 (500), K-5 (400 `คำขอนี้ยกเลิกไม่ได้`) and P-1 (303), each on the answer. K-2, K-3, K-4 and P-2 pass, as the table says.
+- With a throwaway T1 + T2 (B-1 recommended): those 7, plus `kiosk_http_test`, `device_setup_http_test`, `device_setup_branch_scope_test`, `gapsa6_queue_skip_cancel_kiosk_route_test` and every test whose name contains `kiosk`, ran 254 and passed 254.
+- clippy `-D warnings`, `cargo fmt --all --check` and `scripts/fmt-included.sh origin/main` are clean on `test/5629`. The two new files were also run through `rustfmt` directly, since they are `include!`d and `cargo fmt` skips them (the miss found in #5618's review).
+
+### 13.6 For claude/553782: the one business question
+
+| # | Question | Today | Options | Recommend | Why |
+|---|---|---|---|---|---|
+| B-1 | Who gets the pairing page `GET /_xc/device-agents`? | the owner only (EXECUTIVE + ADMIN). Its API `POST /api/device-setup` admits every `SystemSettings` holder: EXECUTIVE, ADMIN (org-wide or at a branch), and any group given it | **A.** Whoever holds `SystemSettings`, the same check as the API. An ADMIN alone, including a branch ADMIN, gets the page; `the_owner_s_page_…`'s `SYSTEM` row flips. **B.** The owner or an EXECUTIVE alone (`owner_standing \|\| executive_standing`); no other caller changes. **C.** Unchanged: an EXECUTIVE alone keeps the API but not the page. | **B** | It is "the owner's page" (AG design), and V.9's OWNER maps to EXECUTIVE (§11.2), the same reading as §12 and R-4/R-6. A widens a page to ADMIN, which is the owner's choice to make. C leaves an executive with an API it can use and no page to use it from |
+
+Until B-1 is answered, T2 is not released; T1 does not depend on it.
+
+### 13.7 Data migration
+
+None.
+
+### 13.8 Function tickets
+
+Both `class:guarded`, Gemini 4 Argon, base `main`, branched from `test/5629`. Their File scopes are disjoint, so they run together.
+
+| Ticket | Change | File scope | Done line |
+|---|---|---|---|
+| **T1** kiosk | R-4: an `executive_standing()` arm between the owner and staff arms of `kiosk_actor_from_callers`: `Staff { username: exec.user_id, role: KioskRole::Owner }`. R-6: the same arm in `notifications`' employee line: `id` the user id, `username` and `name` from `usernames(..)` / `username_or_id` as the staff arm, `role` `exec.kind.audit_text()` | `api/src/presentation/http/kiosk.rs` | `kiosk_executive_alone_test`, `kiosk_http_test`, `gapsa6_queue_skip_cancel_kiosk_route_test`, and `test(/kiosk/)` green |
+| **T2** pairing page | R-1 per B-1 (B: `owner_standing().is_some() \|\| executive_standing().is_some()`) | `api/src/presentation/http/device_setup.rs` | `device_agents_page_executive_test`, `device_setup_http_test`, `device_setup_branch_scope_test` green |
+
+### 13.9 Out of scope
+
+- The eight unchanged readers (13.2). The two teller gates (R-9, R-11) stay teller-only.
+- The literal `"owner"` username the kiosk gives the owner (R-4, R-6) is v2's and is not changed here.
