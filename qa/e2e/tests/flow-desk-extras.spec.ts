@@ -32,12 +32,14 @@ import {
   hasAccount,
   openShift,
   posted,
+  sameOriginHeaders,
   shot,
   signIn,
   STAFF_LANGS,
   startService,
   users,
   withLang,
+  writeHeaders,
   type Role,
 } from './helpers';
 
@@ -113,10 +115,7 @@ interface AdminSnapshotRpcAnswer {
 /** Reads `operations.drafts` from `POST /api/staff/rpc` (`adminSnapshot`, api/src/presentation/http/rpc.rs:113-116, api/src/application/compat/snapshot.rs:85-87, v2_json.rs:509). */
 async function readStaffDrafts(page: Page): Promise<DraftItem[]> {
   const res = await page.request.post('/api/staff/rpc', {
-    headers: {
-      Origin: users.baseUrl,
-      'x-xchange-request': '1',
-    },
+    headers: sameOriginHeaders(),
     data: { action: 'adminSnapshot', payload: {} },
   });
   expect(res.ok(), `POST /api/staff/rpc adminSnapshot status ${res.status()}`).toBeTruthy();
@@ -674,45 +673,41 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         expect(body.error?.code, `${label} as customer 400 error.code`).toBe('roleNotAllowedHere');
       }
     };
-    const headers = {
-      Origin: users.baseUrl,
-      'x-xchange-request': '1',
-      'idempotency-key': `qa-r9-9-cust-${Date.now()}`,
-    };
+    const headers = writeHeaders(`qa-r9-9-cust-${Date.now()}`);
     const nilUuid = '00000000-0000-0000-0000-000000000000';
 
     const draftRes = await page.request.post('/api/tx-drafts', {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-draft` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-draft` },
       data: { branch: users.branch, side: 'BUY', currency: 'USD', amount: '1' },
     });
     await assertCustomerRefused(draftRes, 'POST /api/tx-drafts');
 
     const refRes = await page.request.post(`/api/transactions/${nilUuid}/referral`, {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-ref` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-ref` },
       data: { branch: users.branch, referralCode: VALID_REFERRAL_CODE },
     });
     await assertCustomerRefused(refRes, 'POST /api/transactions/{id}/referral');
 
     const pauseRes = await page.request.post('/api/queue/counter/pause', {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pause` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-pause` },
       data: { branch: users.branch },
     });
     await assertCustomerRefused(pauseRes, 'POST /api/queue/counter/pause');
 
     const resumeRes = await page.request.post('/api/queue/counter/resume', {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-resume` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-resume` },
       data: { branch: users.branch },
     });
     await assertCustomerRefused(resumeRes, 'POST /api/queue/counter/resume');
 
     const phoneStartRes = await page.request.post('/api/customers/CX-00000001/phone-verifications', {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pstart` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-pstart` },
       data: { phone: TEST_PHONE },
     });
     await assertCustomerRefused(phoneStartRes, 'POST /api/customers/{id}/phone-verifications');
 
     const phoneConfirmRes = await page.request.post(`/api/customers/CX-00000001/phone-verifications/${nilUuid}/confirm`, {
-      headers: { ...headers, 'idempotency-key': `${headers['idempotency-key']}-pconfirm` },
+      headers: { ...headers, 'Idempotency-Key': `${headers['Idempotency-Key']}-pconfirm` },
       data: { code: '000000' },
     });
     await assertCustomerRefused(
