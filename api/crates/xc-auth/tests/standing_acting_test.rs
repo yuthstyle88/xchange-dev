@@ -91,23 +91,14 @@ fn s5_a_customer_does_not_act() {
     assert_eq!(Standing::acting(&actor(&[]), at()), None);
 }
 
-/// S-6: the audit text: `EXECUTIVE` for an executive alone, the standing's text otherwise, and
-/// `STAFF` when there is no standing (never a refusal).
+/// S-6: an executive's standing text is `EXECUTIVE`.
+///
+/// #5630 (design `org-wide-actor-branch.md` §14.5; rulings on #5661), restated by the test author
+/// claude/studio-claude-17: the V.9-spelling helper on `Standing` is deleted by #5630 T5, and the audit text of
+/// every caller is now `access::audit_role`, pinned in `audit_role_test.rs` (A-3..A-5). What stays here is the kind's
+/// own text, which the kiosk employee line still reads.
 #[test]
-fn s6_audit_text_of_every_caller() {
-    for (roles, text) in [
-        (&[(Role::Executive, None)][..], "EXECUTIVE"),
-        (&[(Role::Executive, None), (Role::Admin, None)][..], "OWNER"),
-        (&[(Role::Admin, None)][..], "SYSTEM"),
-        (&[(Role::Teller, Some("B1"))][..], "FRONT"),
-        (&[(Role::Customer, None)][..], "STAFF"),
-    ] {
-        assert_eq!(
-            Standing::audit_text_of(&actor(roles), at()),
-            text,
-            "{roles:?}"
-        );
-    }
+fn s6_an_executive_standing_reads_executive() {
     assert_eq!(StandingKind::Executive.audit_text(), "EXECUTIVE");
 }
 
