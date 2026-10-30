@@ -19,6 +19,7 @@
 #   6a. A second test teller: an Identity account (password login) bound to an ACTIVE users row with TELLER on MAIN.
 #   6g. A test executive: an Identity account (password login) bound to an ACTIVE users row with EXECUTIVE org-wide.
 #   6h. A test admin: an Identity account (password login) bound to an ACTIVE users row with ADMIN org-wide.
+#   6i. A test owner: an Identity account (password login) bound to an ACTIVE users row with EXECUTIVE and ADMIN org-wide.
 #   7. A test customer: an Identity account, then POST /api/app/register (creates the CUSTOMER user and customer).
 #
 # Passwords are generated here and printed once, on this terminal only. They are written to no file.
@@ -51,6 +52,7 @@ if [ "${1:-}" = "--json" ]; then
   FINANCE2_PHONE="${FINANCE2_PHONE:-+6687$(rnd)}"
   EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+6688$(rnd)}"
   ADMIN_PHONE="${ADMIN_PHONE:-+6689$(rnd)}"
+  OWNER_TEST_PHONE="${OWNER_TEST_PHONE:-+6690$(rnd)}"
   CUSTOMER_PHONE="${CUSTOMER_PHONE:-+6682$(rnd)}"
 fi
 
@@ -73,6 +75,7 @@ MANAGER2_PHONE="${MANAGER2_PHONE:-+66800000106}"
 FINANCE2_PHONE="${FINANCE2_PHONE:-+66800000107}"
 EXECUTIVE_PHONE="${EXECUTIVE_PHONE:-+66800000108}"
 ADMIN_PHONE="${ADMIN_PHONE:-+66800000109}"
+OWNER_TEST_PHONE="${OWNER_TEST_PHONE:-+66900000100}"
 CUSTOMER_PHONE="${CUSTOMER_PHONE:-+66800000102}"
 SEED_DAYS="${SEED_DAYS:-7}"
 ORG_ID="00000000-0000-0000-0000-000000000001"   # org XC, seeded by 20261011100000_organizations.sql
@@ -368,6 +371,24 @@ else
   ADMIN_PW="(unchanged: $ADMIN_PHONE was already registered)"
 fi
 
+say "6i. test owner $OWNER_TEST_PHONE (EXECUTIVE and ADMIN org-wide)"
+OWNER_TEST_PW="$(new_password)"
+OWNER_TEST_SUB="$(identity_register "$OWNER_TEST_PHONE" "$OWNER_TEST_PW")"
+if [ -n "$OWNER_TEST_SUB" ]; then
+  q "WITH u AS (
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$OWNER_TEST_SUB', 'Test Owner', 'ACTIVE', 1, now(), '$OWNER_ID')
+       ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
+     INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
+     SELECT id, 'EXECUTIVE', '$ORG_ID', NULL FROM u
+     UNION ALL
+     SELECT id, 'ADMIN', '$ORG_ID', NULL FROM u;" >/dev/null
+  [ "$JSON" = 1 ] || echo "    owner created: $OWNER_TEST_PHONE  password $OWNER_TEST_PW"
+else
+  [ "$JSON" = 0 ] || die "an account already existed ($OWNER_TEST_PHONE), so its password is unknown; run again (new random phones)"
+  OWNER_TEST_PW="(unchanged: $OWNER_TEST_PHONE was already registered)"
+fi
+
 say "7. test customer $CUSTOMER_PHONE"
 CUSTOMER_PW="$(new_password)"
 CUSTOMER_SUB="$(identity_register "$CUSTOMER_PHONE" "$CUSTOMER_PW")"
@@ -386,7 +407,7 @@ else
 fi
 
 if [ "$JSON" = 1 ]; then
-  case "$TELLER_PW$TELLER2_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW$EXECUTIVE_PW$ADMIN_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
+  case "$TELLER_PW$TELLER2_PW$CUSTOMER_PW$MANAGER_PW$FINANCE_PW$MARKETING_PW$MANAGER2_PW$FINANCE2_PW$EXECUTIVE_PW$ADMIN_PW$OWNER_TEST_PW" in *unchanged*) die "an account already existed, so its password is unknown; run again (new random phones)";; esac
   cat >&3 <<JSON
 {
   "baseUrl": "$BASE",
@@ -400,6 +421,7 @@ if [ "$JSON" = 1 ]; then
   "finance2": { "phone": "$FINANCE2_PHONE", "password": "$FINANCE2_PW" },
   "executive": { "phone": "$EXECUTIVE_PHONE", "password": "$EXECUTIVE_PW" },
   "admin":    { "identifier": "$ADMIN_PHONE", "password": "$ADMIN_PW" },
+  "owner":    { "phone": "$OWNER_TEST_PHONE", "password": "$OWNER_TEST_PW" },
   "referralCode": "TEST1234",
   "branch": "$BRANCH",
   "branch2": "$BRANCH2",
@@ -416,5 +438,6 @@ echo "Done. Test accounts (shown once, not saved anywhere):"
 echo "  teller    $TELLER_PHONE   $TELLER_PW    sign in at $BASE/login"
 echo "  executive $EXECUTIVE_PHONE   $EXECUTIVE_PW    sign in at $BASE/login"
 echo "  admin     $ADMIN_PHONE   $ADMIN_PW    sign in at $BASE/login"
+echo "  owner     $OWNER_TEST_PHONE   $OWNER_TEST_PW    sign in at $BASE/login"
 echo "  customer  $CUSTOMER_PHONE   $CUSTOMER_PW    sign in at $BASE/login?next=/app/book (the /app sign-in page is OTP-only)"
 echo "  check:    curl -s $BASE/api/public/host   → {\"org\":\"XC\"}"
