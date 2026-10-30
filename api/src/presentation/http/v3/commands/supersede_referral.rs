@@ -12,9 +12,9 @@ use actix_web::http::Method;
 use actix_web::web;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
 use xc_auth::domain::access::authorizer::{Authorizer, Target};
 use xc_auth::domain::access::permission::Permission;
+use xc_auth::domain::access::{Actor, audit_role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_referral::application::capture_service::{CaptureError, ReferralCaptureService};
@@ -76,7 +76,7 @@ impl CommandAction for SupersedeReferralCommand {
         let target = Target::new(&who.organization_id, Some(branch.clone()), None);
         let grant = Authorizer::check(Some(who), Permission::ReferralSupersede, &target, now)
             .map_err(|_| out_of_scope())?;
-        let by_role = grant.roles_used.first().ok_or_else(out_of_scope)?.as_str();
+        let by_role = audit_role(&grant.roles_used, who, now);
         let id = self
             .captures
             .supersede_in(
