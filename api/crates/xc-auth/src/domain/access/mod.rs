@@ -30,5 +30,5 @@ pub use scope_rule::ScopeRule;
 pub use scoped_role::ScopedRole;
 pub use session_branch::{BranchRef, SessionBranch};
 pub use staff_caller::is_staff_caller;
-pub use standing::{Standing, StandingKind};
+pub use standing::{Standing, StandingKind, audit_role};
 pub use target_user::TargetUser;

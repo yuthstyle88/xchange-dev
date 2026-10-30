@@ -14,7 +14,7 @@ use futures::future::BoxFuture;
 use serde::Serialize;
 use sqlx::{PgConnection, Postgres, Transaction};
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, Role, audit_role};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
@@ -58,6 +58,7 @@ impl ContactVerify {
 
     /// Verifies `phone` as `customer_id`'s phone inside the caller's transaction, as `who` acting
     /// at `branch`.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
@@ -66,6 +67,7 @@ impl ContactVerify {
         customer_id: &'a str,
         phone: &'a str,
         now: DateTime<Utc>,
+        roles_used: &'a [Role],
     ) -> BoxFuture<'a, Result<ContactSummary, ContactVerifyError>> {
         Box::pin(async move {
             let customer_org: Option<Uuid> =
@@ -133,7 +135,16 @@ impl ContactVerify {
                         .await
                         .map_err(|e| ContactVerifyError::Internal(e.to_string()))?;
 
-                        record_audit_event(tx, who, branch, customer_id, existing_id, now).await?;
+                        record_audit_event(
+                            tx,
+                            who,
+                            branch,
+                            customer_id,
+                            existing_id,
+                            now,
+                            roles_used,
+                        )
+                        .await?;
 
                         now
                     }
@@ -181,7 +192,7 @@ impl ContactVerify {
             .await
             .map_err(|e| ContactVerifyError::Internal(e.to_string()))?;
 
-            record_audit_event(tx, who, branch, customer_id, new_id, now).await?;
+            record_audit_event(tx, who, branch, customer_id, new_id, now, roles_used).await?;
 
             Ok(ContactSummary {
                 customer_id: customer_id.to_string(),
@@ -200,12 +211,9 @@ async fn record_audit_event(
     customer_id: &str,
     identity_id: Uuid,
     now: DateTime<Utc>,
+    roles_used: &[Role],
 ) -> Result<(), ContactVerifyError> {
-    let role_str = who
-        .roles
-        .first()
-        .map(|r| r.role.as_str())
-        .unwrap_or("TELLER");
+    let role_str = audit_role(roles_used, who, now);
 
     sqlx::query(
         "INSERT INTO audit_events ( \

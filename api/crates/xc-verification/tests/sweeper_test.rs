@@ -855,6 +855,7 @@ async fn rejecting_a_case_sets_each_documents_retention_until_from_its_types_per
     .expect("insert documents");
 
     let reviewer = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: REVIEWER_USER_ID,
         scope: ReviewerScope::Organization {
             organization_id: ORG_ID,
@@ -941,6 +942,7 @@ async fn revoking_a_case_sets_each_documents_retention_until_from_its_types_peri
     .expect("insert documents");
 
     let reviewer = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: REVIEWER_USER_ID,
         scope: ReviewerScope::Organization {
             organization_id: ORG_ID,

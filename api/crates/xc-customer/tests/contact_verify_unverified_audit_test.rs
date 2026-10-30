@@ -194,6 +194,7 @@ fn unverified_active_phone_verification_writes_audit_and_reverify_is_idempotent(
                 &customer_id,
                 raw_phone,
                 verify_time_1,
+                &[],
             )
             .await
             .expect("first verify succeeds");
@@ -276,6 +277,7 @@ fn unverified_active_phone_verification_writes_audit_and_reverify_is_idempotent(
                 &customer_id,
                 raw_phone,
                 verify_time_2,
+                &[],
             )
             .await
             .expect("second verify succeeds");
@@ -311,6 +313,84 @@ fn unverified_active_phone_verification_writes_audit_and_reverify_is_idempotent(
             "re-verifying already verified phone must NOT write another audit row"
         );
 
+        cleanup_db(pool, schema).await;
+    });
+}
+
+/// #5630 W-7 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the sub-controller
+/// claude/studio-claude-17 before the implementation: the audit row's `actor_role` is the role whose row granted
+/// the verify (`roles_used`), not the actor's first row.
+#[test]
+fn w7_the_audit_role_is_the_granting_role_not_the_first_row() {
+    sqlx::test_block_on(async {
+        let (pool, schema) = setup_db().await;
+        let keys = test_keys();
+        let _ = install_pii_keys(keys.clone());
+        let org_id = Uuid::parse_str(ORG_ID_STR).unwrap();
+        let customer_id = unique("CX");
+        sqlx::query(
+            "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+             VALUES ($1, $2, $1, $3, 'LIVE', $4)",
+        )
+        .bind(&customer_id)
+        .bind(org_id)
+        .bind("Somchai W7")
+        .bind(at(-3600))
+        .execute(&pool)
+        .await
+        .expect("insert customer");
+        let e164_phone = "+66812345678";
+        let sealed = PiiCipher::new(keys.clone()).encrypt(
+            format!("{customer_id}PHONE").as_bytes(),
+            e164_phone.as_bytes(),
+        );
+        let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Phone, e164_phone);
+        sqlx::query(
+            "INSERT INTO customer_identities ( \
+                 id, customer_id, organization_id, type, encrypted_value, key_id, \
+                 lookup_hash, verified_at, status, created_at \
+             ) VALUES ($1, $2, $3, 'PHONE', $4, $5, $6, NULL, 'ACTIVE', $7)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(&customer_id)
+        .bind(org_id)
+        .bind(&sealed.bytes)
+        .bind(&sealed.key_id)
+        .bind(&lookup_hash[..])
+        .bind(at(-1800))
+        .execute(&pool)
+        .await
+        .expect("seed unverified active phone");
+
+        let service = ContactVerify::new(BranchTx::new(Transactor::new(pool.clone())));
+        // First row TELLER, second row FINANCE; the grant names FINANCE.
+        let mut who = teller_user(&org_id, "MAIN");
+        who.roles.push(ScopedRole::new(
+            Role::Finance,
+            Some(BranchId::new("MAIN")),
+            DateTime::<Utc>::UNIX_EPOCH,
+            None,
+        ));
+        let mut tx = pool.begin().await.expect("begin");
+        service
+            .verify_in(
+                &mut tx,
+                &who,
+                &BranchId::new("MAIN"),
+                &customer_id,
+                "081-234-5678",
+                at(0),
+                &[Role::Finance],
+            )
+            .await
+            .expect("verify succeeds");
+        tx.commit().await.expect("commit");
+        let roles: Vec<String> =
+            sqlx::query_scalar("SELECT actor_role FROM audit_events ORDER BY id ASC")
+                .fetch_all(&pool)
+                .await
+                .expect("read audit_events");
+        assert_eq!(roles, vec!["FINANCE".to_owned()], "W-7");
         cleanup_db(pool, schema).await;
     });
 }

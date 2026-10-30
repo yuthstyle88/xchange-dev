@@ -38,7 +38,7 @@
 //    - api/src/presentation/http/v3/commands/supersede_referral.rs:39-97
 //    - api/src/presentation/http/v3/commands/attach_referral.rs:107-139
 import { expect, type APIResponse, type Page, test } from '@playwright/test';
-import { signIn, users } from './helpers';
+import { signIn, users, writeHeaders } from './helpers';
 
 interface V3ErrorEnvelope {
   error?: {
@@ -54,10 +54,8 @@ let idemSeq = 0;
 function commandHeaders(prefix: string): Record<string, string> {
   idemSeq += 1;
   return {
-    'x-xchange-request': '1',
-    origin: new URL(users.baseUrl).origin,
+    ...writeHeaders(`qa-r9-13-${prefix}-${Date.now()}-${idemSeq}`),
     'content-type': 'application/json',
-    'idempotency-key': `qa-r9-13-${prefix}-${Date.now()}-${idemSeq}`,
   };
 }
 

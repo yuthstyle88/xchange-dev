@@ -14,7 +14,7 @@ use ts_rs::TS;
 use uuid::Uuid;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
-use xc_auth::domain::access::{Actor, Authorizer, Permission, Refusal, Target};
+use xc_auth::domain::access::{Actor, Authorizer, Permission, Refusal, Target, audit_role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, QuantityDelta};
@@ -32,14 +32,6 @@ use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
-
-fn audit_actor_role(who: &Actor) -> String {
-    who.roles
-        .first()
-        .map(|s| s.role.as_str())
-        .unwrap_or("STAFF")
-        .to_string()
-}
 
 pub struct CashExceptionRaiseCommand {
     pool: PgPool,
@@ -145,16 +137,17 @@ impl CommandAction for CashExceptionRaiseCommand {
             Some(branch.clone()),
             who.customer_id.as_deref(),
         );
-        if let Err(refusal) =
-            Authorizer::check(Some(who), Permission::FinanceReconcile, &target, now)
-        {
-            return Err(match refusal {
-                Refusal::OutOfScope => out_of_scope(),
-                _ => V3Error::from(
-                    xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
-                ),
-            });
-        }
+        let grant = match Authorizer::check(Some(who), Permission::FinanceReconcile, &target, now) {
+            Ok(g) => g,
+            Err(refusal) => {
+                return Err(match refusal {
+                        Refusal::OutOfScope => out_of_scope(),
+                        _ => V3Error::from(
+                            xc_auth::domain::policy::value_objects::policy_error::PolicyError::RoleNotAllowedHere,
+                        ),
+                    });
+            }
+        };
 
         let reason = input.reason.trim();
         if reason.is_empty() {
@@ -207,7 +200,7 @@ impl CommandAction for CashExceptionRaiseCommand {
                 &who.organization_id,
                 &AuditEvent {
                     actor_id: who.user_id.clone(),
-                    actor_role: audit_actor_role(who),
+                    actor_role: audit_role(&grant.roles_used, who, now).to_owned(),
                     scope: format!("BRANCH:{}", branch.as_str()),
                     action: "CASH_EXCEPTION_RAISE".to_owned(),
                     object_ref: format!("cash_exception:{exception_id}"),

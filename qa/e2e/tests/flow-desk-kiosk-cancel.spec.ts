@@ -22,6 +22,7 @@ import {
   hasAccount,
   openShift,
   posted,
+  sameOriginHeaders,
   shot,
   signIn,
   users,
@@ -57,7 +58,7 @@ interface BranchServiceStatusEnvelope {
 
 // POST /api/kiosk applies the same-origin rule (kiosk.rs:245, extractors/origin.rs:4-6): X-Xchange-Request: 1 and
 // an Origin equal to the host. Without them every call answers 400 "Request rejected." and the test would only skip.
-const kioskHeaders = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
+const kioskHeaders = sameOriginHeaders();
 
 test.describe.serial('F20 desk kiosk cancel', () => {
   test('teller accepts a kiosk request, cancels it from the desk entry bar, and reopening it is refused', async ({

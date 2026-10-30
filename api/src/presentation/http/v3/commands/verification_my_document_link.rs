@@ -125,7 +125,7 @@ impl CommandAction for VerificationMyDocumentLinkCommand {
         );
 
         let now = Utc::now();
-        match access.link_for_owner(who, session, doc_id, now).await {
+        match access.link_for_owner(who, session, doc_id, now, &[]).await {
             Ok(issued) => Ok(VerificationMyDocumentLinkOutput {
                 url: issued.url,
                 expires_at: issued.expires_at.to_rfc3339(),

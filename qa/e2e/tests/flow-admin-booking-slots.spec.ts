@@ -29,7 +29,7 @@
 // - screens/admin/AdminShell.tsx:279-301 (smoke-rbac-matrix.spec.ts:59-60,141-169)
 //   nav.admin-nav a[href="#booking-slots"]
 import { expect, test, type Page } from '@playwright/test';
-import { hasAccount, mePermissions, posted, shot, signIn, users, withLang } from './helpers';
+import { hasAccount, mePermissions, posted, sameOriginHeaders, shot, signIn, users, withLang } from './helpers';
 
 const SAVE_RULE_BTN = /^(Save กฎการจอง|Save Rule)$/;
 const SAVE_POLICY_BTN = /^(บันทึกนโยบาย|Save Policy)$/;
@@ -458,7 +458,7 @@ test.describe.serial('R9-4 admin booking-slots: policy, slot rules, open/close, 
     // Direct command calls as teller are refused with 400 (roleNotAllowed) or 403 (outOfScope).
     // The same-origin check (command.rs step 2, extractors/origin.rs same_origin) runs before Policy::authorize,
     // so send its headers or the refusal would be 400 originRejected instead of the role refusal.
-    const sameOrigin = { 'x-xchange-request': '1', origin: new URL(users.baseUrl).origin };
+    const sameOrigin = sameOriginHeaders();
     const branch = encodeURIComponent(users.branch);
     const dummySlot = '00000000-0000-0000-0000-000000000001';
     const closureDate = bangkokDate(21);

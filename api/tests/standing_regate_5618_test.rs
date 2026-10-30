@@ -385,7 +385,7 @@ async fn h4_an_executive_alone_saves_exchange_settings() {
     db.finish().await;
 }
 
-/// H-5: an org-wide ADMIN is unchanged: 200, audited as `SYSTEM`.
+/// H-5: an org-wide ADMIN is unchanged: 200, audited as `ADMIN` (V.9's `SYSTEM` until #5630).
 #[actix_web::test]
 async fn h5_an_org_wide_admin_is_unchanged_on_exchange_settings() {
     let db = TestDb::start().await;
@@ -401,7 +401,8 @@ async fn h5_an_org_wide_admin_is_unchanged_on_exchange_settings() {
     assert_eq!(a.status, StatusCode::OK, "H-5: {}", a.text);
     assert_eq!(
         db.audited("exchangeSettingsSave").await,
-        vec![(user_id("ADMIN@*"), "SYSTEM".to_owned())],
+        // #5630 (§14.5, ruling Q-1 A on #5661), restated by claude/studio-claude-17: was V.9's `SYSTEM`.
+        vec![(user_id("ADMIN@*"), "ADMIN".to_owned())],
         "H-5: audited as SYSTEM"
     );
     db.finish().await;
@@ -429,7 +430,7 @@ async fn h6_an_executive_alone_saves_a_branch_exchange_limit() {
     db.finish().await;
 }
 
-/// H-7: an org-wide ADMIN is unchanged on the branch limit: 200, audited as `SYSTEM`.
+/// H-7: an org-wide ADMIN is unchanged on the branch limit: 200, audited as `ADMIN` (V.9's `SYSTEM` until #5630).
 #[actix_web::test]
 async fn h7_an_org_wide_admin_is_unchanged_on_a_branch_exchange_limit() {
     let db = TestDb::start().await;
@@ -445,7 +446,8 @@ async fn h7_an_org_wide_admin_is_unchanged_on_a_branch_exchange_limit() {
     assert_eq!(a.status, StatusCode::OK, "H-7: {}", a.text);
     assert_eq!(
         db.audited("branchExchangeLimitSave").await,
-        vec![(user_id("ADMIN@*"), "SYSTEM".to_owned())],
+        // #5630 (§14.5, ruling Q-1 A on #5661), restated by claude/studio-claude-17: was V.9's `SYSTEM`.
+        vec![(user_id("ADMIN@*"), "ADMIN".to_owned())],
         "H-7: audited as SYSTEM"
     );
     db.finish().await;

@@ -112,28 +112,30 @@ test.describe('QA-S4 smoke: admin money menus', () => {
     });
   });
 
-  // key: web/src/screens/admin/starting-prices/StartingPrices.tsx:322 (menu.ts:13 needs OrgStartingPricesManage)
+  // key: web/src/screens/admin/starting-prices/StartingPrices.tsx:322 (menu.ts:13 needs OrgStartingPricesManage; executive holds it)
   test('/#starting-prices', async ({ page }) => {
-    await signIn(page, 'admin', '/#starting-prices');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#starting-prices');
     await smoke(page, {
       area: 'admin-money',
       screen: 'starting-prices',
       path: '/#starting-prices',
-      role: 'admin',
+      role,
       key: '.xc-sp-screen',
       langs: STAFF_LANGS,
       needs: 'OrgStartingPricesManage',
     });
   });
 
-  // key: web/src/screens/admin/denomination-groups/DenominationGroups.tsx:226 (menu.ts:14 needs RatesDraft)
+  // key: web/src/screens/admin/denomination-groups/DenominationGroups.tsx:226 (menu.ts:14 needs RatesDraft; executive holds it)
   test('/#denomination-groups', async ({ page }) => {
-    await signIn(page, 'admin', '/#denomination-groups');
+    const role = hasAccount('executive') ? 'executive' : 'admin';
+    await signIn(page, role, '/#denomination-groups');
     await smoke(page, {
       area: 'admin-money',
       screen: 'denomination-groups',
       path: '/#denomination-groups',
-      role: 'admin',
+      role,
       key: '.denomination-groups-screen',
       langs: STAFF_LANGS,
       needs: 'RatesDraft',

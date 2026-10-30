@@ -674,7 +674,7 @@ async fn test_start_thai_number_normalises_and_sends_sms() {
     let customer_id = db.customer(org, "th").await;
 
     let res = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start succeeds");
 
@@ -756,7 +756,7 @@ async fn test_start_foreign_number_starts_and_sends_sms() {
     let customer_id = db.customer(org, "en").await;
 
     let res = service
-        .start(&teller, &branch, &customer_id, "+14155552671", at(0))
+        .start(&teller, &branch, &customer_id, "+14155552671", at(0), &[])
         .await
         .expect("foreign start succeeds");
 
@@ -778,7 +778,7 @@ async fn test_start_invalid_phone_number_fails_validation() {
 
     for bad in ["not-a-phone", "123", "0000", "+9999999999999999999"] {
         let err = service
-            .start(&teller, &branch, &customer_id, bad, at(0))
+            .start(&teller, &branch, &customer_id, bad, at(0), &[])
             .await
             .expect_err(&format!("bad phone '{bad}' must fail"));
         assert_eq!(err.code(), "validationFailed");
@@ -801,7 +801,7 @@ async fn test_wrong_code_increments_attempts_and_fifth_locks() {
     let customer_id = db.customer(org, "th").await;
 
     let start_res = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start succeeds");
 
@@ -814,6 +814,7 @@ async fn test_wrong_code_increments_attempts_and_fifth_locks() {
                 start_res.challenge_id,
                 "000000",
                 at(attempt * 10),
+                &[],
             )
             .await
             .expect_err("wrong code must fail");
@@ -839,6 +840,7 @@ async fn test_wrong_code_increments_attempts_and_fifth_locks() {
             start_res.challenge_id,
             "000000",
             at(50),
+            &[],
         )
         .await
         .expect_err("5th wrong code must lock");
@@ -867,7 +869,7 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
 
     // 1. Locked challenge
     let res1 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start succeeds");
     let code1 = fake_sms.last_code().expect("SMS code");
@@ -881,6 +883,7 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
                 res1.challenge_id,
                 "000000",
                 at(10),
+                &[],
             )
             .await;
     }
@@ -894,6 +897,7 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
             res1.challenge_id,
             &code1,
             at(60),
+            &[],
         )
         .await
         .expect_err("right code on locked challenge must fail");
@@ -902,13 +906,13 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
 
     // 2. Superseded challenge
     let res2 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(100))
+        .start(&teller, &branch, &customer_id, "0812345678", at(100), &[])
         .await
         .expect("second start succeeds");
     let code2 = fake_sms.last_code().expect("SMS code");
 
     let res3 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(120))
+        .start(&teller, &branch, &customer_id, "0812345678", at(120), &[])
         .await
         .expect("third start succeeds");
     let code3 = fake_sms.last_code().expect("SMS code");
@@ -922,6 +926,7 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
             res2.challenge_id,
             &code2,
             at(130),
+            &[],
         )
         .await
         .expect_err("right code on superseded challenge must fail");
@@ -937,6 +942,7 @@ async fn test_right_code_on_locked_or_superseded_challenge_fails() {
             res3.challenge_id,
             &code3,
             at(140),
+            &[],
         )
         .await
         .expect("confirm on newest challenge succeeds");
@@ -955,7 +961,7 @@ async fn test_right_code_at_300s_succeeds_and_after_five_minutes_gives_code_expi
 
     // Test 1: Exactly at boundary 300s -> SUCCEEDS
     let start_1 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start 1 succeeds");
     let code_1 = fake_sms.last_code().expect("SMS code");
@@ -968,6 +974,7 @@ async fn test_right_code_at_300s_succeeds_and_after_five_minutes_gives_code_expi
             start_1.challenge_id,
             &code_1,
             at(300),
+            &[],
         )
         .await
         .expect("confirm exactly at 300s boundary must succeed");
@@ -975,7 +982,7 @@ async fn test_right_code_at_300s_succeeds_and_after_five_minutes_gives_code_expi
 
     // Test 2: At 301s (after 5 minutes) -> codeExpired (409)
     let start_2 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(400))
+        .start(&teller, &branch, &customer_id, "0812345678", at(400), &[])
         .await
         .expect("start 2 succeeds");
     let code_2 = fake_sms.last_code().expect("SMS code");
@@ -988,6 +995,7 @@ async fn test_right_code_at_300s_succeeds_and_after_five_minutes_gives_code_expi
             start_2.challenge_id,
             &code_2,
             at(400 + 301),
+            &[],
         )
         .await
         .expect_err("confirm at 301s must give codeExpired");
@@ -1023,7 +1031,7 @@ async fn test_phone_active_on_another_customer_gives_phone_in_use_and_writes_not
     // Customer B attempts to verify the SAME phone
     let customer_b = db.customer(org, "en").await;
     let start_res = service
-        .start(&teller, &branch, &customer_b, "0812345678", at(0))
+        .start(&teller, &branch, &customer_b, "0812345678", at(0), &[])
         .await
         .expect("start succeeds for B");
     let code = fake_sms.last_code().expect("SMS code");
@@ -1036,6 +1044,7 @@ async fn test_phone_active_on_another_customer_gives_phone_in_use_and_writes_not
             start_res.challenge_id,
             &code,
             at(10),
+            &[],
         )
         .await
         .expect_err("must refuse phoneInUse");
@@ -1077,7 +1086,7 @@ async fn test_reverify_same_customer_revokes_old_phone_and_activates_new_phone_i
 
     // Customer reverifies with a new phone
     let start_res = service
-        .start(&teller, &branch, &customer_id, "0822222222", at(0))
+        .start(&teller, &branch, &customer_id, "0822222222", at(0), &[])
         .await
         .expect("start new phone");
     let code = fake_sms.last_code().expect("SMS code");
@@ -1090,6 +1099,7 @@ async fn test_reverify_same_customer_revokes_old_phone_and_activates_new_phone_i
             start_res.challenge_id,
             &code,
             at(10),
+            &[],
         )
         .await
         .expect("confirm new phone succeeds");
@@ -1158,7 +1168,7 @@ async fn test_notify_down_gives_sms_unavailable_and_writes_no_challenge_row() {
     let customer_id = db.customer(org, "th").await;
 
     let err = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect_err("notify down must fail");
     assert_eq!(err.code(), "smsUnavailable");
@@ -1189,14 +1199,28 @@ async fn test_rate_limit_per_customer_and_window_expiry() {
     // 1. Per customer: ≤ 3 challenges / 15 minutes
     for i in 0..3 {
         service
-            .start(&teller, &branch, &customer_id, "0812345678", at(i * 60))
+            .start(
+                &teller,
+                &branch,
+                &customer_id,
+                "0812345678",
+                at(i * 60),
+                &[],
+            )
             .await
             .expect("start within limit succeeds");
     }
 
     // 4th start at 14 minutes fails with rateLimited (429)
     let err4 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(14 * 60))
+        .start(
+            &teller,
+            &branch,
+            &customer_id,
+            "0812345678",
+            at(14 * 60),
+            &[],
+        )
         .await
         .expect_err("4th start in 15m window must be rateLimited");
     assert_eq!(err4.code(), "rateLimited");
@@ -1204,7 +1228,14 @@ async fn test_rate_limit_per_customer_and_window_expiry() {
 
     // Outside the 15-minute window (at 16 minutes), start is allowed again
     let res_after_window = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(16 * 60))
+        .start(
+            &teller,
+            &branch,
+            &customer_id,
+            "0812345678",
+            at(16 * 60),
+            &[],
+        )
         .await
         .expect("start after window expires must succeed");
     assert_ne!(res_after_window.challenge_id, Uuid::nil());
@@ -1224,7 +1255,7 @@ async fn test_rate_limit_per_phone_and_window_expiry() {
     for i in 0..5 {
         let cust = db.customer(org, "th").await;
         service
-            .start(&teller, &branch, &cust, target_phone, at(i * 10 * 60))
+            .start(&teller, &branch, &cust, target_phone, at(i * 10 * 60), &[])
             .await
             .expect("phone start within limit succeeds");
     }
@@ -1232,7 +1263,7 @@ async fn test_rate_limit_per_phone_and_window_expiry() {
     // 6th start for the same phone within 1 hour on a 6th customer fails
     let cust_6 = db.customer(org, "th").await;
     let err6 = service
-        .start(&teller, &branch, &cust_6, target_phone, at(55 * 60))
+        .start(&teller, &branch, &cust_6, target_phone, at(55 * 60), &[])
         .await
         .expect_err("6th start for same phone in 1h window must be rateLimited");
     assert_eq!(err6.code(), "rateLimited");
@@ -1240,7 +1271,7 @@ async fn test_rate_limit_per_phone_and_window_expiry() {
 
     // Outside the 1-hour window (at 65 minutes), start for that phone is allowed again
     let res_after_phone_window = service
-        .start(&teller, &branch, &cust_6, target_phone, at(65 * 60))
+        .start(&teller, &branch, &cust_6, target_phone, at(65 * 60), &[])
         .await
         .expect("phone start after 1h window must succeed");
     assert_ne!(res_after_phone_window.challenge_id, Uuid::nil());
@@ -1260,7 +1291,7 @@ async fn test_rate_limit_per_teller_and_window_expiry() {
         let cust = db.customer(org, "th").await;
         let phone = format!("081{:07}", i);
         service
-            .start(&teller, &branch, &cust, &phone, at(i * 60))
+            .start(&teller, &branch, &cust, &phone, at(i * 60), &[])
             .await
             .expect("teller start within limit succeeds");
     }
@@ -1268,7 +1299,7 @@ async fn test_rate_limit_per_teller_and_window_expiry() {
     // 31st start by same teller within 1 hour fails
     let cust_31 = db.customer(org, "th").await;
     let err31 = service
-        .start(&teller, &branch, &cust_31, "0899999999", at(55 * 60))
+        .start(&teller, &branch, &cust_31, "0899999999", at(55 * 60), &[])
         .await
         .expect_err("31st start by same teller in 1h window must be rateLimited");
     assert_eq!(err31.code(), "rateLimited");
@@ -1276,7 +1307,7 @@ async fn test_rate_limit_per_teller_and_window_expiry() {
 
     // Outside the 1-hour window (at 65 minutes), start by that teller is allowed again
     let res_after_teller_window = service
-        .start(&teller, &branch, &cust_31, "0899999999", at(65 * 60))
+        .start(&teller, &branch, &cust_31, "0899999999", at(65 * 60), &[])
         .await
         .expect("teller start after 1h window must succeed");
     assert_ne!(res_after_teller_window.challenge_id, Uuid::nil());
@@ -1372,7 +1403,7 @@ async fn test_sms_text_differs_per_language_and_holds_only_code_and_branch_name(
     // 1. "en" customer gets en template
     let customer_en = db.customer(org, "en").await;
     service
-        .start(&teller, &branch, &customer_en, "0812345678", at(0))
+        .start(&teller, &branch, &customer_en, "0812345678", at(0), &[])
         .await
         .expect("start succeeds for en");
 
@@ -1394,7 +1425,7 @@ async fn test_sms_text_differs_per_language_and_holds_only_code_and_branch_name(
     // 2. "zh" customer gets zh template
     let customer_zh = db.customer(org, "zh").await;
     service
-        .start(&teller, &branch, &customer_zh, "0812345679", at(10))
+        .start(&teller, &branch, &customer_zh, "0812345679", at(10), &[])
         .await
         .expect("start succeeds for zh");
 
@@ -1415,7 +1446,7 @@ async fn test_sms_text_differs_per_language_and_holds_only_code_and_branch_name(
     // 3. "th" customer gets th template
     let customer_th = db.customer(org, "th").await;
     service
-        .start(&teller, &branch, &customer_th, "0812345670", at(20))
+        .start(&teller, &branch, &customer_th, "0812345670", at(20), &[])
         .await
         .expect("start succeeds for th");
 
@@ -1453,14 +1484,14 @@ async fn test_audit_rows_for_start_and_verify_outcomes_and_zero_secrets() {
 
     // 1. Audit on start success -> outcome: "sent"
     let start_res = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start succeeds");
     let code = fake_sms.last_code().expect("SMS code");
 
     // 2. Audit on start refused -> outcome: "refused"
     let _ = service
-        .start(&teller, &branch, &customer_id, "invalid-phone", at(5))
+        .start(&teller, &branch, &customer_id, "invalid-phone", at(5), &[])
         .await;
 
     // 3. Audit on wrong code -> outcome: "wrongCode"
@@ -1473,6 +1504,7 @@ async fn test_audit_rows_for_start_and_verify_outcomes_and_zero_secrets() {
             start_res.challenge_id,
             wrong_code,
             at(10),
+            &[],
         )
         .await;
 
@@ -1486,6 +1518,7 @@ async fn test_audit_rows_for_start_and_verify_outcomes_and_zero_secrets() {
                 start_res.challenge_id,
                 wrong_code,
                 at(10 + attempt * 2),
+                &[],
             )
             .await;
     }
@@ -1499,12 +1532,13 @@ async fn test_audit_rows_for_start_and_verify_outcomes_and_zero_secrets() {
             start_res.challenge_id,
             wrong_code,
             at(20),
+            &[],
         )
         .await;
 
     // Start a fresh challenge to test successful verify
     let start_2 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(30))
+        .start(&teller, &branch, &customer_id, "0812345678", at(30), &[])
         .await
         .expect("start 2 succeeds");
     let code_2 = fake_sms.last_code().expect("SMS code 2");
@@ -1518,6 +1552,7 @@ async fn test_audit_rows_for_start_and_verify_outcomes_and_zero_secrets() {
             start_2.challenge_id,
             &code_2,
             at(40),
+            &[],
         )
         .await
         .expect("confirm 2 succeeds");
@@ -2011,12 +2046,12 @@ async fn test_start_supersedes_pending_challenge() {
     let customer_id = db.customer(org, "th").await;
 
     let res1 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("first start succeeds");
 
     let res2 = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(10))
+        .start(&teller, &branch, &customer_id, "0812345678", at(10), &[])
         .await
         .expect("second start succeeds");
 
@@ -2062,7 +2097,7 @@ async fn test_customer_outside_organisation_gives_not_found() {
     let customer_b = db.customer(org_b, "th").await;
 
     let err = service
-        .start(&teller_a, &branch_a, &customer_b, "0812345678", at(0))
+        .start(&teller_a, &branch_a, &customer_b, "0812345678", at(0), &[])
         .await
         .expect_err("customer outside org must fail with notFound 404 per ruling (b)");
 
@@ -2113,7 +2148,7 @@ async fn test_concurrent_wrong_confirms_locks_challenge() {
     let customer_id = db.customer(org, "th").await;
 
     let start_res = service
-        .start(&teller, &branch, &customer_id, "0812345678", at(0))
+        .start(&teller, &branch, &customer_id, "0812345678", at(0), &[])
         .await
         .expect("start succeeds");
 
@@ -2126,7 +2161,7 @@ async fn test_concurrent_wrong_confirms_locks_challenge() {
         let c_id = customer_id.clone();
         let ch_id = start_res.challenge_id;
         handles.push(tokio::spawn(async move {
-            svc.confirm(&t, &b, &c_id, ch_id, "000000", at(10 + i))
+            svc.confirm(&t, &b, &c_id, ch_id, "000000", at(10 + i), &[])
                 .await
         }));
     }
@@ -2177,7 +2212,7 @@ async fn test_concurrent_starts_respect_customer_rate_limit() {
         let b = branch.clone();
         let c_id = customer_id.clone();
         handles.push(tokio::spawn(async move {
-            svc.start(&t, &b, &c_id, "0812345678", at(0)).await
+            svc.start(&t, &b, &c_id, "0812345678", at(0), &[]).await
         }));
     }
 
@@ -2246,7 +2281,7 @@ async fn test_route_wrong_codes_commit_attempts_and_lock_challenge() {
     let fake_sms = Arc::new(FakeSmsSender::new());
     let service = db.service(fake_sms);
     let start_res = service
-        .start(&teller, &branch, &cust_id, "0812345678", Utc::now())
+        .start(&teller, &branch, &cust_id, "0812345678", Utc::now(), &[])
         .await
         .expect("start succeeds");
 
@@ -2338,4 +2373,43 @@ async fn test_route_wrong_codes_commit_attempts_and_lock_challenge() {
         ],
         "exactly 6 audit rows: 1 sent + 4 wrongCode + 1 locked"
     );
+}
+
+// ── #5630 W-6 (design `org-wide-actor-branch.md` §14.5; rulings Q-1 A, Q-2 A on #5661), added by the
+// sub-controller claude/studio-claude-17 before the implementation: the audit row's `actor_role` is the role whose
+// row granted the action (`roles_used`), not the actor's first row. ──
+
+#[tokio::test]
+async fn w6_the_audit_role_is_the_granting_role_not_the_first_row() {
+    let db = Db::start().await;
+    let fake_sms = Arc::new(FakeSmsSender::new());
+    let service = db.service(fake_sms.clone());
+    let org = xc_org();
+    let branch = BranchId::new("MAIN");
+    let (mut teller, _) = db.teller(org, "MAIN").await;
+    // First row TELLER, second row FINANCE; the grant names FINANCE.
+    teller.roles.push(ScopedRole::new(
+        Role::Finance,
+        Some(BranchId::new("MAIN")),
+        DateTime::<Utc>::UNIX_EPOCH,
+        None,
+    ));
+    let customer_id = db.customer(org, "th").await;
+    service
+        .start(
+            &teller,
+            &branch,
+            &customer_id,
+            "0812345678",
+            at(0),
+            &[Role::Finance],
+        )
+        .await
+        .expect("start succeeds");
+    let roles: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT actor_role FROM audit_events ORDER BY id ASC")
+            .fetch_all(&db.pool)
+            .await
+            .expect("read audit_events");
+    assert_eq!(roles, vec![Some("FINANCE".to_owned())], "W-6");
 }

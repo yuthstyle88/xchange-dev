@@ -2,10 +2,11 @@
 
 use std::sync::Arc;
 
+use chrono::Utc;
 use futures::future::BoxFuture;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, Role, audit_role};
 use xc_kernel::ids::BranchId;
 
 use crate::application::publication::publish_service::PublishService;
@@ -97,9 +98,10 @@ impl BranchPriceSource for PgBranchPriceSource {
                 .await
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+            let now = Utc::now();
             let event = AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: "EXECUTIVE".to_string(),
+                actor_role: audit_role(&[], who, now).to_string(),
                 scope: "branch".to_string(),
                 action: "branchPriceSourceSet".to_string(),
                 object_ref: branch.as_str().to_string(),
@@ -163,9 +165,10 @@ impl BranchPriceSource for PgBranchPriceSource {
                 .await
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
+            let now = Utc::now();
             let event = AuditEvent {
                 actor_id: who.user_id.clone(),
-                actor_role: "EXECUTIVE".to_string(),
+                actor_role: audit_role(&[], who, now).to_string(),
                 scope: "branch".to_string(),
                 action: "branchPriceSourceSet".to_string(),
                 object_ref: branch.as_str().to_string(),

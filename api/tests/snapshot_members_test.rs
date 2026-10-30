@@ -118,6 +118,7 @@ async fn verify(
             customer_id,
             phone,
             verified_at,
+            &[],
         )
         .await
         .unwrap_or_else(|e| panic!("verify {phone} for {customer_id}: {e:?}"));

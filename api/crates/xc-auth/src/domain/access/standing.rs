@@ -117,12 +117,6 @@ impl Standing {
         })
     }
 
-    /// #5618: the audit `actor_role` text of a v3 caller: its [`Standing::acting`] text, else `STAFF`.
-    /// It never refuses; the permission check has already decided.
-    pub fn audit_text_of(actor: &Actor, now: DateTime<Utc>) -> &'static str {
-        Standing::acting(actor, now).map_or("STAFF", |s| s.kind.audit_text())
-    }
-
     pub fn is_owner(&self) -> bool {
         self.kind == StandingKind::Owner
     }
@@ -137,6 +131,15 @@ impl Standing {
 }
 
 impl StandingKind {
+    /// #5630 (§14.5, ruling Q-1 A): the standing in the Blueprint's role names, for an audit row written without a
+    /// grant: the owner and an executive are `EXECUTIVE`, staff their role (`Role::as_str`).
+    pub fn blueprint_name(self) -> &'static str {
+        match self {
+            StandingKind::Owner | StandingKind::Executive => Role::Executive.as_str(),
+            StandingKind::Staff(role) => role.as_str(),
+        }
+    }
+
     /// The audit `actor_role` text, spelled as v3 stored it (unchanged by OR-7: the stored text stays what
     /// it was, `or7_5_save_actor_test.rs:458`, ruling 5 on #1020): OWNER, FRONT (TELLER), MANAGER
     /// (BRANCH_MANAGER), RATES (RATE_MANAGER), FINANCE, SYSTEM (ADMIN), DOCUMENT_REVIEW
@@ -155,6 +158,17 @@ impl StandingKind {
             StandingKind::Staff(other) => other.as_str(),
         }
     }
+}
+
+/// #5630 (design `org-wide-actor-branch.md` §14.5): the audit `actor_role` of a staff caller, in the
+/// Blueprint's role names (`Role::as_str`, ruling Q-1 A). The role whose row granted the action, when the writer
+/// has the grant (`roles_used`, ruling Q-2 A); else the caller's [`Standing::acting`], the owner and an
+/// executive written `EXECUTIVE` (Q-2 B); else `STAFF`. It never refuses.
+pub fn audit_role(roles_used: &[Role], actor: &Actor, now: DateTime<Utc>) -> &'static str {
+    if let Some(role) = roles_used.first() {
+        return role.as_str();
+    }
+    Standing::acting(actor, now).map_or("STAFF", |s| s.kind.blueprint_name())
 }
 
 #[cfg(test)]
