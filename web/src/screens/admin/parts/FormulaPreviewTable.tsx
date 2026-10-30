@@ -1,7 +1,6 @@
 // Pricing formula FE T4 (docs/design/blueprint/pricing-formula-web.md §2, §3 T1r–T5r): the live preview's table,
 // the per-unit note and the `notChecked` list.
 import { For, Show, type JSX } from 'solid-js';
-import { screenT } from '../../../shared/i18n';
 import type { PricingFormulaPreviewOutput } from '../../../shared/api/generated/pricing_formula_preview';
 import { failureText, parseSpreadFailure } from './spread-failure';
 import * as table from './formula-i18n';
@@ -13,7 +12,7 @@ export interface FormulaPreviewTableProps {
   error: () => string | null;
 }
 
-const t = screenT('admin.formula', table);
+const t = table.formulaT;
 
 function formatFailure(failure: string): string {
   const parsed = parseSpreadFailure(failure);

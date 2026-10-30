@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import type { PricingFormulaPreviewOutput } from '../../../shared/api/generated/pricing_formula_preview';
+import { makePricingFormulaPreviewOutput, type PricingFormulaPreviewOutput } from '../../../shared/testing/fixtures';
 import { en, th } from './formula-i18n';
 import { FormulaPreviewTable } from './FormulaPreviewTable';
 
@@ -27,7 +27,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
   });
 
   it('T1r: renders table columns branch, currency, unit, tier, mode, buy, sell, result, and failing-row class', () => {
-    const output: PricingFormulaPreviewOutput = {
+    const output = makePricingFormulaPreviewOutput({
       parseError: null,
       ok: false,
       rows: [
@@ -73,7 +73,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
         },
       ],
       notChecked: [],
-    };
+    });
 
     dispose = render(
       () => (
@@ -145,7 +145,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
   });
 
   it('T2r: renders unitNote under table whenever rows show', () => {
-    const withRows: PricingFormulaPreviewOutput = {
+    const withRows = makePricingFormulaPreviewOutput({
       parseError: null,
       ok: true,
       rows: [
@@ -161,7 +161,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
         },
       ],
       notChecked: [],
-    };
+    });
 
     const [result, setResult] = createSignal<PricingFormulaPreviewOutput | null>(withRows);
 
@@ -186,7 +186,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
   });
 
   it('T3r: notChecked non-empty renders heading and list items', () => {
-    const output: PricingFormulaPreviewOutput = {
+    const output = makePricingFormulaPreviewOutput({
       parseError: null,
       ok: true,
       rows: [],
@@ -194,7 +194,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
         { branch: 'MAIN', currency: 'CHF' },
         { branch: 'B2', currency: 'SGD' },
       ],
-    };
+    });
 
     dispose = render(
       () => (
@@ -256,7 +256,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
   });
 
   it('T5r: parseError set renders previewFixFirst and no table', () => {
-    const output: PricingFormulaPreviewOutput = {
+    const output = makePricingFormulaPreviewOutput({
       parseError: {
         field: 'buyFormula',
         code: 'syntax',
@@ -276,7 +276,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
         },
       ],
       notChecked: [],
-    };
+    });
 
     dispose = render(
       () => (
@@ -295,7 +295,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
 
   it('supports English mode without hardcoded Thai text', () => {
     setLang('en');
-    const output: PricingFormulaPreviewOutput = {
+    const output = makePricingFormulaPreviewOutput({
       parseError: null,
       ok: true,
       rows: [
@@ -311,7 +311,7 @@ describe('FormulaPreviewTable (T1r–T5r)', () => {
         },
       ],
       notChecked: [{ branch: 'B2', currency: 'EUR' }],
-    };
+    });
 
     dispose = render(
       () => (
