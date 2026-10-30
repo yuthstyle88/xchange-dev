@@ -95,7 +95,7 @@ async fn source_of(db: &TestDb, currency: &str, g: &str, provider: &str) -> Opti
 async fn create(db: &TestDb, who: &Actor, currency: &str, g: &str) -> Result<(), &'static str> {
     let mut tx = db.begin().await;
     let got = service(db)
-        .create_group(&mut tx, who, code(currency), &group(g))
+        .create_group(&mut tx, who, code(currency), &group(g), &[])
         .await;
     settle(tx, got).await
 }
@@ -117,6 +117,7 @@ async fn map(
             &group(g),
             provider,
             instrument_key,
+            &[],
         )
         .await;
     settle(tx, got).await
@@ -125,7 +126,7 @@ async fn map(
 async fn remove(db: &TestDb, who: &Actor, currency: &str, g: &str) -> Result<(), &'static str> {
     let mut tx = db.begin().await;
     let got = service(db)
-        .remove_group(&mut tx, who, code(currency), &group(g))
+        .remove_group(&mut tx, who, code(currency), &group(g), &[])
         .await;
     settle(tx, got).await
 }

@@ -82,7 +82,7 @@ impl CommandAction for CustomerPhoneConfirmCommand {
         let now = Utc::now();
 
         let res = service
-            .confirm_in_tx(tx, who, branch, &input.id, challenge_id, &input.code, now)
+            .confirm_in_tx(tx, who, branch, &input.id, challenge_id, &input.code, now, &[])
             .await
             .map_err(map_phone_error)?;
 

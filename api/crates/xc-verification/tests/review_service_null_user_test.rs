@@ -127,6 +127,7 @@ impl Db {
     async fn org_reviewer(&self, org: &str) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Organization {
                 organization_id: Uuid::from_str(org).expect("uuid"),

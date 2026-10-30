@@ -20,4 +20,6 @@ pub struct ReviewerActor {
     /// `users.id`.
     pub user_id: Uuid,
     pub scope: ReviewerScope,
+    /// #5630 (§14.5): the role whose row granted `VerificationReview`, written as the audit `actor_role`.
+    pub role: xc_auth::domain::access::Role,
 }

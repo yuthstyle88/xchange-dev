@@ -194,6 +194,7 @@ fn unverified_active_phone_verification_writes_audit_and_reverify_is_idempotent(
                 &customer_id,
                 raw_phone,
                 verify_time_1,
+                &[],
             )
             .await
             .expect("first verify succeeds");
@@ -276,6 +277,7 @@ fn unverified_active_phone_verification_writes_audit_and_reverify_is_idempotent(
                 &customer_id,
                 raw_phone,
                 verify_time_2,
+                &[],
             )
             .await
             .expect("second verify succeeds");

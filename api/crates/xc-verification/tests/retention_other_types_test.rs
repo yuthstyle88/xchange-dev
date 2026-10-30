@@ -306,6 +306,7 @@ async fn ending_a_case_leaves_other_document_types_untouched_while_setting_passp
     .expect("insert documents for reject case");
 
     let reviewer = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: REVIEWER_USER_ID,
         scope: ReviewerScope::Organization {
             organization_id: ORG_ID,

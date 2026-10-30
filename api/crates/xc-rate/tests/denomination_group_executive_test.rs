@@ -92,7 +92,7 @@ async fn settle(
 async fn create(db: &TestDb, who: &Actor, g: &str) -> Result<(), &'static str> {
     let mut tx = db.begin().await;
     let got = service(db)
-        .create_group(&mut tx, who, code("USD"), &group(g))
+        .create_group(&mut tx, who, code("USD"), &group(g), &[])
         .await;
     settle(tx, got).await
 }
@@ -100,7 +100,7 @@ async fn create(db: &TestDb, who: &Actor, g: &str) -> Result<(), &'static str> {
 async fn map(db: &TestDb, who: &Actor, g: &str, key: &str) -> Result<(), &'static str> {
     let mut tx = db.begin().await;
     let got = service(db)
-        .map_group(&mut tx, who, code("USD"), &group(g), BOARD, key)
+        .map_group(&mut tx, who, code("USD"), &group(g), BOARD, key, &[])
         .await;
     settle(tx, got).await
 }
@@ -108,7 +108,7 @@ async fn map(db: &TestDb, who: &Actor, g: &str, key: &str) -> Result<(), &'stati
 async fn remove(db: &TestDb, who: &Actor, g: &str) -> Result<(), &'static str> {
     let mut tx = db.begin().await;
     let got = service(db)
-        .remove_group(&mut tx, who, code("USD"), &group(g))
+        .remove_group(&mut tx, who, code("USD"), &group(g), &[])
         .await;
     settle(tx, got).await
 }

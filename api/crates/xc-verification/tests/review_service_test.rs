@@ -286,6 +286,7 @@ impl Db {
     async fn org_reviewer(&self, org: &str) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Organization {
                 organization_id: Uuid::from_str(org).expect("uuid"),
@@ -296,6 +297,7 @@ impl Db {
     async fn branch_reviewer(&self, org: &str, branch_id: BranchId) -> ReviewerActor {
         let user_id = self.user(org).await;
         ReviewerActor {
+            role: xc_auth::domain::access::Role::VerificationReviewer,
             user_id,
             scope: ReviewerScope::Branch {
                 organization_id: Uuid::from_str(org).expect("uuid"),
@@ -468,6 +470,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u1 = db.user(ORG_1).await;
     let c1 = db.customer_with_user(ORG_1, u1).await;
     let r1 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u1,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -486,6 +489,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u2 = db.user(ORG_1).await;
     let c2 = db.customer_with_user(ORG_1, u2).await;
     let r2 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u2,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -506,6 +510,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u3 = db.user(ORG_1).await;
     let c3 = db.customer_with_user(ORG_1, u3).await;
     let r3 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u3,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -527,6 +532,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u4 = db.user(ORG_1).await;
     let c4 = db.customer_with_user(ORG_1, u4).await;
     let r4 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u4,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),
@@ -548,6 +554,7 @@ async fn self_review_is_strictly_prohibited_on_all_reviewer_actions() {
     let u5 = db.user(ORG_1).await;
     let c5 = db.customer_with_user(ORG_1, u5).await;
     let r5 = ReviewerActor {
+        role: xc_auth::domain::access::Role::VerificationReviewer,
         user_id: u5,
         scope: ReviewerScope::Organization {
             organization_id: Uuid::from_str(ORG_1).expect("uuid"),

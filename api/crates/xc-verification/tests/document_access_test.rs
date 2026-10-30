@@ -543,7 +543,7 @@ async fn the_reviewer_gets_a_link_that_serves_the_document() {
 
     let issued = db
         .access()
-        .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+        .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
         .await
         .expect("the reviewer gets a link");
     assert_eq!(issued.expires_at, t0 + Duration::seconds(60), "S-3");
@@ -569,7 +569,7 @@ async fn the_cases_own_customer_gets_a_link_to_their_document() {
 
     let issued = db
         .access()
-        .link_for_owner(&owner, SESSION, doc.id, t0)
+        .link_for_owner(&owner, SESSION, doc.id, t0, &[])
         .await
         .expect("the owner gets a link");
     assert_eq!(issued.expires_at, t0 + Duration::seconds(60));
@@ -594,7 +594,7 @@ async fn every_other_staff_role_is_out_of_scope_role_by_role() {
         let actor = staff(db.user(ORG_1).await, ORG_1, role, None);
         let as_reviewer = db
             .access()
-            .link_for_reviewer(&actor, SESSION, doc.id, t0)
+            .link_for_reviewer(&actor, SESSION, doc.id, t0, &[])
             .await;
         if RoleGrants::seed(role).contains(&Permission::VerificationReview) {
             assert!(
@@ -614,7 +614,7 @@ async fn every_other_staff_role_is_out_of_scope_role_by_role() {
         }
         let as_owner = db
             .access()
-            .link_for_owner(&actor, SESSION, doc.id, t0)
+            .link_for_owner(&actor, SESSION, doc.id, t0, &[])
             .await;
         assert!(
             matches!(as_owner, Err(AccessError::OutOfScope)),
@@ -634,7 +634,7 @@ async fn another_customer_is_out_of_scope() {
     let t0 = now();
     let as_owner = db
         .access()
-        .link_for_owner(&actor, SESSION, doc.id, t0)
+        .link_for_owner(&actor, SESSION, doc.id, t0, &[])
         .await;
     assert!(
         matches!(as_owner, Err(AccessError::OutOfScope)),
@@ -642,7 +642,7 @@ async fn another_customer_is_out_of_scope() {
     );
     let as_reviewer = db
         .access()
-        .link_for_reviewer(&actor, SESSION, doc.id, t0)
+        .link_for_reviewer(&actor, SESSION, doc.id, t0, &[])
         .await;
     assert!(
         matches!(as_reviewer, Err(AccessError::OutOfScope)),
@@ -651,7 +651,7 @@ async fn another_customer_is_out_of_scope() {
     let reviewer = db.reviewer(ORG_1).await;
     let reviewer_as_owner = db
         .access()
-        .link_for_owner(&reviewer, SESSION, doc.id, t0)
+        .link_for_owner(&reviewer, SESSION, doc.id, t0, &[])
         .await;
     assert!(
         matches!(reviewer_as_owner, Err(AccessError::OutOfScope)),
@@ -669,7 +669,7 @@ async fn a_reviewer_of_another_organisation_is_out_of_scope() {
     let reviewer = db.reviewer(&elsewhere).await;
     let refused = db
         .access()
-        .link_for_reviewer(&reviewer, SESSION, doc.id, now())
+        .link_for_reviewer(&reviewer, SESSION, doc.id, now(), &[])
         .await;
     assert!(
         matches!(refused, Err(AccessError::OutOfScope)),
@@ -695,7 +695,7 @@ async fn a_reviewer_of_another_branch_is_out_of_scope() {
         Some(&b1),
     );
     db.access()
-        .link_for_reviewer(&ours, SESSION, doc.id, t0)
+        .link_for_reviewer(&ours, SESSION, doc.id, t0, &[])
         .await
         .expect("the case's branch reviewer gets a link");
 
@@ -707,7 +707,7 @@ async fn a_reviewer_of_another_branch_is_out_of_scope() {
     );
     let refused = db
         .access()
-        .link_for_reviewer(&theirs, SESSION, doc.id, t0)
+        .link_for_reviewer(&theirs, SESSION, doc.id, t0, &[])
         .await;
     assert!(
         matches!(refused, Err(AccessError::OutOfScope)),
@@ -731,7 +731,7 @@ async fn a_removed_or_purged_document_gets_no_link() {
         .await;
         let as_reviewer = db
             .access()
-            .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+            .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
             .await;
         assert!(as_reviewer.is_err(), "{column}: {as_reviewer:?}");
         assert!(
@@ -741,7 +741,7 @@ async fn a_removed_or_purged_document_gets_no_link() {
         let owner = customer_actor(doc.owner.user, ORG_1, &doc.owner.id);
         let as_owner = db
             .access()
-            .link_for_owner(&owner, SESSION, doc.id, t0)
+            .link_for_owner(&owner, SESSION, doc.id, t0, &[])
             .await;
         assert!(as_owner.is_err(), "{column}: {as_owner:?}");
         assert!(
@@ -763,7 +763,7 @@ async fn a_link_used_after_sixty_seconds_is_link_expired() {
     let t0 = now();
     let token = token_of(
         &db.access()
-            .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+            .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
             .await
             .expect("a link"),
     );
@@ -789,7 +789,7 @@ async fn a_link_used_by_another_session_or_tampered_is_refused() {
     let t0 = now();
     let token = token_of(
         &db.access()
-            .link_for_owner(&owner, SESSION, doc.id, t0)
+            .link_for_owner(&owner, SESSION, doc.id, t0, &[])
             .await
             .expect("a link"),
     );
@@ -823,7 +823,7 @@ async fn a_link_to_a_document_removed_since_serves_nothing() {
     let t0 = now();
     let token = token_of(
         &db.access()
-            .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+            .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
             .await
             .expect("a link"),
     );
@@ -854,7 +854,7 @@ async fn the_content_answers_private_no_store_nosniff_attachment() {
     let t0 = now();
     let token = token_of(
         &db.access()
-            .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+            .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
             .await
             .expect("a link"),
     );
@@ -893,7 +893,7 @@ async fn each_link_writes_one_audit_row_with_no_link_and_no_bytes() {
     let before = db.audit_rows().await;
     let first = db
         .access()
-        .link_for_reviewer(&reviewer, SESSION, doc.id, t0)
+        .link_for_reviewer(&reviewer, SESSION, doc.id, t0, &[])
         .await
         .expect("a reviewer link");
     assert_eq!(
@@ -903,7 +903,7 @@ async fn each_link_writes_one_audit_row_with_no_link_and_no_bytes() {
     );
     let second = db
         .access()
-        .link_for_owner(&owner, OTHER_SESSION, doc.id, t0)
+        .link_for_owner(&owner, OTHER_SESSION, doc.id, t0, &[])
         .await
         .expect("an owner link");
     assert_eq!(

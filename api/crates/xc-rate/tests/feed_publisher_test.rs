@@ -140,11 +140,19 @@ async fn map(db: &TestDb, currency: &str, group: &str, instrument_key: &str) {
     let g = GroupCode::new(group).expect("a group code");
     let mut tx = db.begin().await;
     service
-        .create_group(&mut tx, &owner(), code(currency), &g)
+        .create_group(&mut tx, &owner(), code(currency), &g, &[])
         .await
         .expect("create the group");
     service
-        .map_group(&mut tx, &owner(), code(currency), &g, BOARD, instrument_key)
+        .map_group(
+            &mut tx,
+            &owner(),
+            code(currency),
+            &g,
+            BOARD,
+            instrument_key,
+            &[],
+        )
         .await
         .expect("map the group");
     tx.commit().await.expect("commit");
