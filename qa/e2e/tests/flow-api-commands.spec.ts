@@ -454,7 +454,7 @@ test.describe.serial('QA-R9-13 API commands with no screen', () => {
     // (a) Paired happy path: cashExceptionRaise creates an OPEN row visible in GET /api/v3/views/finance_reconciliation,
     // and cashExceptionReview marks it REVIEWED so no OPEN cash exception remains on the branch
     // (cash_exception_raise.rs:121-230; cash_exception_review.rs:48-156; reconciliation.rs:233-259).
-    await signIn(page, 'admin', '/');
+    await signIn(page, 'executive', '/');
     const marker = `qa-r9-13-${Date.now()}`;
     const today = bangkokDateString();
     const reconUrl = `/api/v3/views/finance_reconciliation?branch=${encodeURIComponent(users.branch)}&date=${today}`;

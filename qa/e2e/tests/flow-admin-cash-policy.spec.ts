@@ -184,7 +184,13 @@ test.describe.serial('QA-R9-5: cash limits, transfer policy, reconcile, denomina
   test('denominationGroupCreate + denominationGroupMap + denominationGroupRemove: create, map board key, reload read-back, and remove', async ({
     page,
   }) => {
-    await signIn(page, 'executive', adminPath('denomination-groups'));
+    // denominationGroupCreate inherits rateDraft (RatesDraft) and also needs a Standing (denomination_groups.rs:56,70):
+    // among the seeded roles only `owner` (EXECUTIVE + ADMIN org-wide) has both; `admin` lacks RatesDraft and an
+    // EXECUTIVE alone has no Standing.
+    test.skip(!hasAccount('owner'), 'no owner account in users.json: run scripts/reseed.sh');
+    await signIn(page, 'owner', adminPath('denomination-groups'));
+    const perms = await mePermissions(page);
+    test.skip(!perms.includes('RatesDraft'), 'owner lacks RatesDraft');
     await page.goto(adminPath('denomination-groups'));
     const currency = await selectFirstDenomCurrency(page);
 
