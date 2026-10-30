@@ -3,8 +3,10 @@ import * as holdsI18n from '../../../web/src/screens/staff/holds/i18n';
 import * as transfersI18n from '../../../web/src/screens/staff/transfers/i18n';
 import {
   clockIn,
+  closeQueueIfOpened,
   closeShift,
   cutOff,
+  ensureQueueOpen,
   ensureShiftClosed,
   hasAccount,
   HTML_LANG,
@@ -12,7 +14,7 @@ import {
   posted,
   shot,
   signIn,
-   STAFF_LANGS,
+  STAFF_LANGS,
   startService,
   users,
   withLang,
@@ -425,6 +427,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
       let shiftOpened = true;
       let started: 'started' | 'alreadyOpen' | undefined;
       let createdBookingId: string | null = null;
+      let openedQueue = false;
 
       try {
         started = await startService(manager);
@@ -521,6 +524,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(confirmBookingBtn, 'booking step visible (steps/booking/step.tsx:54)').toBeVisible({
             timeout: 15_000,
           });
+          if (await ensureQueueOpen(manager)) openedQueue = true;
           await confirmBookingBtn.click();
 
           const methodSelect = teller.locator('select[name="method"]');
@@ -837,6 +841,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
         }
         await shot(manager, 'desk', 'validation-desk-bookings');
       } finally {
+        await closeQueueIfOpened(manager, openedQueue).catch(() => {});
         if (createdBookingId) {
           await manager.request
             .post(`/api/bookings/${encodeURIComponent(createdBookingId)}/cancel`, {
