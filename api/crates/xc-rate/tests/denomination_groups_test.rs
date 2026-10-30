@@ -233,7 +233,9 @@ async fn the_owner_creates_a_group_and_it_is_audited() {
     let rows = audits(&db).await;
     assert_eq!(rows.len(), 1, "one audit event");
     assert_eq!(rows[0].0, "denominationGroupCreate");
-    assert_eq!(rows[0].1, "OWNER");
+    // #5630 (§14.5, rulings Q-1 A / Q-2 A on #5661), restated by claude/studio-claude-17: was V.9's `OWNER`;
+    // the owner's granting row for `RatesDraft` is EXECUTIVE (raised by gemini/studio-13 on #5690).
+    assert_eq!(rows[0].1, "EXECUTIVE");
     assert!(rows[0].2.contains("LARGE"), "after: {}", rows[0].2);
     db.finish().await;
 }

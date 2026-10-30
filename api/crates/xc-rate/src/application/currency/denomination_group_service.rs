@@ -5,7 +5,7 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
-use xc_auth::domain::access::{Actor, Role, Standing};
+use xc_auth::domain::access::{Actor, Role, audit_role};
 use xc_kernel::money::CurrencyCode;
 
 use crate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
@@ -50,7 +50,6 @@ impl DenominationGroupService {
         group: &GroupCode,
         roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
-        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 
@@ -80,7 +79,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupCreate".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
@@ -111,7 +110,6 @@ impl DenominationGroupService {
         instrument_key: &str,
         roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
-        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 
@@ -183,7 +181,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupMap".to_string(),
             object_ref: format!("{}/{}/{}", code.as_str(), group.as_str(), provider),
@@ -216,7 +214,6 @@ impl DenominationGroupService {
         group: &GroupCode,
         roles_used: &[Role],
     ) -> Result<(), RateEngineError> {
-        let _ = roles_used; // #5630 §14.5: the audit role's grant; read by its ticket
         let now = Utc::now();
         executive_org_wide(who, now)?;
 
@@ -301,7 +298,7 @@ impl DenominationGroupService {
 
         let event = AuditEvent {
             actor_id: who.user_id.clone(),
-            actor_role: Standing::audit_text_of(who, now).to_string(),
+            actor_role: audit_role(roles_used, who, now).to_string(),
             scope: "RATE_ENGINE".to_string(),
             action: "denominationGroupRemove".to_string(),
             object_ref: format!("{}/{}", code.as_str(), group.as_str()),
