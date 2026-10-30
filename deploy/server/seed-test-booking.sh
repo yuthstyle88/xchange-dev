@@ -296,8 +296,8 @@ MARKETING_PW="$(new_password)"
 MARKETING_SUB="$(identity_register "$MARKETING_PHONE" "$MARKETING_PW")"
 if [ -n "$MARKETING_SUB" ]; then
   q "WITH u AS (
-       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by)
-       VALUES (gen_random_uuid(), '$ORG_ID', '$MARKETING_SUB', 'Test Marketing', 'ACTIVE', 1, now(), '$OWNER_ID')
+       INSERT INTO users (id, organization_id, auth_subject, name, status, version, created_at, created_by, last_branch_id)
+       VALUES (gen_random_uuid(), '$ORG_ID', '$MARKETING_SUB', 'Test Marketing', 'ACTIVE', 1, now(), '$OWNER_ID', '$BRANCH')
        ON CONFLICT (auth_subject) DO NOTHING RETURNING id)
      INSERT INTO user_roles (user_id, role_code, organization_id, branch_id)
      SELECT id, 'MARKETING', '$ORG_ID', NULL FROM u;" >/dev/null
