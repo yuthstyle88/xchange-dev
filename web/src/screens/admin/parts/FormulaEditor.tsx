@@ -1,6 +1,6 @@
 // Pricing formula FE T3 (docs/design/blueprint/pricing-formula-web.md §2, §3 E1–E4): the two formula texts, the
 // inputs a formula may name, and the parse error under its field.
-import { For, Show, type JSX } from 'solid-js';
+import { createUniqueId, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../../shared/i18n';
 import type { FormulaTextsDto } from '../../../shared/api/generated/pricing_formula';
 import type { FormulaParseErrorDto } from '../../../shared/api/generated/pricing_formula_preview';
@@ -30,11 +30,16 @@ function formatError(err: FormulaParseErrorDto): string {
 }
 
 export function FormulaEditor(props: FormulaEditorProps): JSX.Element {
+  const buyId = createUniqueId();
+  const sellId = createUniqueId();
   return (
     <div class="formula-editor">
       <div class="formula-field">
-        <label class="formula-field-label">{t('buyFormulaLabel')}</label>
+        <label class="formula-field-label" for={buyId}>
+          {t('buyFormulaLabel')}
+        </label>
         <textarea
+          id={buyId}
           class="formula-textarea"
           data-field="buyFormula"
           maxlength={500}
@@ -50,8 +55,11 @@ export function FormulaEditor(props: FormulaEditorProps): JSX.Element {
       </div>
 
       <div class="formula-field">
-        <label class="formula-field-label">{t('sellFormulaLabel')}</label>
+        <label class="formula-field-label" for={sellId}>
+          {t('sellFormulaLabel')}
+        </label>
         <textarea
+          id={sellId}
           class="formula-textarea"
           data-field="sellFormula"
           maxlength={500}
