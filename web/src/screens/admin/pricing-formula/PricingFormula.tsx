@@ -1,6 +1,6 @@
 // Pricing formula FE T6 (docs/design/blueprint/pricing-formula-web.md §1, §3 F1–F11): the organisation formula
 // screen — the editor, the live preview (scope ORGANISATION), which formula each branch follows, and the save.
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, createUniqueId, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { PricingFormulaData } from '../../../shared/api/generated/pricing_formula';
 import type { FormulaNotCheckedDto } from '../../../shared/api/generated/pricing_formula_preview';
@@ -27,6 +27,7 @@ const tf = screenT('admin.formula', formulaTable);
 
 export function PricingFormula(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
+  const reasonId = createUniqueId();
   const writer = keyedWrite<PricingFormulaSaveInput & { branch: string }, PricingFormulaSaveOutput>(
     api,
     'POST',
@@ -238,8 +239,9 @@ export function PricingFormula(props: AdminMenuProps): JSX.Element {
             </section>
 
             <div class="pricing-formula-reason">
-              <label>{t('reasonLabel')}</label>
+              <label for={reasonId}>{t('reasonLabel')}</label>
               <textarea
+                id={reasonId}
                 data-field="reason"
                 value={reason()}
                 disabled={saving()}
