@@ -105,6 +105,7 @@ function answer(
       serviceType: 'WALK_IN',
       status: w.status ?? 'SERVING',
       tellerId: w.staff ?? w.tellerId ?? null,
+      tellerName: null,
       calledAt: w.startedAt ?? w.calledAt ?? null,
     }));
   const waiting =

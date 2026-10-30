@@ -29,6 +29,8 @@ pub struct QueueBoardCalled {
     pub status: String,
     /// The teller's `users.id`.
     pub teller_id: Option<String>,
+    /// `users.name` of the teller; `null` when there is no teller or the name is empty. Never the id.
+    pub teller_name: Option<String>,
     pub called_at: Option<String>,
 }
 

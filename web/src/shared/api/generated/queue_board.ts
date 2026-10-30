@@ -11,7 +11,11 @@ status: string,
 /**
  * The teller's `users.id`.
  */
-tellerId: string | null, calledAt: string | null, };
+tellerId: string | null, 
+/**
+ * `users.name` of the teller; `null` when there is no teller or the name is empty. Never the id.
+ */
+tellerName: string | null, calledAt: string | null, };
 
 /**
  * The caller's own counter.
