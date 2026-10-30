@@ -39,6 +39,7 @@ use xc_queue::application::counter::counter_service::CounterService;
 use xc_queue::application::day::queue_day_hook::QueueDayHook;
 use xc_queue::application::status::status_service::StatusService;
 use xc_queue::domain::repository::QueueRepository;
+use xc_queue::domain::ticket::queue_error::QueueError;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
@@ -159,6 +160,11 @@ fn required_end_field(message: &str) -> Option<&'static str> {
     }
 }
 
+/// `ticketStillServing` (#5675, design `queue-tickets.md` §4.7): the CLOSE verify or the hand-over accept
+/// would close a shift whose teller still holds a CALLED or SERVING ticket.
+pub(crate) const TICKET_STILL_SERVING_TH: &str =
+    "ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)";
+
 /// An xc-cash service error on the wire. `Forbidden` (a transfer received at a branch that is not its destination,
 /// G9) and the receiver rule are `outOfScope` / 403; a hand-over that is no longer PENDING is `staleVersion` / 409
 /// (Q-B); a move beyond the stock is `stockInsufficient` / 409; every other refusal is `validationFailed`.
@@ -198,6 +204,15 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                     StatusCode::BAD_REQUEST,
                 )
             }
+        }
+        // #5675: the shift close's queue hook refused, the teller still holds a CALLED or SERVING ticket.
+        AppError::Validation(message) if message == QueueError::TicketStillServing.code() => {
+            V3Error::new(
+                "ticketStillServing",
+                None,
+                TICKET_STILL_SERVING_TH,
+                StatusCode::CONFLICT,
+            )
         }
         AppError::Validation(message) => V3Error::new(
             "validationFailed",
