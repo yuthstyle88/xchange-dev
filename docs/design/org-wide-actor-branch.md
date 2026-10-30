@@ -646,3 +646,145 @@ Found while sweeping (measured at `bf5305fc`; each goes to claude/553782 as a pr
 - The `StaffRpc` rows `loyaltyRuleDraft` / `loyaltyRuleSubmit` have no handler (no route names them on `StaffRpc`).
 - The `userResetPassword` row has no route.
 - `loyaltyRuleDraft` derives its draft id from `(kind, grant.branch, key)` (`loyalty_rule_draft.rs:50-53`). Under `Organisation`, `grant.branch` is the session branch, so a retry with the same key from another session branch makes a second draft. A retry from the same session (the case the id serves) is unchanged.
+
+## 11. A branch admin sees only its own branches' users (#5557)
+
+> Design by claude/2ca5874b (BE lane, under claude/553782), 2026-10-30 ICT. Code cited on `origin/main` `78123f9c` (the cited lines are unchanged at `f978e089`, except `org_admin.rs`, cited there). Ticket #5557 §4.
+> Owner's decision, 2026-10-30 07:1x ICT, in claude/553782's session (label verbatim): **"กรองให้เห็นเฉพาะสาขาตัวเอง (Recommended)"**. It answers #5526's B-2 (10.8), which keeps the four rows below `Request`.
+
+### 11.1 The rule
+
+A holder sees, in the four lists, only the users its **qualifying rows** cover:
+- **Qualifying rows** are the rows `Authorizer::check` already counts for the list's permission (`authorizer.rs:88`, `qualifying`). For `admin_users` and `admin_employee_register` the permission is `UsersManage`; for the audit and the logins it is `AuditLogsRead` (the rows at `areas/org_admin.rs:35`, `:42-44` on `f978e089`). Groups are editable (RBAC §11), so the rule reads the permission, not a role name.
+- One organisation-wide qualifying row covers **every** user, as today.
+- Otherwise a user is covered when they have **at least one live row**, and **every** live row sits on a branch the holder's qualifying rows name. That is `GrantGuard`'s rule (`grant_guard.rs:70-75`): a user with a row on another branch, or an organisation-wide row, is not covered.
+- **A user with no live row** (all rows ended, or created with `roles: []`, `presentation/http/users.rs:54`) is covered only by an organisation-wide holder (#5557 §4: hidden from branch admins). Today `GrantGuard`'s `.all()` is true for such a user (`grant_guard.rs:75`, 10.10's finding), so G-3 below makes the guard agree.
+- "Live" is `valid_from <= now < valid_to`, as everywhere else (`authorizer.rs:94-95`).
+
+### 11.2 Class diagram
+
+The shared core already exists: `BranchScope` (`domain/access/branch_scope.rs`, EX-1 #1070) is "which branches a permission reaches", built from the same `qualifying` rows. #5557 adds the user-level question to it, and one SQL form of the same question for the paged reads.
+
+```mermaid
+classDiagram
+    class BranchScope {
+        <<enum>>
+        All
+        Branches(Vec~BranchId~)
+        +of(actor, permission, now) BranchScope
+        +of_rows(rows) BranchScope
+        +contains(branch) bool
+        +covers_row(Option~BranchId~) bool
+        +covers_user(live row branches) bool
+    }
+    class GrantGuard {
+        +check(actor, target, action, owners_left) Result
+    }
+    class branch_scope_sql {
+        <<module>>
+        +push_user_in_scope(builder, scope, user_id_sql, now)
+    }
+    class UserRepository {
+        <<trait>>
+        +list_audit(tx, org, scope, now, before, limit)
+        +list_logins(tx, org, scope, now, before, limit)
+    }
+    class AdminUsersPagedView
+    class AdminEmployeeRegisterPagedView
+    class AdminUserAuditPagedView
+    class AdminLoginHistoryPagedView
+    GrantGuard ..> BranchScope : of_rows(live ADMIN rows), covers_row, covers_user
+    AdminUsersPagedView ..> BranchScope : of(who, UsersManage)
+    AdminEmployeeRegisterPagedView ..> BranchScope : of(who, UsersManage)
+    AdminUserAuditPagedView ..> BranchScope : of(who, AuditLogsRead)
+    AdminLoginHistoryPagedView ..> BranchScope : of(who, AuditLogsRead)
+    AdminUsersPagedView ..> branch_scope_sql : u.id
+    AdminEmployeeRegisterPagedView ..> branch_scope_sql : u.id
+    AdminUserAuditPagedView ..> UserRepository : list_audit
+    AdminLoginHistoryPagedView ..> UserRepository : list_logins
+    UserRepository ..> branch_scope_sql : subj.id / l.user_id
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `BranchScope::of_rows` (the body of today's `of`, which now calls it) | `api/crates/xc-auth/src/domain/access/branch_scope.rs` | skeleton on `test/5557` | `of`; `GrantGuard` |
+| `BranchScope::covers_row`, `covers_user` (signatures; skeleton answers `true`, today's "no filter") | same file | skeleton | the views (through the SQL form), `GrantGuard` |
+| their bodies | same file | **T1** | — |
+| `GrantGuard::check` reads `BranchScope` instead of its own `admin_scopes` / `covers` | `api/crates/xc-auth/src/domain/access/grant_guard.rs` | **T1** | user commands |
+| `push_user_in_scope(builder, scope, user_id_sql, now)` (signature; skeleton pushes nothing) | `api/crates/xc-auth/src/infrastructure/access/branch_scope_sql.rs` (new) | skeleton | the two views and the repository |
+| its body | same file | **T2** | — |
+| `list_audit` / `list_logins` take `scope: &BranchScope, now` and build their SQL with `QueryBuilder` | `api/crates/xc-auth/src/domain/user/user_repository.rs`, `api/crates/xc-auth/src/infrastructure/user/user_repository.rs` | skeleton | the two history views |
+| the four views compute `BranchScope::of(who, <permission>, now)` and pass it | `api/src/presentation/http/v3/views/admin_users.rs`, `admin_employee_register.rs`, `admin_user_audit.rs`, `admin_login_history.rs` | skeleton | — |
+
+- `[required]` the signatures above. `[proposed]` the SQL helper's name and module.
+- **Why two forms of one rule:** the lists page in the database (`LIMIT` + keyset cursor), so the filter must be in the `WHERE`, or a page would come back short and the cursor would skip covered users. `covers_user` (Rust) and `push_user_in_scope` (SQL) state the same rule, and the up-front tests pin both on the same seven kinds of user (11.4).
+- **The SQL form**, for `Branches(list)`: ` AND EXISTS (a live user_roles row of the user) AND NOT EXISTS (a live row of the user whose branch_id IS NULL OR NOT (branch_id = ANY(list)))`. A NULL user id (an audit subject that is not a user, or a login of an unknown identifier) fails the `EXISTS`, so it is hidden from a branch holder. `All` adds nothing.
+- The skeleton's callers change only by passing `&BranchScope::All, Utc::now()` in the two repository test files (`rbac_c1c_repository_test.rs`, `rbac_f24_cursor_test.rs`), the same answer as today.
+
+### 11.3 The four reads
+
+| Read | Where (on `78123f9c`) | Today | Filters on |
+|---|---|---|---|
+| `admin_users` | `views/admin_users.rs:48-117`: `users u JOIN branches b ON b.id = $branch AND u.organization_id = b.organization_id` (`:72`) | every user of the organisation | the user (`u.id`) |
+| `admin_employee_register` | `views/admin_employee_register.rs:51-80` (`:64`), then one row per live role | every user of the organisation | the user (`u.id`); a covered user's rows are all on covered branches by the rule |
+| `admin_user_audit` | `views/admin_user_audit.rs:63` → `PgUserRepository::list_audit` (`infrastructure/user/user_repository.rs:395`), `WHERE a.organization_id` (`:421`) | every audit row of the organisation | the row's subject (`subj.id`, the `LEFT JOIN users subj` of `:420`) |
+| `admin_login_history` | `views/admin_login_history.rs:63` → `list_logins` (`:451`), `WHERE l.organization_id` (`:472`) | every login of the organisation | the login's user (`l.user_id`) |
+
+All four `page` functions receive the caller as `_who` and ignore it today (`admin_users.rs:51`, `admin_employee_register.rs:54`, `admin_user_audit.rs:42`, `admin_login_history.rs:42`).
+
+### 11.4 Behaviour table
+
+Users of the tests: `b1` TELLER @ B01; `b1b` TELLER and BRANCH_MANAGER @ B01; `b2` TELLER @ B02; `both` TELLER @ B01 and @ B02; `org` FINANCE organisation-wide; `none` no row; `ended` a TELLER @ B01 row that ended.
+
+| # | Who | Case | Answer | Up-front test |
+|---|---|---|---|---|
+| C-1 | `All` | any row or user, including `none` | covered | `branch_scope_covers_test::c1_…` (green today) |
+| C-2 | `Branches[B01]` | a row on B01 / B02 / organisation-wide | yes / no / no | `c2_…` (red today) |
+| C-3 | `Branches[B01,B02]` | live rows {B01}, {B01,B02} | covered | `c3_…` (green today) |
+| C-4 | `Branches[B01,B02]` | live rows {B01,B03}, {B01, org-wide}, {org-wide} | not covered | `c4_…` (red today) |
+| C-5 | `Branches[B01]` | no live row | not covered | `c5_…` (red today) |
+| C-6 | — | `of_rows`: one org-wide row ⇒ `All`, else sorted unique branches | as stated | `c6_…` (green: the skeleton moves `of`'s body) |
+| G-1 | ADMIN @ B01 | suspends a user live only on B01 (an ended B02 row too) | `Ok` | `g1_…` (green today) |
+| G-2 | ADMIN @ B01 | suspends `both` | `NoScope` | `g2_…` (green today) |
+| G-3 | ADMIN @ B01 | suspends a user with no live row; grants that user a B01 row; an org-wide ADMIN suspends them | `NoScope`; `Ok`; `Ok` | `g3_…` (red today: the vacuous `.all()`) |
+| V-1 | ADMIN @ B01 | `admin_users` | `b1`, `b1b` | `admin_lists_branch_scope_test::v1_…` (red today) |
+| V-2 | ADMIN @ B01 and @ B02 | `admin_users` | `b1`, `b1b`, `b2`, `both` | `v2_…` (red today) |
+| V-3 | ADMIN organisation-wide | `admin_users` | all seven | `v3_…` (green today) |
+| V-4 | ADMIN @ B01 | `admin_users`, `limit=1`, then `before=b1` (`b2` sorts between `b1` and `b1b`) | `b1`, then `b1b` | `v4_…` (red today) |
+| V-5 | ADMIN @ B01 / org-wide | `admin_employee_register` | `b1`, `b1b` / all seven | `v5_…` (red today) |
+| V-6 | ADMIN @ B01 | `admin_user_audit` (one row per user, plus a subject that is no user) | the 2 rows of `b1`, `b1b` | `v6_…` (red today) |
+| V-7 | ADMIN @ B01 | `admin_login_history` (one per user, plus an unknown identifier) | the 2 logins of `b1`, `b1b` | `v7_…` (red today) |
+| V-8 | ADMIN organisation-wide | audit and logins | all 8 of each | `v8_…` (green today) |
+
+- **G-3 is for claude/553782 to confirm** (one line). #5557 §4 decides that a user with no live row is hidden from branch admins. Sharing the rule (♻️) makes `GrantGuard` refuse a branch ADMIN's suspend, disable, reset or profile edit of such a user too, while a grant on the admin's own branch still passes (`covers_row` of the granted row, as today). **Default if no answer: as written**, so that a branch admin cannot manage a user its lists hide. The alternative keeps `.all()` in `GrantGuard` and uses `covers_user` only in the views, and drops `g3_…`'s first assert.
+
+### 11.5 Tests that pin today's answer
+
+None found. Method: a throwaway with all of 11.2 written (T1 + T2 bodies) ran the whole `xc-auth` crate (467/467 green) and the 21 api test files that name the four reads or a user command (`git grep -l -E 'admin_users|adminUsers|admin_user_audit|…|userGrant|…|GrantGuard' -- api/tests`, 161/161 green), on 2026-10-30 ICT. The existing list tests call as an organisation-wide ADMIN (for example `admin_users_search_test.rs`, `ADMIN@*`), so they keep their answer. No existing GrantGuard test acts on a user with no live row.
+
+### 11.6 Up-front tests and measurements
+
+On branch **`test/5557`** at `f6b53b3d`, off `origin/main` `f978e089` (which has #5526's three tickets): the skeleton commit `2af5df38` (11.2), then the test commit `f6b53b3d`.
+- `api/crates/xc-auth/tests/branch_scope_covers_test.rs` (T1): C-1..C-6, G-1..G-3. Pure.
+- `api/tests/admin_lists_branch_scope_test.rs` (T2): V-1..V-8, through the four routes with a private schema.
+- Measured on `test/5557` (2026-10-30 ICT), with T1's and T2's done lines together (17 files, `-p xc-auth -p xchange -p xc-verification`): 155 run. On the skeleton, 10 fail on the answer (C-2, C-4, C-5, G-3, V-1, V-2, V-4..V-7) and 145 pass. With the throwaway bodies, 155/155 pass.
+- clippy `--workspace --all-targets -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` are clean on `test/5557`.
+- T1 alone turns the C and G tests green. V-1..V-7 need T2, because the lists filter in SQL; T1's `covers_user` is the same rule's Rust form.
+
+### 11.7 Data migration
+
+None. No table, column or row changes; the filter reads `user_roles` as it is.
+
+### 11.8 Function tickets
+
+Both `class:guarded` (authorization, PII), Gemini 4 Argon, base `main`, branched from `test/5557` (`Test branch: test/5557`). File scopes are disjoint, so they run together; they merge back to back. #5526's lesson: once the first one squash-merges (carrying the skeleton), the second conflicts on the skeleton's lines, so the merger replays the second ticket's own commit onto `origin/main` and re-runs its done line before merging.
+
+| Ticket | What | File scope | Done line (`cd api && cargo nextest run -p xc-auth -p xchange -E 'test(/^(…)::/)'`, all green; clippy and `fmt-included.sh` clean) |
+|---|---|---|---|
+| **T1** coverage rule (`-p xc-verification` added to the done line for `document_access_test`) | `covers_row`, `covers_user` bodies; `GrantGuard` reads `BranchScope::of_rows(live ADMIN rows)` and its `covers_row` / `covers_user` in place of `admin_scopes` / `covers` (`grant_guard.rs:58-75`) | `api/crates/xc-auth/src/domain/access/branch_scope.rs`, `api/crates/xc-auth/src/domain/access/grant_guard.rs` | `branch_scope_covers_test`, `branch_scope_test`, `rbac_c1a_grant_guard_test`, `rbac_c1a_user_service_test`, `rbac_c1c_user_service_test`, `user_service_test`, `document_access_test` |
+| **T2** SQL form | `push_user_in_scope` body (11.2's predicate) | `api/crates/xc-auth/src/infrastructure/access/branch_scope_sql.rs` | `admin_lists_branch_scope_test`, `rbac_c1c_repository_test`, `rbac_f24_cursor_test`, `admin_users_search_test`, `admin_users_cursor_org_test`, `rbac_f4a_test`, `rbac_f4b_test`, `view_org_scope_test`, `v3_view_unknown_branch_test`, `c5_xlsx_export_test` |
+
+### 11.9 Out of scope
+
+- The web: the lists answer fewer rows in the same shape (`AdminUserRow`, `AdminEmployeeRegisterRow`, `AdminUserAuditRow`, `AdminLoginHistoryRow` unchanged), so no FE ticket.
+- The `need_table` rows (#5558), and any other list keyed by the organisation.
