@@ -124,7 +124,7 @@ queue_tickets:  WAITING --call--> CALLED --start--> SERVING --finish--> COMPLETE
                 WAITING | CALLED --cancel(reason)--> CANCELLED
                 SERVING --release--> CANCELLED (reason noSale; refused while a non-CANCELLED sale names it, §4.6)
                 WAITING | CALLED --branch day closes--> CANCELLED (reason dayClosed)
-queue_counters: ACTIVE --pause--> PAUSED --resume--> ACTIVE ; removed when the shift closes
+queue_counters: ACTIVE --pause--> PAUSED --resume--> ACTIVE ; removed when the shift closes, refused while its teller holds a CALLED or SERVING ticket (§4.7)
 branch queue:   closed --open (start service or BRANCH_MANAGER)--> open --close (cut-off or BRANCH_MANAGER)--> closed
 ```
 
@@ -140,6 +140,7 @@ branch queue:   closed --open (start service or BRANCH_MANAGER)--> open --close 
 | a teller serves one ticket at a time: no call while they hold a CALLED or SERVING ticket (`alreadyServing`) | `QueueDesk::call_next` |
 | every transition checks the expected status; a lost race answers `STALE_VERSION` | `QueueTicket::apply` |
 | every transition writes a `queue_events` row, raises the branch version and recomputes the estimate in the same transaction (§09) | `QueueDesk`, `StatusService::refresh_in` |
+| a shift close is refused while its teller holds a CALLED or SERVING ticket in the branch (`ticketStillServing`, §4.7) | `CounterService::on_shift_closed`, called through `ShiftLifecycleHook::on_closed` |
 | when the branch day closes, WAITING and CALLED tickets are cancelled (`dayClosed`) | `QueueDayHook::on_day_closed`, called through `ShiftLifecycleHook::on_day_closed` after the last CLOSE verify (`queue-day-close.md`, #4136; `BranchDay` has no close transition to call it from) |
 
 ### 4.4 Commands and views
@@ -287,6 +288,148 @@ FE-1 needs T1 on main for a live route, but it can start against the `[required]
 **Data migration.** None. `CANCELLED` and `ended_reason` exist (`20261101100000_queue.sql:14`, `:20`). `ended_reason` is free text with no CHECK, and `CANCEL` is an allowed event kind (`:37`). No row changes shape.
 
 **Out of scope.** Releasing a CALLED ticket (it already has `cancel` and `skip`), and any change to `finish` or `cancel`.
+
+### 4.7 A shift close never orphans a CALLED or SERVING ticket (#5675)
+
+> Design delta by claude/01TxaRJG (AG controller #5675, under BE lane controller claude/553782), 2026-10-30 ICT. Measured on `origin/main` `9861594a`.
+> Owner's ruling, 2026-10-30 13:5x ICT, typed in claude/553782's session and recorded on #5675: **A. Refuse the close.** A shift close is refused while that teller has a CALLED or SERVING ticket at their counter. The teller first finishes, releases (#5541) or skips it. Nothing is released or cancelled automatically.
+
+**The gap.**
+- On xc-v3 at `0b4400a3`, walk-in W035 stayed SERVING after its teller's shift closed. The branch manager's `finish` got 409 `noOpenShift`.
+- Every shift close runs `ShiftLifecycleHook::on_closed` in the close's transaction (`xc-shift/src/application/shift/service.rs:240-242`). `CounterService` is that hook (`xc-queue/src/application/counter_hook.rs:27-35`).
+- `on_shift_closed` deletes the teller's `queue_counters` row and never looks at their tickets (`counter_service.rs:195-210`).
+- The ticket keeps `counter_teller_id`, but no counter backs it. `finish`, `start`, `recall`, `release` and `cancel` all need the caller's counter (`check_on_duty`, `queue_desk.rs:63-85`). So nobody can end the ticket until someone opens a shift of their own or the day closes.
+
+**Root cause.** `on_shift_closed` is allowed to delete a counter that still holds a live ticket. It is the one place a counter is deleted (`git grep "DELETE FROM queue_counters"` finds only `counter_service.rs:202`), so the rule goes there.
+
+**The rule.** `[required]` `CounterService::on_shift_closed` first reads whether the teller holds a ticket in that branch with `status IN ('CALLED','SERVING')` and `counter_teller_id` = the teller.
+- If one exists, it answers `QueueError::TicketStillServing`, which is `AppError::Validation("ticketStillServing")` through the existing `From`. It deletes nothing.
+- `ShiftLifecycleHook::on_closed` documents that an error rolls the close back (`shift_hook.rs:29-30`). So the shift stays OPEN, the counter stays, the CLOSE count stays unverified, a hand-over stays PENDING, and `close_day_if_last_in` never runs.
+- WAITING tickets and other tellers' tickets do not block. A PAUSED counter is checked the same as an ACTIVE one.
+- The teller's way out is an action that already exists:
+  - CALLED: `skip` (→ NO_SHOW) or `cancel`;
+  - SERVING: `finish` (→ COMPLETED) or `release` (→ CANCELLED `noSale`, §4.6);
+  - a SERVING ticket that a sale names: complete the sale (it finishes the ticket), or cancel the sale and then release.
+  The teller still holds their counter, so `check_on_duty` passes.
+
+**No race.** Every v3 command, including `countVerify`, `handoverAccept` and each queue desk command, runs inside the branch's `BranchTx`, which takes `SELECT … FOR UPDATE` on that branch's `branch_versions` row first (`xc-kernel/src/branch_tx.rs:1-12`; `api/src/presentation/http/v3/command.rs:562-563`). A desk `call` cannot interleave with a close of the same branch, so a plain `SELECT` in `on_shift_closed` is enough.
+
+**Which closes the rule covers.** Measured on `9861594a`, `close_on_verified` has two callers:
+- the CLOSE count verify (`xc-cash/src/application/count/count_service.rs:1390-1399`);
+- the hand-over accept, which closes the giver's shift (`handover_service.rs:733-735`).
+Both reach the same hook, so the rule holds on both without another change.
+- **A forced or manager close of another teller's shift follows the same rule.** There is no separate force-close: `adminCloseShift` is retired (`api/src/application/compat/rpc.rs:23`). Another person closes a teller's shift only by verifying that teller's CLOSE count (`countVerify`: BRANCH_MANAGER, or EXECUTIVE / ADMIN via `ShiftCloseCertify`).
+- I found no reason to treat that case differently. The ticket still belongs to the teller, and the same orphan would follow. The teller is still on duty while the close is refused, so the teller can end the ticket.
+- A BRANCH_MANAGER who holds an OPEN shift can also end it (`check_ticket_owner`, `queue_desk.rs:111`).
+- A hand-over follows the rule too. The receiver does not inherit the giver's live ticket, because no rule moves `counter_teller_id`, and adding one would be an automatic change the ruling forbids.
+
+**Where a ticket can still be orphaned.** Only rows from before this change. Day close cancels WAITING and CALLED ones (#4136); a SERVING orphan stays until someone with a shift ends it. This is the existing data question on #564 and is not part of this ticket. No backfill.
+
+**The refusal on the wire.** `[required]` `countVerify` (`POST /api/cash-counts/{id}/verify`) and `handoverAccept` (`POST /api/handovers/{id}/accept`) answer **409 `ticketStillServing`**. The message is:
+> ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)
+
+(*"Cannot close the shift: a called or serving ticket is still open. End that ticket first (finish, no sale, or skip)."*)
+- Both routes map service errors through `from_cash_error` (`api/src/presentation/http/v3/commands/cash.rs:165`). Today that turns `Validation(_)` into 400 `validationFailed`.
+- The skeleton adds one arm ahead of it, matching only `QueueError::TicketStillServing.code()`, which answers 409 with the text above (`TICKET_STILL_SERVING_TH`). No other cash refusal changes.
+- The code is camelCase like the queue's other codes. The message names the three desk actions by the labels the desk shows ("เสร็จสิ้น", "ไม่มีการขาย" from §4.6 FE-1, "ข้ามคิว").
+- `countSubmit` and `handoverStart` are not refused. A CLOSE count can be submitted while a ticket is live; only the step that closes the shift is refused. Refusing at submit too would need xc-cash to read queue state through a new port, and the verify-time refusal already rolls back everything.
+
+**Class diagram (the delta).**
+
+```mermaid
+classDiagram
+    class QueueError {
+        <<enum>>
+        TicketStillServing  "ticketStillServing"
+    }
+    class CounterService {
+        +on_shift_closed(tx, branch, teller_id, now) AppResult~()~
+    }
+    class ShiftLifecycleHook {
+        <<trait xc-kernel>>
+        +on_closed(tx, branch, teller, now) AppResult~()~
+    }
+    class ShiftService {
+        <<xc-shift>>
+        +close_on_verified(tx, shift_id, closed_by, ..) AppResult~()~
+    }
+    class CashCountService {
+        <<xc-cash countVerify>>
+    }
+    class HandoverService {
+        <<xc-cash handoverAccept>>
+    }
+    class from_cash_error {
+        <<api/src v3 cash.rs>>
+        ticketStillServing → 409 + TICKET_STILL_SERVING_TH
+    }
+    CashCountService --> ShiftService : CLOSE verify
+    HandoverService --> ShiftService : giver's close
+    ShiftService --> ShiftLifecycleHook : on_closed
+    ShiftLifecycleHook <|.. CounterService
+    CounterService ..> QueueError : TicketStillServing
+    CashCountService ..> from_cash_error
+    HandoverService ..> from_cash_error
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `QueueError::TicketStillServing` (`"ticketStillServing"`) | `api/crates/xc-queue/src/domain/ticket/queue_error.rs` | skeleton on `test/5675` | T1 |
+| the check at the top of `on_shift_closed` | `api/crates/xc-queue/src/application/counter/counter_service.rs` | **T1** (the skeleton keeps today's body and documents the rule) | every shift close |
+| `TICKET_STILL_SERVING_TH` and the `ticketStillServing` → 409 arm of `from_cash_error` | `api/src/presentation/http/v3/commands/cash.rs` | skeleton | `countVerify`, `handoverAccept`, FE ticket |
+| the four `*_needs_an_open_shift` tests' setup, restated (below) | `api/crates/xc-queue/tests/queue_desk_on_duty_test.rs` | skeleton | — |
+
+The skeleton keeps `on_shift_closed`'s body rather than `todo!()`. Some 29 existing test files close a shift through it, and a `todo!()` would turn them red for a reason the ticket does not change.
+
+**Behaviour table.**
+
+| # | Teller's tickets at close | Close by | Answer | Up-front test |
+|---|---|---|---|---|
+| S-1 | one CALLED | hook | `ticketStillServing`; shift OPEN, counter ACTIVE, ticket CALLED, branch version unchanged | `xc-queue/tests/queue_shift_close_live_ticket_test.rs::a_called_ticket_refuses_the_close_and_nothing_moves` (red today) |
+| S-2 | one SERVING | hook | same, ticket SERVING | `…::a_serving_ticket_refuses_the_close_and_nothing_moves` (red today) |
+| S-3 | one SERVING, counter PAUSED | hook | same; counter stays PAUSED | `…::a_paused_counter_with_a_serving_ticket_is_refused` (red today) |
+| S-4 | the live ticket finished, released or skipped | hook | close goes through; counter removed, `active_counters` 0 | `…::after_finish_release_or_skip_the_close_goes_through` (red today: the first close is not refused) |
+| S-5 | only WAITING tickets; another teller SERVING | hook | close goes through; the other counter and tickets unchanged | `…::waiting_tickets_and_another_tellers_live_ticket_do_not_block` (green today, stays green) |
+| S-6 | — | — | `AppError::from(TicketStillServing)` is `Validation("ticketStillServing")` | `…::the_refusal_is_validation_ticket_still_serving` (green on the skeleton) |
+| S-7 | SERVING (W035) | `countVerify` by the BRANCH_MANAGER (a close of another teller's shift) | 409 `ticketStillServing` with the Thai text; shift OPEN, counter ACTIVE, count unverified, ticket SERVING | `api/tests/shift_close_live_ticket_route_test.rs::h1_h2_a_close_verify_while_the_teller_serves_is_refused_until_the_ticket_ends` (red today) |
+| S-8 | W035 released by the teller (#5541) | the same `countVerify` again | 200 `VERIFIED`; shift CLOSED; counter removed | same test |
+| S-9 | CALLED | `handoverAccept` by the receiver | 409 `ticketStillServing`; giver's shift OPEN and counter ACTIVE, receiver has no OPEN shift, hand-over PENDING | `…::h3_a_handover_accept_while_the_giver_holds_a_called_ticket_is_refused` (red today) |
+| S-10 | nothing live | any close | unchanged from today | the existing files below, unedited |
+
+**Up-front tests.** They are on branch **`test/5675`** at `a3dbc686`, off `origin/main` `9861594a`, with the skeleton above. That is 8 new tests in two new files, plus the restated setup below. clippy `-p xc-queue -p xchange --all-targets -D warnings`, `cargo fmt --all --check` and `bash scripts/fmt-included.sh origin/main` are clean.
+
+**Tests that pin today's close.** I listed every test file that closes a shift with `git grep -lE "on_shift_closed|\.on_closed\(|close_on_verified|close_shift\(|handovers/\{[a-z_]+\}/accept|\.accept_or_await|accept_in\(|\"kind\": \"CLOSE\"|CountKind::Close" -- 'api/tests/**' 'api/crates/*/tests/**'` on `9861594a`. That finds 53 files.
+- **24 cannot reach the rule:** `xc-cash` (20), `xc-shift` (2) and `xc-kernel` (1) tests, plus `xc-queue/tests/queue_day_shift_hook_test.rs`. The first three crates do not depend on `xc-queue` (`Cargo.toml`), so they install `NoShiftLifecycleHook` or their own recorder. The day-shift test calls `QueueDayHook::on_closed`, which does nothing.
+- **29 reach `CounterService::on_shift_closed`:**
+  - in `xc-queue/tests`: `queue_counter_test`, `queue_counter_hook_test`, `queue_desk_test`, `queue_desk_on_duty_test`, and `queue_desk_common/mod.rs`'s `close_shift` helper;
+  - in `api/tests`, through `countVerify` or `handoverAccept`: `abandon_request_test`, `cash_rounding_transaction_test`, `custody_ports_test`, `device_save_step_test`, `handover_accept_v3_awaiting_finance_test`, `handover_decide_branch_scope_test`, `handover_start_receiver_and_shift_test`, `kiosk_day_close_wiring_test`, `queue_day_close_wiring_test`, `save_transaction_test` (+ `save_common`), `shift_close_notices_v3_test`, `shift_counter_hook_wiring_test`, `transfer_receive_open_shift_and_dispatch_source_test`, `transfer_shift_branch_test`, `tx4_repositories_test`, `tx_8l_custody_ports_test`, `v3_admin_cash_view_test`, `v3_admin_overview_view_test`, `v3_admin_parts_views_test`, `v3_cash_commands_test`, `v3_devices_view_test`, `v3_staff_daily_report_view_test` (+ `shift_setup_common`).
+- **Measured, not read:** with a throwaway T1 (the check above, not committed), I ran these 29 files, plus `queue_desk_release_test`, `queue_release_no_sale_route_test` and the two new files. Result: 257 tests run, 253 passed, 4 failed. All 4 failures are in `xc-queue/tests/queue_desk_on_duty_test.rs`: `recall_needs_an_open_shift`, `skip_needs_an_open_shift`, `start_needs_an_open_shift` and `finish_needs_an_open_shift`.
+  - Each one sets up the orphan this ticket forbids. Teller A calls (and for `finish`, starts) a ticket, then `close_shift` closes A's shift. The test then checks that A's desk command is refused `noOpenShift`.
+  - Under ruling A that close is refused, so the setup's `close_shift` helper panics (`queue_desk_common/mod.rs:179`).
+- **Restated on `test/5675`, setup only, for claude/553782 to PASS or reject.**
+  - The four tests now reach "off duty with a live ticket" through a new local helper, `off_duty_with_a_live_ticket`. It makes the state rows from before #5675 still have: the shift CLOSED and the counter row deleted, in SQL. The helper's comment cites §4.7 and the ruling.
+  - Every assertion is unchanged, so what they pin still holds: a desk command needs the caller's counter.
+  - That file's header says "do not edit". This is the trap in skill `lane-controllers` §5: a provided test written before an owner decision pins the old decision, so the controller restates it and cites the owner's words.
+  - I did not delete or weaken any assertion, and I did not touch the shared `close_shift` helper.
+- **After the restatement, measured 2026-10-30 ICT:**
+  - On the skeleton, `queue_desk_on_duty_test` passes 7/7. The new files fail 6 tests on the result (no refusal yet) and pass 2: S-5, and S-6, which needs only the skeleton.
+  - With the throwaway T1, `queue_desk_on_duty_test` plus the two new files pass 15/15. The other 249 tests of the 257-test run above were already green under T1.
+- Other near misses I checked by reading and confirmed by the run:
+  - `kiosk_day_close_wiring_test.rs:474-480` sets a kiosk ticket SERVING but leaves `counter_teller_id` NULL;
+  - `queue_day_close_wiring_test.rs` closes with WAITING tickets only.
+
+**Function tickets** (released only after claude/553782 PASSes this design).
+
+| Ticket | Lane | File scope | Done line |
+|---|---|---|---|
+| **T1** refuse a shift close while the teller holds a live ticket | BE: `class:guarded` (it gates cash custody's shift close), **Gemini 4 Argon**, base `main`, from `test/5675` | `api/crates/xc-queue/src/application/counter/counter_service.rs` | `cd api && cargo nextest run -p xc-queue -p xchange -E 'test(/(queue_shift_close_live_ticket_test\|shift_close_live_ticket_route_test\|queue_desk_on_duty_test\|queue_counter_test\|queue_counter_hook_test\|shift_counter_hook_wiring_test\|queue_day_close_wiring_test)::/)'` all green; clippy `-p xc-queue -p xchange --all-targets -D warnings` and `bash scripts/fmt-included.sh origin/main` clean |
+| **FE-1** show `ticketStillServing` on the shift-close and hand-over screens | FE: cut by the FE controller claude/e92db6 | for the FE controller to set; measured candidates: `web/src/screens/staff/shift/ShiftCard.tsx` (the verify call's error branch, `:405-411`, beside `notWaiting`) and `web/src/screens/staff/shift/i18n.ts` | a 409 `ticketStillServing` on verify or accept shows the Thai line above (TH/EN/ZH per PR 607), and the count stays waiting so it can be verified again |
+
+T1 is one function in one file, so the queue's file lock gives it no conflict with the FE ticket. FE-1 can start against the `[required]` wire contract above before T1 merges.
+
+**Data migration.** None. No table, column or CHECK changes; the rule is a read plus a refusal.
+
+**Out of scope.** Moving a live ticket to the hand-over's receiver; refusing `countSubmit` or `handoverStart`; clearing W035 or other existing orphans (#564, #4136).
 
 ## 5. Class diagram
 
