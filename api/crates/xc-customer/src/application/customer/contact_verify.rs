@@ -59,6 +59,7 @@ impl ContactVerify {
 
     /// Verifies `phone` as `customer_id`'s phone inside the caller's transaction, as `who` acting
     /// at `branch`.
+    #[allow(clippy::too_many_arguments)]
     pub fn verify_in<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,

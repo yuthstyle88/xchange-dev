@@ -175,6 +175,7 @@ impl PhoneVerificationService {
         Ok(res)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn start_in_tx(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -378,6 +379,7 @@ impl PhoneVerificationService {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn confirm(
         &self,
         actor: &Actor,

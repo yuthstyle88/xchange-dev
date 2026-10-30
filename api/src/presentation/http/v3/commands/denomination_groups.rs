@@ -163,7 +163,8 @@ impl CommandAction for DenominationGroupMapCommand {
                 code,
                 &group,
                 &input.provider,
-                &input.instrument_key, &[]
+                &input.instrument_key,
+                &[],
             )
             .await
             .map_err(map_rate_engine_error)?;

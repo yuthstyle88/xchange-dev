@@ -100,6 +100,7 @@ impl DenominationGroupService {
     }
 
     /// Maps a denomination group to a board rate row (instrument_key).
+    #[allow(clippy::too_many_arguments)]
     pub async fn map_group(
         &self,
         tx: &mut Transaction<'_, Postgres>,
