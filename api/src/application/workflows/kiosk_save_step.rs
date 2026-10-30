@@ -39,7 +39,7 @@ fn request_id<'a>(ctx: &SaveContext<'a>) -> Option<&'a str> {
 /// The kiosk role of a standing. A role with no part at the kiosk desk is `Other`.
 fn kiosk_role(kind: StandingKind) -> KioskRole {
     match kind {
-        StandingKind::Owner => KioskRole::Owner,
+        StandingKind::Owner | StandingKind::Executive => KioskRole::Owner,
         StandingKind::Staff(AuthRole::Teller) => KioskRole::Front,
         StandingKind::Staff(AuthRole::BranchManager) => KioskRole::Manager,
         StandingKind::Staff(AuthRole::RateManager) => KioskRole::Rates,
@@ -179,6 +179,7 @@ mod tests {
     fn kiosk_role_of_each_standing() {
         for (kind, role) in [
             (StandingKind::Owner, KioskRole::Owner),
+            (StandingKind::Executive, KioskRole::Owner),
             (StandingKind::Staff(AuthRole::Teller), KioskRole::Front),
             (
                 StandingKind::Staff(AuthRole::BranchManager),
