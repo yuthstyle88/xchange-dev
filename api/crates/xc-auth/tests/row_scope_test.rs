@@ -140,7 +140,6 @@ fn w5_no_organisation_row_is_public_or_needs_the_customers_own_record() {
             Need::Public => true,
             Need::Permission(p) => p == Permission::CustomerSelf,
             Need::AnyOf(ps) => ps.contains(&Permission::CustomerSelf),
-            _ => false,
         };
         assert!(!customer_or_public, "{:?} {}", row.path, row.action);
     }

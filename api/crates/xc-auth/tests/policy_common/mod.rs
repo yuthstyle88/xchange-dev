@@ -174,31 +174,27 @@ pub fn path_name(path: EntryPath) -> &'static str {
         EntryPath::StaffUpload => "StaffUpload",
         EntryPath::File => "File",
         EntryPath::StaffFile => "StaffFile",
-        EntryPath::StaffDesk => "StaffDesk",
         EntryPath::Devices => "Devices",
         EntryPath::Kiosk => "Kiosk",
         EntryPath::OwnerRoute => "OwnerRoute",
         EntryPath::UserRoute => "UserRoute",
-        EntryPath::Custody => "Custody",
         EntryPath::PaymentMethods => "PaymentMethods",
         EntryPath::DrawerPassport => "DrawerPassport",
         EntryPath::DeviceSetup => "DeviceSetup",
     }
 }
 
-pub const PATHS: [EntryPath; 14] = [
+pub const PATHS: [EntryPath; 12] = [
     EntryPath::Rpc,
     EntryPath::StaffRpc,
     EntryPath::Upload,
     EntryPath::StaffUpload,
     EntryPath::File,
     EntryPath::StaffFile,
-    EntryPath::StaffDesk,
     EntryPath::Devices,
     EntryPath::Kiosk,
     EntryPath::OwnerRoute,
     EntryPath::UserRoute,
-    EntryPath::Custody,
     EntryPath::PaymentMethods,
     EntryPath::DrawerPassport,
 ];

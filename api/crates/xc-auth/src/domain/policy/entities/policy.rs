@@ -34,8 +34,6 @@ pub enum Need {
     Permission(Permission),
     /// Any of these permissions (`Need::AnyOf`).
     AnyOf(&'static [Permission]),
-    /// #582's row: until #582, the custody engine asks the v2 rule [`Policy::allow`].
-    Custody,
 }
 
 fn actor_single_branch(actor: &Who) -> Option<BranchId> {
@@ -88,41 +86,23 @@ impl Policy {
 
     /// The route table itself (§4.2), without the area rows. PL-0b moves today's `need` match
     /// here unchanged.
-    pub fn need_table(path: EntryPath, action: &Action) -> Option<Need> {
-        // #5558 (design `org-wide-actor-branch.md` §12): the per-action rows of `Rpc`, `StaffRpc`, `Kiosk` and
-        // `PaymentMethods` moved to area files (`areas/compat_desk.rs`, `branch_admin.rs`, `rates.rs`,
-        // `consent.rs`, `approvals.rs`, `kiosk.rs`, `payment_methods.rs`). What stays answers a whole path, or a
-        // path with a catch-all default (`Devices`, `OwnerRoute`, `UserRoute`), whose named rows an area row could
-        // not take over (`shadowed`).
-        let act = action.as_str();
+    pub fn need_table(path: EntryPath, _action: &Action) -> Option<Need> {
+        // #5558, #5682 (design `org-wide-actor-branch.md` §12, §15.12): every per-action row lives in an area file
+        // (`areas/compat_desk.rs`, `branch_admin.rs`, `rates.rs`, `consent.rs`, `approvals.rs`, `kiosk.rs`,
+        // `payment_methods.rs`, `devices.rs`, `owner_route.rs`, `user_route.rs`). What stays here answers a whole
+        // path.
         match path {
-            EntryPath::Rpc | EntryPath::StaffRpc | EntryPath::Kiosk | EntryPath::PaymentMethods => {
-                None
-            }
+            EntryPath::Rpc
+            | EntryPath::StaffRpc
+            | EntryPath::Kiosk
+            | EntryPath::PaymentMethods
+            | EntryPath::Devices
+            | EntryPath::OwnerRoute
+            | EntryPath::UserRoute => None,
             EntryPath::Upload => Some(Need::Permission(Permission::ProofUpload)),
             EntryPath::StaffUpload => Some(Need::Permission(Permission::ProofUpload)),
             EntryPath::File => Some(Need::Permission(Permission::FileRead)),
             EntryPath::StaffFile => Some(Need::Permission(Permission::IdentityDocumentRead)),
-            EntryPath::StaffDesk => Some(Need::Permission(Permission::ExchangeTransact)),
-            EntryPath::Devices => match act {
-                "setPrinter" | "setDrawer" => Some(Need::Permission(Permission::SystemSettings)),
-                "queue" => Some(Need::Permission(Permission::DeviceQueue)),
-                "process" | "retry" | "drawerObservation" => {
-                    Some(Need::Permission(Permission::DeviceProcess))
-                }
-                "printerOnline" => Some(Need::Permission(Permission::DevicePrinterOnline)),
-                _ => Some(Need::Permission(Permission::SignedIn)),
-            },
-            EntryPath::OwnerRoute => match act {
-                "/api/reference-rates" => Some(Need::Permission(Permission::ReferenceRatesRead)),
-                "queueTicketTake" => Some(Need::Permission(Permission::CustomerSelf)),
-                _ => Some(Need::Permission(Permission::UsersManage)),
-            },
-            EntryPath::UserRoute => match act {
-                "documents" => Some(Need::Permission(Permission::DocumentsList)),
-                _ => Some(Need::Permission(Permission::SignedIn)),
-            },
-            EntryPath::Custody => Some(Need::Custody),
             EntryPath::DrawerPassport => Some(Need::Permission(Permission::DrawerPassport)),
             EntryPath::DeviceSetup => Some(Need::Permission(Permission::SystemSettings)),
         }
@@ -178,10 +158,9 @@ impl Policy {
         // 2. No actor -> path's sign-in sentence
         let Some(actor) = actor else {
             return match path {
-                EntryPath::StaffRpc
-                | EntryPath::StaffDesk
-                | EntryPath::StaffFile
-                | EntryPath::StaffUpload => Err(PolicyError::EmployeeAuthRequired),
+                EntryPath::StaffRpc | EntryPath::StaffFile | EntryPath::StaffUpload => {
+                    Err(PolicyError::EmployeeAuthRequired)
+                }
                 EntryPath::Kiosk => match action.as_str() {
                     "manage" | "configure" | "configureSettings" => {
                         Err(PolicyError::KioskOwnerOrRates)
@@ -224,11 +203,10 @@ impl Policy {
             };
         };
 
-        // 5. Need::Custody -> refused with InvalidRequest
+        // 5. The row's permissions
         let single;
         let permissions: &[Permission] = match need {
             Need::Public => unreachable!(),
-            Need::Custody => return Err(PolicyError::InvalidRequest),
             Need::Permission(p) => {
                 single = [p];
                 &single
@@ -289,7 +267,6 @@ impl Policy {
                     "documents" => Err(PolicyError::DocumentsNotReadable),
                     _ => Err(PolicyError::RoleNotAllowed),
                 },
-                EntryPath::StaffDesk => Err(PolicyError::FrontOnly),
                 EntryPath::Upload | EntryPath::StaffUpload => Err(PolicyError::UploadNotAllowed),
                 EntryPath::File => Err(PolicyError::NotFound),
                 EntryPath::StaffFile => Err(PolicyError::FilesNotReadable),
