@@ -1,4 +1,4 @@
-// C1 FE up-front tests (docs/design/walkin-queue.md §12.3 C1 and its behaviour table, rows F1-F7; the owner's ruling C1
+// C1 FE up-front tests (docs/design/walkin-queue.md §12.3 C1 and its behaviour table, rows F1-F8; the owner's ruling C1
 // relayed on #564, issuecomment-6543033385). The customer step (index 1) runs before the booking step (index 2), so it
 // reads the teller's held ticket itself and sends `bookingId` with `reserveCustomer`.
 // Written before the implementation by the ticket author claude/01TxaRJG. Do not edit, delete or weaken; add tests in a
@@ -26,7 +26,11 @@ const ME = () => ({
 });
 const NO_ME = () => undefined;
 
+// The server's two C1 sentences (TH only on the wire, `code: 'refused'`), and the desk's EN for each (608dff, #5814).
 const NOT_THIS_CUSTOMER = 'พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง';
+const NOT_THIS_CUSTOMER_EN = "This passport is not the booked customer's. Please check the passport again.";
+const NOT_USABLE = 'ใช้การจองนี้ไม่ได้ กรุณาตรวจคิวจองอีกครั้ง';
+const NOT_USABLE_EN = "This booking can't be used here. Please check the booking ticket again.";
 const JPEG = new File([new Uint8Array([0xff, 0xd8, 0xff, 1])], 'passport.jpg', { type: 'image/jpeg' });
 
 type Call = { method: string; path: string; body: any };
@@ -235,6 +239,41 @@ describe('C1: the customer step sends the held booking with reserveCustomer', ()
     fillPassport(store);
     submit();
     await vi.waitFor(() => expect(host.textContent).toContain(NOT_THIS_CUSTOMER));
+    expect(store.step()).toBe(1);
+    expect(store.customerId()).toBe('');
+  });
+
+  it('F6 EN: bookingNotThisCustomer is worded in English on the passport field', async () => {
+    setLang('en');
+    const s = stubServer({
+      called: [HELD_BOOKING],
+      bookings: [BK9],
+      reserve: () => ({ status: 400, body: { error: NOT_THIS_CUSTOMER, field: 'passportNo' } }),
+    });
+    const store = atCustomerStep(s);
+    fillPassport(store);
+    submit();
+    await vi.waitFor(() => expect(host.textContent).toContain(NOT_THIS_CUSTOMER_EN));
+    expect(host.textContent).not.toContain(NOT_THIS_CUSTOMER);
+    const passportField = host.querySelector('input[name="passportNo"]')!.closest('label')!;
+    expect(passportField.textContent).toContain(NOT_THIS_CUSTOMER_EN);
+    expect(store.step()).toBe(1);
+  });
+
+  it.each([
+    ['th', NOT_USABLE],
+    ['en', NOT_USABLE_EN],
+  ] as const)('F8 %s: bookingNotUsable is worded at form level and the step stays', async (lang, text) => {
+    setLang(lang);
+    const s = stubServer({
+      called: [HELD_BOOKING],
+      bookings: [BK9],
+      reserve: () => ({ status: 400, body: { error: NOT_USABLE } }),
+    });
+    const store = atCustomerStep(s);
+    fillPassport(store);
+    submit();
+    await vi.waitFor(() => expect(host.querySelector('[role="alert"]')?.textContent).toContain(text));
     expect(store.step()).toBe(1);
     expect(store.customerId()).toBe('');
   });
