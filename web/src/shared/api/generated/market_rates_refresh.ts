@@ -5,7 +5,7 @@ export type MarketRatesRefreshInput = Record<symbol, never>;
 
 export type MarketRatesRefreshOutput = { sources: Array<MarketRefreshSourceDto>, 
 /**
- * One per FOLLOW currency planned (empty away from MAIN).
+ * One per FOLLOW currency planned.
  */
 followResults: Array<PricingFollowResultDto>, };
 
