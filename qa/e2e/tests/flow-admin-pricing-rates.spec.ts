@@ -25,6 +25,7 @@ const ROUTE_PRICING_BRANCH_POLICY = /^\/api\/pricing\/branch-policy$/;
 const ROUTE_ORG_STARTING_PRICE_SAVE = /^\/api\/v3\/commands\/org_starting_price_save$/;
 const ROUTE_RATE_ALERT_SETTINGS = /^\/api\/rate-alert-settings$/;
 const ROUTE_BRANCH_ALERT_SETTINGS_SAVE = /^\/api\/v3\/commands\/branch_alert_settings_save$/;
+const ROUTE_RATE_POLICY_SAVE = /^\/api\/rate-policies$/;
 
 // Screen i18n tables and exact refusal strings on origin/main:
 // - web/src/screens/admin/pricing/i18n.ts:21,25,26,30,31,32,35 (th), :76,80,81,85,86,87,90 (en)
@@ -219,6 +220,106 @@ async function openPricingRow(page: Page, currency: string): Promise<void> {
   await expect(rowBtn, `pricing row button for ${currency}`).toBeVisible({ timeout: 20_000 });
   await rowBtn.click();
   await expect(screen.locator('.pricing-detail')).toBeVisible({ timeout: 20_000 });
+}
+
+async function ensureBranch2Priced(
+  page: Page,
+  branch2: string,
+  role: 'executive' | 'admin',
+): Promise<string | null> {
+  let board = await fetchPricingBoard(page, branch2);
+  if (board?.policyVersionId && board.rows.some((r) => hasFourCompleteTiers(r.published))) {
+    return null;
+  }
+
+  if (!board?.policyVersionId) {
+    if (role !== 'executive') {
+      return 'branch2 has no rate policy and only executive holds RatePolicySave (role_grants.rs: ADMIN has no RatesStock)';
+    }
+
+    const mainPolicyRes = await page.request.get(
+      `/api/v3/views/rate_policy?branch=${encodeURIComponent(users.branch)}`,
+    );
+    let maxReferenceAgeHours = 24;
+    if (mainPolicyRes.ok()) {
+      const body = (await mainPolicyRes.json().catch(() => null)) as {
+        data?: { policy?: { maxReferenceAgeHours?: number | null } | null };
+      } | null;
+      if (body?.data?.policy?.maxReferenceAgeHours != null) {
+        maxReferenceAgeHours = body.data.policy.maxReferenceAgeHours;
+      }
+    }
+
+    await page.goto(`/?branch=${encodeURIComponent(branch2)}#rates`);
+    const screen = page.locator('.admin-rates-screen');
+    await expect(screen).toBeVisible({ timeout: 20_000 });
+    const policyCard = screen.locator('.rates-section').filter({ has: page.getByTestId('save-policy') });
+    await expect(policyCard).toBeVisible({ timeout: 20_000 });
+    const ageInput = policyCard.locator('input[name="maxReferenceAgeHours"]');
+    await expect(ageInput).toBeVisible({ timeout: 20_000 });
+    await ageInput.fill(String(maxReferenceAgeHours));
+
+    try {
+      const res = await posted(page, ROUTE_RATE_POLICY_SAVE, () =>
+        policyCard.getByTestId('save-policy').click(),
+      );
+      if (!res.ok) {
+        return `first policy on ${branch2} failed: ${res.text} ${res.body}`;
+      }
+    } catch (err: unknown) {
+      return `first policy on ${branch2} failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+
+    console.log(`[qa-r9-6] setup: first rate policy on ${branch2}`);
+  }
+
+  board = await fetchPricingBoard(page, branch2);
+  if (!board?.rows.some((r) => hasFourCompleteTiers(r.published))) {
+    const candidates = (board?.rows ?? []).filter(
+      (r) => r.selectable === true && hasFourCompleteTiers(r.suggestion),
+    );
+    const row = candidates.find((r) => r.currency === 'USD') ?? candidates[0];
+    if (!row) {
+      return `no row on branch ${branch2} has selectable=true and 4 complete suggestion tiers`;
+    }
+
+    await page.goto(`/?branch=${encodeURIComponent(branch2)}#pricing`);
+    await openPricingRow(page, row.currency);
+
+    const tierEditor = page.locator('section.tier-editor');
+    await expect(tierEditor).toBeVisible({ timeout: 20_000 });
+    await tierEditor.locator('input[name="reason"]').fill(`${RUN_MARKER}-setup-first-publication`);
+
+    let approveRes: { ok: boolean; text: string; body: string };
+    try {
+      approveRes = await posted(page, ROUTE_PRICING_APPROVE, () =>
+        tierEditor.locator('button[name="approve"]').click(),
+      );
+    } catch (err: unknown) {
+      return `first publication on ${branch2} failed: ${err instanceof Error ? err.message : String(err)}`;
+    }
+    if (!approveRes.ok) {
+      return approveRes.body || approveRes.text;
+    }
+
+    let approveBody: { currencies?: Array<{ currency?: string; state?: string }> } | null = null;
+    try {
+      approveBody = JSON.parse(approveRes.body) as {
+        currencies?: Array<{ currency?: string; state?: string }>;
+      };
+    } catch {
+      return approveRes.body;
+    }
+    if (approveBody?.currencies?.[0]?.state !== 'PUBLISHED') {
+      return approveRes.body;
+    }
+
+    console.log(
+      `[qa-r9-6] setup: first publication of ${row.currency} on ${branch2} (one-time, not restored: the branch had none; #564 ruling)`,
+    );
+  }
+
+  return null;
 }
 
 test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting prices, rate-alert and branch alert settings', () => {
@@ -447,6 +548,9 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     const branch2 = users.branch2;
     const role = hasAccount('executive') ? 'executive' : 'admin';
     await signIn(page, role, `/?branch=${encodeURIComponent(branch2)}#pricing`);
+
+    const setupReason = await ensureBranch2Priced(page, branch2, role);
+    if (setupReason) console.log(`[qa-r9-6] pricingApprove: setup did not complete — ${setupReason}`);
 
     const initialBoard = await fetchPricingBoard(page, branch2);
     if (!initialBoard?.policyVersionId) {
