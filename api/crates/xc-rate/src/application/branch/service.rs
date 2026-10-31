@@ -134,12 +134,12 @@ impl BranchService {
                     }
 
                     // Step 6: no branch has this name, compared without regard to case (the main branch's XC-B counts)
-                    if repo.name_taken(tx, &trimmed_name).await? {
+                    if repo.name_taken(tx, &org_id, &trimmed_name).await? {
                         return Err(AppError::Domain(NAME_TAKEN.to_string()));
                     }
 
                     // Step 7: fewer than 20 branches exist, the main one included
-                    if repo.count(tx).await? >= 20 {
+                    if repo.count(tx, &org_id).await? >= 20 {
                         return Err(AppError::Domain(TOO_MANY_BRANCHES.to_string()));
                     }
 
