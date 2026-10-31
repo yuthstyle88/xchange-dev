@@ -177,7 +177,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     return {
       quoteId,
       customerId: store.customerId(),
-      bookingId: text(extras.bookingId) ?? text(extras.onlineBookingId),
+      bookingId: text(extras.bookingId) ?? text(extras.onlineBookingId) ?? store.heldBooking()?.bookingId ?? null,
       kioskRequestId: text(extras.kioskRequestId),
       queueTicketId: store.walkInTicket()?.id ?? null,
       staffDraftId: store.path.usesDraft && draft !== '' ? draft : null,

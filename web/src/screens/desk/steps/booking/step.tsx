@@ -6,7 +6,8 @@ import type { QueueServeWalkInInput, QueueTicketDto } from '../../../../shared/a
 import { screenT, t as sharedT } from '../../../../shared/i18n';
 import { fieldError } from '../../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../../shared/i18n/worded-error';
-import type { DeskStore } from '../../desk-store';
+import { bangkokToday, type DeskStore } from '../../desk-store';
+import { readHeldTicket } from '../../held-ticket';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
 
@@ -55,9 +56,19 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
       return;
     }
     setError(undefined);
-    if (!hasEntryKey(store) && !store.walkInTicket()) {
+    if (!hasEntryKey(store) && !store.walkInTicket() && !store.heldBooking()) {
       setServing(true);
       try {
+        const held = await readHeldTicket(store.api, store.branch(), store.meId(), bangkokToday());
+        if (held.kind === 'booking') {
+          store.setHeldBooking(held.booking);
+          store.go(3);
+          return;
+        }
+        if (held.kind === 'bookingUnmatched') {
+          setError(t('error.heldBookingUnmatched', { number: held.displayNumber }));
+          return;
+        }
         const answer = await store.api.command<QueueServeWalkInInput, QueueTicketDto>(
           'POST',
           '/api/queue/tickets/serve',
@@ -100,6 +111,13 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
         {(ticket) => (
           <p class="desk-notice" data-row="walkin-ticket">
             {t('ticket', { number: ticket().displayNumber })}
+          </p>
+        )}
+      </Show>
+      <Show when={store.heldBooking()}>
+        {(held) => (
+          <p class="desk-notice" data-row="held-booking">
+            {t('heldBooking', { number: held().displayNumber })}
           </p>
         )}
       </Show>
