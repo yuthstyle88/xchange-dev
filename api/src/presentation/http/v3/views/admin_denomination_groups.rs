@@ -39,10 +39,11 @@ impl BranchView for AdminDenominationGroupsView {
     fn load(
         &self,
         _branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let organization_id = who.organization_id.clone();
 
         async move {
             let rows = sqlx::query(
@@ -55,20 +56,24 @@ impl BranchView for AdminDenominationGroupsView {
                          SELECT 1 \
                          FROM published_rate_lines l \
                          JOIN branches b ON l.publication_id = b.current_publication_id \
-                         WHERE l.currency_code = d.currency_code \
+                         WHERE b.organization_id = d.organization_id \
+                           AND l.currency_code = d.currency_code \
                            AND l.denomination_group = d.group_code \
                            AND l.tier_lower_exclusive_thb IS NULL \
                      ) AS is_priced \
                  FROM denominations d \
                  LEFT JOIN denomination_group_sources s \
-                     ON s.currency_code = d.currency_code \
+                     ON s.organization_id = d.organization_id \
+                    AND s.currency_code = d.currency_code \
                     AND s.group_code = d.group_code \
                     AND s.provider = 'RATE_BOARD' \
-                 GROUP BY d.currency_code, d.group_code, s.instrument_key \
+                 WHERE d.organization_id = $1::uuid \
+                 GROUP BY d.organization_id, d.currency_code, d.group_code, s.instrument_key \
                  ORDER BY currency ASC, \
                           CASE WHEN d.group_code = 'ALL' THEN 0 ELSE 1 END, \
                           d.group_code ASC",
             )
+            .bind(&organization_id)
             .fetch_all(&pool)
             .await
             .map_err(pos_error::AppError::Database)?;

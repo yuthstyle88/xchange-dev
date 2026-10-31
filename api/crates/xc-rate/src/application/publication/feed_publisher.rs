@@ -76,14 +76,15 @@ impl FeedPublisher {
         let branch_str = branch.as_str();
 
         // 1. Lock branches FOR UPDATE
-        let branch_row: Option<(Option<Uuid>,)> =
-            sqlx::query_as("SELECT current_publication_id FROM branches WHERE id = $1 FOR UPDATE")
-                .bind(branch_str)
-                .fetch_optional(&mut **tx)
-                .await
-                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let branch_row: Option<(Option<Uuid>, String)> = sqlx::query_as(
+            "SELECT current_publication_id, organization_id::text FROM branches WHERE id = $1 FOR UPDATE",
+        )
+        .bind(branch_str)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let (current_pub_id,) = branch_row
+        let (current_pub_id, organization_id) = branch_row
             .ok_or_else(|| RateEngineError::NotFound(format!("branch not found: {branch_str}")))?;
 
         let (current_version, current_req_info, current_line_checksum): (
@@ -223,11 +224,14 @@ impl FeedPublisher {
                 Err(_) => continue,
             };
 
-            let groups = self.groups.groups_of(tx, curr_code).await?;
+            let groups = self
+                .groups
+                .groups_in(tx, &organization_id, curr_code)
+                .await?;
             for group in groups {
                 let mapped_key = self
                     .groups
-                    .source_of(tx, curr_code, &group, provider)
+                    .source_in(tx, &organization_id, curr_code, &group, provider)
                     .await?;
                 let instrument_key = match mapped_key {
                     Some(k) => k,

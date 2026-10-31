@@ -1515,8 +1515,10 @@ classDiagram
 ```mermaid
 classDiagram
   class DenominationGroups["DenominationGroups (xc-rate domain/currency/denomination_groups.rs)"] {
-    +groups_of(tx, organization_id: &str, code) Vec~GroupCode~
-    +source_of(tx, organization_id: &str, code, group, provider) Option~String~
+    +groups_in(tx, organization_id: &str, code) Vec~GroupCode~
+    +source_in(tx, organization_id: &str, code, group, provider) Option~String~
+    +groups_of(tx, code) Vec~GroupCode~
+    +source_of(tx, code, group, provider) Option~String~
   }
   class PgDenominationGroups["PgDenominationGroups (xc-rate infrastructure/currency/denomination_groups.rs)"]
   class DenominationGroupService["DenominationGroupService (xc-rate application/currency/denomination_group_service.rs)"] {
@@ -1530,9 +1532,9 @@ classDiagram
 | Item | File | Change |
 |---|---|---|
 | `[required]` migration | `api/migrations/<slot>_denomination_group_sources_organization.sql` | add `organization_id uuid NOT NULL DEFAULT <seeded> REFERENCES organizations(id)`; re-key to `PRIMARY KEY (organization_id, currency_code, group_code, provider)` |
-| `[required]` trait + impl | `domain/currency/denomination_groups.rs`, `infrastructure/currency/denomination_groups.rs` | `organization_id: &str` after `tx`; both queries filter on it |
+| `[required]` trait + impl | `domain/currency/denomination_groups.rs`, `infrastructure/currency/denomination_groups.rs` | new `groups_in` / `source_in` take `organization_id: &str` after `tx` and filter on it; `groups_of` / `source_of` keep their signatures, because the frozen `xc-rate/tests/denomination_groups_test.rs:78`, `:90` call them (amended for #5760) |
 | `[required]` service | `application/currency/denomination_group_service.rs` | every statement filters or writes `who.organization_id`, including the `denomination_group_sources` upsert's new conflict target |
-| `[required]` publisher | `application/publication/feed_publisher.rs:80`, `:226-230` | read `organization_id` with the branch row at `:80`; pass it on |
+| `[required]` publisher | `application/publication/feed_publisher.rs:80`, `:226-230` | read `organization_id` with the branch row at `:80`; call `groups_in` / `source_in` with it |
 | `[required]` views | `api/src/presentation/http/v3/views/denominations.rs:43`, `views/admin_denomination_groups.rs:62` | filter on `who.organization_id`; the admin view's `LEFT JOIN` on sources also matches `organization_id` |
 
 **Data migration.**

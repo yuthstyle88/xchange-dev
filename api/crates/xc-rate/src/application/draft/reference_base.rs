@@ -73,6 +73,7 @@ impl ReferenceBase {
              WHERE l.currency_code = $1 \
                AND l.reference_type = 'START' \
                AND b.provider = 'START:' || br.organization_id::text \
+               AND b.organization_id = br.organization_id \
              ORDER BY b.fetched_at DESC LIMIT 1",
         )
         .bind(currency.as_str())

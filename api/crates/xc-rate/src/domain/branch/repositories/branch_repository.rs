@@ -31,12 +31,14 @@ pub trait BranchRepository: Send + Sync {
     fn name_taken(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        organization_id: &str,
         name: &str,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
     fn count(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        organization_id: &str,
     ) -> impl Future<Output = AppResult<i64>> + Send;
 
     fn organization_of(

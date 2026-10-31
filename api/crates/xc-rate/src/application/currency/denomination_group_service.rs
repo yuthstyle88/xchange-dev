@@ -55,8 +55,10 @@ impl DenominationGroupService {
 
         // Check if group already exists for this currency
         let exists: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM denominations WHERE currency_code = $1 AND group_code = $2 LIMIT 1",
+            "SELECT id FROM denominations \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 LIMIT 1",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .fetch_optional(&mut **tx)
@@ -69,8 +71,10 @@ impl DenominationGroupService {
         }
 
         sqlx::query(
-            "INSERT INTO denominations (currency_code, face_value, group_code) VALUES ($1, NULL, $2)",
+            "INSERT INTO denominations (organization_id, currency_code, face_value, group_code) \
+             VALUES ($1::uuid, $2, NULL, $3)",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .execute(&mut **tx)
@@ -128,8 +132,10 @@ impl DenominationGroupService {
 
         // Group must exist for that currency
         let exists: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM denominations WHERE currency_code = $1 AND group_code = $2 LIMIT 1",
+            "SELECT id FROM denominations \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 LIMIT 1",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .fetch_optional(&mut **tx)
@@ -147,8 +153,9 @@ impl DenominationGroupService {
         // Check if existing mapping has the same key
         let existing: Option<(String,)> = sqlx::query_as(
             "SELECT instrument_key FROM denomination_group_sources \
-             WHERE currency_code = $1 AND group_code = $2 AND provider = $3",
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 AND provider = $4",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .bind(provider)
@@ -163,13 +170,15 @@ impl DenominationGroupService {
         }
 
         sqlx::query(
-            "INSERT INTO denomination_group_sources (currency_code, group_code, provider, instrument_key, updated_by, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, now()) \
-             ON CONFLICT (currency_code, group_code, provider) \
+            "INSERT INTO denomination_group_sources \
+             (organization_id, currency_code, group_code, provider, instrument_key, updated_by, updated_at) \
+             VALUES ($1::uuid, $2, $3, $4, $5, $6, now()) \
+             ON CONFLICT (organization_id, currency_code, group_code, provider) \
              DO UPDATE SET instrument_key = EXCLUDED.instrument_key, \
                            updated_by = EXCLUDED.updated_by, \
                            updated_at = now()",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .bind(provider)
@@ -226,8 +235,10 @@ impl DenominationGroupService {
 
         // Group must exist for this currency
         let exists: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM denominations WHERE currency_code = $1 AND group_code = $2 LIMIT 1",
+            "SELECT id FROM denominations \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 LIMIT 1",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .fetch_optional(&mut **tx)
@@ -242,8 +253,10 @@ impl DenominationGroupService {
 
         // Refuse if face values belong to this group
         let has_face_values: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM denominations WHERE currency_code = $1 AND group_code = $2 AND face_value IS NOT NULL LIMIT 1",
+            "SELECT id FROM denominations \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 AND face_value IS NOT NULL LIMIT 1",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .fetch_optional(&mut **tx)
@@ -261,9 +274,10 @@ impl DenominationGroupService {
         let is_priced: Option<(i32,)> = sqlx::query_as(
             "SELECT 1 FROM published_rate_lines l \
              JOIN branches b ON l.publication_id = b.current_publication_id \
-             WHERE l.currency_code = $1 AND l.denomination_group = $2 \
+             WHERE b.organization_id = $1::uuid AND l.currency_code = $2 AND l.denomination_group = $3 \
              LIMIT 1",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .fetch_optional(&mut **tx)
@@ -279,8 +293,10 @@ impl DenominationGroupService {
 
         // Delete group sources and face_value IS NULL denomination rows
         sqlx::query(
-            "DELETE FROM denomination_group_sources WHERE currency_code = $1 AND group_code = $2",
+            "DELETE FROM denomination_group_sources \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .execute(&mut **tx)
@@ -288,8 +304,10 @@ impl DenominationGroupService {
         .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
         sqlx::query(
-            "DELETE FROM denominations WHERE currency_code = $1 AND group_code = $2 AND face_value IS NULL",
+            "DELETE FROM denominations \
+             WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 AND face_value IS NULL",
         )
+        .bind(&who.organization_id)
         .bind(code.as_str())
         .bind(group.as_str())
         .execute(&mut **tx)
