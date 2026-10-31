@@ -30,6 +30,11 @@ pub const NOT_THIS_PASSPORT: &str = "รหัสลูกค้าไม่ต�
 pub const BAD_TEXT: &str = "ข้อมูลข้อความไม่ครบหรือยาวเกินกำหนด";
 pub const BAD_DATE: &str = "วันที่ไม่ถูกต้อง";
 pub const BAD_MODE: &str = "กรุณาเลือกประเภทรายการ";
+/// `bookingNotThisCustomer` (`walkin-queue.md` §12.3 C1): the scanned passport is another customer's, or differs
+/// from the one on the booking's customer. Named on `passportNo`.
+pub const BOOKING_NOT_THIS_CUSTOMER: &str = "พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง";
+/// `bookingNotUsable` (§12.3 C1): no such booking at this branch, or it is not CHECKED_IN or IN_SERVICE.
+pub const BOOKING_NOT_USABLE: &str = "ใช้การจองนี้ไม่ได้ กรุณาตรวจคิวจองอีกครั้ง";
 
 /// Why a reserve was refused: a fault in a named field, or anything else (`rpc-refusal-field.md` RF-D3).
 #[derive(Debug)]
@@ -232,6 +237,21 @@ impl CustomerService {
             })
             .await
             .map_err(ReserveError::Other)
+    }
+
+    /// C1 (`walkin-queue.md` §12.3): `reserveCustomer` with a `bookingId` answers the booking's customer.
+    /// The scanned passport is attached to that customer when it has none, and accepted when it equals the one on
+    /// file; otherwise [`BOOKING_NOT_THIS_CUSTOMER`] on `passportNo`. A booking that is not this branch's, or not
+    /// CHECKED_IN / IN_SERVICE, is [`BOOKING_NOT_USABLE`]. Nothing is written on a refusal.
+    pub async fn reserve_for_booking(
+        &self,
+        branch: &BranchId,
+        cmd: ReserveCustomer,
+        booking_id: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Reservation, ReserveError> {
+        let _ = (branch, cmd, booking_id, now);
+        todo!("C1: reserve_for_booking")
     }
 
     pub async fn reserve(
