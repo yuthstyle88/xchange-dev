@@ -455,7 +455,7 @@ impl Plan {
 }
 
 /// The branch's current published BUY unit cost (`round8(buy_rate / unit_size)`) on the `ALL`
-/// denomination group and `ALL` value tier (`docs/design/blueprint/ledger-inventory.md` §4.5, #2794).
+/// denomination group at its first tier (`docs/design/blueprint/ledger-inventory.md` §4.5, #2794, #5809).
 async fn published_buy_unit_cost(
     tx: &mut Transaction<'_, Postgres>,
     organization_id: &str,
@@ -468,7 +468,8 @@ async fn published_buy_unit_cost(
          JOIN rate_publications p ON p.id = b.current_publication_id \
          JOIN published_rate_lines l ON l.publication_id = p.id \
          WHERE b.organization_id = $1::uuid AND b.id = $2 AND l.currency_code = $3 \
-           AND l.denomination_group = 'ALL' AND l.value_tier = 'ALL'",
+           AND l.denomination_group = 'ALL' AND l.tier_lower_exclusive_thb IS NULL \
+         ORDER BY (l.value_tier = 'ALL') DESC LIMIT 1",
     )
     .bind(organization_id)
     .bind(branch)
