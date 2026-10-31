@@ -1,5 +1,6 @@
-//! `pricingModeSave` (pricing-tiers.md §15.5; `H:` §6): FOLLOW or MANUAL for one currency. An EXECUTIVE
-//! frame change (`may_change_the_frame`), V.9's OWNER. Bumps `pricing_modes.revision`.
+//! `pricingModeSave` (pricing-tiers.md §15.5; `H:` §6): FOLLOW or MANUAL for one currency, at MAIN only. An EXECUTIVE
+//! frame change (`may_change_the_frame`), V.9's OWNER. Bumps `pricing_modes.revision`. Another branch ⇒
+//! `validationFailed`.
 //!
 //! SKELETON (XC-V9-PRICING): `run` is PV-f4's. Types, route and registration stay.
 
@@ -58,6 +59,15 @@ impl CommandAction for PricingModeSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        if branch.as_str() != "MAIN" {
+            return Err(V3Error::new(
+                "validationFailed",
+                Some("branch"),
+                "pricingModeSave is only allowed at MAIN",
+                StatusCode::BAD_REQUEST,
+            ));
+        }
+
         let currency = CurrencyCode::parse(input.currency.trim()).map_err(|e| {
             V3Error::new(
                 "validationFailed",

@@ -108,9 +108,8 @@ impl RoleGrants {
     ];
 
     /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN;
-    /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2); 8, ApproveLedgerAdjustment (ledger adjustment);
-    /// 9, PricingFormulaSave (organisation pricing formula, #5733)).
-    pub const SEED_VERSION: i32 = 9;
+    /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2); 8, ApproveLedgerAdjustment (ledger adjustment)).
+    pub const SEED_VERSION: i32 = 8;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
@@ -129,7 +128,6 @@ impl RoleGrants {
         // Staff corrections SC-D2: close another employee's forgotten clock-in.
         (7, Permission::AttendanceCloseFor),
         (8, Permission::ApproveLedgerAdjustment),
-        (9, Permission::PricingFormulaSave),
     ];
 
     /// Existing permissions seeded on one more built-in role after version 1 (#5108).
@@ -234,7 +232,6 @@ impl RoleGrants {
                 P::DevicePrinterOnline,
                 P::DrawerPassport,
                 P::SignedIn,
-                P::PricingFormulaSave,
             ],
             Role::Admin => &[
                 P::ShiftCloseCertify,

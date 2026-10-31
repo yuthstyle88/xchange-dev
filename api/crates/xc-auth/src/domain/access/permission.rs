@@ -99,15 +99,11 @@ pub enum Permission {
     /// payload's, not the requester's). Seeded on FINANCE only. LA-1 adds it to `ALL`, `APPROVAL_KINDS`,
     /// `RoleGrants::seed` and `SEED_ADDITIONS` (version 8).
     ApproveLedgerAdjustment,
-    /// #5733 (owner ruling A on #5683; `pricing-formula.md` §5 F-2 *"EXECUTIVE เท่านั้น"*): save the organisation's
-    /// price formula (`pricingFormulaSave`) and preview it at scope `ORGANISATION`. No module, so RatesStock at Full
-    /// (RATE_MANAGER) never implies it; seeded on EXECUTIVE only at seed v9, and editable on the `/users` matrix.
-    PricingFormulaSave,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 65] = [
+    pub const ALL: [Permission; 64] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -172,6 +168,5 @@ impl Permission {
         Permission::BindingQuoteIssue,
         Permission::AttendanceCloseFor,
         Permission::ApproveLedgerAdjustment,
-        Permission::PricingFormulaSave,
     ];
 }

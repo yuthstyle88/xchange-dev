@@ -49,8 +49,8 @@ fn pt14_permission_all_holds_market_rates_refresh_exactly_once() {
     // AttendanceCloseFor: 61 -> 62.
     assert_eq!(
         Permission::ALL.len(),
-        65,
-        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9), then 62 (BQ-7), 63 (staff corrections), 64 (LA-1), 65 (#5733)"
+        64,
+        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9), then 62 (BQ-7), 63 (staff corrections), 64 (LA-1)"
     );
 }
 

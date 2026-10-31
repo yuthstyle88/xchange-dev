@@ -8,11 +8,13 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::{Actor, Role};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::formula::spread_check::{SpreadCandidate, SpreadCheck};
 use xc_rate::domain::formula::price_formula::PriceFormula;
@@ -54,7 +56,7 @@ impl CommandAction for PricingFormulaSaveCommand {
     const ROUTE: &'static str = "/api/pricing/formula";
     const METHOD: Method = Method::POST;
 
-    /// In order: `PricingFormulaSave` at the seam (§5, F-2) else `403 forbidden`; blank `reason` ⇒ `400` field
+    /// In order: an organisation-wide EXECUTIVE (§5, F-2) else `403 forbidden`; blank `reason` ⇒ `400` field
     /// `reason`; each text through `FormulaText::parse` ⇒ `400 validationFailed`, field `buyFormula` / `sellFormula`,
     /// message `FormulaError`'s; `SpreadCheck::run(Organisation)` with failures ⇒ `400 validationFailed`, field
     /// `buyFormula`, message = one `SpreadFailure::describe()` per line, nothing written; else close the current
@@ -68,6 +70,17 @@ impl CommandAction for PricingFormulaSaveCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let now = Utc::now();
+        let is_org_exec = who.roles.iter().any(|r| {
+            r.role == Role::Executive
+                && r.branch.is_none()
+                && r.valid_from <= now
+                && r.valid_to.is_none_or(|to| now < to)
+        });
+        if !is_org_exec {
+            return Err(V3Error::from(PolicyError::RoleNotAllowedHere));
+        }
+
         if input.reason.trim().is_empty() {
             return Err(V3Error::new(
                 "validationFailed",

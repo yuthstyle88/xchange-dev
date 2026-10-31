@@ -159,9 +159,7 @@ impl PermissionModule {
             // binding-quote.md D-13: no module, so Customers at Create (EXECUTIVE included) never implies it.
             | P::BindingQuoteIssue
             // ledger-inventory.md §13.3: an approval kind, so no module.
-            | P::ApproveLedgerAdjustment
-            // #5733: EXECUTIVE-only by seed, so no module (RatesStock at Full must not imply it).
-            | P::PricingFormulaSave => None,
+            | P::ApproveLedgerAdjustment => None,
         }
     }
 }
