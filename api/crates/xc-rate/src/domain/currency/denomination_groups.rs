@@ -48,16 +48,36 @@ impl fmt::Display for GroupCode {
 
 pub trait DenominationGroups: Send + Sync {
     /// Distinct group codes for a currency, sorted ascending.
+    /// Every organisation's rows; production code uses groups_in / source_in (#5760).
     fn groups_of<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         code: CurrencyCode,
     ) -> BoxFuture<'a, Result<Vec<GroupCode>, RateEngineError>>;
 
+    /// Distinct group codes for a currency in `organization_id`, sorted ascending.
+    fn groups_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
+        code: CurrencyCode,
+    ) -> BoxFuture<'a, Result<Vec<GroupCode>, RateEngineError>>;
+
     /// The board row mapping (instrument_key) for a group and provider, or None if unmapped.
+    /// Every organisation's rows; production code uses groups_in / source_in (#5760).
     fn source_of<'a>(
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
+        code: CurrencyCode,
+        group: &'a GroupCode,
+        provider: &'a str,
+    ) -> BoxFuture<'a, Result<Option<String>, RateEngineError>>;
+
+    /// The board row mapping (instrument_key) for a group and provider in `organization_id`, or None if unmapped.
+    fn source_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        organization_id: &'a str,
         code: CurrencyCode,
         group: &'a GroupCode,
         provider: &'a str,
