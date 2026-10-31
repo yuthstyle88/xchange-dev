@@ -146,20 +146,34 @@ impl BranchRepository for PgBranchRepository {
             .map_err(AppError::Database)
     }
 
+    async fn organization_of(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &BranchId,
+    ) -> AppResult<Option<String>> {
+        sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+            .bind(id.as_str())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)
+    }
+
     async fn insert(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: &str,
         name: &str,
+        organization_id: &str,
         created_at: DateTime<Utc>,
         created_by: &str,
         request_id: &str,
     ) -> AppResult<()> {
         sqlx::query(
-            "INSERT INTO branches (id, name, created_at, created_by, request_id, code) VALUES ($1, $2, $3, $4, $5, $1)",
+            "INSERT INTO branches (id, name, organization_id, created_at, created_by, request_id, code) VALUES ($1, $2, $3::uuid, $4, $5, $6, $1)",
         )
         .bind(id)
         .bind(name)
+        .bind(organization_id)
         .bind(created_at)
         .bind(created_by)
         .bind(request_id)

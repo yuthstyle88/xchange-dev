@@ -39,11 +39,19 @@ pub trait BranchRepository: Send + Sync {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     ) -> impl Future<Output = AppResult<i64>> + Send;
 
+    fn organization_of(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: &BranchId,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
+    #[allow(clippy::too_many_arguments)]
     fn insert(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: &str,
         name: &str,
+        organization_id: &str,
         created_at: DateTime<Utc>,
         created_by: &str,
         request_id: &str,
