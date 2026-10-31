@@ -2,7 +2,7 @@
 // (design docs/design/qa-e2e.md §4 row F6; docs/design/blueprint/quote-transaction.md; reversal V-2,
 // api/crates/xc-exchange/src/domain/reversal/window.rs:16-18).
 // Written by ticket #3998 (QA-F6); this file is its whole File scope.
-// Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
+// Import only from './helpers' and './desk-exchange' (runDeskExchange moved there by #5795). Never run against a host from a worker's machine (E-3): check with --list and tsc.
 //
 // Selectors cited from web/src/screens/:
 // - desk/steps.ts:7-13                        steps 0 -> 4 (rate, customer, booking, payment, receipt)

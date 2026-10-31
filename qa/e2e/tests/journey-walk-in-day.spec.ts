@@ -160,6 +160,8 @@ test.describe.serial('J1 walk-in day', () => {
         // Step 5: BUY for A: assertActingBranch(teller), set up waits, runDeskExchange(..., 'BUY').
         await assertActingBranch(teller, 'teller before BUY sale');
 
+        // These waits are awaited only after runDeskExchange returns; 120 s (inside the 300 s test) keeps a slow but healthy
+        // sale from rejecting them unawaited, which Playwright reports as a failure (the #5789 review finding).
         const servePromiseA = teller.waitForResponse((res) => {
           try {
             const url = new URL(res.url());
@@ -167,7 +169,7 @@ test.describe.serial('J1 walk-in day', () => {
           } catch {
             return false;
           }
-        }, { timeout: 30_000 });
+        }, { timeout: 120_000 });
 
         const createTxPromiseA = teller.waitForRequest((req) => {
           try {
@@ -176,7 +178,7 @@ test.describe.serial('J1 walk-in day', () => {
           } catch {
             return false;
           }
-        }, { timeout: 30_000 });
+        }, { timeout: 120_000 });
 
         const buyReceipt = await runDeskExchange(teller, manager, 'BUY', (opened) => {
           if (opened) openedQueue = true;
@@ -245,7 +247,7 @@ test.describe.serial('J1 walk-in day', () => {
           } catch {
             return false;
           }
-        }, { timeout: 30_000 });
+        }, { timeout: 120_000 });
 
         const createTxPromiseB = teller.waitForRequest((req) => {
           try {
@@ -254,7 +256,7 @@ test.describe.serial('J1 walk-in day', () => {
           } catch {
             return false;
           }
-        }, { timeout: 30_000 });
+        }, { timeout: 120_000 });
 
         const sellReceipt = await runDeskExchange(teller, manager, 'SELL', (opened) => {
           if (opened) openedQueue = true;
