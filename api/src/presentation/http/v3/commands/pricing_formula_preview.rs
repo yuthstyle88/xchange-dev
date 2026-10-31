@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ts_rs::TS;
 use uuid::Uuid;
-use xc_auth::domain::access::{Actor, Role};
+use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
@@ -106,9 +106,9 @@ impl CommandAction for PricingFormulaPreviewCommand {
     const ROUTE: &'static str = "/api/pricing/formula/preview";
     const METHOD: Method = Method::POST;
 
-    /// EXECUTIVE only (`may_change_the_frame`, §5; `ORGANISATION` needs an organisation-wide EXECUTIVE role) else
-    /// `403 forbidden`. Parses both texts (a parse error is answered in `parse_error`, not as an error status), runs
-    /// `SpreadCheck::run` and answers every row; writes nothing.
+    /// `ORGANISATION` needs an organisation-wide `PricingFormulaSave` grant (`ApprovalDecider::holds_on`); `BRANCH`
+    /// uses `may_change_the_frame` (§5); else `403 forbidden`. Parses both texts (a parse error is answered in
+    /// `parse_error`, not as an error status), runs `SpreadCheck::run` and answers every row; writes nothing.
     async fn run(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -118,16 +118,10 @@ impl CommandAction for PricingFormulaPreviewCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let scope = input::one_of("scope", &input.scope, &["ORGANISATION", "BRANCH"])?;
-        let now = Utc::now();
         let allowed = if scope == "ORGANISATION" {
-            who.roles.iter().any(|r| {
-                r.role == Role::Executive
-                    && r.branch.is_none()
-                    && r.valid_from <= now
-                    && r.valid_to.is_none_or(|to| now < to)
-            })
+            ApprovalDecider::holds_on(who, Permission::PricingFormulaSave, None)
         } else {
-            may_change_the_frame(who, branch, now)
+            may_change_the_frame(who, branch, Utc::now())
         };
         if !allowed {
             return Err(V3Error::from(PolicyError::RoleNotAllowedHere));

@@ -211,6 +211,7 @@ impl CompatRpc {
         action: &str,
         payload: Map<String, Value>,
         caller: &RpcCaller,
+        organization_id: Option<&str>,
         _session_user: Option<uuid::Uuid>,
         branch: &BranchId,
         now: DateTime<Utc>,
@@ -254,12 +255,17 @@ impl CompatRpc {
             "adminDeskConfig" => self.snapshots.desk_config(branch).await?,
             "getConnectionStatus" => connection_status(),
             "adminCreateBranch" => {
+                let org = organization_id.ok_or_else(|| RpcRefusal::not_signed_in(route))?;
                 let command = CreateBranch {
                     request_id: js_text(payload.get("requestId")),
                     name: js_text(payload.get("name")),
                     from_branch: branch.clone(),
                 };
-                let created = self.services.branches.create(command, who, now).await?;
+                let created = self
+                    .services
+                    .branches
+                    .create_in(command, org, who, now)
+                    .await?;
                 // v2 answers with the new branch, not the one the screen was on
                 self.written(&created.id, who, now).await?
             }

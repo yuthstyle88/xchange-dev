@@ -47,7 +47,7 @@ pub const ROWS: &[AreaRow] = &[
     org_row(
         EntryPath::Rpc,
         "pricingFormulaSave",
-        p(Permission::RatePolicySave),
+        p(Permission::PricingFormulaSave),
     ),
     org_row(
         EntryPath::Rpc,

@@ -59,6 +59,27 @@ impl BranchService {
         actor: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Branch> {
+        self.create_with_org(cmd, None, actor, now).await
+    }
+
+    pub async fn create_in(
+        &self,
+        cmd: CreateBranch,
+        organization_id: &str,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Branch> {
+        self.create_with_org(cmd, Some(organization_id.to_string()), actor, now)
+            .await
+    }
+
+    async fn create_with_org(
+        &self,
+        cmd: CreateBranch,
+        organization_id: Option<String>,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<Branch> {
         // Step 1: cmd.from_branch exists
         if !self.repo.branch_exists(&cmd.from_branch).await? {
             return Err(AppError::Domain(NO_SUCH_BRANCH.to_string()));
@@ -88,6 +109,14 @@ impl BranchService {
                     if from_branch != main_id {
                         BranchTx::lock_also(tx, &from_branch).await?;
                     }
+
+                    let org_id = match organization_id {
+                        Some(org) => org,
+                        None => repo
+                            .organization_of(tx, &from_branch)
+                            .await?
+                            .ok_or_else(|| AppError::Domain(NO_SUCH_BRANCH.to_string()))?,
+                    };
 
                     // Step 4: a branch with this request_id exists:
                     // its name equals trimmed_name exactly -> return that branch, write nothing; otherwise REQUEST_CHANGED
@@ -120,6 +149,7 @@ impl BranchService {
                         tx,
                         &new_id,
                         &trimmed_name,
+                        &org_id,
                         stored_now,
                         &actor_str,
                         &trimmed_req,
