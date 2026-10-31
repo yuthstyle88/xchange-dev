@@ -117,7 +117,10 @@ fn scan() -> Vec<(String, usize, &'static str)> {
     for c in crates.flatten() {
         rust_files(&c.path().join("src"), &mut files);
     }
-    assert!(files.len() > 100, "the scan reaches api/src and api/crates/*/src");
+    assert!(
+        files.len() > 100,
+        "the scan reaches api/src and api/crates/*/src"
+    );
     let mut found = Vec::new();
     for file in files {
         let rel = file
