@@ -1451,6 +1451,148 @@ The v2 fixtures (`v2_policy_cases.json`, `blueprint_policy_cases.json`) and thei
 
 **Data migration.** None. The rows are code; no table, column or row changes.
 
+### 15.13 Organisation columns: the rule every reader follows (#5666, #5665 part 2)
+
+Survey: main `6ed62a5e`, 2026-10-30. Owner rulings D1–D4 at #564 issuecomment-6520923886; D5 at PR #5740 comment 6536029938. Migrations are approved to write and merge; deploying them needs its own owner order.
+
+**Where each reader gets the organisation.** The rule is the same as §15.11's: never the column default, never a seeded constant.
+
+| Reader kind | Organisation | Why |
+|---|---|---|
+| A v3 command or view (it holds `who: &Actor`) | `who.organization_id` | the caller's organisation |
+| Code that acts on one branch (a background loop, the feed publisher, a branch refresh, the spread check) | that branch's `branches.organization_id`, read where the code already reads the branch row | the rows belong to the branch's organisation; `spread_check.rs:175` already reads it this way |
+| SQL that already names a branch parameter | `organization_id = (SELECT organization_id FROM branches WHERE id = $branch)` inside the same statement | no extra round trip |
+
+A branch-scoped reader needs no new helper: each one already reads its branch row (`feed_publisher.rs:80`, `spread_check.rs:175`), or names the branch in its SQL (`branch_refresh.rs:90`). The FOLLOW loop works only at `MAIN` (`market_pricing_loop.rs:139-147`), so it reads `MAIN`'s organisation. FOLLOW for any other organisation needs that organisation's publishing branch, which the rate engine does not have yet. That is out of scope here; see §15.16.
+
+### 15.14 D1: `pricing_modes` per organisation (#5666)
+
+**Root cause.** `pricing_modes` is keyed by `currency_code` alone (`api/migrations/20261226100000_v9_pricing.sql:22-28`, created after `20261011100000_organizations.sql`, so the organisation sweep never gave it the column). Every method of `PricingModeStore` (`api/crates/xc-rate/src/domain/pricing/pricing_mode.rs:46-69`) reads or writes across all organisations.
+
+```mermaid
+classDiagram
+  class PricingModeStore["PricingModeStore (xc-rate domain/pricing/pricing_mode.rs)"] {
+    +save_in(conn, organization_id: &str, currency, mode, by, at) i64
+    +get_in(conn, organization_id: &str, currency) Option~PricingModeRow~
+    +following_in(conn, organization_id: &str) Vec~CurrencyCode~
+    +newest_revision_in(conn, organization_id: &str) Option~i64~
+  }
+  class PgPricingModeStore["PgPricingModeStore (xc-rate infrastructure/pricing/pricing_mode_store.rs)"]
+  PgPricingModeStore ..|> PricingModeStore
+  pricing_mode_save --> PricingModeStore : who.organization_id
+  market_rates_refresh --> PricingModeStore : who.organization_id
+  pricing_board --> PricingModeStore : who.organization_id
+  MarketPricingLoop --> PricingModeStore : MAIN's organisation
+  SpreadCheck --> PricingModeStore : the branch's organisation
+```
+
+| Item | File | Change |
+|---|---|---|
+| `[required]` migration | `api/migrations/<slot>_pricing_modes_organization.sql` (version from `scripts/migration-slot.sh next`) | add `organization_id uuid NOT NULL DEFAULT '00000000-0000-0000-0000-000000000001' REFERENCES organizations(id)`; drop the primary key; add `PRIMARY KEY (organization_id, currency_code)` |
+| `[required]` trait | `api/crates/xc-rate/src/domain/pricing/pricing_mode.rs` | each of the 4 methods takes `organization_id: &str` right after `conn` |
+| `[required]` store | `api/crates/xc-rate/src/infrastructure/pricing/pricing_mode_store.rs` | every statement names `organization_id`; the upsert's conflict target is `(organization_id, currency_code)` |
+| `[required]` callers | `api/crates/xc-rate/src/application/formula/spread_check.rs:285`, `api/src/infrastructure/rate_feed/market_pricing_loop.rs:121`, `api/src/presentation/http/v3/commands/market_rates_refresh.rs:107`, `api/src/presentation/http/v3/commands/pricing_mode_save.rs:95`, `api/src/presentation/http/v3/views/pricing_board.rs:603` | pass the organisation per §15.13 |
+| `[required]` raw SQL | `api/src/infrastructure/rate_feed/branch_refresh.rs:90`, `api/src/presentation/http/v3/views/pricing_board.rs:213` | `branch_refresh` matches the `$2` branch's organisation; `pricing_board`'s version hash sums the caller's organisation's rows only |
+
+**Data migration.**
+1. Every existing row gets the seeded organisation through the default. That is correct, because it is the only organisation today.
+2. No backfill: the default fills the column in the same `ALTER`.
+3. Deploy the migration before the new binary. The old binary breaks on the new key: its upsert's `ON CONFLICT (currency_code)` no longer matches a unique index. So the migration and the binary go out together in one deploy.
+4. `down` drops the column and restores `PRIMARY KEY (currency_code)`. It fails if two organisations hold a row for the same currency; delete the other organisations' rows first. Nothing else is lost.
+
+**Order.** #5683 (F-4) holds `pricing_mode_save.rs` and `market_rates_refresh.rs` (leased, measured 2026-10-30 18:10 ICT). D1 is released after #5683 merges.
+
+### 15.15 D2: denominations and their groups per organisation (#5666)
+
+**Root cause.** The writers never set `denominations.organization_id`, the column default fills it, and every reader lists across all organisations:
+- writers: `denomination_group_service.rs:71`;
+- readers: `denomination_group_service.rs:57`, `:128`, `:225`, `:241`; `denomination_groups.rs:33`; `views/denominations.rs:43`; `views/admin_denomination_groups.rs:62`.
+
+`denomination_group_sources` has no organisation column; its key is `(currency_code, group_code, provider)` (`20261110100000_rate_feed.sql:61-69`).
+
+**Not changed:** joins by `denominations.id` (`transfer_moves.rs:94`, `transfer_repository.rs:130`, `:169`, `sheet_parts.rs:173`, `:249`, `staff_daily_report.rs:350`, `xc-cash application/denominations.rs:22`). An id names one row of one organisation already. The `INSERT`s in `xc-cash count_service.rs` are inside `#[cfg(test)]` (`:195`).
+
+```mermaid
+classDiagram
+  class DenominationGroups["DenominationGroups (xc-rate domain/currency/denomination_groups.rs)"] {
+    +groups_of(tx, organization_id: &str, code) Vec~GroupCode~
+    +source_of(tx, organization_id: &str, code, group, provider) Option~String~
+  }
+  class PgDenominationGroups["PgDenominationGroups (xc-rate infrastructure/currency/denomination_groups.rs)"]
+  class DenominationGroupService["DenominationGroupService (xc-rate application/currency/denomination_group_service.rs)"] {
+    create_group / map_group / remove_group use who.organization_id
+  }
+  PgDenominationGroups ..|> DenominationGroups
+  FeedPublisher --> DenominationGroups : the branch's organisation
+  DenominationGroupService --> DenominationGroups
+```
+
+| Item | File | Change |
+|---|---|---|
+| `[required]` migration | `api/migrations/<slot>_denomination_group_sources_organization.sql` | add `organization_id uuid NOT NULL DEFAULT <seeded> REFERENCES organizations(id)`; re-key to `PRIMARY KEY (organization_id, currency_code, group_code, provider)` |
+| `[required]` trait + impl | `domain/currency/denomination_groups.rs`, `infrastructure/currency/denomination_groups.rs` | `organization_id: &str` after `tx`; both queries filter on it |
+| `[required]` service | `application/currency/denomination_group_service.rs` | every statement filters or writes `who.organization_id`, including the `denomination_group_sources` upsert's new conflict target |
+| `[required]` publisher | `application/publication/feed_publisher.rs:80`, `:226-230` | read `organization_id` with the branch row at `:80`; pass it on |
+| `[required]` views | `api/src/presentation/http/v3/views/denominations.rs:43`, `views/admin_denomination_groups.rs:62` | filter on `who.organization_id`; the admin view's `LEFT JOIN` on sources also matches `organization_id` |
+
+**Data migration.**
+1. `denominations` needs no migration: the column exists and existing rows hold the seeded organisation. `denomination_group_sources` rows get the seeded organisation through the default.
+2. No backfill.
+3. Deploy the migration with the binary, as in §15.14: the old upsert's conflict target no longer matches a unique index.
+4. `down` restores the old key. It fails if two organisations map the same `(currency, group, provider)`; delete the other organisations' rows first.
+
+**Order.** #5690 (T5, in review on 2026-10-30) holds `denomination_group_service.rs` and `commands/denomination_groups.rs`. D2 is released after #5690 merges.
+
+### 15.16 D3 + D4: branch names and the branch limit per organisation (#5665 part 2)
+
+`[required]` migration `api/migrations/<slot>_branches_name_per_organization.sql`: `DROP INDEX branches_name_lower_key; CREATE UNIQUE INDEX branches_organization_id_name_lower_key ON branches (organization_id, lower(name));`.
+
+`[required]` `BranchRepository::name_taken(tx, organization_id, name)` and `count(tx, organization_id)` filter on the organisation. `BranchService::create_in` (§15.11) passes its `organization_id`. The `TOO_MANY_BRANCHES` and `NAME_TAKEN` texts are unchanged.
+
+**Data migration.**
+1. Existing rows are unique by `lower(name)` across the whole table today, so they are unique per organisation too, and the new index builds on them.
+2. No backfill.
+3. Deploy order is free: the old binary's global check is stricter than the new index.
+4. `down` restores the global index. It fails if two organisations hold the same name; rename one first.
+
+**Order.** It touches #5665 part 1's files (`branch_repository.rs` ×2, `service.rs`). It is released after part 1 merges.
+
+**Out of scope, for a later design:**
+- FOLLOW and the market refresh for an organisation without `MAIN`: the rate engine publishes only at `MAIN`.
+- Seeding a new organisation's denominations: no code creates an organisation yet.
+- `find_by_request` is global (`branch_repository.rs:106`). Request ids are client UUIDs.
+
+### 15.17 D5: `rate_reference_batches`, market data shared (#5666)
+
+**Decided: A** (owner, relayed by claude/608dff on PR #5740 comment 6536029938). Market data fetched from a provider (BoT, the market refresh, `rate_reference_fetch`) stays shared across organisations. Only `org_starting_price_save` batches carry the caller's organisation, and their reader filters on it. No migration.
+
+Survey (main `fda6660b`): `rate_reference_batches.organization_id` exists with the seeded default (`20261011100000_organizations.sql:47`). Neither writer sets it (`pg_reference_batch_store.rs:84`, `org_starting_price_save.rs:185`). The only reader of `START` lines is `reference_base.rs:68-81`; today it scopes them through the provider name `'START:' || br.organization_id`.
+
+| Kind | Change |
+|---|---|
+| `[required]` writer `api/src/presentation/http/v3/commands/org_starting_price_save.rs:185` | the `INSERT INTO rate_reference_batches` writes `organization_id` = the caller's organisation (`org_id`, already in hand at `:173`) |
+| `[required]` reader `api/crates/xc-rate/src/application/draft/reference_base.rs:68-81` | adds `AND b.organization_id = br.organization_id`; the provider-name match stays |
+| market writers and readers (`pg_reference_batch_store.rs`, `feed_publisher.rs:134`, `branch_refresh.rs:103`, `published_rates.rs:431`, `publish_service.rs`, `market_pricing_loop.rs:376`, `spread_check.rs:302`, `pricing_approve.rs:351`) | unchanged: shared data, and no reader of market data filters on the column |
+| `pricing_board.rs:116-122` (the view's version stamp, which counts `START` across organisations) | a stamp, not data: another organisation's save only makes the board re-read. Left as it is; `pricing_board.rs` belongs to the D1 ticket |
+
+**Data migration.** None. (1) Existing `START:` batches keep the seeded default; the new reader filter keeps a row only where its column matches the branch's organisation, which the provider name already required. A row whose provider names another organisation than its column is dropped from the reference base. Measure before deploy: `SELECT count(*) FROM rate_reference_batches WHERE provider LIKE 'START:%' AND provider <> 'START:' || organization_id::text;`. (2) Backfill only if that count is above 0, and then it goes to the owner first (Data Risk): `UPDATE rate_reference_batches SET organization_id = substring(provider from 7)::uuid WHERE provider LIKE 'START:%';`. (3) The binary deploys on its own; there is no schema change, and the old binary ignores the column. (4) No `down`.
+
+**Up-front test:** organisation B saves starting prices; the new batch's `organization_id` is B, and a branch of B gets B's `START` line as its reference base while a branch of A does not.
+
+### 15.18 Tickets
+
+| Ticket | Scope | Class / worker | Released after |
+|---|---|---|---|
+| #5665 part 2 (D3+D4) | §15.16: the migration, `branch_repository.rs` ×2, `branch/service.rs` | `guarded` (migration) · gemini/warut-4 | #5665 part 1 merges |
+| #5666 D1 | §15.14: the migration plus 9 files | `guarded` · gemini/warut-5 | #5683 merges |
+| #5666 D2 | §15.15: the migration plus 6 files | `guarded` · whichever of warut-4/5 is free | #5690 merges |
+| #5666 D5 | §15.17: `org_starting_price_save.rs`, `reference_base.rs` | `logic` (no migration) · whichever of warut-4/5 is free | with D2, or alone; no file shared with D1–D4 |
+
+Each ticket has its own File scope and no file in common with the others. Up-front tests are written on `test/<n>` once the ticket's dependency has merged, so they compile against the merged signatures:
+- **D1:** one organisation's `FOLLOW` does not change another's `get_in` / `following_in`.
+- **D2:** organisation B's `denominations` view does not list organisation A's rows, and a group created by B is B's.
+- **D3+D4:** B may use A's branch name; B's count ignores A's branches; a name repeated within one organisation is still refused.
+
 ## 16. The branch list reads the view's permission (#5684, F-5)
 
 > Design by claude/86094638 (studio claude-15, sub-controller for #5684 under the xchange lane controller claude/608dff), 2026-10-30 ICT. Code cited on `origin/main` `61382f2f`. Ruling N-8 on #5558 (issuecomment-6515987193): `admin_branches` stays a `Request` row, and "filtering it to the caller's own branches is a follow-up, as #5557 did".
