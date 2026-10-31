@@ -70,26 +70,26 @@ run_case() {
 }
 
 ALL="packages=--workspace|run_tests=true"
-# A non-batch PR runs no tests (BE controller ruling on #2965, owner 2026-10-17): compile only, scoped.
-PR_ALL="packages=--workspace|run_tests=false"
+# A PR runs the tests of what it changed (owner 2026-10-31 on #564, replacing #2965's compile-only rule).
+PR_ALL="packages=--workspace|run_tests=true"
 
-# ── pull_request: compile only the changed crates and what depends on them; no tests ─────────────────────────────
-check "pr: a leaf crate's source => that crate and its dependents; no tests" pull_request feat/x \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+# ── pull_request: build and test the changed crates and what depends on them ─────────────────────────────
+check "pr: a leaf crate's source => that crate and its dependents; their tests" pull_request feat/x \
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 check "pr: the device agent alone => only it; no release check" pull_request feat/x \
-  "packages=-p xc-device-agent|run_tests=false|guards=true|device_agent=true|release_check=false" \
+  "packages=-p xc-device-agent|run_tests=true|guards=true|device_agent=true|release_check=false" \
   api/crates/xc-device-agent/src/main.rs
 check "pr: a root-package test => xchange only" pull_request feat/x \
-  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  "packages=-p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
   api/tests/open_of_teller_view_test.rs
 check "pr: a web screen => xchange (it embeds the screens)" pull_request feat/x \
-  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  "packages=-p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
   web/src/screens/admin/overview/Overview.tsx
 check "pr: docs only => nothing to build or test" pull_request docs/x \
   "packages=|run_tests=false|guards=false|device_agent=false|release_check=false" \
   docs/design/cash-shift-transfer.md README.md
-check "pr: Cargo.lock => compile everything, still no tests on a PR" pull_request feat/x \
+check "pr: Cargo.lock => compile everything, and test everything" pull_request feat/x \
   "$PR_ALL|guards=true|device_agent=true|release_check=true" \
   api/Cargo.lock
 check "pr: api/Cargo.toml => everything" pull_request feat/x \
@@ -124,7 +124,7 @@ check "batch PR: one small change => the full suite and the guards" pull_request
   "$ALL|guards=true|device_agent=true|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 check "a branch that only starts like batch is not a batch" pull_request batchy/merge \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
   api/crates/xc-shift/src/application/shift/service.rs
 
 # ── any other event plans everything (fail safe) ───────────────────────────────────────────────
