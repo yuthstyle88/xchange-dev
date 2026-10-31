@@ -386,6 +386,13 @@ One posting, `source_type EXCHANGE`, `source_key complete`, per currency balance
   above zero, the difference between that provisional cost and the acquisition's unit cost on the negative quantity
   is posted as an `ADJUST` movement (and a `realized_margin_thb` correction line on the adjustment posting), so the
   average restarts from real cost. `[proposed]`; the Blueprint leaves it to *"negative stock policy"* (§12).
+- **Cost with no history** (amendment 2026-10-31; owner *"ทำ T1"*, #564 issuecomment-6542441849). When a position has no
+  cost history (`last_average` is `None`) and must be costed, by a count overage into it (`adjust_in`) or a short sale
+  out of it (`dispose`), the unit cost is the branch's current published **BUY ÷ unit_size of group `ALL` at its first
+  tier**: `tier_lower_exclusive_thb IS NULL`, the `'ALL'` line first when one exists
+  (`ledger_postings.rs:459-484`, `published_buy_unit_cost`). On an untiered publication that is today's line; on a
+  tier-only one (MANUAL approve, `pricing-tiers.md` §15.3) it is T1's BUY, never another tier's. No BUY on that line, or
+  no line, is still refused `validationFailed` naming the currency. Ticket R2.
 
 ### 4.6 A reversal (#552, `reversal.md` V-6)
 
@@ -731,7 +738,7 @@ database with rows.
 |---|---|---|
 | Q-1 | The AccountZing event and accounts of §7 (AccountZing `DO_NOT_TOUCH.md`) | only the AccountZing ticket, which is not cut until answered |
 | Q-2 | `count_difference_limit_thb` per branch (unset = every difference goes to FINANCE) | nothing; ADMIN/FINANCE sets it |
-| Q-3 | The opening cost of today's stock at cutover (§9 migration 2): the published BUY rate, or a cost the owner types | LG-4's backfill only |
+| Q-3 | The opening cost of today's stock at cutover (§9 migration 2): the published BUY rate, or a cost the owner types | LG-4's backfill only. For stock with no history the owner ruled 2026-10-31 *"ทำ T1"*: the first tier's BUY (§4.5 "Cost with no history") |
 | Q-4 | §4.5's provisional-cost rule for negative stock | LG-2 |
 
 ---
