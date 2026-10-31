@@ -1,0 +1,92 @@
+name: qa-e2e
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('qa-e2e-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'qa-e2e-main') || format('qa-e2e-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  changes:
+    name: changes
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.filter.outputs.run }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check changed files
+        id: filter
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.event.after }}
+        run: |
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            base_ref="${PR_BASE_REF:-${GITHUB_BASE_REF:-main}}"
+            if [ -n "$base_ref" ] && git rev-parse --verify "origin/$base_ref" >/dev/null 2>&1; then
+              BASE=$(git merge-base "origin/$base_ref" "$PR_HEAD" 2>/dev/null || echo "$PR_BASE")
+            elif [ -n "$base_ref" ] && git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+              BASE=$(git merge-base "$base_ref" "$PR_HEAD" 2>/dev/null || echo "$PR_BASE")
+            else
+              BASE="$PR_BASE"
+            fi
+            HEAD="$PR_HEAD"
+          else
+            BASE="$PUSH_BEFORE"
+            HEAD="$PUSH_AFTER"
+          fi
+          run=$(bash .github/scripts/should-build.sh --pathspec "qa/e2e/" .github/workflows/qa-e2e.yml "$EVENT_NAME" "$BASE" "$HEAD" || echo "true")
+          if [ "$run" != "false" ]; then
+            run=true
+          fi
+          echo "run=$run" | tee -a "$GITHUB_OUTPUT"
+
+  qa-e2e:
+    name: qa-e2e
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run == 'true' }}
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 10
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install (npm ci)
+        run: npm --prefix qa/e2e ci --no-audit --no-fund --prefer-offline
+
+      - name: Typecheck
+        run: cd qa/e2e && npx tsc -p .
+
+      - name: List specs
+        run: |
+          cd qa/e2e && npx playwright test --list | tee list.txt
+          last_line=$(tail -n 1 list.txt)
+          if ! printf '%s\n' "$last_line" | grep -qE '^Total: [1-9][0-9]* tests in [1-9][0-9]* files$'; then
+            echo "::error::Unexpected last line from playwright test --list: $last_line" >&2
+            exit 1
+          fi
