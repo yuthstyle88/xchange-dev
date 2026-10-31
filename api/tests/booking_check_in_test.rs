@@ -23,9 +23,9 @@
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, SystemTime};
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, TimeZone, Utc};
 use chrono_tz::Asia::Bangkok;
 use sha2::{Digest, Sha256};
 use sqlx::migrate::Migrator;
@@ -55,6 +55,18 @@ const MUST_FINISH: StdDuration = StdDuration::from_secs(60);
 const ORG_ID: &str = "00000000-0000-0000-0000-000000000001";
 const TELLER_ID: &str = "00000000-0000-0000-0000-000000000010";
 const BRANCH_ID: &str = "XC-B01";
+
+/// 12:00 Asia/Bangkok today as UTC.
+fn noon_today_bangkok() -> DateTime<Utc> {
+    let today = DateTime::<Utc>::from(SystemTime::now())
+        .with_timezone(&Bangkok)
+        .date_naive();
+    Bangkok
+        .from_local_datetime(&today.and_hms_opt(12, 0, 0).expect("12:00:00 is valid"))
+        .single()
+        .expect("12:00 in Asia/Bangkok is unambiguous")
+        .with_timezone(&Utc)
+}
 
 fn unique(prefix: &str) -> String {
     xc_testdb::unique_schema_name(prefix)
@@ -215,7 +227,7 @@ impl TestHarness {
             vec![ScopedRole::new(
                 Role::Teller,
                 Some(branch.clone()),
-                Utc::now() - Duration::days(1),
+                noon_today_bangkok() - Duration::days(1),
                 None,
             )],
             None,
@@ -420,7 +432,7 @@ fn make_qr_token() -> (String, Vec<u8>) {
 #[tokio::test]
 async fn check_in_by_right_qr_issues_booking_ticket_and_marks_checked_in() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -490,7 +502,7 @@ async fn check_in_by_right_qr_issues_booking_ticket_and_marks_checked_in() {
 #[tokio::test]
 async fn check_in_identity_checked_issues_booking_ticket_and_marks_checked_in() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -546,7 +558,7 @@ async fn check_in_identity_checked_issues_booking_ticket_and_marks_checked_in() 
 #[tokio::test]
 async fn check_in_wrong_qr_refuses_with_qr_mismatch() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -606,7 +618,7 @@ async fn check_in_wrong_qr_refuses_with_qr_mismatch() {
 #[tokio::test]
 async fn check_in_qr_of_another_booking_refuses_with_qr_mismatch() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -679,7 +691,7 @@ async fn check_in_qr_of_another_booking_refuses_with_qr_mismatch() {
 #[tokio::test]
 async fn check_in_closed_queue_refuses_and_booking_stays_confirmed() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -752,7 +764,7 @@ async fn check_in_closed_queue_refuses_and_booking_stays_confirmed() {
 #[tokio::test]
 async fn check_in_another_day_refuses_check_in_window() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let tomorrow_date = (now + Duration::days(1))
         .with_timezone(&Bangkok)
         .date_naive();
@@ -812,7 +824,7 @@ async fn check_in_another_day_refuses_check_in_window() {
 #[tokio::test]
 async fn check_in_after_start_plus_grace_refuses_check_in_window() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -865,7 +877,7 @@ async fn check_in_after_start_plus_grace_refuses_check_in_window() {
 #[tokio::test]
 async fn ticket_serving_transitions_booking_to_in_service() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -934,7 +946,7 @@ async fn ticket_serving_transitions_booking_to_in_service() {
 #[tokio::test]
 async fn ticket_no_show_keeps_checked_in_and_allows_second_check_in() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -1020,7 +1032,7 @@ async fn ticket_no_show_keeps_checked_in_and_allows_second_check_in() {
 #[tokio::test]
 async fn day_close_cancels_checked_in_booking_with_day_closed() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -1099,7 +1111,7 @@ async fn day_close_cancels_checked_in_booking_with_day_closed() {
 #[tokio::test]
 async fn teller_cancel_of_checked_in_booking_cancels_active_ticket() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
@@ -1181,7 +1193,7 @@ async fn teller_cancel_of_checked_in_booking_cancels_active_ticket() {
 #[tokio::test]
 async fn booking_cancel_by_teller_cancels_checked_in_booking_and_active_ticket() {
     let h = TestHarness::start().await;
-    let now = Utc::now();
+    let now = noon_today_bangkok();
     let service_date = now.with_timezone(&Bangkok).date_naive();
     let slot_id = Uuid::new_v4();
     let customer_id = format!("CUST-{}", unique("c"));
