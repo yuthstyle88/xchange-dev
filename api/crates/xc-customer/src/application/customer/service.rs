@@ -119,13 +119,19 @@ impl CustomerService {
         })
     }
 
-    /// `reserve`, with a refusal of the customer's details naming its field (RF-D3).
-    pub async fn reserve_checked(
+    async fn prepare_reserve(
         &self,
         branch: &BranchId,
-        cmd: ReserveCustomer,
-        now: DateTime<Utc>,
-    ) -> Result<Reservation, ReserveError> {
+        cmd: &ReserveCustomer,
+    ) -> Result<
+        (
+            Uuid,
+            CustomerDetails,
+            std::sync::Arc<xc_kernel::pii::PiiKeys>,
+            [u8; 32],
+        ),
+        ReserveError,
+    > {
         if !self
             .repo
             .branch_exists(branch)
@@ -137,7 +143,7 @@ impl CustomerService {
             )));
         }
 
-        let details = CustomerDetails::check(&cmd).map_err(ReserveError::Input)?;
+        let details = CustomerDetails::check(cmd).map_err(ReserveError::Input)?;
         let org_id = self
             .repo
             .organization_of_branch(branch)
@@ -164,6 +170,52 @@ impl CustomerService {
         })?;
 
         let lookup_hash = LookupHasher::new(&keys).hash(IdentityType::Passport, &normalized);
+        Ok((org_id, details, keys, lookup_hash))
+    }
+
+    fn seal_passport_identity(
+        org_id: Uuid,
+        customer_id: &str,
+        details: &CustomerDetails,
+        keys: std::sync::Arc<xc_kernel::pii::PiiKeys>,
+        lookup_hash: &[u8],
+        created_at: DateTime<Utc>,
+    ) -> CustomerIdentity {
+        let cipher = PiiCipher::new(keys);
+        let aad = format!("{customer_id}PASSPORT");
+        let payload = serde_json::json!({
+            "number": details.passport_no,
+            "nationality": details.nationality,
+            "birthDate": details.birth_date.map(|d| d.to_string()),
+            "expiry": details.passport_expiry.map(|d| d.to_string()),
+            "nameOnDocument": details.name,
+        });
+        let sealed = cipher.encrypt(aad.as_bytes(), payload.to_string().as_bytes());
+
+        CustomerIdentity {
+            id: uuid::Uuid::new_v4(),
+            organization_id: org_id,
+            customer_id: customer_id.to_owned(),
+            r#type: IdentityType::Passport,
+            encrypted_value: sealed.bytes,
+            key_id: sealed.key_id,
+            lookup_hash: lookup_hash.to_vec(),
+            nationality: Some(details.nationality.clone()),
+            verified_at: None,
+            status: "ACTIVE".to_string(),
+            created_at,
+            updated_at: None,
+        }
+    }
+
+    /// `reserve`, with a refusal of the customer's details naming its field (RF-D3).
+    pub async fn reserve_checked(
+        &self,
+        branch: &BranchId,
+        cmd: ReserveCustomer,
+        now: DateTime<Utc>,
+    ) -> Result<Reservation, ReserveError> {
+        let (org_id, details, keys, lookup_hash) = self.prepare_reserve(branch, &cmd).await?;
 
         self.branch_tx
             .run(branch, move |tx| {
@@ -192,31 +244,14 @@ impl CustomerService {
                         } => (customer_id, created_at),
                     };
 
-                    let cipher = PiiCipher::new(keys);
-                    let aad = format!("{customer_id}PASSPORT");
-                    let payload = serde_json::json!({
-                        "number": details.passport_no,
-                        "nationality": details.nationality,
-                        "birthDate": details.birth_date.map(|d| d.to_string()),
-                        "expiry": details.passport_expiry.map(|d| d.to_string()),
-                        "nameOnDocument": details.name,
-                    });
-                    let sealed = cipher.encrypt(aad.as_bytes(), payload.to_string().as_bytes());
-
-                    let new_identity = CustomerIdentity {
-                        id: uuid::Uuid::new_v4(),
-                        organization_id: org_id,
-                        customer_id: customer_id.clone(),
-                        r#type: IdentityType::Passport,
-                        encrypted_value: sealed.bytes,
-                        key_id: sealed.key_id,
-                        lookup_hash: lookup_hash.to_vec(),
-                        nationality: Some(details.nationality.clone()),
-                        verified_at: None,
-                        status: "ACTIVE".to_string(),
+                    let new_identity = Self::seal_passport_identity(
+                        org_id,
+                        &customer_id,
+                        &details,
+                        keys,
+                        lookup_hash.as_slice(),
                         created_at,
-                        updated_at: None,
-                    };
+                    );
 
                     PgCustomerRepository::insert_customer_and_identity_in_tx(
                         tx,
@@ -250,8 +285,95 @@ impl CustomerService {
         booking_id: &str,
         now: DateTime<Utc>,
     ) -> Result<Reservation, ReserveError> {
-        let _ = (branch, cmd, booking_id, now);
-        todo!("C1: reserve_for_booking")
+        let (org_id, details, keys, lookup_hash) = self.prepare_reserve(branch, &cmd).await?;
+        let branch_id = branch.as_str().to_owned();
+        let booking_id = booking_id.to_owned();
+
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move {
+                    let booker: Option<String> = sqlx::query_scalar(
+                        "SELECT customer_id FROM bookings \
+                         WHERE id = $1 AND branch_id = $2 AND status IN ('CHECKED_IN', 'IN_SERVICE')",
+                    )
+                    .bind(&booking_id)
+                    .bind(&branch_id)
+                    .fetch_optional(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    let Some(booker) = booker else {
+                        return Err(AppError::Domain(BOOKING_NOT_USABLE.to_owned()));
+                    };
+
+                    let lock_key = i64::from_be_bytes(lookup_hash[0..8].try_into().unwrap());
+                    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+                        .bind(lock_key)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+
+                    sqlx::query("SELECT id FROM customers WHERE id = $1 FOR UPDATE")
+                        .bind(&booker)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(AppError::Database)?;
+
+                    if let Some(existing_id) =
+                        Self::find_existing_in_tx(tx, org_id, lookup_hash.as_slice()).await?
+                    {
+                        if existing_id == booker {
+                            return Ok(Reservation {
+                                customer_id: booker,
+                                existing: true,
+                            });
+                        }
+                        return Err(AppError::Domain(BOOKING_NOT_THIS_CUSTOMER.to_owned()));
+                    }
+
+                    let active_passports: i64 = sqlx::query_scalar(
+                        "SELECT count(*) FROM customer_identities \
+                         WHERE customer_id = $1 AND type = 'PASSPORT' AND status = 'ACTIVE'",
+                    )
+                    .bind(&booker)
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(AppError::Database)?;
+
+                    if active_passports > 0 {
+                        return Err(AppError::Domain(BOOKING_NOT_THIS_CUSTOMER.to_owned()));
+                    }
+
+                    let created_at = Utc
+                        .timestamp_millis_opt(now.timestamp_millis())
+                        .single()
+                        .unwrap_or(now);
+                    let new_identity = Self::seal_passport_identity(
+                        org_id,
+                        &booker,
+                        &details,
+                        keys,
+                        lookup_hash.as_slice(),
+                        created_at,
+                    );
+                    Self::insert_identity_in_tx(tx, &new_identity).await?;
+
+                    Ok(Reservation {
+                        customer_id: booker,
+                        existing: true,
+                    })
+                })
+            })
+            .await
+            .map_err(|e| match e {
+                AppError::Domain(s) if s == BOOKING_NOT_THIS_CUSTOMER => {
+                    ReserveError::Input(CustomerRefusal {
+                        field: CustomerField::PassportNo,
+                        sentence: BOOKING_NOT_THIS_CUSTOMER,
+                    })
+                }
+                other => ReserveError::Other(other),
+            })
     }
 
     pub async fn reserve(
