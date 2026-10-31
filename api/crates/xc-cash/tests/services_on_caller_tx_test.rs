@@ -34,6 +34,7 @@ use rust_decimal::Decimal;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool, Postgres, Transaction};
+use uuid::Uuid;
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access::{Actor, Role, ScopedRole};
 use xc_cash::application::count::count_service::CountVerified;
@@ -1285,6 +1286,14 @@ async fn receive_in_of_a_single_branch_kind_runs_on_a_once_locked_tx() {
     flow.decide(&approver, &t.id, Outcome::Approved, "ok", at(20))
         .await
         .expect("approved");
+    publish(
+        &db.pool,
+        &branch,
+        0,
+        &[("USD", "ALL", "ALL", "1", Some("33.00"), "34.00", None, None)],
+        true,
+    )
+    .await;
     flow.dispatch(&finance, &t.id, at(30))
         .await
         .expect("dispatched");
@@ -1848,4 +1857,81 @@ async fn verify_in_same_org_verifier_is_counter_is_refused_by_person_rules() {
         other => panic!("expected SameCounter refusal, got {other:?}"),
     }
     tx.rollback().await.expect("roll back");
+}
+
+type Line<'a> = (
+    &'a str,
+    &'a str,
+    &'a str,
+    &'a str,
+    Option<&'a str>,
+    &'a str,
+    Option<&'a str>,
+    Option<&'a str>,
+);
+
+async fn publish(
+    pool: &PgPool,
+    branch: &BranchId,
+    days_ago: i32,
+    lines: &[Line<'_>],
+    current: bool,
+) -> Uuid {
+    let request = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, \
+         proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
+         VALUES ($1, 'RATE_PUBLICATION', $2, $3, 'h', 'p', '{}'::jsonb, 'test', now(), 'APPROVED', $4, '00000000-0000-0000-0000-000000000001')",
+    )
+    .bind(request)
+    .bind(branch.as_str())
+    .bind(unique("pub-object"))
+    .bind(unique("pub-key"))
+    .execute(pool)
+    .await
+    .expect("an approved rate publication request");
+    let publication = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO rate_publications (id, branch_id, version, published_at, approved_request_id, published_by) \
+         VALUES ($1, $2, (SELECT coalesce(max(version), 0) + 1 FROM rate_publications WHERE branch_id = $2), \
+                 now() - make_interval(days => $3), $4, 'test')",
+    )
+    .bind(publication)
+    .bind(branch.as_str())
+    .bind(days_ago)
+    .bind(request)
+    .execute(pool)
+    .await
+    .expect("a rate publication");
+    for (cur, group, tier, unit, buy, sell, lo, hi) in lines {
+        sqlx::query(
+            "INSERT INTO published_rate_lines (id, publication_id, currency_code, denomination_group, \
+             value_tier, unit_size, buy_rate, sell_rate, source_snapshot, tier_lower_exclusive_thb, \
+             tier_upper_inclusive_thb) \
+             VALUES ($1, $2, $3, $4, $5, $6::numeric, $7::numeric, $8::numeric, '{}'::jsonb, \
+                     $9::numeric, $10::numeric)",
+        )
+        .bind(Uuid::new_v4())
+        .bind(publication)
+        .bind(*cur)
+        .bind(*group)
+        .bind(*tier)
+        .bind(*unit)
+        .bind(*buy)
+        .bind(*sell)
+        .bind(*lo)
+        .bind(*hi)
+        .execute(pool)
+        .await
+        .expect("a published rate line");
+    }
+    if current {
+        sqlx::query("UPDATE branches SET current_publication_id = $1 WHERE id = $2")
+            .bind(publication)
+            .bind(branch.as_str())
+            .execute(pool)
+            .await
+            .expect("make the publication current");
+    }
+    publication
 }
