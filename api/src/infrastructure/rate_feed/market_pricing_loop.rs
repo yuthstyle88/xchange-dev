@@ -118,7 +118,14 @@ impl MarketPricingLoop {
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let currencies = PgPricingModeStore.following_in(&mut lock_tx).await?;
+        let org_id: String =
+            sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = 'MAIN'")
+                .fetch_one(&mut *lock_tx)
+                .await
+                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+        let currencies = PgPricingModeStore
+            .following_in(&mut lock_tx, &org_id)
+            .await?;
         let mut results = Vec::with_capacity(currencies.len());
         for currency in currencies {
             match self.plan_currency(currency, now).await {

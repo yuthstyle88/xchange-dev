@@ -48,6 +48,7 @@ pub trait PricingModeStore: Send + Sync {
     fn save_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
         currency: CurrencyCode,
         mode: PricingMode,
         by: &'a str,
@@ -57,14 +58,21 @@ pub trait PricingModeStore: Send + Sync {
     fn get_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingModeRow>>;
 
     /// Every currency whose mode is `FOLLOW`, by code.
-    fn following_in<'a>(&'a self, conn: &'a mut PgConnection)
-    -> StoreFuture<'a, Vec<CurrencyCode>>;
+    fn following_in<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        organization_id: &'a str,
+    ) -> StoreFuture<'a, Vec<CurrencyCode>>;
 
     /// `max(revision)` over every row, for `pricing_board`'s version (§15.9).
-    fn newest_revision_in<'a>(&'a self, conn: &'a mut PgConnection)
-    -> StoreFuture<'a, Option<i64>>;
+    fn newest_revision_in<'a>(
+        &'a self,
+        conn: &'a mut PgConnection,
+        organization_id: &'a str,
+    ) -> StoreFuture<'a, Option<i64>>;
 }
