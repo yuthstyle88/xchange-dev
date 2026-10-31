@@ -237,6 +237,7 @@ impl Settings {
                 audience: identity_audience.unwrap().clone(),
                 issuer: identity_issuer.unwrap().clone(),
                 api_key,
+                internal_token: None,
             })
         } else if count == 0 && identity_api_key.is_none() {
             None
