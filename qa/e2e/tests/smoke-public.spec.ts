@@ -1,7 +1,7 @@
 // QA-S1 — smoke: public pages (/login, /app/sign-in, /app/sign-up, /rates) (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-S1; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { test } from '@playwright/test';
-import { CUSTOMER_LANGS, STAFF_LANGS, smoke } from './helpers';
+import { CUSTOMER_LANGS, STAFF_LANGS, smoke, users } from './helpers';
 
 test.describe('QA-S1 smoke: public pages (/login, /app/sign-in, /app/sign-up, /rates)', () => {
   // key: web/src/screens/login/LoginScreen.tsx:126
@@ -42,14 +42,14 @@ test.describe('QA-S1 smoke: public pages (/login, /app/sign-in, /app/sign-up, /r
     });
   });
 
-  // key: web/src/screens/customer/rate-display/RateDisplay.tsx:57
+  // key: web/src/screens/customer/rate-display/board/BoardShell.tsx:52
   test('/rates', async ({ page }) => {
     await smoke(page, {
       area: 'public',
       screen: 'rates',
-      path: '/rates',
+      path: `/rates?branch=${encodeURIComponent(users.branch)}`,
       role: 'anonymous',
-      key: '.xc-rate-display',
+      key: '.xc-rb',
       langs: CUSTOMER_LANGS,
     });
   });

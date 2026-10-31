@@ -282,7 +282,9 @@ impl SpreadCheck {
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
         let unit_sizes: HashMap<String, Decimal> = unit_rows.into_iter().collect();
 
-        let following = PgPricingModeStore.following_in(tx).await?;
+        let following = PgPricingModeStore
+            .following_in(tx, &org_id.to_string())
+            .await?;
         let main_settings = PricingSuggestionSettingsStore::for_branch(tx, "MAIN").await?;
 
         let mut report = SpreadReport::default();

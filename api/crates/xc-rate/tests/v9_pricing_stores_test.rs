@@ -458,11 +458,17 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
     let store = PgPricingModeStore;
     let mut conn = db.pool.acquire().await.expect("a connection");
     assert_eq!(
-        store.get_in(&mut conn, code("USD")).await.expect("read"),
+        store
+            .get_in(&mut conn, rate_engine_common::ORG, code("USD"))
+            .await
+            .expect("read"),
         None
     );
     assert_eq!(
-        store.newest_revision_in(&mut conn).await.expect("newest"),
+        store
+            .newest_revision_in(&mut conn, rate_engine_common::ORG)
+            .await
+            .expect("newest"),
         None
     );
 
@@ -470,6 +476,7 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
         store
             .save_in(
                 &mut conn,
+                rate_engine_common::ORG,
                 code("USD"),
                 PricingMode::Follow,
                 "owner-1",
@@ -483,6 +490,7 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
         store
             .save_in(
                 &mut conn,
+                rate_engine_common::ORG,
                 code("USD"),
                 PricingMode::Manual,
                 "owner-1",
@@ -495,6 +503,7 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
     store
         .save_in(
             &mut conn,
+            rate_engine_common::ORG,
             code("JPY"),
             PricingMode::Follow,
             "owner-1",
@@ -505,6 +514,7 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
     store
         .save_in(
             &mut conn,
+            rate_engine_common::ORG,
             code("EUR"),
             PricingMode::Follow,
             "owner-1",
@@ -514,7 +524,7 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
         .expect("save EUR");
 
     let usd = store
-        .get_in(&mut conn, code("USD"))
+        .get_in(&mut conn, rate_engine_common::ORG, code("USD"))
         .await
         .expect("read")
         .expect("the row");
@@ -522,11 +532,17 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
     assert_eq!(usd.revision, 2);
     assert_eq!(usd.updated_at, at(1));
     assert_eq!(
-        store.following_in(&mut conn).await.expect("following"),
+        store
+            .following_in(&mut conn, rate_engine_common::ORG)
+            .await
+            .expect("following"),
         vec![code("EUR"), code("JPY")]
     );
     assert_eq!(
-        store.newest_revision_in(&mut conn).await.expect("newest"),
+        store
+            .newest_revision_in(&mut conn, rate_engine_common::ORG)
+            .await
+            .expect("newest"),
         Some(2)
     );
 }

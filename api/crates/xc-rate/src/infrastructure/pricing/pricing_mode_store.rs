@@ -16,6 +16,7 @@ impl PricingModeStore for PgPricingModeStore {
     fn save_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
         currency: CurrencyCode,
         mode: PricingMode,
         by: &'a str,
@@ -23,15 +24,16 @@ impl PricingModeStore for PgPricingModeStore {
     ) -> StoreFuture<'a, i64> {
         Box::pin(async move {
             let row = sqlx::query(
-                "INSERT INTO pricing_modes (currency_code, mode, revision, updated_by, updated_at) \
-                 VALUES ($1, $2, 1, $3, $4) \
-                 ON CONFLICT (currency_code) DO UPDATE \
+                "INSERT INTO pricing_modes (organization_id, currency_code, mode, revision, updated_by, updated_at) \
+                 VALUES ($1::uuid, $2, $3, 1, $4, $5) \
+                 ON CONFLICT (organization_id, currency_code) DO UPDATE \
                  SET mode = EXCLUDED.mode, \
                      revision = pricing_modes.revision + 1, \
                      updated_by = EXCLUDED.updated_by, \
                      updated_at = EXCLUDED.updated_at \
                  RETURNING revision",
             )
+            .bind(organization_id)
             .bind(currency.as_str())
             .bind(mode.as_str())
             .bind(by)
@@ -47,14 +49,16 @@ impl PricingModeStore for PgPricingModeStore {
     fn get_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
         currency: CurrencyCode,
     ) -> StoreFuture<'a, Option<PricingModeRow>> {
         Box::pin(async move {
             let row = sqlx::query(
                 "SELECT mode, revision, updated_by, updated_at \
                  FROM pricing_modes \
-                 WHERE currency_code = $1",
+                 WHERE organization_id = $1::uuid AND currency_code = $2",
             )
+            .bind(organization_id)
             .bind(currency.as_str())
             .fetch_optional(&mut *conn)
             .await
@@ -80,11 +84,14 @@ impl PricingModeStore for PgPricingModeStore {
     fn following_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
     ) -> StoreFuture<'a, Vec<CurrencyCode>> {
         Box::pin(async move {
             let rows = sqlx::query(
-                "SELECT currency_code FROM pricing_modes WHERE mode = 'FOLLOW' ORDER BY currency_code",
+                "SELECT currency_code FROM pricing_modes \
+                 WHERE organization_id = $1::uuid AND mode = 'FOLLOW' ORDER BY currency_code",
             )
+            .bind(organization_id)
             .fetch_all(&mut *conn)
             .await
             .map_err(|e| RateEngineError::Database(e.to_string()))?;
@@ -106,12 +113,16 @@ impl PricingModeStore for PgPricingModeStore {
     fn newest_revision_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,
+        organization_id: &'a str,
     ) -> StoreFuture<'a, Option<i64>> {
         Box::pin(async move {
-            let row = sqlx::query("SELECT MAX(revision) AS newest FROM pricing_modes")
-                .fetch_one(&mut *conn)
-                .await
-                .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            let row = sqlx::query(
+                "SELECT MAX(revision) AS newest FROM pricing_modes WHERE organization_id = $1::uuid",
+            )
+            .bind(organization_id)
+            .fetch_one(&mut *conn)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
             Ok(row.get("newest"))
         })

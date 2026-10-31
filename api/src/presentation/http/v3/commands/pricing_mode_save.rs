@@ -83,7 +83,7 @@ impl CommandAction for PricingModeSaveCommand {
         }
 
         PgPricingModeStore
-            .save_in(tx, currency, mode, &who.user_id, now)
+            .save_in(tx, &who.organization_id, currency, mode, &who.user_id, now)
             .await
             .map_err(|_| server_error())?;
 
