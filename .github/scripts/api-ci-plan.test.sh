@@ -185,7 +185,7 @@ dcheck "dispatch: naming the device agent turns its job on" workflow_dispatch "x
 dcheck "schedule ignores the input => everything" schedule "xc-cash" \
   "$ALL|guards=true|device_agent=true|release_check=true"
 dcheck "pull_request ignores the input" pull_request "xc-cash" \
-  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=false|guards=true|device_agent=false|release_check=true"
+  "packages=-p xc-cash -p xc-shift -p xchange|run_tests=true|guards=true|device_agent=false|release_check=true"
 # an unknown package fails, naming it
 printf '%s\n' api/crates/xc-shift/src/application/shift/service.rs > "$TMP_DIR/changed.txt"
 if out=$(DISPATCH_PACKAGES="xc-cash xc-nope" "$PLAN" workflow_dispatch "" "$TMP_DIR/changed.txt" "$TMP_DIR/metadata.json" 2>&1); then
@@ -197,7 +197,7 @@ else
 fi
 
 check "PR: an api change runs the guards" pull_request feat/4883 \
-  "packages=-p xchange|run_tests=false|guards=true|device_agent=false|release_check=true" \
+  "packages=-p xchange|run_tests=true|guards=true|device_agent=false|release_check=true" \
   api/src/presentation/http/auth.rs
 
 echo "passed: $pass, failed: $fail"
