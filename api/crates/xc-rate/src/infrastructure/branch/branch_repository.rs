@@ -130,17 +130,26 @@ impl BranchRepository for PgBranchRepository {
     async fn name_taken(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        organization_id: &str,
         name: &str,
     ) -> AppResult<bool> {
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM branches WHERE lower(name) = lower($1))")
-            .bind(name)
-            .fetch_one(&mut **tx)
-            .await
-            .map_err(AppError::Database)
+        sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM branches WHERE lower(name) = lower($1) AND organization_id = $2::uuid)",
+        )
+        .bind(name)
+        .bind(organization_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)
     }
 
-    async fn count(&self, tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> AppResult<i64> {
-        sqlx::query_scalar("SELECT count(*) FROM branches")
+    async fn count(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        organization_id: &str,
+    ) -> AppResult<i64> {
+        sqlx::query_scalar("SELECT count(*) FROM branches WHERE organization_id = $1::uuid")
+            .bind(organization_id)
             .fetch_one(&mut **tx)
             .await
             .map_err(AppError::Database)

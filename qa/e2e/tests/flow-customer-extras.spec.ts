@@ -138,6 +138,12 @@ async function produceQueueNotifications(
   }
 }
 
+async function waitNotificationsLoaded(page: Page): Promise<void> {
+  await expect(
+    page.locator('.xc-notifications-list, .xc-notifications-empty, .xc-notifications-error').first(),
+  ).toBeVisible({ timeout: 15_000 });
+}
+
 test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number, rate alerts pause/resume, notifications read', () => {
   test('assistantAsk: (a) asks assistant and reads conversation back after reload; (b) refuses empty message in th/en; (c) serves non-customer role as anonymous app session', async ({
     page,
@@ -766,13 +772,15 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
 
       await withLang(page, 'en');
       await page.goto('/app/notifications');
-      // li.xc-notifications-item.xc-notifications-item-unread: web/src/screens/customer/notifications/Notifications.tsx:97-98
-      const unreadItems = page.locator('li.xc-notifications-item.xc-notifications-item-unread');
+      await waitNotificationsLoaded(page);
+      // .xc-notifications-item.xc-notifications-item-unread: web/src/screens/customer/notifications/Notifications.tsx:97-98
+      const unreadItems = page.locator('.xc-notifications-item.xc-notifications-item-unread');
 
       // If fewer than 2 unread notifications exist, try producing 2 real queue_called notifications via teller call + recall
       if ((await unreadItems.count()) < 2) {
         leftoverTicketId = await produceQueueNotifications(page, browser, true);
         await page.reload();
+        await waitNotificationsLoaded(page);
       }
 
       const countBeforeReadOne = await unreadItems.count();
@@ -815,6 +823,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       }
 
       await page.reload();
+      await waitNotificationsLoaded(page);
       const countAfterReadOne = await unreadItems.count();
       expect(
         countAfterReadOne,
@@ -825,6 +834,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
       if ((await unreadItems.count()) < 1) {
         leftoverTicketId = await produceQueueNotifications(page, browser, false);
         await page.reload();
+        await waitNotificationsLoaded(page);
       }
       const countBeforeReadAll = await unreadItems.count();
       if (countBeforeReadAll < 1) {
@@ -854,6 +864,7 @@ test.describe('QA-R9-10 flow: customer assistant, booking confirm, take a number
 
       // Reload and read back 0 unread notifications
       await page.reload();
+      await waitNotificationsLoaded(page);
       await expect(unreadItems, '0 unread items persist after page.reload()').toHaveCount(0);
       await expect(
         page.locator('button.xc-notifications-mark-all-btn'),

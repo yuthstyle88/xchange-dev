@@ -34,16 +34,18 @@ impl BranchView for DenominationsView {
     fn load(
         &self,
         _branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let organization_id = who.organization_id.clone();
         async move {
             let rows: Vec<(i64, String, Decimal, String)> = sqlx::query_as(
                 "SELECT id, currency_code::text, face_value, group_code FROM denominations \
-                 WHERE face_value IS NOT NULL \
+                 WHERE face_value IS NOT NULL AND organization_id = $1::uuid \
                  ORDER BY currency_code, face_value, id",
             )
+            .bind(&organization_id)
             .fetch_all(&pool)
             .await
             .map_err(AppError::Database)?;
