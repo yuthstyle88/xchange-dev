@@ -41,19 +41,17 @@ fn v3_route_files() -> Vec<PathBuf> {
 }
 
 /// Every `EntryPath`. `exhaustive` fails to compile when a variant is added and not listed here.
-const ALL: [EntryPath; 15] = [
+const ALL: [EntryPath; 13] = [
     EntryPath::Rpc,
     EntryPath::StaffRpc,
     EntryPath::Upload,
     EntryPath::StaffUpload,
     EntryPath::File,
     EntryPath::StaffFile,
-    EntryPath::StaffDesk,
     EntryPath::Devices,
     EntryPath::Kiosk,
     EntryPath::OwnerRoute,
     EntryPath::UserRoute,
-    EntryPath::Custody,
     EntryPath::PaymentMethods,
     EntryPath::DrawerPassport,
     EntryPath::DeviceSetup,
@@ -68,12 +66,10 @@ fn exhaustive(p: EntryPath) {
         | EntryPath::StaffUpload
         | EntryPath::File
         | EntryPath::StaffFile
-        | EntryPath::StaffDesk
         | EntryPath::Devices
         | EntryPath::Kiosk
         | EntryPath::OwnerRoute
         | EntryPath::UserRoute
-        | EntryPath::Custody
         | EntryPath::PaymentMethods
         | EntryPath::DrawerPassport
         | EntryPath::DeviceSetup => {}
