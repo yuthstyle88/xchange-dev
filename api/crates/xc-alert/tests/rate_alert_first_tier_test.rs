@@ -60,14 +60,28 @@ async fn create_on_a_tier_only_publication_observes_tier_1_sell() {
         .create(
             &svc,
             CX1,
-            &input("USD", CustomerSide::CustomerBuy, AlertCondition::Above, "34.20"),
+            &input(
+                "USD",
+                CustomerSide::CustomerBuy,
+                AlertCondition::Above,
+                "34.20",
+            ),
             &key(),
         )
         .await
-        .expect("row 1: created on a tier-only publication (main refuses: does not publish USD Sell)");
+        .expect(
+            "row 1: created on a tier-only publication (main refuses: does not publish USD Sell)",
+        );
     let row = db.row(alert.id).await;
-    assert_eq!(row.relation, "SATISFIED", "row 1: observed at T1's SELL 34.22");
-    assert_eq!(row.last_publication_version, Some(2), "row 1: the tier-only publication v2");
+    assert_eq!(
+        row.relation, "SATISFIED",
+        "row 1: observed at T1's SELL 34.22"
+    );
+    assert_eq!(
+        row.last_publication_version,
+        Some(2),
+        "row 1: the tier-only publication v2"
+    );
     db.finish().await;
 }
 
@@ -83,11 +97,18 @@ async fn create_on_a_tier_only_publication_observes_tier_1_buy() {
         .create(
             &svc,
             CX1,
-            &input("USD", CustomerSide::CustomerSell, AlertCondition::Below, "33.52"),
+            &input(
+                "USD",
+                CustomerSide::CustomerSell,
+                AlertCondition::Below,
+                "33.52",
+            ),
             &key(),
         )
         .await
-        .expect("row 2: created on a tier-only publication (main refuses: does not publish USD Buy)");
+        .expect(
+            "row 2: created on a tier-only publication (main refuses: does not publish USD Buy)",
+        );
     assert_eq!(
         db.row(alert.id).await.relation,
         "SATISFIED",
@@ -107,7 +128,12 @@ async fn resume_on_a_tier_only_publication_observes_tier_1() {
         .create(
             &svc,
             CX1,
-            &input("USD", CustomerSide::CustomerBuy, AlertCondition::Above, "35"),
+            &input(
+                "USD",
+                CustomerSide::CustomerBuy,
+                AlertCondition::Above,
+                "35",
+            ),
             &key(),
         )
         .await
@@ -120,7 +146,12 @@ async fn resume_on_a_tier_only_publication_observes_tier_1() {
     publish_usd_tiers(
         &db,
         2,
-        [("34.60", "35.10"), ("34.62", "35.05"), ("34.64", "34.98"), ("34.66", "34.90")],
+        [
+            ("34.60", "35.10"),
+            ("34.62", "35.05"),
+            ("34.64", "34.98"),
+            ("34.66", "34.90"),
+        ],
     )
     .await;
 
@@ -148,7 +179,12 @@ async fn a_currency_the_tier_only_publication_lacks_is_still_refused() {
         db.create(
             &svc,
             CX1,
-            &input("JPY", CustomerSide::CustomerBuy, AlertCondition::Above, "25"),
+            &input(
+                "JPY",
+                CustomerSide::CustomerBuy,
+                AlertCondition::Above,
+                "25",
+            ),
             &key(),
         )
         .await,
