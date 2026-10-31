@@ -26,7 +26,8 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
-use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
+use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 const MAIN: &str = "MAIN";
@@ -130,11 +131,15 @@ async fn quote_path_stale(pool: &PgPool, currency: &str) -> bool {
     for side in [Side::Buy, Side::Sell] {
         let mut tx = pool.begin().await.expect("a transaction");
         let got = reader
-            .line_in(
+            .line_for(
                 &mut tx,
                 &BranchId::new(MAIN),
-                CurrencyCode::parse(currency).unwrap(),
-                side,
+                LineSelector {
+                    code: CurrencyCode::parse(currency).unwrap(),
+                    side,
+                    group: GroupCode::all(),
+                    quantity: None,
+                },
             )
             .await
             .expect("line_in")
