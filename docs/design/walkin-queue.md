@@ -356,3 +356,104 @@ Measured on the Mac Studio, private PG17:
 ### 11.8 Data migration
 
 None. `branch_service_status` and its columns exist (`20261101100000_queue.sql`). The start writes the row through the existing `open_in` upsert.
+
+## 12. A held BOOKING ticket at the desk (W4a, the J2 gap)
+
+> Design by claude/01TxaRJG (FE sub-controller under claude/608dff), 2026-10-31 ICT, measured on `origin/main` `f4aa8360`.
+> Ruling **A** by claude/608dff on #564 (issuecomment-6541732560). The gap was found by the J2 journey survey (#5796, issuecomment-6541694206).
+
+### 12.1 The gap
+
+A booked customer who has been checked in and called cannot be sold to at the desk while the teller holds their BOOKING ticket.
+- The booking step calls `ticketServeWalkIn` whenever the sale has no entry key (`web/src/screens/desk/steps/booking/step.tsx:22-26`, `:58-69`).
+- W4 refuses `alreadyServing` for a held booking ticket (`api/crates/xc-queue/src/application/issue/walk_in_desk.rs:133-143`), on the assumption that *"the desk should open that entry instead"* (W4 above).
+- Since BK-11 (#1413) removed `?booking=` (`xchange-v3-wave3-desk.md:139,741`), no such entry exists. The only one is `?kiosk=` (`web/src/screens/desk/entries/kiosk/entry.ts:26`).
+
+The booking therefore never reaches `COMPLETED`, which only a sale saved with its `bookingId` can do (`api/crates/xc-booking/src/application/lifecycle.rs:116-160`, `booking-slots.md` B10). It ends `CANCELLED` at day close (`lifecycle.rs:213-260`).
+
+### 12.2 Decisions
+
+| # | Decision | Why |
+|---|---|---|
+| W4a.1 | **The desk's booking step looks for the teller's held ticket before it calls `serve`.** It reads `queue_board` (`QueueBoardData.called`, `web/src/shared/api/generated/queue_board.ts`), and takes the row whose `tellerId` is the caller's `me.id` (`api/src/presentation/http/v3/views/me.rs:195`). The teller holds at most one (`queue_desk.rs:95-108`). | Ruling A: use the held ticket's booking instead of `serve`. |
+| W4a.2 | **A held `BOOKING` ticket is mapped to its booking through `desk_bookings`** (`filter: {date: <today, Asia/Bangkok>}`): the item whose `ticketNumber` equals the held ticket's `displayNumber` and whose `status` is `CHECKED_IN` or `IN_SERVICE` (`DeskBookingItemDto`, `web/src/shared/api/generated/desk_bookings.ts`). The desk keeps `{bookingId, ticketId, displayNumber}` as `heldBooking` in the store, skips `serve`, and goes on. | No API change: both views exist and the desk already reads them (`desk_bookings`: `DeskBookingsScreen.tsx:279`; `queue_board`: `api/src/presentation/http/v3/views/queue_board.rs:44`, read by the desk queue through `web/src/shared/queue/`). A ticket number is unique per branch and service day. |
+| W4a.3 | **The save sends `bookingId` = `heldBooking.bookingId`**, after an entry's own `bookingId`/`onlineBookingId` (`save.ts:173-181`). `queueTicketId` stays `null`, since the server refuses the pair (`create.rs:481-484`). Completion runs `BookingSaveStep` and makes the booking `COMPLETED` (B10). | The server already accepts and completes a booking sale (`create.rs:324-335`, `complete.rs:345`). |
+| W4a.4 | **Held walk-in ticket, or nothing held: today's behaviour.** `serve` is called exactly as W4 says. | Ruling A keeps W4 (2)–(4). |
+| W4a.5 | **If the board or the bookings list can't be read, call `serve` as today.** | The server's W4 refusal stays the backstop: a held booking ticket still refuses `alreadyServing`, worded as today. The desk never guesses a booking. |
+| W4a.6 | **A held BOOKING ticket with no matching booking** (no item, or a status other than CHECKED_IN/IN_SERVICE): a worded refusal on the booking step, with no `serve` call and no step change. | Calling `serve` would only answer `alreadyServing`; saying which ticket has no booking tells the teller what to fix. |
+| W4a.7 | `heldBooking` is cleared with the rest of the sale (`startNew()` / `reset()`, `desk-store.ts:477-491`), as `walkInTicket` is. | One sale, one entry (W5). |
+
+### 12.3 Open: whose customer the sale is (needs a ruling before J2 can pass)
+
+`BookingSaveStep` requires the sale's `customerId` to be the booking's `customer_id`, or the save refuses `bookingNotThisCustomer` (`lifecycle.rs:84-88`). `bookings.customer_id` is `NOT NULL` (`booking-slots.md` §4 schema).
+
+Today's desk can't meet that for a customer who booked in the app:
+- The customer step's `reserveCustomer` finds an existing customer **only by passport hash** and otherwise creates a new one (`api/crates/xc-customer/src/application/customer/service.rs:160-185`).
+- It takes no customer or booking id (`reserve_customer.rs:4-11`, `api/src/application/compat/rpc.rs:424-437`).
+- A booker registered by phone, with no passport on file, therefore gets a **new** customer at the desk, and the save is refused.
+- Neither `queue_board` nor `desk_bookings` exposes the booking's `customer_id`.
+
+Options:
+
+| | Path | Cost |
+|---|---|---|
+| **C1 (proposed)** | `reserveCustomer` takes an optional `bookingId`. With it, the server answers **the booking's customer**, with these rules: <br>• the scanned passport is attached to that customer when it has none; <br>• it is accepted when it equals the one on file; <br>• it refuses `bookingNotThisCustomer` when the passport belongs to another customer or differs from the one on file. <br>The desk's customer step sends `heldBooking.bookingId` (the held ticket is read when the sale starts, W4a.1, so it is known before step 1). | Server `xc-customer` + rpc (`class:logic`, PII path) and one FE file (`steps/customer/step.tsx`). The identity rule is a business decision. |
+| C2 | The save takes the customer from the booking when `bookingId` is set, ignoring the desk's `customerId`. | Smallest, but the scanned passport is no longer tied to the customer who completes the booking. Not proposed. |
+| C3 | `desk_bookings` exposes `customerId`, and the desk skips `reserveCustomer`. | The passport is never recorded on that customer. Not proposed. |
+
+Until this is ruled:
+- W4a.1–W4a.7 still ship. A booking sale **succeeds** when the booker's passport is already on file (the same customer comes back), and is refused `bookingNotThisCustomer`, worded, otherwise. Today the same sale is refused `alreadyServing`, so no case gets worse.
+- J2 (#5796) waits for both halves, because its customer is an app booker with no passport on file.
+
+### 12.4 Behaviour table (pinned by the FE ticket's up-front tests)
+
+| Row | Held ticket (board `called`, `tellerId == me.id`) | Booking step does | Save body |
+|---|---|---|---|
+| 1 | BOOKING `B003`; `desk_bookings` has `{id: bk-9, ticketNumber: B003, status: IN_SERVICE}` | no `serve`; `heldBooking = {bk-9, <ticket id>, B003}`; shows `[data-row="held-booking"]` with `B003`; step 3 | `bookingId: "bk-9"`, `queueTicketId: null` |
+| 2 | WALK_IN | `serve` once, as today; `walkInTicket` set | `queueTicketId` = the served ticket, `bookingId: null` |
+| 3 | none | `serve` once, as today | as today |
+| 3b | BOOKING held by **another** teller | ignored; `serve` once | as today |
+| 4 | board read fails | `serve` once, as today (W4a.5) | as today |
+| 5 | BOOKING `B004`, no matching booking | worded refusal `error.heldBookingUnmatched` on `role="alert"`; no `serve`; stays on step 2 | — |
+| 6 | after `startNew()` | `heldBooking` cleared | — |
+
+### 12.5 Class diagram
+
+```mermaid
+classDiagram
+  class HeldTicket {
+    <<web/src/screens/desk/held-ticket.ts>>
+    +readHeldTicket(api, branch, meId, today) Promise~HeldTicketRead~
+  }
+  class HeldTicketRead {
+    <<union>>
+    none | walkIn | booking(HeldBooking) | bookingUnmatched(displayNumber) | unknown
+  }
+  class HeldBooking {
+    bookingId: string
+    ticketId: string
+    displayNumber: string
+  }
+  class DeskStore {
+    <<desk-store.ts>>
+    +heldBooking() HeldBooking|undefined
+    +setHeldBooking(h)
+  }
+  class BookingStep { <<steps/booking/step.tsx>> }
+  class Save { <<save.ts createBody>> }
+  BookingStep --> HeldTicket : before serve
+  BookingStep --> DeskStore : setHeldBooking
+  Save --> DeskStore : heldBooking().bookingId
+```
+
+### 12.6 Tickets
+
+| Ticket | File scope | Class |
+|---|---|---|
+| **FE-W4a** booking step uses the held BOOKING ticket | `web/src/screens/desk/held-ticket.ts` (new), `web/src/screens/desk/desk-store.ts`, `web/src/screens/desk/steps/booking/step.tsx`, `web/src/screens/desk/steps/booking/i18n.ts`, `web/src/screens/desk/save.ts` | `class:logic`, Argon; up-front tests on `test/<n>` |
+| C1 pair (after the §12.3 ruling) | server `reserveCustomer` + `steps/customer/step.tsx` | written after the ruling |
+
+### 12.7 Out of scope / data migration
+
+- The kiosk entry and the board's own buttons are unchanged. W4 stays as written; W4a only changes what the desk sends before `serve`.
+- **Data migration: none.** No table or column changes. FE-W4a reads two existing views.
