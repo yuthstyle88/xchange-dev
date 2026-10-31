@@ -188,17 +188,6 @@ async fn line_for(
     got
 }
 
-async fn line_in(db: &TestDb, currency: &str, side: Side) -> Option<PublishedSide> {
-    let rates = PgPublishedRates::new(db.pool.clone());
-    let mut tx = db.pool.begin().await.expect("begin");
-    let got = rates
-        .line_in(&mut tx, &BranchId::new("MAIN"), code(currency), side)
-        .await
-        .expect("line_in answers");
-    tx.commit().await.expect("commit");
-    got
-}
-
 fn teller() -> SaveActor {
     SaveActor {
         id: "employee-7".to_owned(),
@@ -312,24 +301,6 @@ async fn a_tiered_line_without_a_quantity_is_tier_1() {
         .expect("B4: tier 1 needs no quantity");
     assert_eq!(side.line_id.to_string(), id_of(&ids, "T1"));
     assert_eq!(side.rate.value(), dec("31.50"));
-    db.finish().await;
-}
-
-#[tokio::test]
-async fn line_in_never_reads_a_tiered_line() {
-    let db = TestDb::start().await;
-    let p = db.publish("MAIN", &[USD, JPY]).await;
-    add_tiers(&db, &p.id, "USD", "ALL", "1", &USD_TIERS, true).await;
-    assert_eq!(
-        line_in(&db, "USD", Side::Buy).await,
-        None,
-        "tiered: unavailable"
-    );
-    let jpy = line_in(&db, "JPY", Side::Buy)
-        .await
-        .expect("JPY is untiered");
-    assert_eq!(jpy.line_id.to_string(), p.line("JPY"));
-    assert_eq!(jpy.value_tier.as_str(), "ALL");
     db.finish().await;
 }
 

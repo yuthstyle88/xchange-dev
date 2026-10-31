@@ -7,7 +7,7 @@ import { screenT, t as sharedT } from '../../../../shared/i18n';
 import { fieldError } from '../../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../../shared/i18n/worded-error';
 import { bangkokToday, type DeskStore } from '../../desk-store';
-import { readHeldTicket } from '../../held-ticket';
+import { hasEntryKey, readHeldTicket } from '../../held-ticket';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
 
@@ -20,12 +20,6 @@ const OWN_ERROR_KEYS = {
   counterPaused: 'error.counterPaused',
   alreadyServing: 'error.alreadyServing',
 } as const satisfies Record<string, keyof typeof texts.th>;
-
-function hasEntryKey(store: DeskStore): boolean {
-  const extras = store.entry()?.payloadExtras();
-  if (!extras) return false;
-  return Boolean(extras.bookingId || extras.onlineBookingId || extras.kioskRequestId);
-}
 
 function serveErrorMessage(err: unknown): string {
   if (err instanceof ApiError && !isServerFailure(err)) {

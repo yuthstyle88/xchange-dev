@@ -72,10 +72,11 @@ use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access;
 use xc_kernel::money::{Side, UnitSize};
 use xc_rate::application::draft::rate_draft_service::SubmitOutcome;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, LineSide, RateDraft};
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 use xc_rate::domain::publication::publication::PublicationState;
-use xc_rate::domain::publication::published_rates::{PublicationRef, PublishedRates};
+use xc_rate::domain::publication::published_rates::{LineSelector, PublicationRef, PublishedRates};
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -659,7 +660,16 @@ async fn a_publish_carries_every_line_with_its_unit_size_and_moves_the_pointer()
     let mut tx = db.begin().await;
     let jpy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("JPY"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("JPY"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("read")
         .expect("JPY sell is published");
@@ -669,7 +679,16 @@ async fn a_publish_carries_every_line_with_its_unit_size_and_moves_the_pointer()
     assert_eq!(jpy.publication.id, p.id);
     let usd = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("read")
         .expect("USD buy is published");
@@ -677,7 +696,16 @@ async fn a_publish_carries_every_line_with_its_unit_size_and_moves_the_pointer()
     assert_eq!(usd.unit_size, UnitSize::ONE);
     assert!(
         e.published
-            .line_in(&mut tx, &main_branch(), code("EUR"), Side::Buy)
+            .line_for(
+                &mut tx,
+                &main_branch(),
+                LineSelector {
+                    code: code("EUR"),
+                    side: Side::Buy,
+                    group: GroupCode::all(),
+                    quantity: None,
+                },
+            )
             .await
             .expect("read")
             .is_none(),
