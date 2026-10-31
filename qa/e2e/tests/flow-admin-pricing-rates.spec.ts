@@ -1,7 +1,8 @@
 // QA-R9-6 — flow: pricing configure/approve, starting prices, rate-alert and branch alert settings (design docs/design/qa-e2e.md §9; ticket #4290).
 // Written by ticket QA-R9-6 (#4290); this file is its whole File scope.
-// Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
+// Import only from './helpers' and './acting-branch'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test, type Page } from '@playwright/test';
+import { actingBranch, assertActingBranch, switchSessionBranch } from './acting-branch';
 import {
   hasAccount,
   mePermissions,
@@ -22,6 +23,7 @@ const STAFF_TH_EN = STAFF_LANGS as readonly ('th' | 'en')[];
 const ROUTE_PRICING_CONFIGURE = /^\/api\/pricing\/configure$/;
 const ROUTE_PRICING_APPROVE = /^\/api\/pricing\/approve$/;
 const ROUTE_PRICING_BRANCH_POLICY = /^\/api\/pricing\/branch-policy$/;
+const ROUTE_RATE_POLICY_SAVE = /^\/api\/rate-policies$/;
 const ROUTE_ORG_STARTING_PRICE_SAVE = /^\/api\/v3\/commands\/org_starting_price_save$/;
 const ROUTE_RATE_ALERT_SETTINGS = /^\/api\/rate-alert-settings$/;
 const ROUTE_BRANCH_ALERT_SETTINGS_SAVE = /^\/api\/v3\/commands\/branch_alert_settings_save$/;
@@ -219,6 +221,126 @@ async function openPricingRow(page: Page, currency: string): Promise<void> {
   await expect(rowBtn, `pricing row button for ${currency}`).toBeVisible({ timeout: 20_000 });
   await rowBtn.click();
   await expect(screen.locator('.pricing-detail')).toBeVisible({ timeout: 20_000 });
+}
+
+async function ensureBranch2Priced(
+  page: Page,
+  branch2: string,
+  role: 'executive' | 'admin',
+): Promise<string | null> {
+  try {
+    let board = await fetchPricingBoard(page, branch2);
+    if (board?.policyVersionId && board.rows.some((r) => hasFourCompleteTiers(r.published))) {
+      return null;
+    }
+
+    if (!board?.policyVersionId) {
+      if (role !== 'executive') {
+        return 'branch2 has no rate policy and only executive holds RatePolicySave (role_grants.rs: ADMIN has no RatesStock)';
+      }
+
+      const mainPolicyRes = await page.request.get(
+        `/api/v3/views/rate_policy?branch=${encodeURIComponent(users.branch)}`,
+      );
+      let maxReferenceAgeHours = 24;
+      if (mainPolicyRes.ok()) {
+        const body = (await mainPolicyRes.json().catch(() => null)) as {
+          data?: { policy?: { maxReferenceAgeHours?: number | null } | null };
+        } | null;
+        if (body?.data?.policy?.maxReferenceAgeHours != null) {
+          maxReferenceAgeHours = body.data.policy.maxReferenceAgeHours;
+        }
+      }
+
+      await page.goto('/#rates');
+      const screen = page.locator('.admin-rates-screen');
+      await expect(screen).toBeVisible({ timeout: 20_000 });
+      const policyCard = screen.locator('.rates-section').filter({ has: page.getByTestId('save-policy') });
+      await expect(policyCard).toBeVisible({ timeout: 20_000 });
+      const ageInput = policyCard.locator('input[name="maxReferenceAgeHours"]');
+      await expect(ageInput).toBeVisible({ timeout: 20_000 });
+      await ageInput.fill(String(maxReferenceAgeHours));
+      // Save stays disabled for a branch with no policy until #5785 is deployed (RatesPolicyCard.tsx:518-524). Never click a
+      // disabled button through posted(): its waitForResponse (helpers.ts:431) would reject unawaited and fail the test.
+      const saveEnabled = await expect(policyCard.getByTestId('save-policy'))
+        .toBeEnabled({ timeout: 20_000 })
+        .then(() => true, () => false);
+      if (!saveEnabled) {
+        return `first policy on ${branch2} failed: save-policy stays disabled (is #5785 deployed on this host?)`;
+      }
+
+      try {
+        await assertActingBranch(page, branch2, 'setup: first policy');
+        const res = await posted(page, ROUTE_RATE_POLICY_SAVE, () =>
+          policyCard.getByTestId('save-policy').click(),
+        );
+        if (!res.ok) {
+          return `first policy on ${branch2} failed: ${res.text} ${res.body}`;
+        }
+      } catch (err: unknown) {
+        return `first policy on ${branch2} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+
+      console.log(`[qa-r9-6] setup: first rate policy on ${branch2}`);
+    }
+
+    board = await fetchPricingBoard(page, branch2);
+    if (!board?.rows.some((r) => hasFourCompleteTiers(r.published))) {
+      const candidates = (board?.rows ?? []).filter(
+        (r) => r.selectable === true && hasFourCompleteTiers(r.suggestion),
+      );
+      const row = candidates.find((r) => r.currency === 'USD') ?? candidates[0];
+      if (!row) {
+        return `no row on branch ${branch2} has selectable=true and 4 complete suggestion tiers`;
+      }
+
+      await page.goto('/#pricing');
+      await openPricingRow(page, row.currency);
+
+      const tierEditor = page.locator('section.tier-editor');
+      await expect(tierEditor).toBeVisible({ timeout: 20_000 });
+      await tierEditor.locator('input[name="reason"]').fill(`${RUN_MARKER}-setup-first-publication`);
+      const approveEnabled = await expect(tierEditor.locator('button[name="approve"]'))
+        .toBeEnabled({ timeout: 20_000 })
+        .then(() => true, () => false);
+      if (!approveEnabled) {
+        return `first publication on ${branch2} failed: approve stays disabled for ${row.currency}`;
+      }
+
+      let approveRes: { ok: boolean; text: string; body: string };
+      try {
+        await assertActingBranch(page, branch2, 'setup: first publication');
+        approveRes = await posted(page, ROUTE_PRICING_APPROVE, () =>
+          tierEditor.locator('button[name="approve"]').click(),
+        );
+      } catch (err: unknown) {
+        return `first publication on ${branch2} failed: ${err instanceof Error ? err.message : String(err)}`;
+      }
+      if (!approveRes.ok) {
+        return approveRes.body || approveRes.text;
+      }
+
+      let approveBody: { currencies?: Array<{ currency?: string; state?: string }> } | null = null;
+      try {
+        approveBody = JSON.parse(approveRes.body) as {
+          currencies?: Array<{ currency?: string; state?: string }>;
+        };
+      } catch {
+        return approveRes.body;
+      }
+      if (approveBody?.currencies?.[0]?.state !== 'PUBLISHED') {
+        return approveRes.body;
+      }
+
+      console.log(
+        `[qa-r9-6] setup: first publication of ${row.currency} on ${branch2} (one-time, not restored: the branch had none; #564 ruling)`,
+      );
+    }
+
+    return null;
+  } catch (err: unknown) {
+    return `ensureBranch2Priced failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting prices, rate-alert and branch alert settings', () => {
@@ -422,18 +544,22 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
     }
   });
 
-  // Runs on users.branch2 (never MAIN):
-  // 1. Skips with a logged reason when branch2 is unset, pricing_board or policyVersionId is null, or no selectable
+  // Runs on users.branch2 (never MAIN) via session branch switch:
+  // The admin shell reads only me.branch, never ?branch= (AdminShell.tsx:243-261), and switching writes
+  // users.last_branch_id (session_service.rs:1090-1099) which persists across sign-ins. The test switches to branch2
+  // through the account bar, asserts the acting branch on screen before every write, and always switches back in finally.
+  // 1. Sets up TEST2's first rate policy and publication through the UI when missing (ensureBranch2Priced).
+  // 2. Skips with a logged reason when branch2 is unset, pricing_board or policyVersionId is null, or no selectable
   //    row has 4 complete suggestion tiers and 4 complete published tiers (prefers USD).
-  // 2. Records published (4 tiers) and branchPolicy (buyBp, sellBp, own, follow) before the approve.
-  // 3. Approves the prefilled suggestion on /?branch=<branch2>#pricing via TierEditor (POST /api/pricing/approve)
+  // 3. Records published (4 tiers) and branchPolicy (buyBp, sellBp, own, follow) before the approve.
+  // 4. Approves the prefilled suggestion on /#pricing via TierEditor (POST /api/pricing/approve)
   //    and expects currencies[0].state === 'PUBLISHED' (pricing_approve.rs:482-497 sets own=true on non-MAIN branches;
   //    pricing_approve.rs:511-535 pushes to every other branch only on MAIN).
-  // 4. Reads back pricing_board and checks published equals the approved suggestion (to 4 dp).
-  // 5. Restores in a single-run restore() closure (called before test end and in finally):
-  //    (i) POST /api/pricing/approve?branch=<branch2> with recorded published tiers (retrying once on staleVersion/conflict);
+  // 5. Reads back pricing_board and checks published equals the approved suggestion (to 4 dp).
+  // 6. Restores in a single-run restore() closure (called before test end and in finally):
+  //    (i) POST /api/pricing/approve with branch: branch2 in the body and recorded published tiers (retrying once on staleVersion/conflict);
   //    (ii) if recorded own was false or follow/buyBp/sellBp differ, saves the branch-policy form back via UI (save-policy).
-  // 6. Verifies restored published (to 4 dp) and branchPolicy (own, follow, buyBp, sellBp).
+  // 7. Verifies restored published (to 4 dp) and branchPolicy (own, follow, buyBp, sellBp).
   test('pricingApprove (POST /api/pricing/approve): approves a suggested tier set on branch2, reads back published rates, and restores published rates and branch policy', async ({
     page,
   }) => {
@@ -446,193 +572,210 @@ test.describe.serial('QA-R9-6 flow: admin pricing configure/approve, starting pr
 
     const branch2 = users.branch2;
     const role = hasAccount('executive') ? 'executive' : 'admin';
-    await signIn(page, role, `/?branch=${encodeURIComponent(branch2)}#pricing`);
+    await signIn(page, role, '/#pricing');
 
-    const initialBoard = await fetchPricingBoard(page, branch2);
-    if (!initialBoard?.policyVersionId) {
-      const reason = `pricing_board on branch ${branch2} is not ready (policyVersionId=${initialBoard?.policyVersionId ?? 'null'})`;
-      console.log(`[qa-r9-6] pricingApprove: skipping — ${reason}`);
-      test.skip(true, reason);
-      return;
-    }
-
-    const eligibleRows = initialBoard.rows.filter(
-      (r) => r.selectable === true && hasFourCompleteTiers(r.suggestion) && hasFourCompleteTiers(r.published),
-    );
-    const targetRow = eligibleRows.find((r) => r.currency === 'USD') ?? eligibleRows[0];
-    if (!targetRow || !hasFourCompleteTiers(targetRow.suggestion) || !hasFourCompleteTiers(targetRow.published)) {
-      const reason = `no row on branch ${branch2} has selectable=true, 4 complete suggestion tiers, and 4 complete published tiers`;
-      console.log(`[qa-r9-6] pricingApprove: skipping — ${reason}`);
-      test.skip(true, reason);
-      return;
-    }
-
-    const currency = targetRow.currency;
-    const recordedPublished = targetRow.published.map((t) => ({
-      tierNo: t.tierNo,
-      buy: t.buy,
-      sell: t.sell,
-    }));
-    const recordedPolicy = {
-      buyBp: targetRow.branchPolicy.buyBp,
-      sellBp: targetRow.branchPolicy.sellBp,
-      own: targetRow.branchPolicy.own,
-      follow: targetRow.branchPolicy.follow,
-    };
-    const recordedStateText = `recorded published=${JSON.stringify(recordedPublished)}, branchPolicy=${JSON.stringify(recordedPolicy)}`;
-
-    let publishedByTest = false;
-    let restored = false;
-    const restore = async () => {
-      if (restored) return;
-
-      if (publishedByTest) {
-        const postRestoreApprove = async () => {
-          const curBoard = await fetchPricingBoard(page, branch2);
-          const curRow = curBoard?.rows.find((r) => r.currency === currency);
-          if (!curBoard?.policyVersionId || !curRow) {
-            return {
-              ok: false,
-              retryable: false,
-              detail: `pricing_board unavailable on ${branch2} (policyVersionId=${curBoard?.policyVersionId ?? 'null'})`,
-            };
-          }
-          const res = await page.request.post(`/api/pricing/approve?branch=${encodeURIComponent(branch2)}`, {
-            headers: writeHeaders(crypto.randomUUID()),
-            data: {
-              policyVersionId: curBoard.policyVersionId,
-              rows: [
-                {
-                  currency,
-                  tiers: recordedPublished,
-                  ...(curRow.tierSet?.id ? { tierSetId: curRow.tierSet.id } : {}),
-                },
-              ],
-              reason: `${RUN_MARKER}-restore`,
-            },
-          });
-          const bodyText = await res.text().catch(() => '');
-          type ApproveResponseBody = {
-            error?: { code?: string };
-            currencies?: Array<{ currency?: string; state?: string }>;
-          };
-          let parsed: ApproveResponseBody | null = null;
-          try {
-            parsed = JSON.parse(bodyText) as ApproveResponseBody;
-          } catch {
-            // non-JSON
-          }
-          const code = parsed?.error?.code ?? '';
-          const retryable =
-            res.status() === 409 ||
-            code === 'staleVersion' ||
-            code === 'conflict' ||
-            /staleVersion|conflict/.test(bodyText);
-          const ok = res.ok() && parsed?.currencies?.[0]?.state === 'PUBLISHED';
-          return { ok, retryable, detail: `${res.status()} ${bodyText}` };
-        };
-
-        let attempt = await postRestoreApprove();
-        if (!attempt.ok && attempt.retryable) {
-          attempt = await postRestoreApprove();
-        }
-        expect(
-          attempt.ok,
-          `restore (i) POST /api/pricing/approve?branch=${branch2} failed (${attempt.detail}); ${recordedStateText}`,
-        ).toBeTruthy();
-      }
-
-      const boardAfterApproveRestore = await fetchPricingBoard(page, branch2);
-      const rowAfterApproveRestore = boardAfterApproveRestore?.rows.find((r) => r.currency === currency);
-      const curBp = rowAfterApproveRestore?.branchPolicy;
-      const needsPolicyRestore =
-        !recordedPolicy.own ||
-        !curBp ||
-        curBp.own !== recordedPolicy.own ||
-        curBp.follow !== recordedPolicy.follow ||
-        curBp.buyBp !== recordedPolicy.buyBp ||
-        curBp.sellBp !== recordedPolicy.sellBp;
-
-      if (needsPolicyRestore) {
-        await page.goto(`/?branch=${encodeURIComponent(branch2)}#pricing`);
-        await openPricingRow(page, currency);
-        const branchPolicyForm = page
-          .locator('.pricing-detail form.pricing-policy-form')
-          .filter({ has: page.locator('button[name="save-policy"]') });
-        await expect(branchPolicyForm).toBeVisible({ timeout: 20_000 });
-        await branchPolicyForm.locator('input[name="buyBp"]').fill(String(recordedPolicy.buyBp));
-        await branchPolicyForm.locator('input[name="sellBp"]').fill(String(recordedPolicy.sellBp));
-        await branchPolicyForm.locator('input[name="own"]').setChecked(recordedPolicy.own);
-        await branchPolicyForm.locator('input[name="follow"]').setChecked(recordedPolicy.follow);
-        const polRes = await posted(page, ROUTE_PRICING_BRANCH_POLICY, () =>
-          branchPolicyForm.locator('button[name="save-policy"]').click(),
-        );
-        expect(
-          polRes.ok,
-          `restore (ii) POST /api/pricing/branch-policy failed: ${polRes.text} ${polRes.body}; ${recordedStateText}`,
-        ).toBeTruthy();
-      }
-
-      restored = true;
-    };
-
+    await switchSessionBranch(page, branch2);
     try {
-      await page.goto(`/?branch=${encodeURIComponent(branch2)}#pricing`);
-      await openPricingRow(page, currency);
+      const setupReason = await ensureBranch2Priced(page, branch2, role);
+      if (setupReason) console.log(`[qa-r9-6] pricingApprove: setup did not complete — ${setupReason}`);
 
-      const tierEditor = page.locator('section.tier-editor');
-      await expect(tierEditor).toBeVisible({ timeout: 20_000 });
-      await tierEditor.locator('input[name="reason"]').fill(`${RUN_MARKER}-approve`);
-      // What the TierEditor sends (TierEditor.tsx:63-66), read after render: the suggestion moves with live quotes.
-      const approvedSuggestion: Array<{ tierNo: number; buy: string; sell: string }> = [];
-      for (const tierNo of [1, 2, 3, 4]) {
-        approvedSuggestion.push({
-          tierNo,
-          buy: (await tierEditor.locator(`input[name="buy-${tierNo}"]`).inputValue()).trim(),
-          sell: (await tierEditor.locator(`input[name="sell-${tierNo}"]`).inputValue()).trim(),
-        });
+      const initialBoard = await fetchPricingBoard(page, branch2);
+      if (!initialBoard?.policyVersionId) {
+        const reason = `pricing_board on branch ${branch2} is not ready (policyVersionId=${initialBoard?.policyVersionId ?? 'null'})`;
+        console.log(`[qa-r9-6] pricingApprove: skipping — ${reason}`);
+        test.skip(true, reason);
+        return;
       }
 
-      const approveRes = await posted(page, ROUTE_PRICING_APPROVE, () =>
-        tierEditor.locator('button[name="approve"]').click(),
+      const eligibleRows = initialBoard.rows.filter(
+        (r) => r.selectable === true && hasFourCompleteTiers(r.suggestion) && hasFourCompleteTiers(r.published),
       );
-      expect(approveRes.ok, `POST /api/pricing/approve: ${approveRes.text} ${approveRes.body}`).toBeTruthy();
-      const approveBody = JSON.parse(approveRes.body) as {
-        currencies?: Array<{ currency?: string; state?: string }>;
+      const targetRow = eligibleRows.find((r) => r.currency === 'USD') ?? eligibleRows[0];
+      if (!targetRow || !hasFourCompleteTiers(targetRow.suggestion) || !hasFourCompleteTiers(targetRow.published)) {
+        const reason = `no row on branch ${branch2} has selectable=true, 4 complete suggestion tiers, and 4 complete published tiers`;
+        console.log(`[qa-r9-6] pricingApprove: skipping — ${reason}`);
+        test.skip(true, reason);
+        return;
+      }
+
+      const currency = targetRow.currency;
+      const recordedPublished = targetRow.published.map((t) => ({
+        tierNo: t.tierNo,
+        buy: t.buy,
+        sell: t.sell,
+      }));
+      const recordedPolicy = {
+        buyBp: targetRow.branchPolicy.buyBp,
+        sellBp: targetRow.branchPolicy.sellBp,
+        own: targetRow.branchPolicy.own,
+        follow: targetRow.branchPolicy.follow,
       };
-      expect(approveBody.currencies?.[0]?.state, `POST /api/pricing/approve body: ${approveRes.body}`).toBe(
-        'PUBLISHED',
-      );
-      publishedByTest = true;
+      const recordedStateText = `recorded published=${JSON.stringify(recordedPublished)}, branchPolicy=${JSON.stringify(recordedPolicy)}`;
 
-      const afterApproveBoard = await fetchPricingBoard(page, branch2);
-      const afterApproveRow = afterApproveBoard?.rows.find((r) => r.currency === currency);
-      expect(afterApproveRow, `row ${currency} after approve`).toBeTruthy();
-      for (const s of approvedSuggestion) {
-        const pubTier = afterApproveRow!.published.find((t) => t.tierNo === s.tierNo);
-        expect(pubTier, `published tier ${s.tierNo} after approve`).toBeTruthy();
-        expect(Number(pubTier!.buy)).toBeCloseTo(Number(s.buy), 4);
-        expect(Number(pubTier!.sell)).toBeCloseTo(Number(s.sell), 4);
+      let publishedByTest = false;
+      let restored = false;
+      const restore = async () => {
+        if (restored) return;
+
+        if (publishedByTest) {
+          const postRestoreApprove = async () => {
+            const curBoard = await fetchPricingBoard(page, branch2);
+            const curRow = curBoard?.rows.find((r) => r.currency === currency);
+            if (!curBoard?.policyVersionId || !curRow) {
+              return {
+                ok: false,
+                retryable: false,
+                detail: `pricing_board unavailable on ${branch2} (policyVersionId=${curBoard?.policyVersionId ?? 'null'})`,
+              };
+            }
+            await assertActingBranch(page, branch2, 'restore (i)');
+            // The command reads `branch` only from the body (command.rs:336-365); URL query dropped.
+            const res = await page.request.post('/api/pricing/approve', {
+              headers: writeHeaders(crypto.randomUUID()),
+              data: {
+                branch: branch2,
+                policyVersionId: curBoard.policyVersionId,
+                rows: [
+                  {
+                    currency,
+                    tiers: recordedPublished,
+                    ...(curRow.tierSet?.id ? { tierSetId: curRow.tierSet.id } : {}),
+                  },
+                ],
+                reason: `${RUN_MARKER}-restore`,
+              },
+            });
+            const bodyText = await res.text().catch(() => '');
+            type ApproveResponseBody = {
+              error?: { code?: string };
+              currencies?: Array<{ currency?: string; state?: string }>;
+            };
+            let parsed: ApproveResponseBody | null = null;
+            try {
+              parsed = JSON.parse(bodyText) as ApproveResponseBody;
+            } catch {
+              // non-JSON
+            }
+            const code = parsed?.error?.code ?? '';
+            const retryable =
+              res.status() === 409 ||
+              code === 'staleVersion' ||
+              code === 'conflict' ||
+              /staleVersion|conflict/.test(bodyText);
+            const ok = res.ok() && parsed?.currencies?.[0]?.state === 'PUBLISHED';
+            return { ok, retryable, detail: `${res.status()} ${bodyText}` };
+          };
+
+          let attempt = await postRestoreApprove();
+          if (!attempt.ok && attempt.retryable) {
+            attempt = await postRestoreApprove();
+          }
+          expect(
+            attempt.ok,
+            `restore (i) POST /api/pricing/approve failed (${attempt.detail}); ${recordedStateText}`,
+          ).toBeTruthy();
+        }
+
+        const boardAfterApproveRestore = await fetchPricingBoard(page, branch2);
+        const rowAfterApproveRestore = boardAfterApproveRestore?.rows.find((r) => r.currency === currency);
+        const curBp = rowAfterApproveRestore?.branchPolicy;
+        const needsPolicyRestore =
+          !recordedPolicy.own ||
+          !curBp ||
+          curBp.own !== recordedPolicy.own ||
+          curBp.follow !== recordedPolicy.follow ||
+          curBp.buyBp !== recordedPolicy.buyBp ||
+          curBp.sellBp !== recordedPolicy.sellBp;
+
+        if (needsPolicyRestore) {
+          await page.goto('/#pricing');
+          await openPricingRow(page, currency);
+          const branchPolicyForm = page
+            .locator('.pricing-detail form.pricing-policy-form')
+            .filter({ has: page.locator('button[name="save-policy"]') });
+          await expect(branchPolicyForm).toBeVisible({ timeout: 20_000 });
+          await branchPolicyForm.locator('input[name="buyBp"]').fill(String(recordedPolicy.buyBp));
+          await branchPolicyForm.locator('input[name="sellBp"]').fill(String(recordedPolicy.sellBp));
+          await branchPolicyForm.locator('input[name="own"]').setChecked(recordedPolicy.own);
+          await branchPolicyForm.locator('input[name="follow"]').setChecked(recordedPolicy.follow);
+          await assertActingBranch(page, branch2, 'restore (ii): branch policy');
+          const polRes = await posted(page, ROUTE_PRICING_BRANCH_POLICY, () =>
+            branchPolicyForm.locator('button[name="save-policy"]').click(),
+          );
+          expect(
+            polRes.ok,
+            `restore (ii) POST /api/pricing/branch-policy failed: ${polRes.text} ${polRes.body}; ${recordedStateText}`,
+          ).toBeTruthy();
+        }
+
+        restored = true;
+      };
+
+      try {
+        await page.goto('/#pricing');
+        await openPricingRow(page, currency);
+
+        const tierEditor = page.locator('section.tier-editor');
+        await expect(tierEditor).toBeVisible({ timeout: 20_000 });
+        await tierEditor.locator('input[name="reason"]').fill(`${RUN_MARKER}-approve`);
+        // What the TierEditor sends (TierEditor.tsx:63-66), read after render: the suggestion moves with live quotes.
+        const approvedSuggestion: Array<{ tierNo: number; buy: string; sell: string }> = [];
+        for (const tierNo of [1, 2, 3, 4]) {
+          approvedSuggestion.push({
+            tierNo,
+            buy: (await tierEditor.locator(`input[name="buy-${tierNo}"]`).inputValue()).trim(),
+            sell: (await tierEditor.locator(`input[name="sell-${tierNo}"]`).inputValue()).trim(),
+          });
+        }
+
+        await assertActingBranch(page, branch2, 'pricingApprove: approve suggestion');
+        const approveRes = await posted(page, ROUTE_PRICING_APPROVE, () =>
+          tierEditor.locator('button[name="approve"]').click(),
+        );
+        expect(approveRes.ok, `POST /api/pricing/approve: ${approveRes.text} ${approveRes.body}`).toBeTruthy();
+        const approveBody = JSON.parse(approveRes.body) as {
+          currencies?: Array<{ currency?: string; state?: string }>;
+        };
+        expect(approveBody.currencies?.[0]?.state, `POST /api/pricing/approve body: ${approveRes.body}`).toBe(
+          'PUBLISHED',
+        );
+        publishedByTest = true;
+
+        const afterApproveBoard = await fetchPricingBoard(page, branch2);
+        const afterApproveRow = afterApproveBoard?.rows.find((r) => r.currency === currency);
+        expect(afterApproveRow, `row ${currency} after approve`).toBeTruthy();
+        for (const s of approvedSuggestion) {
+          const pubTier = afterApproveRow!.published.find((t) => t.tierNo === s.tierNo);
+          expect(pubTier, `published tier ${s.tierNo} after approve`).toBeTruthy();
+          expect(Number(pubTier!.buy)).toBeCloseTo(Number(s.buy), 4);
+          expect(Number(pubTier!.sell)).toBeCloseTo(Number(s.sell), 4);
+        }
+
+        await restore();
+
+        const restoredBoard = await fetchPricingBoard(page, branch2);
+        const restoredRow = restoredBoard?.rows.find((r) => r.currency === currency);
+        expect(restoredRow, `row ${currency} after restore`).toBeTruthy();
+        for (const rec of recordedPublished) {
+          const pubTier = restoredRow!.published.find((t) => t.tierNo === rec.tierNo);
+          expect(pubTier, `restored published tier ${rec.tierNo}`).toBeTruthy();
+          expect(Number(pubTier!.buy)).toBeCloseTo(Number(rec.buy), 4);
+          expect(Number(pubTier!.sell)).toBeCloseTo(Number(rec.sell), 4);
+        }
+        expect(restoredRow!.branchPolicy.own).toBe(recordedPolicy.own);
+        expect(restoredRow!.branchPolicy.follow).toBe(recordedPolicy.follow);
+        expect(restoredRow!.branchPolicy.buyBp).toBe(recordedPolicy.buyBp);
+        expect(restoredRow!.branchPolicy.sellBp).toBe(recordedPolicy.sellBp);
+      } finally {
+        // A restore failure here must not hide the error that sent us to finally; it is logged with the recorded state.
+        await restore().catch((e) => console.warn(`[pricingApprove] restore failed: ${String(e)}; ${recordedStateText}`));
       }
-
-      await restore();
-
-      const restoredBoard = await fetchPricingBoard(page, branch2);
-      const restoredRow = restoredBoard?.rows.find((r) => r.currency === currency);
-      expect(restoredRow, `row ${currency} after restore`).toBeTruthy();
-      for (const rec of recordedPublished) {
-        const pubTier = restoredRow!.published.find((t) => t.tierNo === rec.tierNo);
-        expect(pubTier, `restored published tier ${rec.tierNo}`).toBeTruthy();
-        expect(Number(pubTier!.buy)).toBeCloseTo(Number(rec.buy), 4);
-        expect(Number(pubTier!.sell)).toBeCloseTo(Number(rec.sell), 4);
-      }
-      expect(restoredRow!.branchPolicy.own).toBe(recordedPolicy.own);
-      expect(restoredRow!.branchPolicy.follow).toBe(recordedPolicy.follow);
-      expect(restoredRow!.branchPolicy.buyBp).toBe(recordedPolicy.buyBp);
-      expect(restoredRow!.branchPolicy.sellBp).toBe(recordedPolicy.sellBp);
     } finally {
-      // A restore failure here must not hide the error that sent us to finally; it is logged with the recorded state.
-      await restore().catch((e) => console.warn(`[pricingApprove] restore failed: ${String(e)}; ${recordedStateText}`));
+      await switchSessionBranch(page, users.branch);
+      expect(
+        (await actingBranch(page)).branch,
+        'executive left on users.branch (last_branch_id persists to the next sign-in)',
+      ).toBe(users.branch);
     }
   });
 
