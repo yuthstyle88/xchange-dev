@@ -1450,3 +1450,81 @@ The v2 fixtures (`v2_policy_cases.json`, `blueprint_policy_cases.json`) and thei
 **Function tickets.** One function, so one ticket (#5682 itself), `class:guarded`, Argon, base `main`, `Test branch: test/5682`. File scope: `entities/policy.rs` and the three new area files.
 
 **Data migration.** None. The rows are code; no table, column or row changes.
+
+## 16. The branch list reads the view's permission (#5684, F-5)
+
+> Design by claude/86094638 (studio claude-15, sub-controller for #5684 under the xchange lane controller claude/608dff), 2026-10-30 ICT. Code cited on `origin/main` `61382f2f`. Ruling N-8 on #5558 (issuecomment-6515987193): `admin_branches` stays a `Request` row, and "filtering it to the caller's own branches is a follow-up, as #5557 did".
+
+### 16.1 What the view does today
+
+`views/admin_branches.rs:52-82`:
+1. `:53` keeps the branches of the caller's organisation (#2485).
+2. `:70` keeps the branches `SessionBranch::switchable(&who.roles, ..)` returns (`session_branch.rs:34-58`). That counts **every** live row, whatever its group may do: any live organisation-wide row opens every branch, and any live branch row adds its branch.
+
+So a branch-only ADMIN already sees only its branches (A-1, green today). The ticket's symptom holds only when the caller has another live row whose group does **not** hold the row's permission, `CompatRead` (`areas/branch_admin.rs:39`). Today that is MARKETING (`role_grants.rs` lists `CompatRead` for every other built-in staff group; `policy.rs:360` asserts MARKETING lacks it), or any edited group without it (RBAC §11).
+
+### 16.2 The rule
+
+A caller sees the branches of its organisation that its **qualifying rows for the view's permission** reach: `BranchScope::of(who, permission, now)`, the rule §11 uses for the user lists and `Authorizer::check` uses for every request (`authorizer.rs`, `qualifying`). One organisation-wide qualifying row gives every branch; otherwise exactly the rows' branches. The permission is read from the view's own policy row, `Policy::need(Self::INHERITS)`, as `org_view.rs:139-143` does, so the list cannot drift from the row.
+
+### 16.3 Class diagram
+
+No new type. `admin_branches` stops using `SessionBranch` and uses the existing `BranchScope`.
+
+```mermaid
+classDiagram
+    class AdminBranchesBranchView {
+        +load(branch, who, filter) AdminBranchesData
+    }
+    class Policy {
+        +need(path, action) Option~Need~
+    }
+    class BranchScope {
+        <<enum>>
+        All
+        Branches(Vec~BranchId~)
+        +of(actor, permission, now) BranchScope
+        +contains(branch) bool
+    }
+    AdminBranchesBranchView ..> Policy : need(Rpc, "admin_branches")
+    AdminBranchesBranchView ..> BranchScope : of(who, CompatRead, now), contains
+```
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| `Policy::need` | `api/crates/xc-auth/src/domain/policy/entities/policy.rs:132` | exists | the view |
+| `BranchScope::of`, `contains` | `api/crates/xc-auth/src/domain/access/branch_scope.rs` | exists | the view |
+| `AdminBranchesBranchView::load` filters with them | `api/src/presentation/http/v3/views/admin_branches.rs` | **T1** | the admin branch picker |
+
+- `[required]` the answer's shape (`AdminBranchesData { branches: [{id, name}] }`) and order (`BranchService::list`'s, as today) are unchanged; only membership changes.
+- `[required]` the permission comes from `Policy::need(Self::INHERITS.0, &Action::new(Self::INHERITS.1))`. A row that is not `Need::Permission` is a server error (`AppError`), as in `org_view.rs:139-142`; no fallback to "all".
+- `[proposed]` the step order inside `load`: organisation filter (`:53`, kept), then `scope.contains(&b.id)`.
+
+### 16.4 Behaviour table
+
+Branches `MAIN`, `XC-B01`, `XC-B02`, `XC-B03` in the seeded organisation; every call names `branch=XC-B01`.
+
+| # | Caller's live rows | Answer | Up-front test (`admin_branches_branch_scope_test::`) |
+|---|---|---|---|
+| A-1 | ADMIN @ B01 | B01 | `a1_…` (green today) |
+| A-2 | ADMIN @ B01, ADMIN @ B02 | B01, B02 | `a2_…` (green today) |
+| A-3 | ADMIN org-wide | all four | `a3_…` (green today) |
+| A-4 | ADMIN @ B01, MARKETING org-wide | B01 | `a4_…` (**red today**: all four) |
+| A-5 | ADMIN @ B01, TELLER org-wide | all four | `a5_…` (green today) |
+| A-6 | ADMIN @ B01, an ADMIN org-wide row that ended | B01 | `a6_…` (green today) |
+| A-7 | ADMIN @ B01, MARKETING @ B02 | B01 | `a7_…` (**red today**: B01, B02) |
+
+Another organisation's branch stays out for every caller: `admin_branches_org_scope_test` (green today, kept).
+
+### 16.5 Data migration
+
+None. No table, column or row changes.
+
+### 16.6 Function ticket
+
+One function in one file, so no `feat/` branch: **T1** is #5684 itself, base `main`, `Test branch: test/5684`, `class:guarded` (authorization), Gemini 4 Argon.
+
+### 16.7 Out of scope
+
+- `Me.branches` and the session's switch list (`SessionBranch::switchable`, `session_service.rs:242`) keep counting every live row: they say where a user may *be*, not what this view may *read*. A MARKETING @ B02 holder may still switch to B02; this list just does not offer it.
+- The web: same shape, fewer rows; no FE ticket.

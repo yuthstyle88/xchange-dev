@@ -10,7 +10,10 @@ use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use ts_rs::TS;
-use xc_auth::domain::access::{Actor, BranchRef, SessionBranch};
+use xc_auth::domain::access::Actor;
+use xc_auth::domain::access::branch_scope::BranchScope;
+use xc_auth::domain::policy::entities::policy::{Need, Policy};
+use xc_auth::domain::policy::value_objects::action::Action;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
@@ -61,21 +64,14 @@ impl BranchView for AdminBranchesBranchView {
                 .into_iter()
                 .filter(|b| org_branch_ids.iter().any(|id| id == b.id.as_str()))
                 .collect();
-            // S, the branches the caller may switch to (SB-1 `SessionBranch::switchable`, as `Me.branches`).
-            let refs: Vec<BranchRef> = all_branches
-                .iter()
-                .map(|b| {
-                    BranchRef::new(
-                        b.id.as_str(),
-                        b.code.as_deref().unwrap_or(b.id.as_str()),
-                        &b.name,
-                    )
-                })
-                .collect();
-            let s = SessionBranch::switchable(&who.roles, &refs, Utc::now());
+            let permission = match Policy::need(Self::INHERITS.0, &Action::new(Self::INHERITS.1)) {
+                Some(Need::Permission(p)) => p,
+                _ => return Err(AppError::Internal("admin_branches need".into())),
+            };
+            let scope = BranchScope::of(&who, permission, Utc::now());
             let items = all_branches
                 .into_iter()
-                .filter(|b| s.iter().any(|r| r.id == b.id))
+                .filter(|b| scope.contains(&b.id))
                 .map(|b| AdminBranchItem {
                     id: b.id.to_string(),
                     name: b.name,
