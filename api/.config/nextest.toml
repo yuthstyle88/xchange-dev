@@ -1,5 +1,8 @@
 # Nextest configuration for xchange
 # https://nexte.st/book/configuration.html
+#
+# The suite needs one process per test: RoleGrants::install swaps a
+# process-global snapshot, so `cargo test` with threads gives false failures.
 
 [profile.default]
 # No retries: a retry turns a real race into a silent green (#568).
