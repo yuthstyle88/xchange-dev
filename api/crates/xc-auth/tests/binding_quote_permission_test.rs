@@ -159,11 +159,11 @@ fn p3_it_enters_the_seed_in_version_6() {
         vec![6],
         "SEED_ADDITIONS has (6, BindingQuoteIssue) once"
     );
-    // Staff corrections SC-D2 raised it to 7 after D-18 set 6; LA-1 (ledger adjustment) to 8.
+    // Staff corrections SC-D2 raised it to 7 after D-18 set 6; LA-1 (ledger adjustment) to 8; #5733 to 9.
     assert_eq!(
         RoleGrants::SEED_VERSION,
-        8,
-        "SEED_VERSION is 8 (D-18 set 6; SC-D2 7; LA-1 8)"
+        9,
+        "SEED_VERSION is 9 (D-18 set 6; SC-D2 7; LA-1 8; #5733 PricingFormulaSave 9)"
     );
 }
 
