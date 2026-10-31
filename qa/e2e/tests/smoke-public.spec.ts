@@ -42,14 +42,14 @@ test.describe('QA-S1 smoke: public pages (/login, /app/sign-in, /app/sign-up, /r
     });
   });
 
-  // key: web/src/screens/customer/rate-display/board/BoardShell.tsx:52
+  // key: web/src/screens/customer/rate-display/board/BoardRowView.tsx:34
   test('/rates', async ({ page }) => {
     await smoke(page, {
       area: 'public',
       screen: 'rates',
       path: `/rates?branch=${encodeURIComponent(users.branch)}`,
       role: 'anonymous',
-      key: '.xc-rb',
+      key: '.xc-rb-row',
       langs: CUSTOMER_LANGS,
     });
   });
