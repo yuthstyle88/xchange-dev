@@ -182,14 +182,15 @@ impl CommandAction for OrgStartingPriceSaveCommand {
         };
 
         sqlx::query(
-            "INSERT INTO rate_reference_batches (id, provider, source_date, fetched_at, raw_checksum, status) \
-             VALUES ($1, $2, $3, $4, $5, 'COMPLETE')",
+            "INSERT INTO rate_reference_batches (id, provider, source_date, fetched_at, raw_checksum, status, organization_id) \
+             VALUES ($1, $2, $3, $4, $5, 'COMPLETE', $6)",
         )
         .bind(batch_id)
         .bind(&provider)
         .bind(source_date)
         .bind(now)
         .bind(&raw_checksum)
+        .bind(org_id)
         .execute(&mut **tx)
         .await
         .map_err(|_| server_error())?;
