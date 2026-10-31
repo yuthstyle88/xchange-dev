@@ -75,7 +75,7 @@ impl CommandAction for MarketRatesRefreshCommand {
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
@@ -104,7 +104,7 @@ impl CommandAction for MarketRatesRefreshCommand {
 
         let mut follow_results = Vec::new();
         let currencies = PgPricingModeStore
-            .following_in(tx)
+            .following_in(tx, &who.organization_id)
             .await
             .map_err(map_rate_engine_error)?;
         if !currencies.is_empty() {

@@ -390,7 +390,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
   const handleSavePolicy = props.guarded(async () => {
     if (!props.canSavePolicy()) return;
     const policy = props.policyData()?.policy;
-    if (!policy || Boolean(props.policyError())) return;
+    if (!props.policyData() || Boolean(props.policyError())) return;
     if (!areValueTiersValid()) return;
 
     const guardRows = currentGuardRows();
@@ -458,7 +458,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       maxReferenceAgeHours: parsedAge,
       onStale: staleMode,
       staleLimitThb: staleLimit,
-      reason: policy.reason || props.t('savePolicy'),
+      reason: policy?.reason || props.t('savePolicy'),
       valueTiersOn: props.valueTiersOn(),
       valueTiers: tiersPayload,
       sharpMoveAlertPct: sharpTrim === '' ? null : sharpTrim,
@@ -519,7 +519,7 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
                 props.busy() ||
                 !props.canSavePolicy() ||
                 Boolean(props.policyError()) ||
-                !props.policyData()?.policy ||
+                !props.policyData() ||
                 !areValueTiersValid()
               }
               title={props.disabledReason}

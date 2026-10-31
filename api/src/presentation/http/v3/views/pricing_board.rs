@@ -74,26 +74,36 @@ impl BranchView for PricingBoardView {
     fn own_version(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
     ) -> impl Future<Output = AppResult<Option<i64>>> + Send {
         let pool = self.pool.clone();
         let branch_id = branch.as_str().to_string();
-        async move { pricing_board_version(&pool, &branch_id).await.map(Some) }
+        let organization_id = who.organization_id.clone();
+        async move {
+            pricing_board_version(&pool, &branch_id, &organization_id)
+                .await
+                .map(Some)
+        }
     }
 
     fn load(
         &self,
         branch: &BranchId,
-        _who: &Actor,
+        who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let branch_id = branch.as_str().to_string();
-        async move { load_pricing_board(&pool, &branch_id).await }
+        let organization_id = who.organization_id.clone();
+        async move { load_pricing_board(&pool, &branch_id, &organization_id).await }
     }
 }
 
-async fn pricing_board_version(pool: &PgPool, branch_id: &str) -> AppResult<i64> {
+async fn pricing_board_version(
+    pool: &PgPool,
+    branch_id: &str,
+    organization_id: &str,
+) -> AppResult<i64> {
     let now = Utc::now();
     let mut conn = pool.acquire().await.map_err(AppError::Database)?;
 
@@ -210,8 +220,10 @@ async fn pricing_board_version(pool: &PgPool, branch_id: &str) -> AppResult<i64>
     eat_ts(&mut eat, ts_max);
 
     let (mode_rev_sum, mode_max): (i64, Option<DateTime<Utc>>) = sqlx::query_as(
-        "SELECT COALESCE(SUM(revision)::bigint, 0), MAX(updated_at) FROM pricing_modes",
+        "SELECT COALESCE(SUM(revision)::bigint, 0), MAX(updated_at) \
+         FROM pricing_modes WHERE organization_id = $1::uuid",
     )
+    .bind(organization_id)
     .fetch_one(&mut *conn)
     .await
     .map_err(AppError::Database)?;
@@ -262,7 +274,11 @@ fn parse_updated_at(s: &str) -> Option<DateTime<Utc>> {
         .map(|ndt| ndt.and_utc())
 }
 
-async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<PricingBoardData> {
+async fn load_pricing_board(
+    pool: &PgPool,
+    branch_id: &str,
+    organization_id: &str,
+) -> AppResult<PricingBoardData> {
     let now = Utc::now();
     let mut tx = pool.begin().await.map_err(AppError::Database)?;
 
@@ -601,7 +617,7 @@ async fn load_pricing_board(pool: &PgPool, branch_id: &str) -> AppResult<Pricing
             main_tier_sets.insert(code.clone(), ts);
         }
         if let Some(m) = PgPricingModeStore
-            .get_in(&mut tx, cur_code)
+            .get_in(&mut tx, organization_id, cur_code)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?
         {
