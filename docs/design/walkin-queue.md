@@ -383,27 +383,91 @@ The booking therefore never reaches `COMPLETED`, which only a sale saved with it
 | W4a.6 | **A held BOOKING ticket with no matching booking** (no item, or a status other than CHECKED_IN/IN_SERVICE): a worded refusal on the booking step, with no `serve` call and no step change. | Calling `serve` would only answer `alreadyServing`; saying which ticket has no booking tells the teller what to fix. |
 | W4a.7 | `heldBooking` is cleared with the rest of the sale (`startNew()` / `reset()`, `desk-store.ts:477-491`), as `walkInTicket` is. | One sale, one entry (W5). |
 
-### 12.3 Open: whose customer the sale is (needs a ruling before J2 can pass)
+### 12.3 Whose customer the sale is: ruled C1
 
-`BookingSaveStep` requires the sale's `customerId` to be the booking's `customer_id`, or the save refuses `bookingNotThisCustomer` (`lifecycle.rs:84-88`). `bookings.customer_id` is `NOT NULL` (`booking-slots.md` §4 schema).
+> Ruled **C1** by the owner (*"ทำตามเสนอ"*), relayed by claude/608dff on #564 (issuecomment-6543033385). Design rows below by claude/01TxaRJG, measured on `origin/main` `f23c3877`.
 
-Today's desk can't meet that for a customer who booked in the app:
-- The customer step's `reserveCustomer` finds an existing customer **only by passport hash** and otherwise creates a new one (`api/crates/xc-customer/src/application/customer/service.rs:160-185`).
-- It takes no customer or booking id (`reserve_customer.rs:4-11`, `api/src/application/compat/rpc.rs:424-437`).
-- A booker registered by phone, with no passport on file, therefore gets a **new** customer at the desk, and the save is refused.
-- Neither `queue_board` nor `desk_bookings` exposes the booking's `customer_id`.
+`BookingSaveStep` requires the sale's `customerId` to be the booking's `customer_id`, or the save refuses `bookingNotThisCustomer` (`api/crates/xc-booking/src/application/lifecycle.rs:84-88`). `bookings.customer_id` is `NOT NULL REFERENCES customers` (`api/migrations/20261205131000_booking_slots.sql:87`).
 
-Options:
+Before C1, the desk could not meet that for a customer who booked in the app:
+- `reserveCustomer` finds an existing customer **only by passport hash** and otherwise creates a new one (`api/crates/xc-customer/src/application/customer/service.rs:118-235`, `reserve_customer_number_in_tx` `:75-115`).
+- It takes no customer or booking id (`domain/customer/commands/reserve_customer.rs:4-11`, `api/src/application/compat/rpc.rs:287-298`, `:421-437`).
+- So a booker registered by phone, with no passport on file, got a **new** customer at the desk, and the save was refused.
 
-| | Path | Cost |
+The options were C1, C2 (the save takes the booking's customer) and C3 (`desk_bookings` exposes `customerId`); see #564 issuecomment-6541818604. C2 and C3 were not chosen.
+
+#### C1 decisions
+
+| # | Decision | Why |
 |---|---|---|
-| **C1 (proposed)** | `reserveCustomer` takes an optional `bookingId`. With it, the server answers **the booking's customer**, with these rules: <br>• the scanned passport is attached to that customer when it has none; <br>• it is accepted when it equals the one on file; <br>• it refuses `bookingNotThisCustomer` when the passport belongs to another customer or differs from the one on file. <br>The desk's customer step sends `heldBooking.bookingId` (the held ticket is read when the sale starts, W4a.1, so it is known before step 1). | Server `xc-customer` + rpc (`class:logic`, PII path) and one FE file (`steps/customer/step.tsx`). The identity rule is a business decision. |
-| C2 | The save takes the customer from the booking when `bookingId` is set, ignoring the desk's `customerId`. | Smallest, but the scanned passport is no longer tied to the customer who completes the booking. Not proposed. |
-| C3 | `desk_bookings` exposes `customerId`, and the desk skips `reserveCustomer`. | The passport is never recorded on that customer. Not proposed. |
+| C1.1 | **`reserveCustomer` takes an optional `bookingId`** in its payload, on both RPC routes. Absent, `null` or `""` ⇒ today's reserve, unchanged. The answer keeps today's shape `{customerId, existing}`. | Owner's C1. |
+| C1.2 | **With a `bookingId`, the server answers the booking's customer** (`existing: true`), after the same detail checks as today (RF-D3: a bad field is refused naming it, before the booking is read). | Owner's C1. |
+| C1.3 | **The booking must be this branch's and `CHECKED_IN` or `IN_SERVICE`**; otherwise `bookingNotUsable`, worded `ใช้การจองนี้ไม่ได้ กรุณาตรวจคิวจองอีกครั้ง`, with no field. | The desk only sends a booking it read as checked in or in service (W4a.2). Another branch's booking would hand that branch's customer to this desk. |
+| C1.4 | **Passport rule** (the scanned passport's lookup hash, under today's advisory lock on that hash):<br>• on no customer, and the booker has no ACTIVE PASSPORT ⇒ **attached** to the booker (one `customer_identities` row, sealed as today with AAD `<customerId>PASSPORT`);<br>• on the booker already ⇒ accepted, nothing written;<br>• on another customer, or the booker holds a different one ⇒ `bookingNotThisCustomer`, worded `พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง`, named on `passportNo` (an RF-D3 field refusal). | Owner's C1. Naming `passportNo` puts the sentence on the field the teller has to recheck. |
+| C1.5 | **Nothing is written on any refusal.** The booker's customer row is locked (`FOR UPDATE`) before the identity is read, so two desks cannot attach two passports to one booker. | One passport per customer (`customer_identities_one_active` guards only one hash per organisation). |
+| C1.6 | **The desk's customer step reads the held ticket itself** (`readHeldTicket`, W4a.1) before `reserveCustomer` and sends `heldBooking.bookingId`. A `booking` read is kept as `heldBooking`, so the booking step skips both its own read and `serve` (`steps/booking/step.tsx:59`). | The customer step (index 1) runs **before** the booking step (index 2), where W4a reads the held ticket. The earlier note here that the ticket "is read when the sale starts" was wrong; this row replaces it. |
+| C1.7 | **The customer step sends no `bookingId`, and reads nothing, when:** the sale has an entry key (`bookingId`, `onlineBookingId` or `kioskRequestId`), the teller has no id, or the clerk skips (WALK-IN). Any other read (walk-in, none, unmatched, unknown) sends today's payload; the booking step then behaves as W4a says. | A skip would attach the placeholder passport `WALKIN` to the booker. |
 
-Until this is ruled:
-- W4a.1–W4a.7 still ship. A booking sale **succeeds** when the booker's passport is already on file (the same customer comes back), and is refused `bookingNotThisCustomer`, worded, otherwise. Today the same sale is refused `alreadyServing`, so no case gets worse.
-- J2 (#5796) waits for both halves, because its customer is an app booker with no passport on file.
+#### C1 behaviour table (pinned by the two tickets' up-front tests)
+
+Server, `CustomerService::reserve_for_booking` and the RPC routes:
+
+| Row | Booking | Passport scanned | Answer | Written |
+|---|---|---|---|---|
+| S1 | MAIN, `IN_SERVICE` or `CHECKED_IN`, booker has no passport | on no customer | `{booker, existing: true}` | one ACTIVE PASSPORT on the booker; no customer |
+| S2 | MAIN, `IN_SERVICE`, booker holds P | P (any case) | `{booker, existing: true}` | nothing |
+| S3 | MAIN, `IN_SERVICE`, booker has none | on another customer | `bookingNotThisCustomer` on `passportNo` | nothing |
+| S4 | MAIN, `IN_SERVICE`, booker holds P | Q | `bookingNotThisCustomer` on `passportNo` | nothing |
+| S5 | unknown id, another branch's, or `CONFIRMED` | any | `bookingNotUsable`, no field | nothing |
+| S6 | any | bad text (`---`) | today's `BAD_TEXT` on `passportNo` | nothing |
+| S7 | no `bookingId`, `null` or `""` | any | today's reserve | as today |
+
+Desk customer step (`steps/customer/step.tsx`):
+
+| Row | Store / board | `reserveCustomer` payload | After |
+|---|---|---|---|
+| F1 | board: BOOKING `B003` held by me; `desk_bookings` has `bk-9` `IN_SERVICE` | today's keys + `bookingId: "bk-9"` | `heldBooking = {bk-9, t-9, B003}`, step 2 |
+| F2 | `heldBooking` already set | + its `bookingId`; no board read | step 2 |
+| F3 | held walk-in, none, another teller's, unmatched, board unreadable | today's six keys, no `bookingId` | `heldBooking` unset, step 2 |
+| F4 | entry key `kioskRequestId` | no `bookingId`; no board read | step 2 |
+| F5 | skip (WALK-IN) | `passportNo: WALKIN`, no `bookingId`; no board read | as today |
+| F6 | server refuses `bookingNotThisCustomer` on `passportNo` | — | sentence shown, stays on step 1, no customer id |
+| F7 | no signed-in teller id | no `bookingId`; no board read | step 2 |
+
+#### C1 class diagram
+
+```mermaid
+classDiagram
+  class CustomerService {
+    <<xc-customer application/customer/service.rs>>
+    +reserve_checked(branch, cmd, now) Result~Reservation, ReserveError~
+    +reserve_for_booking(branch, cmd, booking_id, now) Result~Reservation, ReserveError~
+  }
+  class RefusalTexts {
+    <<service.rs, re-exported from lib.rs>>
+    BOOKING_NOT_THIS_CUSTOMER
+    BOOKING_NOT_USABLE
+  }
+  class RpcReserve {
+    <<api/src/application/compat/rpc.rs "reserveCustomer">>
+    bookingId? ⇒ reserve_for_booking, else reserve_checked
+  }
+  class CustomerStep {
+    <<web steps/customer/step.tsx>>
+    reserve(): readHeldTicket, then reserveCustomer with bookingId
+  }
+  class HeldTicket {
+    <<web held-ticket.ts>>
+    +readHeldTicket(api, branch, meId, today)
+    +hasEntryKey(store)
+  }
+  RpcReserve --> CustomerService
+  CustomerService --> RefusalTexts
+  CustomerStep --> HeldTicket
+  CustomerStep --> RpcReserve : POST rpc reserveCustomer
+```
+
+`hasEntryKey` moves from `steps/booking/step.tsx:24-28` into `held-ticket.ts`, so both steps use one copy.
 
 ### 12.4 Behaviour table (pinned by the FE ticket's up-front tests)
 
@@ -451,9 +515,10 @@ classDiagram
 | Ticket | File scope | Class |
 |---|---|---|
 | **FE-W4a** booking step uses the held BOOKING ticket | `web/src/screens/desk/held-ticket.ts` (new), `web/src/screens/desk/desk-store.ts`, `web/src/screens/desk/steps/booking/step.tsx`, `web/src/screens/desk/steps/booking/i18n.ts`, `web/src/screens/desk/save.ts` | `class:logic`, Argon; up-front tests on `test/<n>` |
-| C1 pair (after the §12.3 ruling) | server `reserveCustomer` + `steps/customer/step.tsx` | written after the ruling |
+| **C1-S** `reserveCustomer` takes `bookingId` (server) | `api/crates/xc-customer/src/application/customer/service.rs`, `api/crates/xc-customer/src/lib.rs`, `api/src/application/compat/rpc.rs` | `class:logic`, Argon; up-front tests on `test/<n>` |
+| **C1-W** the desk customer step sends the held booking | `web/src/screens/desk/steps/customer/step.tsx`, `web/src/screens/desk/held-ticket.ts`, `web/src/screens/desk/steps/booking/step.tsx` | `class:logic`, Argon; up-front tests on `test/<n>` |
 
 ### 12.7 Out of scope / data migration
 
 - The kiosk entry and the board's own buttons are unchanged. W4 stays as written; W4a only changes what the desk sends before `serve`.
-- **Data migration: none.** No table or column changes. FE-W4a reads two existing views.
+- **Data migration: none.** No table or column changes. FE-W4a reads two existing views. C1 adds `customer_identities` rows through the existing columns, and only when a booker has no passport. Existing rows are untouched, so there is no backfill and nothing for a `down` to lose.
