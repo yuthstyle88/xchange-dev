@@ -3,12 +3,14 @@
 // alpha-3 picker, never free text (CI-4 ruling (a)); the skip sends `XXX` (owner 2026-10-11). No arithmetic (W7).
 import { createSignal, For, onCleanup, Show, type Component, type JSX } from 'solid-js';
 import { Dynamic } from 'solid-js/web';
+import { ApiError } from '../../../../shared/api/client';
 import type { DraftBeginInput } from '../../../../shared/api/generated/branch_day';
 import { keyedWrite } from '../../../../shared/api/keyed-write';
 import { screenT } from '../../../../shared/i18n';
 import { fieldError } from '../../../../shared/i18n/field-error';
 import { wordedError } from '../../../../shared/i18n/worded-error';
-import type { DeskStore, PassportFields } from '../../desk-store';
+import { bangkokToday, type DeskStore, type PassportFields } from '../../desk-store';
+import { hasEntryKey, readHeldTicket } from '../../held-ticket';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
 import { NATIONALITIES, UNSPECIFIED_NATIONALITY } from './nationalities';
@@ -104,7 +106,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
   }
 
   /** draftBegin for staff (X5, #3008), the entry's own step, then reserveCustomer; step 2 on success. */
-  async function reserve(prefix?: (reason: string) => string): Promise<void> {
+  async function reserve(prefix?: (reason: string) => string, opts?: { skip?: boolean }): Promise<void> {
     setSending(true);
     setError(undefined);
     setFieldErrors({});
@@ -119,11 +121,17 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
         if (!alive) return;
         if (typeof draft.id === 'string' && draft.id !== '') store.setStaffDraftId(draft.id);
       }
+      if (!opts?.skip && !store.heldBooking() && !hasEntryKey(store) && store.meId() !== '') {
+        const held = await readHeldTicket(store.api, store.branch(), store.meId(), bangkokToday());
+        if (!alive) return;
+        if (held.kind === 'booking') store.setHeldBooking(held.booking);
+      }
       await store.entry()?.beforeReserve?.(store);
       if (!alive) return;
       const f = store.fields();
+      const heldBooking = !opts?.skip ? store.heldBooking() : undefined;
       const answer = await store.api.post<
-        { action: string; payload: PassportFields & { mode: 'LIVE' } },
+        { action: string; payload: PassportFields & { mode: 'LIVE'; bookingId?: string } },
         { customerId?: unknown; existing?: unknown }
       >(store.path.rpc, {
         action: 'reserveCustomer',
@@ -134,6 +142,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           birthDate: f.birthDate,
           passportExpiry: f.passportExpiry,
           mode: 'LIVE',
+          ...(heldBooking ? { bookingId: heldBooking.bookingId } : {}),
         },
       });
       if (!alive) return;
@@ -148,6 +157,16 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
       if (prefix) {
         setError(prefix(wordedError(e)));
         return;
+      }
+      if (e instanceof ApiError && e.code === 'refused') {
+        if (e.message === texts.th['error.bookingNotThisCustomer']) {
+          setFieldErrors({ passportNo: t('error.bookingNotThisCustomer') });
+          return;
+        }
+        if (e.message === texts.th['error.bookingNotUsable']) {
+          setError(t('error.bookingNotUsable'));
+          return;
+        }
       }
       const m = fieldError(e, {
         name: t('name'),
@@ -212,7 +231,7 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     store.setField('name', 'WALK-IN', 'user');
     store.setField('passportNo', 'WALKIN', 'user');
     store.setField('nationality', UNSPECIFIED_NATIONALITY, 'user');
-    await reserve((reason) => t('skipFailed', { reason }));
+    await reserve((reason) => t('skipFailed', { reason }), { skip: true });
   }
 
   return (
