@@ -258,6 +258,14 @@ async function ensureBranch2Priced(
     const ageInput = policyCard.locator('input[name="maxReferenceAgeHours"]');
     await expect(ageInput).toBeVisible({ timeout: 20_000 });
     await ageInput.fill(String(maxReferenceAgeHours));
+    // Save stays disabled for a branch with no policy until #5785 is deployed (RatesPolicyCard.tsx:518-524). Never click a
+    // disabled button through posted(): its waitForResponse (helpers.ts:431) would reject unawaited and fail the test.
+    const saveEnabled = await expect(policyCard.getByTestId('save-policy'))
+      .toBeEnabled({ timeout: 20_000 })
+      .then(() => true, () => false);
+    if (!saveEnabled) {
+      return `first policy on ${branch2} failed: save-policy stays disabled (is #5785 deployed on this host?)`;
+    }
 
     try {
       const res = await posted(page, ROUTE_RATE_POLICY_SAVE, () =>
@@ -289,6 +297,12 @@ async function ensureBranch2Priced(
     const tierEditor = page.locator('section.tier-editor');
     await expect(tierEditor).toBeVisible({ timeout: 20_000 });
     await tierEditor.locator('input[name="reason"]').fill(`${RUN_MARKER}-setup-first-publication`);
+    const approveEnabled = await expect(tierEditor.locator('button[name="approve"]'))
+      .toBeEnabled({ timeout: 20_000 })
+      .then(() => true, () => false);
+    if (!approveEnabled) {
+      return `first publication on ${branch2} failed: approve stays disabled for ${row.currency}`;
+    }
 
     let approveRes: { ok: boolean; text: string; body: string };
     try {
