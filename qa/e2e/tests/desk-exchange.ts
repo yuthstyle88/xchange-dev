@@ -1,5 +1,5 @@
-// Shared desk exchange helper (quote -> customer -> booking -> payment -> receipt).
-// Extracted from flow-exchange.spec.ts per #5795.
+// Shared desk exchange helper (quote -> customer -> booking -> payment -> receipt), with optional DeskExchangeOptions.customer.
+// Extracted from flow-exchange.spec.ts per #5795; opt-in customer callback added per #5796.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 //
 // Selectors cited from web/src/screens/:
@@ -20,8 +20,14 @@ interface TransactionAnswer {
   documentRef?: string | null;
 }
 
+export interface DeskExchangeOptions {
+  /** Replaces the "Skip customer details" click: fills and submits the customer step. Resolves once the booking step shows. */
+  customer?: (teller: Page) => Promise<void>;
+}
+
 /**
  * Runs the desk exchange steps 2-5 up to the receipt (steps/rate -> customer -> booking -> payment -> receipt).
+ * When `opts.customer` is provided, runs it instead of clicking Skip customer details.
  * Returns the receipt documentRef number matching /^XC-\d{8}-\d{6}$/.
  */
 export async function runDeskExchange(
@@ -29,6 +35,7 @@ export async function runDeskExchange(
   manager: Page,
   type: 'BUY' | 'SELL',
   onQueueOpened?: (opened: boolean) => void,
+  opts?: DeskExchangeOptions,
 ): Promise<string> {
   const currency = users.currency ?? 'USD';
   // Step 2: teller opens /desk?branch=<branch>, selects BUY/SELL + currency + amount, waits for POST /api/quotes, submits Next.
@@ -57,10 +64,14 @@ export async function runDeskExchange(
   const skipBtn = teller.getByRole('button', { name: /ข้ามข้อมูลลูกค้า|Skip customer details/ });
   await expect(skipBtn, 'customer step shows (steps/customer/step.tsx:256)').toBeVisible({ timeout: 15_000 });
 
-  // Step 3: customer step — "Skip customer details" auto-fills WALK-IN + placeholder image and reserves the customer.
-  const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
-  console.log(`[F6] POST /api/rpc (reserveCustomer, ${type}) ${reserveRes.text}`);
-  expect(reserveRes.ok, `reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
+  if (opts?.customer === undefined) {
+    // Step 3: customer step — "Skip customer details" auto-fills WALK-IN + placeholder image and reserves the customer.
+    const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
+    console.log(`[F6] POST /api/rpc (reserveCustomer, ${type}) ${reserveRes.text}`);
+    expect(reserveRes.ok, `reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
+  } else {
+    await opts.customer(teller);
+  }
 
   const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
   await expect(confirmBookingBtn, 'booking step shows (steps/booking/step.tsx:54)').toBeVisible({
