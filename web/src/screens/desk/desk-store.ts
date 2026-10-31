@@ -14,8 +14,10 @@ import { fieldError } from '../../shared/i18n/field-error';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { checkDecimal, MONEY } from '../../shared/ui/bounded';
 import * as screenI18n from './i18n';
+import type { HeldBooking } from './held-ticket';
 import { createSaver, newKey, type SaveAnswer } from './save';
 
+export type { HeldBooking } from './held-ticket';
 export type { SaveAnswer } from './save';
 
 export type DeskType = 'BUY' | 'SELL';
@@ -54,6 +56,7 @@ export interface DeskStore {
   api: ApiClient;
   path: DeskPath;
   branch: Accessor<string>;
+  meId: Accessor<string>;
   config: Accessor<DeskConfig | undefined>;
   configError: Accessor<string | undefined>;
   step: Accessor<StepIndex>;
@@ -96,6 +99,8 @@ export interface DeskStore {
   setBooking(ref: string): void;
   walkInTicket: Accessor<QueueTicketDto | undefined>;
   setWalkInTicket(t: QueueTicketDto | undefined): void;
+  heldBooking: Accessor<HeldBooking | undefined>;
+  setHeldBooking(h: HeldBooking | undefined): void;
   serveKey(): string;
   // step 3
   method: Accessor<string>;
@@ -141,7 +146,7 @@ const EMPTY_FIELDS: PassportFields = {
 };
 
 /** Bangkok's today as YYYY-MM-DD (dh:98). */
-function bangkokToday(): string {
+export function bangkokToday(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(new Date());
 }
 
@@ -203,6 +208,7 @@ export function createDeskStore(
   const [valueDate, setValueDate] = createSignal(bangkokToday());
   const [booking, setBooking] = createSignal('');
   const [walkInTicket, setWalkInTicket] = createSignal<QueueTicketDto | undefined>();
+  const [heldBooking, setHeldBooking] = createSignal<HeldBooking | undefined>();
   let currentServeKey = '';
 
   const [method, setMethodS] = createSignal('');
@@ -364,6 +370,7 @@ export function createDeskStore(
     api,
     path,
     branch,
+    meId: () => deps.me()?.id ?? '',
     config,
     configError,
     step,
@@ -400,6 +407,8 @@ export function createDeskStore(
     setBooking,
     walkInTicket,
     setWalkInTicket,
+    heldBooking,
+    setHeldBooking,
     serveKey: () => (currentServeKey ||= newKey()),
     method,
     setMethod,
@@ -478,6 +487,7 @@ export function createDeskStore(
     setStaffDraftId('');
     setBooking('');
     setWalkInTicket(undefined);
+    setHeldBooking(undefined);
     currentServeKey = '';
     setMethodS('');
     setRef('');
