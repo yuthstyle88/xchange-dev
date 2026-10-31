@@ -90,10 +90,12 @@ else
 fi
 
 if [ "$EVENT" = "pull_request" ]; then
-  run_tests="false"
+  # PRs run the tests and guards of the changed packages (#5773, replacing #2965's no-tests rule).
   if [ -n "$packages" ]; then
+    run_tests="true"
     guards="true"
   else
+    run_tests="false"
     guards="false"
   fi
   if has_pkg "xchange"; then
