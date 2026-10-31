@@ -38,7 +38,7 @@ use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_cash::application::ledger_approval::negative_stock::NegativeStockSource;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, PostingRequest, TransactionLineId,
 };
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
