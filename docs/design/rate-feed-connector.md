@@ -739,6 +739,38 @@ several rows per currency on a tiered publication (§9.4).
 ### 9.5 No database change
 Nothing here adds or changes a table, column or constraint. No data-migration section is needed.
 
+### 9.6 Tier-only publications from a MANUAL approve (amendment, 2026-10-31)
+
+> designed-by: claude/b091f5e0 · measured on `main` `b5b69776` · lane controller's rulings #564 issuecomment-6542427118
+> and -6542441849 (owner: *"ทำ T1"*)
+
+**What changed since §3.4 and §9.4.** A MANUAL or FOLLOW approve always publishes the currency as four tier lines and no
+`'ALL'` line (`pricing-tiers.md` §15.3 step 6, `:908`), and `line_for` answers tier 1 for any quantity (B4,
+`pricing-tiers.md` §15.6). So a tier-only publication is normal on every branch that approves a price, and a reader that
+filters `value_tier = 'ALL'` answers nothing there. Measured on xc-v3 2026-10-31: every branch's current publication was
+USD tier-only after the 16:02 ICT approve, and `rateAlertCreate` refused *"branch MAIN does not publish USD Sell"*.
+
+| Reader on `b5b69776` | Today | Change | Ticket |
+|---|---|---|---|
+| `xc-alert/src/application/rate_alert_service.rs:120-123` (`observe_current_in`, used by create `:283` and resume `:369`) | `PublishedRates::line_in`: `'ALL'` line only | `line_for` with group `ALL` and no quantity: the `'ALL'` line, else tier 1, the line the evaluator (`evaluator.rs:77-79`) and `my_rate_alerts` (`:104-106`) already read | R1 |
+| `xc-rate` `PublishedRates::line_in` (`domain/publication/published_rates.rs:74-81`, impl `infrastructure/publication/published_rates.rs:70-133`) | its last source caller is the row above | **removed** from the port and the impl. §3.4's "`line_in` stays" no longer holds | R1 |
+| `xc-cash/src/infrastructure/ledger_postings.rs:459-484` (`published_buy_unit_cost`, for stock with no cost history) | `value_tier = 'ALL'` only; fails closed (`missing_buy_rate`) on a tier-only publication | first tier, preferring an `'ALL'` line: `tier_lower_exclusive_thb IS NULL ORDER BY (value_tier = 'ALL') DESC LIMIT 1` (`ledger-inventory.md` §4.5) | R2 |
+
+**Guard (replaces §9.4's "Guard (F11)").** The F11 source test accepted any SQL window that mentions `value_tier`, so a
+`value_tier = 'ALL'` filter passed it, and it allowed `published_rates.rs` as a whole file. The guard becomes, per read of
+`published_rate_lines` under `api/src` and `api/crates/*/src`:
+1. names `tier_lower_exclusive_thb` → passes (R-10);
+2. otherwise filters `value_tier = 'ALL'` → **refused**, with no allow-list exception;
+3. otherwise names `value_tier` (reads the tiers and picks one, as `line_for`) → passes;
+4. otherwise reads one line by id (`id = $n`, as `line_by_id`, `stale_policy_in`) → passes;
+5. otherwise refused unless the file only writes publications or needs any tier (`publish_service.rs`,
+   `feed_publisher.rs`, `denomination_group_service.rs`, `admin_cash.rs`; the doc comment in `counter_facts.rs`).
+It lives in its own test file; the guard half of `rate_feed_first_tier_views_test.rs` is removed with it (R3, after R1 and
+R2, which clear the two readers it would refuse).
+
+No database change; no data-migration section is needed. A publication that already exists reads as before on the
+untiered path, and gains its tier-1 reading on the tiered one.
+
 ## 10. The admin screen for banknote groups (F3w, amendment 2026-10-11)
 
 > designed-by: claude/c954feda · measured on `main` `32a8a8b` · owner's order *"เปิดใบ F3w แล้วจ่ายงานเลย"*

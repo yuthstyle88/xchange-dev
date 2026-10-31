@@ -173,6 +173,15 @@ Policy rows in `xc-auth/src/domain/policy/areas/rate_alerts.rs` (PL-0 seam).
 | view `my_rate_alerts` (side in customer words, unit, branch, target, relation, the current published rate and its `published_at`/`stale`, last event, `since`) | `/api/v3/views/my_rate_alerts` | `CustomerSelf` |
 | view `rate_alert_settings` | `/api/v3/views/rate_alert_settings` | EXECUTIVE |
 
+### 4.5 Which published line an alert observes (amendment, 2026-10-31)
+
+Create (R5's first observation), resume (R10) and the evaluator observe **the same line**: the branch's current
+publication, group `ALL`, at its first tier (`rate-feed-connector.md` R-10, §9.6). On an untiered publication that is the
+`'ALL'` line; on a tier-only one (every MANUAL approve, `pricing-tiers.md` §15.3) it is T1. Create and resume read it
+through `PublishedRates::line_for` with no quantity (tier 1, B4); the evaluator keeps its own
+`tier_lower_exclusive_thb IS NULL` read. A currency the publication does not carry is still `not_publishing` (create)
+and `UNKNOWN` (resume). Ticket R1.
+
 ## 5. Class diagram
 
 ```mermaid

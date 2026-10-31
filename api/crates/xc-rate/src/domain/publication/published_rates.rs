@@ -71,15 +71,6 @@ pub trait PublishedRates: Send + Sync {
     fn current<'a>(&'a self, branch: &'a BranchId)
     -> BoxFuture<'a, AppResult<Option<Publication>>>;
 
-    /// One line of the current publication for a side, in the caller's transaction.
-    fn line_in<'a>(
-        &'a self,
-        tx: &'a mut Transaction<'_, Postgres>,
-        branch: &'a BranchId,
-        code: CurrencyCode,
-        side: Side,
-    ) -> BoxFuture<'a, AppResult<Option<PublishedSide>>>;
-
     /// One line of the current publication for a selector (currency, side, group, quantity), in the caller's transaction.
     fn line_for<'a>(
         &'a self,

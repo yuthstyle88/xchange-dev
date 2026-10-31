@@ -1,11 +1,18 @@
 import type { ApiClient } from '../../shared/api/client';
 import type { DeskBookingsData } from '../../shared/api/generated/desk_bookings';
 import type { QueueBoardData } from '../../shared/api/generated/queue_board';
+import type { DeskStore } from './desk-store';
 
 export interface HeldBooking {
   bookingId: string;
   ticketId: string;
   displayNumber: string;
+}
+
+export function hasEntryKey(store: DeskStore): boolean {
+  const extras = store.entry()?.payloadExtras();
+  if (!extras) return false;
+  return Boolean(extras.bookingId || extras.onlineBookingId || extras.kioskRequestId);
 }
 
 export type HeldTicketRead =

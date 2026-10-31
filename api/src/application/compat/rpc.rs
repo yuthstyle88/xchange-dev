@@ -285,12 +285,26 @@ impl CompatRpc {
                 answer
             }
             "reserveCustomer" => {
-                let reservation = self
-                    .services
-                    .customers
-                    .reserve_checked(branch, reserve_command(&payload), now)
-                    .await
-                    .map_err(reserve_failure)?;
+                let cmd = reserve_command(&payload);
+                let reservation = match payload
+                    .get("bookingId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                {
+                    Some(booking_id) => {
+                        self.services
+                            .customers
+                            .reserve_for_booking(branch, cmd, booking_id, now)
+                            .await
+                    }
+                    None => {
+                        self.services
+                            .customers
+                            .reserve_checked(branch, cmd, now)
+                            .await
+                    }
+                }
+                .map_err(reserve_failure)?;
                 V2Json::object(vec![
                     ("customerId", V2Json::text(reservation.customer_id)),
                     ("existing", V2Json::Bool(reservation.existing)),

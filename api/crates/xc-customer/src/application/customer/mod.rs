@@ -52,4 +52,33 @@ impl CustomerService {
         )
         .await
     }
+
+    pub async fn insert_identity_in_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        identity: &crate::domain::customer::entities::customer_identity::CustomerIdentity,
+    ) -> pos_error::AppResult<()> {
+        sqlx::query(
+            "INSERT INTO customer_identities ( \
+                 id, organization_id, customer_id, type, encrypted_value, \
+                 key_id, lookup_hash, nationality, verified_at, status, created_at, updated_at \
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+        )
+        .bind(identity.id)
+        .bind(identity.organization_id)
+        .bind(&identity.customer_id)
+        .bind(identity.r#type.as_str())
+        .bind(&identity.encrypted_value)
+        .bind(&identity.key_id)
+        .bind(&identity.lookup_hash)
+        .bind(&identity.nationality)
+        .bind(identity.verified_at)
+        .bind(&identity.status)
+        .bind(identity.created_at)
+        .bind(identity.updated_at)
+        .execute(&mut **tx)
+        .await
+        .map_err(pos_error::AppError::Database)?;
+
+        Ok(())
+    }
 }
