@@ -767,7 +767,30 @@ impl LedgerCashPostings {
                                 Some(line) => line_row(tx, line).await?,
                                 None => None,
                             };
-                            let cost = exchange_thb(&row, thb_total, foreign_exchange_legs)?;
+                            let cost = if r.line.is_none()
+                                && matches!(
+                                    (&r.from, &r.to),
+                                    (CashPlace::Bank, CashPlace::InTransit(_))
+                                ) {
+                                match published_buy_unit_cost(
+                                    tx,
+                                    &plan.organization_id,
+                                    place,
+                                    r.currency,
+                                )
+                                .await?
+                                {
+                                    Some(unit) => round2(q * unit),
+                                    None => {
+                                        return Err(validation(&format!(
+                                            "no published BUY rate for {} at branch {place} to cost an external inflow",
+                                            r.currency.as_str()
+                                        )));
+                                    }
+                                }
+                            } else {
+                                exchange_thb(&row, thb_total, foreign_exchange_legs)?
+                            };
                             plan.acquire(
                                 tx,
                                 place,
