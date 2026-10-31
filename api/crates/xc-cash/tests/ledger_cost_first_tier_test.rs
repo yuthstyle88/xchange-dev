@@ -17,7 +17,6 @@
 //!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`.
 
-
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -557,15 +556,50 @@ async fn assert_refused_naming(
 // New behaviour: no cost history → the current published BUY rate
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 /// V.9's fixed bands with BUY 32.50 / 32.60 / 32.70 / 32.80 (the first tier is the cheapest, so a reader that picks
 /// any other tier gives a different figure). `lower_exclusive` NULL marks the first tier.
 fn usd_tiers<'a>(t1_buy: Option<&'a str>) -> [Line<'a>; 4] {
     [
-        ("USD", "ALL", "T1", "1", t1_buy, "33.40", None, Some("10000.00")),
-        ("USD", "ALL", "T2", "1", Some("32.60"), "33.30", Some("10000.00"), Some("50000.00")),
-        ("USD", "ALL", "T3", "1", Some("32.70"), "33.20", Some("50000.00"), Some("200000.00")),
-        ("USD", "ALL", "T4", "1", Some("32.80"), "33.10", Some("200000.00"), None),
+        (
+            "USD",
+            "ALL",
+            "T1",
+            "1",
+            t1_buy,
+            "33.40",
+            None,
+            Some("10000.00"),
+        ),
+        (
+            "USD",
+            "ALL",
+            "T2",
+            "1",
+            Some("32.60"),
+            "33.30",
+            Some("10000.00"),
+            Some("50000.00"),
+        ),
+        (
+            "USD",
+            "ALL",
+            "T3",
+            "1",
+            Some("32.70"),
+            "33.20",
+            Some("50000.00"),
+            Some("200000.00"),
+        ),
+        (
+            "USD",
+            "ALL",
+            "T4",
+            "1",
+            Some("32.80"),
+            "33.10",
+            Some("200000.00"),
+            None,
+        ),
     ]
 }
 
