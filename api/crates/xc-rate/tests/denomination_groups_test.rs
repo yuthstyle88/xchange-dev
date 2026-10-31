@@ -9,8 +9,8 @@
 //! - `xc_rate::domain::currency::denomination_groups::{GroupCode, DenominationGroups}`:
 //!   - `GroupCode::new(text) -> Result<GroupCode, String>` accepts `[A-Z0-9_]{1,32}` only;
 //!     `GroupCode::all()` is `"ALL"`; `as_str()`.
-//!   - the trait's `groups_of(tx, code) -> Result<Vec<GroupCode>, RateEngineError>` (sorted
-//!     ascending) and `source_of(tx, code, &group, provider) -> Result<Option<String>, _>`.
+//!   - the trait's `groups_in(tx, organization_id, code) -> Result<Vec<GroupCode>, RateEngineError>` (sorted
+//!     ascending) and `source_in(tx, organization_id, code, &group, provider) -> Result<Option<String>, _>`.
 //! - `xc_rate::infrastructure::currency::denomination_groups::PgDenominationGroups::new(pool)`.
 //! - `xc_rate::application::currency::denomination_group_service::DenominationGroupService::new(
 //!   groups: Arc<dyn DenominationGroups>, audit: Arc<dyn AuditLog>)` with `create_group`,
@@ -75,7 +75,7 @@ async fn settle<T>(
 
 async fn groups_of(db: &TestDb, currency: &str) -> Vec<String> {
     let mut tx = db.begin().await;
-    let got = reader(db).groups_of(&mut tx, code(currency)).await;
+    let got = reader(db).groups_in(&mut tx, ORG, code(currency)).await;
     settle(tx, got)
         .await
         .expect("groups_of answers")
@@ -87,7 +87,7 @@ async fn groups_of(db: &TestDb, currency: &str) -> Vec<String> {
 async fn source_of(db: &TestDb, currency: &str, g: &str, provider: &str) -> Option<String> {
     let mut tx = db.begin().await;
     let got = reader(db)
-        .source_of(&mut tx, code(currency), &group(g), provider)
+        .source_in(&mut tx, ORG, code(currency), &group(g), provider)
         .await;
     settle(tx, got).await.expect("source_of answers")
 }
