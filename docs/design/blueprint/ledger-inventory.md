@@ -373,7 +373,10 @@ One posting, `source_type EXCHANGE`, `source_key complete`, per currency balance
 | BRANCH transfer **dispatched** | ledger: `SAFE(from) → IN_TRANSIT` (§07 *"ledger ย้ายเข้าสู่ in-transit account ตอน dispatch"*). The `IN_TRANSIT` account belongs to the **sender** (`cash_accounts.branch_id = from_branch_id`, one per currency). Inventory: **nothing** — the money in transit is still the sender's, inside the sender's position |
 | BRANCH transfer **received** (`qty_received`) | runs in `BranchTx::run_pair(from, to, …)` (L-5). Ledger: `IN_TRANSIT(from) → SAFE(to)` for `qty_received`. Inventory: `TRANSFER_OUT` on the sender for `qty_received` at the sender's average at that moment, and `TRANSFER_IN` on the receiver as a lot at that same unit cost (cost travels with the money) |
 | a received quantity **short** of the sent one | the shortfall stays on the sender's `IN_TRANSIT`, and in the sender's position, until FINANCE reconciles (§06 *"difference เป็น exception"*). Reconcile posts `IN_TRANSIT(from) → VARIANCE(from)` and an inventory `ADJUST` on the sender for `−shortfall` at its average |
-| EXTERNAL in / out | `BANK ↔ SAFE` |
+| EXTERNAL_IN **dispatched** | ledger: `BANK → IN_TRANSIT` (`xc-cash/src/domain/transfer/kinds/external.rs:62-91`, `source_type TRANSFER`, no line). Inventory, foreign currency: an `ACQUIRE` on the branch, `cost = round2(quantity × unit)` where `unit` is the branch's current published **BUY ÷ unit_size of group `ALL` at its first tier**, the read of §4.5 "Cost with no history" (`published_buy_unit_cost`). No such line, or no BUY on it: refused `validationFailed` naming the currency, nothing written; never 0.00. THB: no inventory, as every THB leg. Amendment 2026-10-31, owner *"ทำตามเสนอ"* (#564 issuecomment-6543033385). The rule keys on the leg `BANK → IN_TRANSIT` with no line, which only this dispatch posts |
+| EXTERNAL_IN **received** | ledger: `IN_TRANSIT → SAFE` (`external.rs:93-130`). Inventory: nothing — the position already holds it |
+| EXTERNAL_OUT **dispatched** | ledger: `SAFE → IN_TRANSIT`. Inventory: nothing |
+| EXTERNAL_OUT **received** | ledger: `IN_TRANSIT → BANK`. Inventory: a `DISPOSE` at the position's average |
 | count difference verified | `DRAWER ↔ VARIANCE` for `counted − expected`; inventory `ADJUST` at average |
 
 ### 4.5 Negative stock (N-1)

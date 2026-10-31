@@ -10,9 +10,10 @@ use sqlx::{Postgres, Row, Transaction};
 use xc_auth::domain::access;
 use xc_kernel::money::Side;
 use xc_rate::application::draft::rate_draft_service::SubmitOutcome;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, RateDraft};
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
-use xc_rate::domain::publication::published_rates::{PublicationRef, PublishedRates};
+use xc_rate::domain::publication::published_rates::{LineSelector, PublicationRef, PublishedRates};
 
 async fn settle<T>(
     tx: Transaction<'static, Postgres>,
@@ -122,39 +123,93 @@ async fn three_lines_sharing_one_policy_and_three_distinct_references_publish_ea
     let mut tx = db.begin().await;
     let usd_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("usd buy query")
         .expect("usd buy published");
     let usd_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("usd sell query")
         .expect("usd sell published");
 
     let eur_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("EUR"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("EUR"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("eur buy query")
         .expect("eur buy published");
     let eur_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("EUR"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("EUR"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("eur sell query")
         .expect("eur sell published");
 
     let gbp_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp buy query")
         .expect("gbp buy published");
     let gbp_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp sell query")
         .expect("gbp sell published");
@@ -248,24 +303,60 @@ async fn three_lines_with_one_line_missing_reference_behaves_as_today() {
     let mut tx = db.begin().await;
     let usd_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("usd buy query")
         .expect("usd buy published");
     let eur_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("EUR"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("EUR"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("eur buy query")
         .expect("eur buy published");
     let gbp_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp buy query");
     let gbp_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp sell query");
     tx.commit().await.expect("commit read");
@@ -400,39 +491,93 @@ async fn two_policy_versions_in_one_draft_publishes_each_line_under_its_own_poli
     let mut tx = db.begin().await;
     let usd_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("usd buy query")
         .expect("usd buy published");
     let usd_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("usd sell query")
         .expect("usd sell published");
 
     let eur_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("EUR"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("EUR"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("eur buy query")
         .expect("eur buy published");
     let eur_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("EUR"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("EUR"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("eur sell query")
         .expect("eur sell published");
 
     let gbp_buy = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Buy)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Buy,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp buy query")
         .expect("gbp buy published");
     let gbp_sell = e
         .published
-        .line_in(&mut tx, &main_branch(), code("GBP"), Side::Sell)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("GBP"),
+                side: Side::Sell,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("gbp sell query")
         .expect("gbp sell published");

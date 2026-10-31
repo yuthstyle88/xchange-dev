@@ -41,9 +41,10 @@ use pos_error::{AppError, AppResult};
 use rate_engine_common::*;
 use serde_json::{Value, json};
 use xc_kernel::money::{Money, Side};
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::draft::rate_draft::DraftStatus;
 use xc_rate::domain::policy::stale_policy::{OnStale, StalePolicy};
-use xc_rate::domain::publication::published_rates::{PublishedRates, PublishedSide};
+use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates, PublishedSide};
 
 fn money(text: &str) -> Money {
     Money::parse(text).expect("a valid amount")
@@ -132,7 +133,16 @@ async fn stale_side(e: &Engine, db: &TestDb, side: Side) -> PublishedSide {
     let mut tx = db.begin().await;
     let got = e
         .published
-        .line_in(&mut tx, &main_branch(), code("USD"), side)
+        .line_for(
+            &mut tx,
+            &main_branch(),
+            LineSelector {
+                code: code("USD"),
+                side,
+                group: GroupCode::all(),
+                quantity: None,
+            },
+        )
         .await
         .expect("read the published line")
         .unwrap_or_else(|| panic!("USD {side:?} is published"));

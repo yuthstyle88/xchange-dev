@@ -9,8 +9,8 @@ pub use application::customer::phone_verification_service::{
     PhoneConfirmResult, PhoneStartResult, PhoneVerificationError, PhoneVerificationService,
 };
 pub use application::customer::service::{
-    BAD_DATE, BAD_MODE, BAD_TEXT, COUNTER_EXHAUSTED, CustomerService, INVALID_NATIONALITY,
-    NO_SUCH_BRANCH, NOT_THIS_PASSPORT, ReserveError,
+    BAD_DATE, BAD_MODE, BAD_TEXT, BOOKING_NOT_THIS_CUSTOMER, BOOKING_NOT_USABLE, COUNTER_EXHAUSTED,
+    CustomerService, INVALID_NATIONALITY, NO_SUCH_BRANCH, NOT_THIS_PASSPORT, ReserveError,
 };
 pub use domain::customer::commands::reserve_customer::ReserveCustomer;
 pub use domain::customer::entities::customer::Customer;

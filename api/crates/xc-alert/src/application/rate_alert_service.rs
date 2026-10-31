@@ -13,8 +13,9 @@ use uuid::Uuid;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
 use xc_rate::domain::currency::currency_register::CurrencyRegister;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::publication::freshness::Freshness;
-use xc_rate::domain::publication::published_rates::PublishedRates;
+use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
 
 use crate::domain::CustomerSide;
 use crate::domain::condition::AlertCondition;
@@ -119,7 +120,16 @@ impl RateAlertService {
     ) -> Result<Option<CurrentObservation>, RateAlertError> {
         let Some(line) = self
             .published
-            .line_in(tx, branch, currency, side)
+            .line_for(
+                tx,
+                branch,
+                LineSelector {
+                    code: currency,
+                    side,
+                    group: GroupCode::all(),
+                    quantity: None,
+                },
+            )
             .await
             .map_err(storage)?
         else {
