@@ -59,6 +59,10 @@ function createStubStore(
     setIdentityChecked: vi.fn((v: boolean) => setIdentityCheckedSignal(v)),
     customerId,
     setCustomerId: vi.fn((v: string) => setCustomerIdSignal(v)),
+    // C1 (walkin-queue.md §12.3): no signed-in teller id, so the step reads no held ticket.
+    meId: () => "",
+    heldBooking: () => undefined,
+    setHeldBooking: vi.fn(),
     staffDraftId,
     setStaffDraftId: vi.fn((v: string) => setStaffDraftIdSignal(v)),
     entry: () => undefined,

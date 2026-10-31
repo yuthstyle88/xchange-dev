@@ -27,6 +27,8 @@ export const th = {
   nameTooLong: 'ชื่อตามพาสปอร์ตยาวได้ไม่เกิน 100 ตัวอักษร',
   passportNoTooLong: 'เลขพาสปอร์ตยาวได้ไม่เกิน 30 ตัวอักษร',
   dateTooEarly: 'วันที่ต้องไม่ก่อน 1920-04-02',
+  'error.bookingNotThisCustomer': 'พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง',
+  'error.bookingNotUsable': 'ใช้การจองนี้ไม่ได้ กรุณาตรวจคิวจองอีกครั้ง',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -56,4 +58,6 @@ export const en: Record<keyof typeof th, string> = {
   nameTooLong: 'Name must be at most 100 characters',
   passportNoTooLong: 'Passport number must be at most 30 characters',
   dateTooEarly: 'Date must not be before 1920-04-02',
+  'error.bookingNotThisCustomer': "This passport is not the booked customer's. Please check the passport again.",
+  'error.bookingNotUsable': "This booking can't be used here. Please check the booking ticket again.",
 };
