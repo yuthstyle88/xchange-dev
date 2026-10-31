@@ -573,6 +573,9 @@ test.describe('QA-R9-11 flow: customer form validations (§9.1 b)', () => {
       await page.goto('/app/bookings');
 
       await expect(page.locator('.xc-bookings-screen')).toBeVisible({ timeout: 20_000 });
+      await expect(
+        page.locator('.xc-bookings-list, .xc-bookings-empty, .xc-bookings-error').first(),
+      ).toBeVisible({ timeout: 20_000 });
 
       // Check 1: Reschedule validation
       const rescheduleBtn = page.locator('button[data-action="reschedule"]').first();
