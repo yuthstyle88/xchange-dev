@@ -88,7 +88,9 @@ impl DraftBranchRefresh {
                    ) \
                    AND NOT EXISTS ( \
                        SELECT 1 FROM pricing_modes m \
-                       WHERE m.currency_code = l.currency_code AND m.mode = 'FOLLOW' \
+                       WHERE m.organization_id = (SELECT organization_id FROM branches WHERE id = $2) \
+                         AND m.currency_code = l.currency_code \
+                         AND m.mode = 'FOLLOW' \
                    ) \
                    AND NOT EXISTS ( \
                        SELECT 1 FROM pricing_branch_policy bp \

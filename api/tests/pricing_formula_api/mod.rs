@@ -119,7 +119,7 @@ pub async fn org_formula(room: &Room, version: i32, buy: &str, sell: &str, curre
 pub async fn follow(room: &Room, currency: &str) {
     sqlx::query(
         "INSERT INTO pricing_modes (currency_code, mode, revision, updated_by, updated_at) VALUES ($1, 'FOLLOW', 1, 'owner-1', now()) \
-         ON CONFLICT (currency_code) DO UPDATE SET mode = 'FOLLOW'",
+         ON CONFLICT (organization_id, currency_code) DO UPDATE SET mode = 'FOLLOW'",
     )
     .bind(currency)
     .execute(&room.pool)
