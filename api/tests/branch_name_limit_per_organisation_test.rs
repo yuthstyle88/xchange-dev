@@ -243,7 +243,11 @@ async fn a_name_repeated_within_organisation_b_is_still_refused() {
         .create_branch(&cookie, request, json!({ "name": "b ari" }))
         .await;
 
-    assert_eq!(again.status, 400, "same name, other case: {:.300}", again.text);
+    assert_eq!(
+        again.status, 400,
+        "same name, other case: {:.300}",
+        again.text
+    );
     assert_eq!(refusal(&again).as_deref(), Some(NAME_TAKEN));
     assert_eq!(room.organisation_of(request).await, None, "nothing written");
     room.finish().await;
