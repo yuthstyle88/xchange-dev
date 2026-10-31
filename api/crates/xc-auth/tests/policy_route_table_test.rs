@@ -24,6 +24,12 @@
 //! `Rpc` and `StaffRpc` `adminOpenShift`, `adminCloseShift`, `adminMoveStock`, `opsClock`, `ops` and
 //! `opsEnable` move to "no row". The `Custody` path's own rows stay (the type stays; no route
 //! reaches it). Every other row is unchanged.
+//!
+//! Re-expected for #5682 by its ticket author (claude/e2926a49; `docs/design/org-wide-actor-branch.md` §15.12):
+//! `EntryPath::StaffDesk`, `EntryPath::Custody` and `Need::Custody` are deleted with their rows, and the catch-all
+//! defaults of `OwnerRoute`, `UserRoute` and `Devices` go, so `employees`, `list`, `receipt`, `admin`, `desk` and
+//! `nope` on those paths move to "no row". `the_blueprint_users_b1_made_are_answered_as_before` asks the owner's
+//! route by the name its route asks with (`/api/reference-rates`). Every other row is unchanged.
 
 mod policy_common;
 
@@ -49,7 +55,6 @@ fn every_route_and_action_names_its_permission() {
         (E::StaffRpc, "adminSnapshot", p(P::CompatRead)),
         (E::StaffRpc, "getConnectionStatus", p(P::CompatRead)),
         (E::StaffRpc, "adminDeskConfig", p(P::ExchangeTransact)),
-        (E::StaffDesk, "desk", p(P::ExchangeTransact)),
         (E::StaffRpc, "reserveCustomer", p(P::ExchangeTransact)),
         (E::StaffRpc, "saveTransaction", p(P::ExchangeTransact)),
         (E::Rpc, "reserveCustomer", p(P::ExchangeTransact)),
@@ -57,8 +62,6 @@ fn every_route_and_action_names_its_permission() {
         (E::Kiosk, "manage", p(P::RatesDraft)),
         (E::Kiosk, "configure", p(P::RatesDraft)),
         (E::Rpc, "adminCreateBranch", p(P::BranchesManage)),
-        (E::OwnerRoute, "employees", p(P::UsersManage)),
-        (E::OwnerRoute, "list", p(P::UsersManage)),
         (E::DeviceSetup, "", p(P::SystemSettings)),
         (E::Devices, "setPrinter", p(P::SystemSettings)),
         (E::Devices, "setDrawer", p(P::SystemSettings)),
@@ -70,11 +73,7 @@ fn every_route_and_action_names_its_permission() {
         (E::File, "file", p(P::FileRead)),
         (E::Upload, "upload", p(P::ProofUpload)),
         (E::StaffUpload, "upload", p(P::ProofUpload)),
-        (E::UserRoute, "receipt", p(P::SignedIn)),
-        (E::UserRoute, "admin", p(P::SignedIn)),
-        (E::UserRoute, "desk", p(P::SignedIn)),
         (E::Devices, "snapshot", p(P::SignedIn)),
-        (E::Devices, "nope", p(P::SignedIn)),
         (E::Kiosk, "notifications", p(P::SignedIn)),
         (E::Kiosk, "list", p(P::SignedIn)),
         (E::PaymentMethods, "list", p(P::SignedIn)),
@@ -109,9 +108,6 @@ fn every_route_and_action_names_its_permission() {
             "/api/reference-rates",
             p(P::ReferenceRatesRead),
         ),
-        // #582's
-        (E::Custody, "opsClock", Some(Need::Custody)),
-        (E::Custody, "opsNope", Some(Need::Custody)),
         // no row
         // CA-10 #626 retires these (cash-shift-transfer.md §6)
         (E::Rpc, "adminOpenShift", None),
@@ -128,6 +124,13 @@ fn every_route_and_action_names_its_permission() {
         (E::Rpc, "opsClock", None),
         (E::Rpc, "nope", None),
         (E::StaffRpc, "nope", None),
+        // #5682 (org-wide-actor-branch.md §15.12) deletes the catch-all defaults: names no route asks
+        (E::OwnerRoute, "employees", None),
+        (E::OwnerRoute, "list", None),
+        (E::UserRoute, "receipt", None),
+        (E::UserRoute, "admin", None),
+        (E::UserRoute, "desk", None),
+        (E::Devices, "nope", None),
         (E::StaffRpc, "Ops", None),
         (E::StaffRpc, "adminCreateBranch", None),
         (E::Kiosk, "nope", None),
@@ -222,7 +225,11 @@ fn the_blueprint_users_b1_made_are_answered_as_before() {
         Ok(())
     ); // C7
     assert_eq!(
-        ask(Some(&owner()), EntryPath::OwnerRoute, "employees"),
+        ask(
+            Some(&owner()),
+            EntryPath::OwnerRoute,
+            "/api/reference-rates"
+        ),
         Ok(())
     );
 }

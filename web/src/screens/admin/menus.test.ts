@@ -264,8 +264,6 @@ const KNOWN_PERMISSIONS = new Set([
   'RateAlertSettingsSave',
   'OrgStartingPricesManage',
   'LoyaltyRulesManage',
-  // #5733 (owner ruling A on #5683): the organisation formula's permission, EXECUTIVE only by seed.
-  'PricingFormulaSave',
 ]);
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {

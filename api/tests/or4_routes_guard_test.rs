@@ -243,25 +243,25 @@ fn the_v2_rule_is_asked_only_on_the_custody_rows() {
     );
 }
 
-fn entry_path(name: &str) -> EntryPath {
-    match name {
+/// `None` for a path #5682 deleted (`StaffDesk`, `Custody`): the fixture keeps v2's cases, and no route asks them.
+fn entry_path(name: &str) -> Option<EntryPath> {
+    Some(match name {
         "Rpc" => EntryPath::Rpc,
         "StaffRpc" => EntryPath::StaffRpc,
         "Upload" => EntryPath::Upload,
         "StaffUpload" => EntryPath::StaffUpload,
         "File" => EntryPath::File,
         "StaffFile" => EntryPath::StaffFile,
-        "StaffDesk" => EntryPath::StaffDesk,
+        "StaffDesk" | "Custody" => return None,
         "Devices" => EntryPath::Devices,
         "Kiosk" => EntryPath::Kiosk,
         "OwnerRoute" => EntryPath::OwnerRoute,
         "UserRoute" => EntryPath::UserRoute,
-        "Custody" => EntryPath::Custody,
         "PaymentMethods" => EntryPath::PaymentMethods,
         "DrawerPassport" => EntryPath::DrawerPassport,
         "DeviceSetup" => EntryPath::DeviceSetup,
         other => panic!("no entry path {other}"),
-    }
+    })
 }
 
 #[test]
@@ -300,8 +300,10 @@ fn no_route_asks_customer_self_while_the_target_is_the_actor() {
     let customer_self: Vec<_> = asked
         .iter()
         .filter(|(path, action)| {
-            Policy::need(entry_path(path), &Action::new(action.as_str()))
-                == Some(Need::Permission(Permission::CustomerSelf))
+            entry_path(path).is_some_and(|p| {
+                Policy::need(p, &Action::new(action.as_str()))
+                    == Some(Need::Permission(Permission::CustomerSelf))
+            })
         })
         .collect();
     assert_eq!(

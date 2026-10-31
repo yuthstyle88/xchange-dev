@@ -37,6 +37,22 @@
 //! Policy each recorded case skip it (`retired_by_re7`, still counted, so the totals stand).
 //! `what_each_role_may_write_on_both_paths`, `the_owners_user_may_do_the_owner_rpc_actions_its_roles_allow`
 //! and `a_staff_path_admits_whoever_holds_its_role` now expect it refused. Nothing else changed.
+//!
+//! Re-expected for #5682 by its ticket author (claude/e2926a49; `docs/design/org-wide-actor-branch.md` §15.12):
+//! `EntryPath::StaffDesk` and `EntryPath::Custody` are deleted, and so are the catch-all defaults of `Devices`,
+//! `OwnerRoute` and `UserRoute`.
+//! - The replays count the mapped cases of `StaffDesk` and of the names only a catch-all answered, without
+//!   asking them (`retired_by_5682`, 162 cases; S11 keeps 40 of its 44, and the 4 are `StaffDesk`'s).
+//! - `the_staff_desk_page_is_tellers` is deleted with its path, and `StaffDesk` leaves the lists of
+//!   `a_staff_path_admits_whoever_holds_its_role` and `paths_with_one_purpose_do_not_read_the_action`.
+//! - `only_admin_passes_branch_and_user_management` becomes `the_employee_route_names_are_names_nobody_knows`,
+//!   because no route asks `employees` or `list`.
+//! - `the_device_route_does_not_stop_a_name_it_has_no_list_for` becomes
+//!   `the_device_route_refuses_a_name_it_has_no_row_for`.
+//! - `an_unknown_action_is_refused_in_the_words_of_its_path` adds the three paths.
+//! - The branch-scope tests ask `Devices` `snapshot` (the same `SignedIn` row, `Request` scope) in place of
+//!   `UserRoute` `desk`.
+//! - The refusal examples that used `OwnerRoute` `employees` use `DeviceSetup`, which is the same `ownerOnly`.
 
 mod policy_common;
 
@@ -87,6 +103,34 @@ const ORG_5558_CASES: usize = 22;
 /// `org_level_rows_branch_admin_test.rs`, not by the replay.
 fn organisation_level_by_5558(name: &str) -> bool {
     name == "adminCreateBranch"
+}
+
+/// How many mapped cases (main and branch) #5682 retires from the replay.
+const RETIRED_5682_CASES: usize = 162;
+
+/// Known difference: #5682 (design `org-wide-actor-branch.md` §15.12, accepted at #5558
+/// issuecomment-6515987193) deletes `EntryPath::StaffDesk` (no route asks it) and the catch-all defaults
+/// of `Devices`, `OwnerRoute` and `UserRoute`: a name those paths do not spell has no row. The fixtures
+/// keep v2's answers; what Policy answers now is pinned by `policy_named_rows_only_test.rs` and
+/// `an_unknown_action_is_refused_in_the_words_of_its_path`, not by the replay.
+fn retired_by_5682(path: &str, name: &str) -> bool {
+    match path {
+        "StaffDesk" => true,
+        "Devices" => ![
+            "setPrinter",
+            "setDrawer",
+            "queue",
+            "process",
+            "retry",
+            "drawerObservation",
+            "printerOnline",
+            "snapshot",
+        ]
+        .contains(&name),
+        "OwnerRoute" => !["/api/reference-rates", "queueTicketTake"].contains(&name),
+        "UserRoute" => name != "documents",
+        _ => false,
+    }
 }
 
 fn front() -> Actor {
@@ -479,11 +523,17 @@ fn every_case_s11_moves_is_the_seeds_answer() {
     // whether one of the caller's mapped roles holds p in RoleGrants::seed.
     let m = mapped_fixture();
     let mut s11_n = 0;
+    let mut s11_staff_desk = 0;
     for c in m
         .cases
         .iter()
         .filter(|c| matches!(c.change.as_deref(), Some("S11" | "S11A")))
     {
+        if c.path == "StaffDesk" {
+            // known difference: #5682 deletes the path (no route asks it)
+            s11_staff_desk += 1;
+            continue;
+        }
         s11_n += 1;
         let on = path(&c.path);
         let name = asked(&c.route, &c.path, &c.action);
@@ -519,7 +569,7 @@ fn every_case_s11_moves_is_the_seeds_answer() {
         assert_eq!(c.allowed, holds, "{label}: {p:?}");
         assert_eq!(recorded_mapped(c).is_ok(), holds, "{label}: {p:?}");
     }
-    assert_eq!(s11_n, 44);
+    assert_eq!((s11_n, s11_staff_desk), (40, 4));
 }
 
 #[test]
@@ -531,6 +581,7 @@ fn every_mapped_case_is_answered_as_mapped() {
     let mut retired_ca10 = 0;
     let mut retired_bk11 = 0;
     let mut org_5558 = 0;
+    let mut retired_5682 = 0;
     for c in m
         .cases
         .iter()
@@ -549,6 +600,12 @@ fn every_mapped_case_is_answered_as_mapped() {
             // known difference: #5558 N-2, organisation-level row
             asked_n += 1;
             org_5558 += 1;
+            continue;
+        }
+        if retired_by_5682(&c.path, &name) {
+            // known difference: #5682, the deleted path and catch-all defaults
+            asked_n += 1;
+            retired_5682 += 1;
             continue;
         }
         if retired_by_ca10(&name) {
@@ -594,6 +651,10 @@ fn every_mapped_case_is_answered_as_mapped() {
         org_5558, ORG_5558_CASES,
         "the mapped cases of adminCreateBranch (#5558 N-2)"
     );
+    assert_eq!(
+        retired_5682, RETIRED_5682_CASES,
+        "the mapped cases of StaffDesk and the catch-all names (#5682)"
+    );
     assert!(
         wrong.is_empty(),
         "{} of {} answers differ from the mapped fixture; the first ones:\n{}",
@@ -638,6 +699,10 @@ fn the_sentences_said_are_exactly_v2s_twenty_two() {
         .chain(&m.branch_cases)
         .filter(|c| c.owner.is_none())
     {
+        if retired_by_5682(&c.path, &asked(&c.route, &c.path, &c.action)) {
+            // known difference: #5682
+            continue;
+        }
         let who = caller(c.roles.as_deref());
         let named = c.named.as_deref().map(branch);
         if let Err(e) = Policy::authorize(
@@ -670,6 +735,7 @@ fn every_call_runs_on_the_branch_named_in_scope() {
             || retired_by_ca10(&name)
             || retired_by_bk11(&c.route)
             || organisation_level_by_5558(&name)
+            || retired_by_5682(&c.path, &name)
         {
             // known difference: RE-7 #604 removes adminSaveRate (rates.md §9), CA-10 #626 the
             // direct shift actions and `ops*` (cash-shift-transfer.md §6); counted, not asked
@@ -719,6 +785,7 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
                 && !retired_by_ca10(&name)
                 && !retired_by_bk11(&c.route)
                 && !organisation_level_by_5558(&name)
+                && !retired_by_5682(&c.path, &name)
         })
     {
         for home in ["MAIN", B9, "B1700000000000-x"] {
@@ -850,7 +917,7 @@ fn naming_a_branch_outside_scope_is_refused() {
         .filter(|r| !matches!(r, Role::Executive | Role::Customer))
     {
         let e = staff(r, B2);
-        let on = |named| ask_on(Some(&e), EntryPath::UserRoute, "desk", named);
+        let on = |named| ask_on(Some(&e), EntryPath::Devices, "snapshot", named);
         assert_eq!(
             said(on(Some(B9))),
             (OUT_OF_SCOPE.to_owned(), 403),
@@ -869,7 +936,12 @@ fn naming_a_branch_outside_scope_is_refused() {
     // an employee of MAIN is held there too: MAIN is a branch, not a wildcard
     let main = staff(Role::BranchManager, "MAIN");
     assert_eq!(
-        said(ask_on(Some(&main), EntryPath::UserRoute, "desk", Some(B9))),
+        said(ask_on(
+            Some(&main),
+            EntryPath::Devices,
+            "snapshot",
+            Some(B9)
+        )),
         (OUT_OF_SCOPE.to_owned(), 403)
     );
     // the teller's own sale on either path, and the same sale named on another branch
@@ -906,7 +978,7 @@ fn naming_a_branch_outside_scope_is_refused() {
 fn an_organisation_wide_user_works_on_the_branch_named_and_on_main_when_none_is() {
     // MAIN is v3's rule (`policy.rs:43-53`); the Blueprint is silent (§11)
     for who in [owner(), user("U-A", vec![row(Role::Admin, None)])] {
-        let on = |named| ask_on(Some(&who), EntryPath::UserRoute, "desk", named);
+        let on = |named| ask_on(Some(&who), EntryPath::Devices, "snapshot", named);
         assert_eq!(on(Some(B9)), Ok(branch(B9)));
         assert_eq!(on(Some(B2)), Ok(branch(B2)));
         assert_eq!(on(None), Ok(branch("MAIN")));
@@ -1109,7 +1181,6 @@ fn the_owner_is_let_through_wherever_a_signed_in_caller_is() {
         (EntryPath::Devices, "printerOnline"),
         (EntryPath::Devices, "queue"),
         (EntryPath::Kiosk, "configure"),
-        (EntryPath::OwnerRoute, "employees"),
         (EntryPath::OwnerRoute, "/api/reference-rates"),
         (EntryPath::UserRoute, "documents"),
     ] {
@@ -1133,7 +1204,6 @@ fn a_staff_path_admits_whoever_holds_its_role() {
         (EntryPath::StaffRpc, "adminDeskConfig"),
         (EntryPath::StaffRpc, "documents"),
         (EntryPath::StaffFile, "file"),
-        (EntryPath::StaffDesk, "desk"),
     ] {
         assert_eq!(ask(Some(&o), on, name), Ok(()), "{} {name}", path_name(on));
     }
@@ -1148,7 +1218,6 @@ fn a_staff_path_admits_whoever_holds_its_role() {
         (EntryPath::StaffRpc, "adminDeskConfig", FRONT_ONLY),
         (EntryPath::StaffRpc, "documents", DOCUMENTS_NOT_READABLE),
         (EntryPath::StaffFile, "file", FILES_NOT_READABLE),
-        (EntryPath::StaffDesk, "desk", FRONT_ONLY),
     ] {
         assert_eq!(
             said(ask(Some(&admin), on, name)),
@@ -1165,26 +1234,17 @@ fn a_staff_path_admits_whoever_holds_its_role() {
 }
 
 #[test]
-fn only_admin_passes_branch_and_user_management() {
-    // C4 (§03 A04/A05 user ADMIN; §02 ADMIN "ผู้ใช้ บทบาท สาขา") and §11.2: UsersManage
-    // (USER_MANAGEMENT FULL) on the employees route is held by EXECUTIVE and ADMIN
-    // (it asks as "employees"; the view `admin_employees` as "list")
+fn the_employee_route_names_are_names_nobody_knows() {
+    // #5682 (org-wide-actor-branch.md §15.12): v2's employees route is gone (no route asks
+    // `OwnerRoute` "employees" or "list"), and with the `OwnerRoute` catch-all deleted those names
+    // have no row: a signed-in caller hears `invalidRequest`, nobody signed in hears the sign-in sentence
     for name in ["employees", "list"] {
-        assert_eq!(ask(Some(&owner()), EntryPath::OwnerRoute, name), Ok(()));
-        assert_eq!(
-            allowed_roles(EntryPath::OwnerRoute, name),
-            ["EXECUTIVE", "ADMIN"],
-            "{name}"
-        );
-        for r in BLUEPRINT
-            .into_iter()
-            .filter(|r| !matches!(r, Role::Executive | Role::Admin))
-        {
+        assert_eq!(Policy::need(EntryPath::OwnerRoute, &action(name)), None);
+        for who in everyone().iter().flatten() {
             assert_eq!(
-                said(ask(Some(&staff(r, B2)), EntryPath::OwnerRoute, name)),
-                (OWNER_ONLY.to_owned(), 403),
-                "{} {name}",
-                r.as_str()
+                said(ask(Some(who), EntryPath::OwnerRoute, name)),
+                (INVALID_REQUEST.to_owned(), 400),
+                "{name}"
             );
         }
         assert_eq!(
@@ -1232,14 +1292,34 @@ fn an_unknown_action_is_refused_in_the_words_of_its_path() {
         said(ask(None, EntryPath::Kiosk, "nope")),
         (KIOSK_STAFF.to_owned(), 400)
     );
+    // #5682 (§15.12): `Devices`, `OwnerRoute` and `UserRoute` have no catch-all row any more
+    for on in [
+        EntryPath::Devices,
+        EntryPath::OwnerRoute,
+        EntryPath::UserRoute,
+    ] {
+        for who in [owner(), m.clone()] {
+            assert_eq!(
+                said(ask(Some(&who), on, "nope")),
+                (INVALID_REQUEST.to_owned(), 400),
+                "{}",
+                path_name(on)
+            );
+        }
+        assert_eq!(said(ask(None, on, "nope")), (SIGN_IN.to_owned(), 401));
+    }
 }
 
 #[test]
-fn the_device_route_does_not_stop_a_name_it_has_no_list_for() {
-    // v2 looks the name up in its list and lets a name without a list through; the device
-    // service, further on, is what answers that it does not know the action
+fn the_device_route_refuses_a_name_it_has_no_row_for() {
+    // #5682 (§15.12): v2 let a name without a list through to the device service, which answered
+    // `คำขอไม่ถูกต้อง` (400). With `snapshot` a named row and the catch-all deleted, the policy says the
+    // same sentence first; `snapshot` still lets every signed-in caller through
     for who in everyone().iter().flatten() {
-        assert_eq!(ask(Some(who), EntryPath::Devices, "nope"), Ok(()));
+        assert_eq!(
+            said(ask(Some(who), EntryPath::Devices, "nope")),
+            (INVALID_REQUEST.to_owned(), 400)
+        );
         assert_eq!(ask(Some(who), EntryPath::Devices, "snapshot"), Ok(()));
     }
     assert_eq!(
@@ -1257,8 +1337,6 @@ fn paths_with_one_purpose_do_not_read_the_action() {
         (EntryPath::StaffUpload, "upload"),
         (EntryPath::File, "file"),
         (EntryPath::StaffFile, "file"),
-        (EntryPath::StaffDesk, "desk"),
-        (EntryPath::OwnerRoute, "employees"),
     ];
     for (on, usual) in one_purpose {
         for who in everyone() {
@@ -1338,28 +1416,6 @@ fn rate_managers_and_admins_read_no_customer_file_and_each_path_says_so_differen
             "FINANCE",
             "VERIFICATION_REVIEWER"
         ]
-    );
-}
-
-#[test]
-fn the_staff_desk_page_is_tellers() {
-    // §11.2 (S11): ExchangeTransact (CUSTOMERS CREATE) on StaffDesk is held by EXECUTIVE,
-    // RATE_MANAGER, BRANCH_MANAGER, TELLER
-    assert_eq!(
-        allowed_roles(EntryPath::StaffDesk, "desk"),
-        ["EXECUTIVE", "RATE_MANAGER", "BRANCH_MANAGER", "TELLER"]
-    );
-    assert_eq!(
-        said(ask(
-            Some(&staff(Role::Finance, B2)),
-            EntryPath::StaffDesk,
-            "desk"
-        )),
-        (FRONT_ONLY.to_owned(), 400)
-    );
-    assert_eq!(
-        said(ask(None, EntryPath::StaffDesk, "desk")),
-        (EMPLOYEE_AUTH.to_owned(), 401)
     );
 }
 
@@ -1460,10 +1516,7 @@ fn a_refusal_carries_the_status_v2_answered_with() {
     assert_eq!(status(ask(None, EntryPath::UserRoute, "documents")), 401);
     assert_eq!(status(ask(None, EntryPath::File, "file")), 401);
     assert_eq!(status(ask(None, EntryPath::StaffRpc, "adminSnapshot")), 401);
-    assert_eq!(
-        status(ask(Some(&m), EntryPath::OwnerRoute, "employees")),
-        403
-    );
+    assert_eq!(status(ask(Some(&m), EntryPath::DeviceSetup, "")), 403);
     assert_eq!(
         status(ask(Some(&staff(Role::Admin, B2)), EntryPath::File, "file")),
         404
@@ -1493,7 +1546,7 @@ fn a_refusal_is_an_error_whose_text_is_the_sentence() {
     assert_eq!(e.clone(), e);
     assert_ne!(
         e,
-        ask(Some(&front()), EntryPath::OwnerRoute, "employees").expect_err("not ADMIN")
+        ask(Some(&front()), EntryPath::DeviceSetup, "").expect_err("not ADMIN")
     );
 }
 
