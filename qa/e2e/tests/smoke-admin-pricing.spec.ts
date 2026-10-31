@@ -1,21 +1,30 @@
 // QA-F10 — smoke: admin pricing menu (design docs/design/qa-e2e.md §3, §4). Written by ticket QA-F10; this file is its whole File scope.
 // Import only from './helpers'. Never run against a host from a worker's machine (E-3): check with --list and tsc.
 import { expect, test } from '@playwright/test';
-import { hasAccount, mePermissions, signIn, smoke, STAFF_LANGS } from './helpers';
+import { hasAccount, mePermissions, signIn, smoke, STAFF_LANGS, users } from './helpers';
 
 test.describe('QA-F10 smoke: admin pricing menu', () => {
-  // key: web/src/screens/admin/pricing/Pricing.tsx:153 (menu.ts:15 needs ReferenceRatesRead)
-  test('/#pricing as admin', async ({ page }) => {
+  // ADMIN lacks ReferenceRatesRead (role_grants.rs:181-186, permission_module.rs:102); menu hidden (menu.ts:14, AdminShell.tsx:279-282,544-558);
+  // fallback prevents .pricing-screen (AdminShell.tsx:285-300, Pricing.tsx:214); pricing_board refuses 403 ownerOnly (pricing_board.rs:2,69, owner_route.rs:22-26, policy.rs:273, policy_error.rs:106,132)
+  test('/#pricing refused to admin: menu not offered, screen not rendered, pricing_board 403 ownerOnly', async ({ page }) => {
+    test.skip(!hasAccount('admin'), 'no admin account in users.json: run scripts/reseed.sh');
     await signIn(page, 'admin', '/#pricing');
-    await smoke(page, {
-      area: 'admin-money',
-      screen: 'pricing',
-      path: '/#pricing',
-      role: 'admin',
-      key: '.pricing-screen',
-      langs: STAFF_LANGS,
-      needs: 'ReferenceRatesRead',
-    });
+    const perms = await mePermissions(page);
+    expect(perms, 'admin does not hold ReferenceRatesRead (role_grants.rs:181-186)').not.toContain('ReferenceRatesRead');
+
+    await expect(page.locator('h2.title')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('nav.admin-nav a[href="#pricing"]')).toHaveCount(0);
+
+    await expect(page.locator('.pricing-screen')).toHaveCount(0);
+    await expect(page.locator('nav.admin-nav a[aria-current="page"]')).not.toHaveAttribute('href', '#pricing');
+
+    const url = `/api/v3/views/pricing_board?branch=${encodeURIComponent(users.branch)}`;
+    const res = await page.request.get(url);
+    const body = await res.text();
+    console.log(`[pricing_board admin] GET ${url} -> ${res.status()} ${body.slice(0, 200)}`);
+    expect(res.status(), body).toBe(403);
+    const code = /"code":"(\w+)"/.exec(body)?.[1] ?? '';
+    expect(code, `refusal code: ${body}`).toBe('ownerOnly');
   });
 
   // key: web/src/screens/admin/pricing/Pricing.tsx:153 (menu.ts:15 needs ReferenceRatesRead; finance holds it)
