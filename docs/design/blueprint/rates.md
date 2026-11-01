@@ -386,6 +386,68 @@ The evaluation is stored on the draft at submit as `evaluation` + `evaluation_ha
 canonical JSON of the lines, the proposals, the policy version id and the reference line ids. The approval binds to
 it (§06, *"อนุมัติผูก version/hash"*).
 
+#### 4.5.1 Which policy version a draft is evaluated under (amendment, 2026-11-02)
+
+**Decision: `simulate` and `submit` evaluate a draft under the branch's policy version valid at that moment, not under
+the version its lines were stamped with when they were saved.**
+
+*Why.* D-5 needs the evaluation to record the version it used, so the decision can be checked later. That record is
+the evaluation stored at submit (`evaluation`, `evaluation_hash`, which already carry `policy_version_id`). No design
+asks for the version that was live when the lines were saved, and no rule depends on it. Evaluating under the
+save-time stamp hides a policy change from a draft until someone saves its lines again with no change. That happened on
+xc-v3 (#564 issuecomment-6564959973): EXECUTIVE saved the EUR/JPY/CNY guards as MAIN v14, re-simulated draft
+`6eac13f3`, and still got out-of-bound under v13. The screen gave no reason.
+
+*Today (main `4985bfb`).* `create` and `edit` look up the branch's newest version valid now
+(`rate_draft_service.rs:160-166`, `:285-289`) and stamp it on every line (`:200-210`, `:324-336`). `evaluate` reads
+the first line's stamp (`:415-424`) and loads that version (`:456`) and its formula (`:484`). `simulate`
+(`commands/rate_draft_simulate.rs:83-87`) and `submit` (`rate_draft_service.rs:656`) both call `evaluate`.
+`publish` copies the line's stamp into `source_snapshot` (`publish_service.rs:320`, `:550`). It compares the hash
+stored at submit with the approved one and does not re-evaluate (`publish_service.rs:100-108`, `:152-155`).
+
+*The rule.*
+- **One lookup.** "The branch's live version" is the query `create` uses today: `branch_id = $1 AND valid_from <=
+  now() AND (valid_to IS NULL OR valid_to > now()) ORDER BY version DESC LIMIT 1`. It becomes one private function of
+  `RateDraftService` that `create`, `edit` and `evaluate` share.
+- **`evaluate` uses the live version** for the policy (guards, `adjust_pct`) and for `FormulaResolver::resolve`. It
+  ignores the lines' stamp.
+- **`simulate` still writes nothing** (§4.7). It evaluates under the live version and leaves the stamps as they were.
+- **`submit` stamps the version it evaluated under.** In its transaction, before the evaluation is stored, every line
+  of the draft gets `policy_version_id` = the live version, or NULL when there is none. The stored evaluation, its hash, the
+  approval request and the later publish then all name one version.
+- **After submit nothing moves.** Edits after submit are refused (§4.6), and publish reads the stamps and the stored
+  hash. A version saved after a submit therefore never changes a submitted draft, even one waiting in A06.
+- **No live version** (every version of the branch is closed, or there is none): the draft is evaluated under no policy,
+  so every side that changes is out-of-bound (D-6, §4.5). That is today's answer for a draft saved under no policy.
+
+*Not changed here.* The AUTO **reference** of a line is still the newest `BOT` line at save time (§4.2,
+`rate_draft_service.rs:187`, `:311`). A BoT batch fetched after a save is used only after the lines are saved
+again. Taking the newest reference at simulate or submit would change the AUTO price the proposer was shown, and "Back
+to AUTO" carries the previewed value (§4.4). That is a separate decision, not made here.
+
+| Case | Required result |
+|---|---|
+| draft saved under v1 (no guard for EUR); v2 adds an EUR guard that the line satisfies; `simulate` with no re-save | in-bound under v2 |
+| the same `simulate` | writes nothing: the lines' `policy_version_id`, `rate_drafts.version` and `evaluation` are unchanged |
+| the same draft, `submit` with no re-save | evaluated under v2: `evaluation.policy_version_id` = v2, every line stamped v2, the request closed by `policy:<v2>` (`in_bound`) |
+| draft saved under v1 (guard satisfied); v1 closed and v2 has no guard for the currency; `submit` by RATES | out-of-bound under v2, request PENDING (waits for EXECUTIVE) |
+| submitted under v2 and waiting; v3 saved; EXECUTIVE approves; publish | publishes; `source_snapshot.policy_version_id` = v2 |
+| draft saved under v1; v1 closed with no successor; `simulate` | evaluated under no policy: every changed side out-of-bound |
+| a draft of branch A; branch B saves a newer version | A's evaluation still uses A's live version |
+
+*Data migration.* No schema change, so no migration. Existing rows:
+- A `DRAFT` draft stamped with a closed version is evaluated under the live version at its next simulate or submit,
+  and submit restamps it. No backfill is needed, because the stamp of a `DRAFT` is no longer read. On xc-v3 at
+  05:5x ICT 2026-11-02, 8 `DRAFT` drafts carried a stamp that is not live (read-only count, #564).
+- `PENDING_APPROVAL`, `APPROVED`, `REJECTED` and `PUBLISHED` drafts keep their stamps, which match their stored
+  evaluations.
+- Deploy order does not matter. `down` loses nothing.
+
+*Classes and files.* No new type and no public signature change. `RateDraftService::evaluate`, `submit`, `create` and
+`edit` keep their signatures. The change lives in `api/crates/xc-rate/src/application/draft/rate_draft_service.rs`
+only. Tests go in a new file, `api/crates/xc-rate/tests/rate_draft_live_policy_test.rs`. Provided tests that pinned the
+old stamp, if any turn up when the ticket's tests are run, are restated by the ticket author and cite this section.
+
 ### 4.6 States and who moves them (§06; A2, A5)
 
 The states are exactly the Blueprint's: `DRAFT → PENDING_APPROVAL → APPROVED → PUBLISHED → SUPERSEDED`, and
