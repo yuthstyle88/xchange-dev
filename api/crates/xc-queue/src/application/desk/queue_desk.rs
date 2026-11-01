@@ -769,6 +769,21 @@ impl QueueDesk {
         self.repo.insert_event_in(tx, &event).await?;
         self.status.refresh_in(tx, branch, now).await?;
 
+        if let (Some(booking_id), Some(events)) = (&ticket.booking_id, &self.booking_events) {
+            let (sales,): (i64,) = sqlx::query_as(
+                "SELECT count(*) FROM transactions \
+                 WHERE queue_ticket_id = $1::uuid AND status = 'COMPLETED'",
+            )
+            .bind(&ticket.id)
+            .fetch_one(&mut **tx)
+            .await?;
+            if sales == 0 {
+                events
+                    .on_ticket_ended_in(tx, branch, booking_id, NO_SALE, now)
+                    .await?;
+            }
+        }
+
         Ok(QueueTicket {
             status: TicketStatus::Completed,
             completed_at: Some(now),
@@ -862,6 +877,12 @@ impl QueueDesk {
                     &actor.user_id,
                     now,
                 )
+                .await?;
+        }
+
+        if let (Some(booking_id), Some(events)) = (&ticket.booking_id, &self.booking_events) {
+            events
+                .on_ticket_ended_in(tx, branch, booking_id, NO_SALE, now)
                 .await?;
         }
 
