@@ -198,6 +198,7 @@ export interface RatesPolicyCardProps {
   policyData: () => RatePolicyData | null;
   policyError: () => string | null;
   pubData?: () => PublishedRatesData | null;
+  draftCurrencies?: () => string[];
   valueTiers: () => TierFormRow[];
   setValueTiers: (updater: TierFormRow[] | ((prev: TierFormRow[]) => TierFormRow[])) => void;
   valueTiersOn: () => boolean;
@@ -287,9 +288,10 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
     const fromProp = props.pubData?.()?.lines?.map((l) => l.currency);
     const pubList = fromProp ?? domPubCurrencies();
     const storedKeys = Object.keys(props.policyData()?.policy?.guards ?? {});
+    const draftList = props.draftCurrencies?.() ?? [];
     const seen = new Set<string>();
     const out: string[] = [];
-    for (const c of [...pubList, ...storedKeys]) {
+    for (const c of [...pubList, ...storedKeys, ...draftList]) {
       if (c && !seen.has(c)) {
         seen.add(c);
         out.push(c);
