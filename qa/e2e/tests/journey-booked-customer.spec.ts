@@ -173,6 +173,12 @@ async function readMyBooking(customer: Page, bookingId: string): Promise<MyBooki
   return (body.data?.bookings ?? []).find((b) => b.id === bookingId);
 }
 
+/** Passport number fixed per customer account so reruns against the same seed match (#5862). */
+function passportNoFor(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return `J2-${digits}`.slice(0, 30);
+}
+
 test.describe.serial('J2 booked customer', () => {
   test('J2 booked customer: books a today slot, arrives, desk check-in, BOOKING ticket called, exchange completes the booking, shift closes', async ({
     browser,
@@ -432,8 +438,8 @@ test.describe.serial('J2 booked customer', () => {
               buffer: ONE_PIXEL_PNG,
             });
             await tPage.locator('input[name="name"]').fill('J2 BOOKED');
-            const freshPassportNo = `J2${Date.now()}`.slice(0, 30);
-            await tPage.locator('input[name="passportNo"]').fill(freshPassportNo);
+            const passportNo = passportNoFor(users.customer.phone ?? '');
+            await tPage.locator('input[name="passportNo"]').fill(passportNo);
             await tPage.locator('select[name="nationality"]').selectOption('THA');
             await tPage.locator('input[name="identityChecked"]').check();
 
@@ -466,9 +472,14 @@ test.describe.serial('J2 booked customer', () => {
             expect(reserveRes, 'reserveCustomer response received').not.toBeNull();
             const reserveText = await reserveRes!.text().catch(() => '');
             console.log(`[J2] POST /api/rpc (reserveCustomer) ${reserveRes!.status()} ${reserveText}`);
+            const isPassportMismatch =
+              reserveRes!.status() === 400 &&
+              reserveText.includes('พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้');
             expect(
               reserveRes!.ok(),
-              `reserveCustomer refused: ${reserveRes!.status()} ${reserveText}`,
+              isPassportMismatch
+                ? `customer ${users.customer.phone} already holds another passport from a run before #5862: run scripts/reseed.sh for a fresh customer`
+                : `reserveCustomer refused: ${reserveRes!.status()} ${reserveText}`,
             ).toBeTruthy();
 
             const reserveParsed = JSON.parse(reserveText) as {
