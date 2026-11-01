@@ -63,6 +63,11 @@ classDiagram
     +requestedByName: Option~String~
     +subject: Option~ApprovalSubject~
   }
+  class ApprovalDecisionDto {
+    <<dto/v3/approval_requests.rs>>
+    +approverId +approverName: Option~String~ +outcome +reason +at
+  }
+  ApprovalRequestItemDto --> ApprovalDecisionDto : decision
   class ApprovalSubject {
     <<enum, serde tag "kind">>
     reversal(ReversalSubject)
@@ -108,6 +113,7 @@ classDiagram
 | `netDifferenceThb` | the request's payload `net_difference_thb` (`count_difference.rs:236-239`) |
 | count `lines` | `cash_count_totals` of the count, by currency |
 | `ApprovalRequestItemDto.requestedByName` | `users.name` of `approval_requests.requested_by`, every type |
+| `ApprovalDecisionDto.approverName` | `users.name` of `approval_decisions.approver_id`, every type (blank → `null`); `null` when the approver is no users row, e.g. a policy decision (`approver_id` = `policy:…`, `decide_by_policy`) — amended 2026-11-02, G1 of the staff rerun (#564) |
 
 - `[required]` loaders take a list of ids and run one query per table (no per-row queries); unknown ids are absent from the map.
 - `[required]` `subject` is `null` for every other request type and when its object no longer exists.
@@ -128,6 +134,11 @@ classDiagram
   make a certification stale. A certification made before this change goes stale once on days with a pending
   reversal (its hash was over the old row shape). That is expected and is not migrated.
 - Generated types: `web/src/shared/api/generated/approval_requests.ts` and `finance_reconciliation.ts`.
+- **G1 amendment (2026-11-02).** The approval card's "ผู้อนุมัติ" showed "—" on build `02e11fc9` because
+  `ApprovalDecisionDto` carried only `approverId` (`api/src/presentation/dto/v3/approval_requests.rs:28-33`).
+  `approverName` is joined at read time (`LEFT JOIN users ON users.id::text = approval_decisions.approver_id`),
+  and the join adds or drops no item. Read-only on xc-v3, 2026-11-02: 266 decisions by users rows, 3 by
+  `policy:…` ids, so `null` is a real case; the card's fallback for it is FE's. No table changes; nothing to backfill.
 
 ## 3. T4 and T10: counts name people, show the difference, and leave the waiting list when they can no longer be verified
 
