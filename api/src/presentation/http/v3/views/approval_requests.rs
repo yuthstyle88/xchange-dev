@@ -64,10 +64,12 @@ impl BranchView for ApprovalRequestsBranchView {
                            r.policy_version, r.proposed_payload, r.requested_by, r.requested_at, r.status, \
                            r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at, \
                            r.organization_id::text, \
-                           NULLIF(btrim(u.name), '') AS requested_by_name \
+                           NULLIF(btrim(u.name), '') AS requested_by_name, \
+                           NULLIF(btrim(ua.name), '') AS approver_name \
                            FROM approval_requests r \
                            LEFT JOIN approval_decisions d ON d.request_id = r.id \
                            LEFT JOIN users u ON u.id::text = r.requested_by \
+                           LEFT JOIN users ua ON ua.id::text = d.approver_id \
                            WHERE (r.branch_id = $1 OR r.branch_id IS NULL) \
                            AND r.organization_id = (SELECT b.organization_id FROM branches b WHERE b.id = $1)"
                 .to_string();
@@ -119,6 +121,7 @@ impl BranchView for ApprovalRequestsBranchView {
                 let decision_at: Option<DateTime<Utc>> = r.get(14);
                 let organization_id: String = r.get(15);
                 let requested_by_name: Option<String> = r.get(16);
+                let decision_approver_name: Option<String> = r.get(17);
 
                 let request = ApprovalRequest {
                     id: RequestId::new(id.to_string()),
@@ -157,6 +160,7 @@ impl BranchView for ApprovalRequestsBranchView {
                         (Some(approver_id), Some(outcome), Some(reason), Some(at)) => {
                             Some(ApprovalDecisionDto {
                                 approver_id,
+                                approver_name: decision_approver_name,
                                 outcome,
                                 reason,
                                 at: at.to_rfc3339(),
