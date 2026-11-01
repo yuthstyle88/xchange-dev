@@ -9,6 +9,7 @@ export function makeTransactionAuditEventDto(o: Partial<TransactionAuditEventDto
   return {
     at: '2026-01-01T00:00:00Z',
     actorId: 'transaction_audit_event_dto-1',
+    actorName: null,
     actorRole: 'actorRole',
     action: 'action',
     ...o,

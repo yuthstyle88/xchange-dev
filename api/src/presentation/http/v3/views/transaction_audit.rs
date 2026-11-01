@@ -24,6 +24,10 @@ pub struct TransactionAuditView {
     pool: PgPool,
 }
 
+fn non_blank(s: Option<String>) -> Option<String> {
+    s.filter(|v| !v.trim().is_empty())
+}
+
 impl BranchView for TransactionAuditView {
     const NAME: &'static str = "transaction_audit";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "transactionView");
@@ -61,10 +65,12 @@ impl BranchView for TransactionAuditView {
             }
 
             let rows = sqlx::query(
-                "SELECT at, actor_id, actor_role, action FROM audit_events \
-                 WHERE object_ref = $1::text \
-                    OR object_ref IN (SELECT id::text FROM reversals WHERE original_transaction_id = $1) \
-                 ORDER BY at ASC, id ASC",
+                "SELECT ae.at, ae.actor_id, ae.actor_role, ae.action, u.name AS actor_name \
+                 FROM audit_events ae \
+                 LEFT JOIN users u ON u.id::text = ae.actor_id \
+                 WHERE ae.object_ref = $1::text \
+                    OR ae.object_ref IN (SELECT id::text FROM reversals WHERE original_transaction_id = $1) \
+                 ORDER BY ae.at ASC, ae.id ASC",
             )
             .bind(id)
             .fetch_all(&pool)
@@ -78,6 +84,7 @@ impl BranchView for TransactionAuditView {
                     TransactionAuditEventDto {
                         at: at.to_rfc3339(),
                         actor_id: r.get("actor_id"),
+                        actor_name: non_blank(r.get("actor_name")),
                         actor_role: r.get("actor_role"),
                         action: r.get("action"),
                     }
