@@ -13,6 +13,10 @@ import type {
 } from '../../../shared/api/generated/admin_permission_matrix';
 import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
 import type { UserChangeOutput } from '../../../shared/api/generated/user_disable';
+import type {
+  UserResetPasswordInput,
+  UserResetPasswordOutput,
+} from '../../../shared/api/generated/user_reset_password';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
@@ -88,6 +92,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const suspendWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/suspend');
   const resumeWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/resume');
   const enableWrite = keyedWrite<{ userId: string }, UserChangeOutput>(api, 'POST', '/api/users/enable');
+  const resetWrite = keyedWrite<UserResetPasswordInput, UserResetPasswordOutput>(api, 'POST', '/api/users/reset-password');
   const profileWrite = keyedWrite<UserProfileSaveInput, UserChangeOutput>(api, 'POST', '/api/users/profile');
 
   const [activeTab, setActiveTab] = createSignal<UsersTabId>('users');
@@ -628,6 +633,33 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const handleEnable = (user: AdminUserRow) =>
     handleStatusWrite(enableWrite, user, 'successEnabled');
 
+  const handleResetPassword = async (user: AdminUserRow) => {
+    if (rowWriting()) return;
+    setRowWriting(true);
+    setPageError(null);
+    setPageSuccess(null);
+    setTempPassword(null);
+    const branch = props.branch();
+    try {
+      const res = await resetWrite.send({
+        userId: user.userId,
+      });
+      if (props.branch() !== branch) return;
+      if (res.temporaryPassword) {
+        setTempPassword(res.temporaryPassword);
+        setPageSuccess(t('successReset'));
+      } else {
+        setPageError(t('resetNoPassword'));
+      }
+    } catch (err: unknown) {
+      if (props.branch() !== branch) return;
+      setPageSuccess(null);
+      setPageError(wordedError(err));
+    } finally {
+      setRowWriting(false);
+    }
+  };
+
 
   const statusClass = (status: string) => {
     switch (status.toUpperCase()) {
@@ -833,6 +865,15 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                   disabled={rowWriting()}
                                 >
                                   {t('profileButton')}
+                                </button>
+                                <button
+                                  type="button"
+                                  class="users-btn"
+                                  data-users-action="reset"
+                                  onClick={() => handleResetPassword(user)}
+                                  disabled={rowWriting()}
+                                >
+                                  {t('resetPassword')}
                                 </button>
                               </Show>
 
