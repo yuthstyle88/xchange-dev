@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type {
+  ApprovalDecisionDto,
   ApprovalRequestItemDto,
   ApprovalRequestsData,
 } from '../../../shared/api/generated/approval_requests';
@@ -61,6 +62,10 @@ function formatDecidedAt(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+}
+
+function approverText(d: ApprovalDecisionDto): string {
+  return d.approverName ?? (d.approverId.startsWith('policy:') ? t('decidedByPolicy') : '—');
 }
 
 interface OutOfBoundSide {
@@ -407,7 +412,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   <>
                     <div class="approval-proposer">
                       <span>{t('decidedBy')}</span>
-                      <strong title={dec().approverId}>—</strong>
+                      <strong title={dec().approverId}>{approverText(dec())}</strong>
                     </div>
                     <div class="approval-proposer">
                       <span>{t('decisionOutcome')}</span>
