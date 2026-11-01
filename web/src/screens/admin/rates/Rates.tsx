@@ -341,6 +341,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         disabledReason={meError() !== null ? permissionsUnavailableText(meError()) : undefined}
         policyData={policyData}
         policyError={policyError}
+        draftCurrencies={() => draftDetail()?.lines.map((l) => l.currency) ?? []}
         valueTiers={valueTiers}
         setValueTiers={setValueTiers}
         valueTiersOn={valueTiersOn}
