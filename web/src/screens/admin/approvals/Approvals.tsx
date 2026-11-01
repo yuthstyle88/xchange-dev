@@ -150,6 +150,8 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         amount: subj.amountThb,
         why: subj.reason,
         customer,
+        shiftId: subj.shiftId,
+        shiftOpenedAt: subj.shiftOpenedAt,
       };
     }
 
@@ -171,7 +173,15 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       typeof rawReason === 'string' && rawReason.length > 0 ? rawReason : null;
 
     if (!original && !amount && !why) return null;
-    return { receipt: null as string | null, original, amount, why, customer: null as string | null };
+    return {
+      receipt: null as string | null,
+      original,
+      amount,
+      why,
+      customer: null as string | null,
+      shiftId: null as string | null,
+      shiftOpenedAt: null as string | null,
+    };
   };
 
   const countDetail = () => {
@@ -327,6 +337,12 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                 <div class="approval-proposer">
                   <span>{t('customer')}</span>
                   <span>{d().customer}</span>
+                </div>
+              )}
+              {d().shiftOpenedAt && (
+                <div class="approval-proposer">
+                  <span>{t('shift')}</span>
+                  <span title={d().shiftId ?? undefined}>{formatDecidedAt(d().shiftOpenedAt!)}</span>
                 </div>
               )}
             </>
