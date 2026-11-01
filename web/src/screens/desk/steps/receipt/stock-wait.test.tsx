@@ -1,6 +1,7 @@
 // G5-FE #5932: the receipt step while complete waits for a negative-stock approval (design xchange-v3-wave3-desk.md §5.4a,
 // PR #5931). Written before the implementation by claude/01TxaRJG (FE sub-controller). Do not edit, delete or weaken;
 // add tests in a file of your own. The store is a stub, as in step.print.test.tsx. One test per row; the id is in the name.
+// S4 is the owner's option A (2026-11-02, "A ตามเสนอ"): a rejection has already cancelled the sale.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -16,15 +17,14 @@ const WORDS = {
   th: {
     stockWaitTitle: 'ยอดเงินในลิ้นชักไม่พอสำหรับรายการนี้ ต้องให้ผู้จัดการสาขาอนุมัติก่อน',
     stockWaitNext: 'ให้ผู้จัดการสาขาอนุมัติคำขอ {ref} ที่หน้าอนุมัติ เมื่ออนุมัติแล้วหน้านี้จะบันทึกรายการต่อเอง',
-    stockRejected: 'ผู้จัดการสาขาไม่อนุมัติ รายการนี้ทำไม่ได้เพราะยอดเงินในลิ้นชักไม่พอ กรุณายกเลิกรายการ',
+    stockRejectedCancelled: 'ผู้จัดการสาขาไม่อนุมัติ รายการนี้ถูกยกเลิกแล้ว เริ่มรายการใหม่ได้',
     cancelSale: 'ยกเลิกรายการนี้',
   },
   en: {
     stockWaitTitle: 'The drawer does not hold enough for this transaction. The branch manager must approve it first',
     stockWaitNext:
       'Ask the branch manager to approve request {ref} on the Approvals page. This page completes the transaction by itself once it is approved',
-    stockRejected:
-      'The branch manager rejected it. This transaction cannot go ahead because the drawer is short. Please cancel it',
+    stockRejectedCancelled: 'The branch manager rejected it. This transaction has been cancelled; you can start a new one',
     cancelSale: 'Cancel this transaction',
   },
 } as const;
@@ -32,7 +32,11 @@ const WORDS = {
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
 
-function makeStore(wait: { requestId: string; rejected: boolean } | undefined, outcome: SaveOutcome) {
+function makeStore(
+  wait: { requestId: string; rejected: boolean } | undefined,
+  outcome: SaveOutcome,
+  state: 'CONFIRMED' | 'CANCELLED' = 'CONFIRMED',
+) {
   const [w, setW] = createSignal(wait);
   const [o, setO] = createSignal<SaveOutcome>(outcome);
   return {
@@ -41,8 +45,8 @@ function makeStore(wait: { requestId: string; rejected: boolean } | undefined, o
     branch: () => 'MAIN',
     config: () => ({ shiftOpen: true, adminUrl: '/?branch=MAIN', paymentMethods: [] }),
     outcome: o,
-    transactionState: () => 'CONFIRMED' as const,
-    saveError: () => (outcome === 'refused' ? `stockInsufficient: negative stock approval request ${REQ} was rejected` : undefined),
+    transactionState: () => state,
+    saveError: () => (state === 'CANCELLED' ? 'negativeStockRejected' : undefined),
     saved: () => undefined,
     stockWait: w,
     cancelStockWait: vi.fn(async () => {
@@ -109,14 +113,14 @@ describe('§5.4a the receipt step while complete waits for a NEGATIVE_STOCK appr
     await vi.waitFor(() => expect(store.cancelStockWait).toHaveBeenCalledTimes(1));
   });
 
-  it('R3 (S4): rejected shows stockRejected and cancelSale; no back-to-edit and no new exchange; no raw message', () => {
-    show(makeStore({ requestId: REQ, rejected: true }, 'refused'));
+  it('R3 (S4, option A): rejected and cancelled shows stockRejectedCancelled, offers a new exchange, no cancel button, no raw reason', () => {
+    show(makeStore({ requestId: REQ, rejected: true }, 'refused', 'CANCELLED'));
     const t = text();
-    expect(t).toContain(WORDS.th.stockRejected);
-    expect(button(WORDS.th.cancelSale)).toBeDefined();
-    expect(button(texts.th.backToEdit), 'no back-to-edit before the cancel').toBeUndefined();
-    expect(button(texts.th.newExchange)?.disabled ?? true, 'new exchange is not offered before the cancel').toBe(true);
-    expect(t).not.toContain('stockInsufficient');
+    expect(t).toContain(WORDS.th.stockRejectedCancelled);
+    expect(button(WORDS.th.cancelSale), 'nothing left to cancel').toBeUndefined();
+    expect(button(texts.th.newExchange)?.disabled, 'a new exchange is offered').toBe(false);
+    expect(t).not.toContain('negativeStockRejected');
+    expect(t).not.toContain(REQ);
   });
 
   it('R4: the words follow setLang (en)', () => {

@@ -4,8 +4,9 @@
 //
 // §5.4a: `POST …/complete` answering `409 approvalRequired` ("approvalRequired: <request id>") is a wait, not a refusal:
 // the transaction and its complete key are kept, complete is resent every APPROVAL_POLL_MS with the same key, and
-// `stockWait` = {requestId, rejected}. A later `409 stockInsufficient` is the rejection; `cancelStockWait()` cancels the
-// transaction. One test per row S1–S6; the row id is in the test name.
+// `stockWait` = {requestId, rejected}. `cancelStockWait()` cancels the
+// transaction. S4 is the owner's option A (2026-11-02, "A ตามเสนอ"): a rejection cancels the sale on the server,
+// so the waiting desk's next complete answers `409 staleVersion`. One test per row S1–S6; the row id is in the test name.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "solid-js";
 import { ApiClient } from "../../shared/api/client";
@@ -235,7 +236,7 @@ async function ready(s: ReturnType<typeof fakeServer>, which: "OWNER_DESK" | "ST
 
 const REQ = "167d8c93-7648-405c-b015-8fc53f176e4a";
 const waitAnswer = refusal(409, "approvalRequired", `approvalRequired: ${REQ}`);
-const rejectAnswer = refusal(409, "stockInsufficient", `stockInsufficient: negative stock approval request ${REQ} was rejected`);
+const staleAnswer = refusal(409, "staleVersion", "staleVersion: transaction tx-1 is not CONFIRMED");
 
 describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
@@ -280,42 +281,51 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
     expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after COMPLETED").toHaveLength(n);
   });
 
-  it("S4 rejected: complete → 409 stockInsufficient while waiting → refused, rejected:true, polling stops", async () => {
-    const s = serverFor({ complete: [waitAnswer, rejectAnswer] });
+  it("S4 rejected (owner's option A): complete → 409 staleVersion while waiting → one transaction read → CANCELLED; rejected kept for the words; polling stops", async () => {
+    const s = serverFor({ complete: [waitAnswer, staleAnswer] });
+    s.on("GET", "/api/v3/views/transaction", () => view({ id: "tx-1", status: "CANCELLED", cancelReason: "negativeStockRejected" }));
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
     await vi.advanceTimersByTimeAsync(15_000);
-    await vi.waitFor(() => expect(store.outcome()).toBe("refused"));
+    await vi.waitFor(() => expect(store.transactionState()).toBe("CANCELLED"));
     expect(store.stockWait()).toEqual({ requestId: REQ, rejected: true });
+    expect(store.outcome()).toBe("refused");
+    expect(s.callsTo("GET", "/api/v3/views/transaction"), "one transaction read").toHaveLength(1);
     const n = s.callsTo("POST", "/api/transactions/tx-1/complete").length;
     await vi.advanceTimersByTimeAsync(60_000);
-    expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the rejection").toHaveLength(n);
+    expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the cancel").toHaveLength(n);
+    expect(s.callsTo("POST", "/api/transactions/tx-1/cancel"), "the desk sends no cancel of its own").toHaveLength(0);
   });
 
-  for (const when of ["rejected", "waiting"] as const) {
-    it(`S5 cancelStockWait (${when}): POST …/cancel {id, reason} with a key; CANCELLED → the next submit is a new exchange`, async () => {
-      const s = serverFor({ complete: when === "rejected" ? [waitAnswer, rejectAnswer] : [waitAnswer, waitAnswer, waitAnswer] });
-      s.on("POST", "/api/transactions/tx-1/cancel", () => txAnswer("tx-1", "CANCELLED", { cancelReason: "x" }));
-      const { store } = await ready(s, "STAFF_DESK");
-      await store.submit();
-      if (when === "rejected") {
-        await vi.advanceTimersByTimeAsync(15_000);
-        await vi.waitFor(() => expect(store.stockWait()?.rejected).toBe(true));
-      }
-      await store.cancelStockWait();
-      const cancel = s.callsTo("POST", "/api/transactions/tx-1/cancel");
-      expect(cancel).toHaveLength(1);
-      expect(cancel[0].key, "the cancel carries an Idempotency-Key").toBeTruthy();
-      const body = JSON.parse(cancel[0].body);
-      expect(body.id).toBe("tx-1");
-      expect(typeof body.reason === "string" && body.reason.length > 0, "a reason is sent").toBe(true);
-      expect(store.stockWait()).toBeUndefined();
-      expect(store.transactionState()).toBe("CANCELLED");
-      const n = s.callsTo("POST", "/api/transactions/tx-1/complete").length;
-      await vi.advanceTimersByTimeAsync(60_000);
-      expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the cancel").toHaveLength(n);
-    });
-  }
+  it("S4b after a rejection, a new exchange clears the wait", async () => {
+    const s = serverFor({ complete: [waitAnswer, staleAnswer] });
+    s.on("GET", "/api/v3/views/transaction", () => view({ id: "tx-1", status: "CANCELLED", cancelReason: "negativeStockRejected" }));
+    const { store } = await ready(s, "STAFF_DESK");
+    await store.submit();
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.waitFor(() => expect(store.stockWait()?.rejected).toBe(true));
+    store.startNew();
+    expect(store.stockWait()).toBeUndefined();
+  });
+
+  it("S5 cancelStockWait while waiting: POST …/cancel {id, reason} with a key; CANCELLED → the next submit is a new exchange", async () => {
+    const s = serverFor({ complete: [waitAnswer, waitAnswer, waitAnswer] });
+    s.on("POST", "/api/transactions/tx-1/cancel", () => txAnswer("tx-1", "CANCELLED", { cancelReason: "x" }));
+    const { store } = await ready(s, "STAFF_DESK");
+    await store.submit();
+    await store.cancelStockWait();
+    const cancel = s.callsTo("POST", "/api/transactions/tx-1/cancel");
+    expect(cancel).toHaveLength(1);
+    expect(cancel[0].key, "the cancel carries an Idempotency-Key").toBeTruthy();
+    const body = JSON.parse(cancel[0].body);
+    expect(body.id).toBe("tx-1");
+    expect(typeof body.reason === "string" && body.reason.length > 0, "a reason is sent").toBe(true);
+    expect(store.stockWait()).toBeUndefined();
+    expect(store.transactionState()).toBe("CANCELLED");
+    const n = s.callsTo("POST", "/api/transactions/tx-1/complete").length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the cancel").toHaveLength(n);
+  });
 
   it("S6 approvalRequired or stockInsufficient from confirm stays a refusal (only complete waits)", async () => {
     for (const answer of [waitAnswer, refusal(409, "stockInsufficient", "stockInsufficient: DRAWER THB 10")]) {
