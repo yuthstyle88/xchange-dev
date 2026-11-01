@@ -116,6 +116,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [dialogSubmitting, setDialogSubmitting] = createSignal<boolean>(false);
   // Row writes (revoke ×, Disable): one in flight at a time (#2413).
   const [rowWriting, setRowWriting] = createSignal<boolean>(false);
+  const [confirmingReset, setConfirmingReset] = createSignal<string | null>(null);
 
   // Create form state
   const [createName, setCreateName] = createSignal('');
@@ -901,15 +902,41 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                 >
                                   {t('profileButton')}
                                 </button>
-                                <button
-                                  type="button"
-                                  class="users-btn"
-                                  data-users-action="reset"
-                                  onClick={() => handleResetPassword(user)}
-                                  disabled={rowWriting()}
+                                <Show
+                                  when={confirmingReset() === user.userId}
+                                  fallback={
+                                    <button
+                                      type="button"
+                                      class="users-btn"
+                                      data-users-action="reset"
+                                      onClick={() => setConfirmingReset(user.userId)}
+                                      disabled={rowWriting()}
+                                    >
+                                      {t('resetPassword')}
+                                    </button>
+                                  }
                                 >
-                                  {t('resetPassword')}
-                                </button>
+                                  <button
+                                    type="button"
+                                    class="users-btn users-btn-primary"
+                                    data-users-action="reset-confirm"
+                                    onClick={() => {
+                                      setConfirmingReset(null);
+                                      void handleResetPassword(user);
+                                    }}
+                                    disabled={rowWriting()}
+                                  >
+                                    {t('resetConfirm')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    class="users-btn"
+                                    data-users-action="reset-cancel"
+                                    onClick={() => setConfirmingReset(null)}
+                                  >
+                                    {t('resetCancel')}
+                                  </button>
+                                </Show>
                               </Show>
 
                               <Show when={isActive()}>
