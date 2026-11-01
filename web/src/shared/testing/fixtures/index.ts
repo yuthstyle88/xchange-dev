@@ -164,6 +164,7 @@ export * from './user_disable';
 export * from './user_enable';
 export * from './user_grant';
 export * from './user_profile_save';
+export * from './user_reset_password';
 export * from './user_resume';
 export * from './user_revoke';
 export * from './user_suspend';
