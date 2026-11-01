@@ -214,7 +214,10 @@ pub async fn load_reversal_subjects(
                 requested_by_name,
                 shift_id,
                 shift_opened_at: shift_opened_at.map(|dt| dt.to_rfc3339()),
-                lines: lines_by_tx.get(&original_tx_id).cloned().unwrap_or_default(),
+                lines: lines_by_tx
+                    .get(&original_tx_id)
+                    .cloned()
+                    .unwrap_or_default(),
             },
         );
     }

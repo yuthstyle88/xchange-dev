@@ -2,6 +2,7 @@
 // Do not edit by hand: run `npm run gen:fixtures`. A guard test fails when this file is stale.
 
 import type { CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter, FinanceSheet, InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput, ReversalPendingRow, ShortReceiptRow, TransactionTotals, TransferStatusCount, TransferSummary } from '../../api/generated/finance_reconciliation';
+import { makeReversalSubject } from './approval_requests';
 
 export type { CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter, FinanceSheet, InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput, ReversalPendingRow, ShortReceiptRow, TransactionTotals, TransferStatusCount, TransferSummary } from '../../api/generated/finance_reconciliation';
 
@@ -119,19 +120,7 @@ export function makeReversalPendingRow(o: Partial<ReversalPendingRow> = {}): Rev
   return {
     requestId: 'reversal_pending_row-1',
     createdAt: '2026-01-01T00:00:00Z',
-    subject: {
-      reversalId: 'reversal_subject-1',
-      originalTransactionId: 'reversal_subject-1',
-      receiptNumber: 'receiptNumber',
-      amountThb: '0.00',
-      reason: 'reason',
-      customerName: null,
-      customerNo: null,
-      requestedByName: null,
-      shiftId: null,
-      shiftOpenedAt: null,
-      lines: [],
-    },
+    subject: makeReversalSubject(),
     ...o,
   };
 }
