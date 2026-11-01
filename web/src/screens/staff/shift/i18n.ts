@@ -34,6 +34,9 @@ export const th: Record<string, string> = {
   onlyThroughHandover: 'การนับส่งมอบต้องจัดการผ่านการส่งมอบเท่านั้น',
   reasonRequired: 'กรุณาระบุเหตุผล',
   reasonTooLong: 'เหตุผลยาวเกิน 500 ตัวอักษร',
+  difference: 'ผลต่าง',
+  shiftOpenedDaysAgo: 'กะนี้เปิดเมื่อ {date} ({n} วันก่อน)',
+  shiftOpenedOneDayAgo: 'กะนี้เปิดเมื่อ {date} (1 วันก่อน)',
 };
 
 export const en: Record<string, string> = {
@@ -71,4 +74,7 @@ export const en: Record<string, string> = {
   onlyThroughHandover: 'Handover counts must be handled through handover only',
   reasonRequired: 'Reason is required',
   reasonTooLong: 'Reason cannot exceed 500 characters',
+  difference: 'Difference',
+  shiftOpenedDaysAgo: 'This shift opened on {date} ({n} days ago)',
+  shiftOpenedOneDayAgo: 'This shift opened on {date} (1 day ago)',
 };
