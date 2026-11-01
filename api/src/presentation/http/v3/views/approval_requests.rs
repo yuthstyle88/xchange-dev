@@ -20,6 +20,8 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::approval_requests::{
     ApprovalDecisionDto, ApprovalRequestItemDto, ApprovalRequestsData, ApprovalRequestsFilter,
+    ApprovalSubject, CountDifferenceSubject, CountSubjectLine, ReversalSubject,
+    ReversalSubjectLine, load_count_difference_subjects, load_reversal_subjects,
 };
 use crate::presentation::http::v3::commands::make_approval_registry;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
@@ -52,6 +54,7 @@ impl BranchView for ApprovalRequestsBranchView {
         let pool = self.pool.clone();
         let registry = self.registry.clone();
         let who = who.clone();
+        let branch = branch.clone();
         let branch_id = branch.as_str().to_string();
         let status_filter = filter.status.clone();
         let type_filter = filter.r#type.clone();
@@ -60,9 +63,11 @@ impl BranchView for ApprovalRequestsBranchView {
             let mut sql = "SELECT r.id, r.type, r.branch_id, r.object_id, r.object_version_hash, \
                            r.policy_version, r.proposed_payload, r.requested_by, r.requested_at, r.status, \
                            r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at, \
-                           r.organization_id::text \
+                           r.organization_id::text, \
+                           NULLIF(btrim(u.name), '') AS requested_by_name \
                            FROM approval_requests r \
                            LEFT JOIN approval_decisions d ON d.request_id = r.id \
+                           LEFT JOIN users u ON u.id::text = r.requested_by \
                            WHERE (r.branch_id = $1 OR r.branch_id IS NULL) \
                            AND r.organization_id = (SELECT b.organization_id FROM branches b WHERE b.id = $1)"
                 .to_string();
@@ -93,6 +98,9 @@ impl BranchView for ApprovalRequestsBranchView {
                 .map_err(pos_error::AppError::Database)?;
 
             let mut requests = Vec::new();
+            let mut reversal_ids = Vec::new();
+            let mut count_requests = Vec::new();
+
             for r in rows {
                 let id: Uuid = r.get(0);
                 let type_name: String = r.get(1);
@@ -110,6 +118,7 @@ impl BranchView for ApprovalRequestsBranchView {
                 let decision_reason: Option<String> = r.get(13);
                 let decision_at: Option<DateTime<Utc>> = r.get(14);
                 let organization_id: String = r.get(15);
+                let requested_by_name: Option<String> = r.get(16);
 
                 let request = ApprovalRequest {
                     id: RequestId::new(id.to_string()),
@@ -131,6 +140,14 @@ impl BranchView for ApprovalRequestsBranchView {
                     .is_some_and(|(_subject, policy)| policy.may_decide(&who, &request).is_ok());
 
                 if allowed {
+                    if let Ok(obj_uuid) = Uuid::parse_str(&obj_id) {
+                        if type_name == "TRANSACTION_REVERSAL" {
+                            reversal_ids.push(obj_uuid);
+                        } else if type_name == "COUNT_DIFFERENCE" {
+                            count_requests.push((obj_uuid, payload.clone()));
+                        }
+                    }
+
                     let decision = match (
                         decision_approver_id,
                         decision_outcome,
@@ -157,10 +174,31 @@ impl BranchView for ApprovalRequestsBranchView {
                         policy_version: pol_ver,
                         proposed_payload: payload,
                         requested_by: req_by,
+                        requested_by_name,
                         requested_at: req_at.to_rfc3339(),
                         status,
                         decision,
+                        subject: None,
                     });
+                }
+            }
+
+            let reversals = load_reversal_subjects(&pool, &branch, &reversal_ids).await?;
+            let counts = load_count_difference_subjects(&pool, &branch, &count_requests).await?;
+
+            for item in &mut requests {
+                if let Ok(obj_uuid) = Uuid::parse_str(&item.object_id) {
+                    item.subject = match item.r#type.as_str() {
+                        "TRANSACTION_REVERSAL" => reversals
+                            .get(&obj_uuid)
+                            .cloned()
+                            .map(ApprovalSubject::Reversal),
+                        "COUNT_DIFFERENCE" => counts
+                            .get(&obj_uuid)
+                            .cloned()
+                            .map(ApprovalSubject::CountDifference),
+                        _ => None,
+                    };
                 }
             }
 
@@ -180,6 +218,11 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     ApprovalRequestsFilter::export_all(&cfg)?;
     ApprovalDecisionDto::export_all(&cfg)?;
+    ReversalSubjectLine::export_all(&cfg)?;
+    ReversalSubject::export_all(&cfg)?;
+    CountSubjectLine::export_all(&cfg)?;
+    CountDifferenceSubject::export_all(&cfg)?;
+    ApprovalSubject::export_all(&cfg)?;
     ApprovalRequestItemDto::export_all(&cfg)?;
     ApprovalRequestsData::export_all(&cfg)?;
     Ok(())

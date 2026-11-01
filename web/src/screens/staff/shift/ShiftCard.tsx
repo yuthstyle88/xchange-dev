@@ -619,6 +619,10 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       {formatCountTime(c.countedAt)}
                       {' · '}
                       <span title={c.id}>#{c.id.slice(0, 8)}</span>
+                      <Show when={c.countedByName}>
+                        {' · '}
+                        <span data-counted-by title={c.countedBy}>{c.countedByName}</span>
+                      </Show>
                       <For each={c.totals}>
                         {(tot) => (
                           <>

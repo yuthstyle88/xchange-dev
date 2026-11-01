@@ -62,7 +62,7 @@ function ReversalRow(props: {
   return (
     <li data-request={props.row.requestId}>
       <span>
-        {props.row.requestId} {props.row.transactionId} {props.row.requestedBy} {stamp(props.row.createdAt)}
+        {props.row.requestId} {props.row.subject.receiptNumber} {props.row.subject.requestedByName ?? ''} {stamp(props.row.createdAt)}
       </span>
       <input
         type="text"
