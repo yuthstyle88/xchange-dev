@@ -79,12 +79,9 @@ export function checkWorkflowVersions(
   return { count };
 }
 
-export function checkRunningNodeMajor(runningVersion: string, expectedMajor: string): void {
-  const runningMajor = extractMajor(runningVersion);
-  if (runningMajor !== expectedMajor) {
-    throw new Error(
-      `Running Node version ${runningVersion} (major ${runningMajor}) does not match .nvmrc major ${expectedMajor}. Run "nvm use" or use Node ${expectedMajor}.`
-    );
+export function checkRunningNodeMajor(runningVersion: string, pinned: string): void {
+  if (extractMajor(runningVersion) !== extractMajor(pinned)) {
+    throw new Error(`Node ${runningVersion} is running; this repo pins ${pinned} (.nvmrc) — run \`nvm use\``);
   }
 }
 
@@ -136,7 +133,7 @@ describe('node-pin', () => {
     const nvmrcPath = path.join(repoRoot, '.nvmrc');
     expect(fs.existsSync(nvmrcPath), '.nvmrc exists').toBe(true);
     const nvmrc = parseNvmrc(fs.readFileSync(nvmrcPath, 'utf8'));
-    checkRunningNodeMajor(process.versions.node, nvmrc.major);
+    checkRunningNodeMajor(process.versions.node, nvmrc.full);
   });
 
   it('P6: workflows contain no node-version: fails', () => {
