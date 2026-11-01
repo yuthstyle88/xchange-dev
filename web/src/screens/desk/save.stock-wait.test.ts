@@ -6,12 +6,15 @@
 // the transaction and its complete key are kept, complete is resent every APPROVAL_POLL_MS with the same key, and
 // `stockWait` = {requestId, rejected}. `cancelStockWait()` cancels the
 // transaction. S4 is the owner's option A (2026-11-02, "A ตามเสนอ"): a rejection cancels the sale on the server,
-// so the waiting desk's next complete answers `409 staleVersion`. One test per row S1–S6; the row id is in the test name.
+// so the waiting desk's next complete answers `409 staleVersion`, and the exchange's cancelReason is the manager's reason.
+// S7 (added 2026-11-02): the PENDING_APPROVAL wait (save.ts watchApproval) must read the view's real shape. One test per row S1–S7; the row id is in the test name.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "solid-js";
 import { ApiClient } from "../../shared/api/client";
 import {
   makeQuoteDto,
+  makeTransactionDetailDto,
+  makeTransactionViewData,
   makeQuoteLineDto,
   makeQuotePublicationDto,
   makeTransactionDto,
@@ -236,7 +239,12 @@ async function ready(s: ReturnType<typeof fakeServer>, which: "OWNER_DESK" | "ST
 
 const REQ = "167d8c93-7648-405c-b015-8fc53f176e4a";
 const waitAnswer = refusal(409, "approvalRequired", `approvalRequired: ${REQ}`);
-const staleAnswer = refusal(409, "staleVersion", "staleVersion: transaction tx-1 is not CONFIRMED");
+const staleAnswer = refusal(409, "staleVersion", "staleVersion: a CANCELLED exchange is not completed");
+/** The manager's reject reason, verbatim: the server writes it as the exchange's cancelReason (claude/b091f5e0, 2026-11-02). */
+const REASON = "เงินในลิ้นชักไม่พอ ไม่อนุมัติ";
+/** `GET /api/v3/views/transaction?id=` in its real shape (generated `TransactionViewData = { transaction }`). */
+const txView = (status: string, cancelReason: string | null = null) =>
+  view(makeTransactionViewData({ transaction: makeTransactionDetailDto({ id: "tx-1", status, cancelReason }) }));
 
 describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
@@ -283,13 +291,14 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
 
   it("S4 rejected (owner's option A): complete → 409 staleVersion while waiting → one transaction read → CANCELLED; rejected kept for the words; polling stops", async () => {
     const s = serverFor({ complete: [waitAnswer, staleAnswer] });
-    s.on("GET", "/api/v3/views/transaction", () => view({ id: "tx-1", status: "CANCELLED", cancelReason: "negativeStockRejected" }));
+    s.on("GET", "/api/v3/views/transaction", () => txView("CANCELLED", REASON));
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
     await vi.advanceTimersByTimeAsync(15_000);
     await vi.waitFor(() => expect(store.transactionState()).toBe("CANCELLED"));
     expect(store.stockWait()).toEqual({ requestId: REQ, rejected: true });
     expect(store.outcome()).toBe("refused");
+    expect(store.saveError(), "the manager's reason, as sent").toBe(REASON);
     expect(s.callsTo("GET", "/api/v3/views/transaction"), "one transaction read").toHaveLength(1);
     const n = s.callsTo("POST", "/api/transactions/tx-1/complete").length;
     await vi.advanceTimersByTimeAsync(60_000);
@@ -299,7 +308,7 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
 
   it("S4b after a rejection, a new exchange clears the wait", async () => {
     const s = serverFor({ complete: [waitAnswer, staleAnswer] });
-    s.on("GET", "/api/v3/views/transaction", () => view({ id: "tx-1", status: "CANCELLED", cancelReason: "negativeStockRejected" }));
+    s.on("GET", "/api/v3/views/transaction", () => txView("CANCELLED", REASON));
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
     await vi.advanceTimersByTimeAsync(15_000);
@@ -335,5 +344,18 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
       expect(store.stockWait()).toBeUndefined();
       expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(0);
     }
+  });
+
+  it("S7 the PENDING_APPROVAL wait reads the real view shape ({ transaction }) and goes on to complete once CONFIRMED", async () => {
+    const s = serverFor({ confirm: [txAnswer("tx-1", "PENDING_APPROVAL", { approvalRequestId: "ar-1" })] });
+    let reads = 0;
+    s.on("GET", "/api/v3/views/transaction", () => (++reads === 1 ? txView("PENDING_APPROVAL") : txView("CONFIRMED")));
+    const { store } = await ready(s, "STAFF_DESK");
+    await store.submit();
+    expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.waitFor(() => expect(store.outcome()).toBe("saved"));
+    expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(1);
   });
 });

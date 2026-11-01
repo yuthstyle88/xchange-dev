@@ -46,7 +46,7 @@ function makeStore(
     config: () => ({ shiftOpen: true, adminUrl: '/?branch=MAIN', paymentMethods: [] }),
     outcome: o,
     transactionState: () => state,
-    saveError: () => (state === 'CANCELLED' ? 'negativeStockRejected' : undefined),
+    saveError: () => (state === 'CANCELLED' ? 'เงินในลิ้นชักไม่พอ ไม่อนุมัติ' : undefined),
     saved: () => undefined,
     stockWait: w,
     cancelStockWait: vi.fn(async () => {
@@ -113,13 +113,14 @@ describe('§5.4a the receipt step while complete waits for a NEGATIVE_STOCK appr
     await vi.waitFor(() => expect(store.cancelStockWait).toHaveBeenCalledTimes(1));
   });
 
-  it('R3 (S4, option A): rejected and cancelled shows stockRejectedCancelled, offers a new exchange, no cancel button, no raw reason', () => {
+  it('R3 (S4, option A): rejected and cancelled shows stockRejectedCancelled and the manager\'s reason, offers a new exchange, no cancel button', () => {
     show(makeStore({ requestId: REQ, rejected: true }, 'refused', 'CANCELLED'));
     const t = text();
     expect(t).toContain(WORDS.th.stockRejectedCancelled);
     expect(button(WORDS.th.cancelSale), 'nothing left to cancel').toBeUndefined();
     expect(button(texts.th.newExchange)?.disabled, 'a new exchange is offered').toBe(false);
-    expect(t).not.toContain('negativeStockRejected');
+    expect(t, "the manager's reason, as sent").toContain('เงินในลิ้นชักไม่พอ ไม่อนุมัติ');
+    expect(t).not.toContain('staleVersion');
     expect(t).not.toContain(REQ);
   });
 
