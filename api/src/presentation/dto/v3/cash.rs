@@ -151,11 +151,15 @@ pub struct CashCountsFilter {
 impl ViewFilter for CashCountsFilter {
     fn check(&self) -> Result<(), crate::presentation::http::v3::error::V3Error> {
         match self.status.as_deref() {
-            None | Some("WAITING") | Some("VERIFIED") | Some("REJECTED") => Ok(()),
+            None
+            | Some("WAITING")
+            | Some("AWAITING_FINANCE")
+            | Some("VERIFIED")
+            | Some("REJECTED") => Ok(()),
             Some(_) => Err(crate::presentation::http::v3::error::V3Error::new(
                 "validationFailed",
                 Some("status"),
-                "status must be WAITING, VERIFIED or REJECTED",
+                "status must be WAITING, AWAITING_FINANCE, VERIFIED or REJECTED",
                 actix_web::http::StatusCode::BAD_REQUEST,
             )),
         }
@@ -170,13 +174,16 @@ pub struct CashCountRow {
     pub id: String,
     pub branch_id: String,
     pub shift_id: Option<String>,
+    pub shift_opened_at: Option<String>,
     pub kind: String,
-    /// Staff corrections §10: the closed set `WAITING` | `VERIFIED` | `REJECTED`.
-    #[ts(type = "\"WAITING\" | \"VERIFIED\" | \"REJECTED\"")]
+    /// Staff corrections §10, T4/T10 (#5866): the closed set `WAITING` | `AWAITING_FINANCE` | `VERIFIED` | `REJECTED`.
+    #[ts(type = "\"WAITING\" | \"AWAITING_FINANCE\" | \"VERIFIED\" | \"REJECTED\"")]
     pub status: String,
     pub counted_by: String,
+    pub counted_by_name: Option<String>,
     pub counted_at: String,
     pub verified_by: Option<String>,
+    pub verified_by_name: Option<String>,
     pub verified_at: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
@@ -187,6 +194,8 @@ pub struct CashCountRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub reject_reason: Option<String>,
+    pub approval_request_id: Option<String>,
+    pub superseded: bool,
     pub note: Option<String>,
     pub totals: Vec<CashCountTotalRow>,
 }
