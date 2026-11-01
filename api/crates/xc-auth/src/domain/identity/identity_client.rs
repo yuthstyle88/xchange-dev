@@ -175,6 +175,27 @@ pub trait IdentityClient: Send + Sync + 'static {
         new_password: &'a str,
         client_ip: Option<&'a str>,
     ) -> BoxFuture<'a, Result<(), IdentityError>>;
+
+    /// Sets another identity's password through Identity's `POST /admin/identities/{subject}/password`
+    /// (ID-1, `108-platform-services#459`), behind `X-Internal-Token`. F2 (design
+    /// `user-management-rbac.md` §13): xchange generates the password and asks for `must_change`.
+    /// [proposed] The default refuses as unavailable, so a client or fake that cannot do it never pretends to;
+    /// `HttpIdentityClient` overrides it (F2-BE, #5835).
+    fn admin_set_password<'a>(
+        &'a self,
+        subject: &'a str,
+        new_password: &'a str,
+        must_change: bool,
+    ) -> BoxFuture<'a, Result<(), IdentityError>> {
+        let _ = (subject, new_password, must_change);
+        Box::pin(async {
+            Err(IdentityError::unavailable(
+                "/admin/identities/{id}/password",
+                501,
+                "not_implemented",
+            ))
+        })
+    }
 }
 
 /// What a server-side create sends to Identity `POST /auth/register` (camelCase on the wire).
