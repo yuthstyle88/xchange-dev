@@ -465,6 +465,50 @@ impl Room {
         tx.commit().await.unwrap();
     }
 
+    /// G3 (#5905): a `users` row of `branch`'s organisation named `name`; its id.
+    async fn user(&self, branch: &str, name: &str) -> String {
+        sqlx::query_scalar(
+            "INSERT INTO users (organization_id, name, status, created_by) \
+             SELECT organization_id, $2, 'ACTIVE', 'test' FROM branches WHERE id = $1 \
+             RETURNING id::text",
+        )
+        .bind(branch)
+        .bind(name)
+        .fetch_one(&self.db.pool)
+        .await
+        .expect("insert user")
+    }
+
+    /// G3 (#5905): one `audit_events` row on transaction `id` by `actor_id`, through `PgAuditLog::append_in`.
+    async fn event_by(
+        &self,
+        branch: &str,
+        id: TransactionId,
+        actor_id: &str,
+        role: &str,
+        action: &str,
+    ) {
+        let mut tx = self.db.pool.begin().await.unwrap();
+        self.audit
+            .append_in(
+                &mut tx,
+                quote_common::ORG_1,
+                &AuditEvent {
+                    actor_id: actor_id.to_owned(),
+                    actor_role: role.to_owned(),
+                    scope: "branch".to_owned(),
+                    action: action.to_owned(),
+                    object_ref: id.0.to_string(),
+                    branch_id: Some(branch.to_owned()),
+                    before: None,
+                    after: None,
+                },
+            )
+            .await
+            .expect("append event");
+        tx.commit().await.unwrap();
+    }
+
     /// An over-limit exchange: `transaction.created`, then an `EXCHANGE_TRANSACTION` request decided
     /// APPROVED by the branch's MANAGER through `ApprovalService::decide` (`approval.approved`).
     async fn approved_over_the_limit(&self, branch: &str) -> TransactionId {
@@ -647,7 +691,9 @@ fn keys(v: &Value) -> Vec<String> {
     k
 }
 
-/// The view's events as (at, actorId, actorRole, action), checking each has exactly those keys.
+/// The view's events as (at, actorId, actorRole, action), checking each has exactly the five keys of §4.3.
+/// Restated 2026-11-02 by the ticket author of G3-BE #5905 (claude/b091f5e0): design PR #5904 adds `actorName`
+/// to D7/§4.3, so "exactly the four fields" became "exactly the five". `actor_names` reads the fifth.
 fn answered(events: &Value) -> Vec<(DateTime<Utc>, String, String, String)> {
     events
         .as_array()
@@ -656,8 +702,8 @@ fn answered(events: &Value) -> Vec<(DateTime<Utc>, String, String, String)> {
         .map(|e| {
             assert_eq!(
                 keys(e),
-                ["action", "actorId", "actorRole", "at"],
-                "exactly the four fields, no before/after, scope or branch: {e}"
+                ["action", "actorId", "actorName", "actorRole", "at"],
+                "exactly the five fields, no before/after, scope or branch: {e}"
             );
             let s = |k: &str| {
                 e[k].as_str()
@@ -665,6 +711,20 @@ fn answered(events: &Value) -> Vec<(DateTime<Utc>, String, String, String)> {
                     .to_owned()
             };
             (instant(&e["at"]), s("actorId"), s("actorRole"), s("action"))
+        })
+        .collect()
+}
+
+/// The view's events' `actorName`, in order: `Some(name)`, or `None` for a JSON `null`.
+fn actor_names(events: &Value) -> Vec<Option<String>> {
+    events
+        .as_array()
+        .unwrap_or_else(|| panic!("events is an array, got {events}"))
+        .iter()
+        .map(|e| match &e["actorName"] {
+            Value::Null => None,
+            Value::String(n) => Some(n.clone()),
+            other => panic!("actorName is a string or null, got {other} in {e}"),
         })
         .collect()
 }
@@ -1071,6 +1131,73 @@ async fn an_unknown_malformed_or_other_branchs_id_answers_null() {
         answered(&room.events("staff:FRONT:B2", &b2.0.to_string()).await).len(),
         2,
         "B2's teller reads B2's: the nulls above are the branch scope, not a missing row"
+    );
+    room.finish().await;
+}
+
+/// G3 (#5905, design §4.3 as amended by #5904): an event whose `actor_id` is a `users.id` names that user;
+/// a blank name and an actor id that is no users row (TX-11's `employee-FRONT`) answer `actorName: null`.
+/// The join adds or drops no event: the trail is still every stored row, oldest first.
+#[tokio::test]
+async fn g3_an_event_names_its_actor_when_the_actor_is_a_user() {
+    let room = Room::open().await;
+    let c = room.completed("MAIN", "named").await;
+    room.created_event("MAIN", c.id).await;
+    let somsri = room.user("MAIN", "Somsri Teller").await;
+    room.event_by("MAIN", c.id, &somsri, "TELLER", "test.named")
+        .await;
+    let blank = room.user("MAIN", "   ").await;
+    room.event_by("MAIN", c.id, &blank, "TELLER", "test.blank")
+        .await;
+
+    let events = room.events(FRONT, &c.id.0.to_string()).await;
+    let got = answered(&events);
+    assert_eq!(
+        got,
+        room.events_of(&[c.id.0.to_string()]).await,
+        "every stored row, oldest first: the join adds or drops none"
+    );
+    assert_eq!(
+        got.iter().map(|e| e.3.as_str()).collect::<Vec<_>>(),
+        ["transaction.created", "test.named", "test.blank"],
+        "{got:?}"
+    );
+    assert_eq!(
+        actor_names(&events),
+        [None, Some("Somsri Teller".to_owned()), None],
+        "employee-FRONT is no users row; Somsri is named; a blank name is null"
+    );
+    assert_eq!(got[1].1, somsri, "actorId stays the stored id");
+    room.finish().await;
+}
+
+/// G3 (#5905): on an approved over-limit trail, every event's `actorName` is the `users.name` of its
+/// `actorId`, or `null` when no users row has that id (or its name is blank).
+#[tokio::test]
+async fn g3_the_existing_trails_answer_null_for_ids_that_are_no_users_row() {
+    let room = Room::open().await;
+    let id = room.approved_over_the_limit("MAIN").await;
+    let events = room.events(MANAGER, &id.0.to_string()).await;
+    let ids: Vec<String> = answered(&events).into_iter().map(|e| e.1).collect();
+    let named: Vec<Option<String>> = {
+        let mut v = Vec::new();
+        for actor in &ids {
+            v.push(
+                sqlx::query_scalar::<_, String>(
+                    "SELECT name FROM users WHERE id::text = $1 AND btrim(name) <> ''",
+                )
+                .bind(actor)
+                .fetch_optional(&room.db.pool)
+                .await
+                .expect("read users"),
+            );
+        }
+        v
+    };
+    assert_eq!(
+        actor_names(&events),
+        named,
+        "actorName is users.name of actorId, or null when there is no such user ({ids:?})"
     );
     room.finish().await;
 }
