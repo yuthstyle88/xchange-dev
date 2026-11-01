@@ -7,8 +7,9 @@
 // Contract these tests read:
 // - admin_users is keyset-paged by name: `before` = the last shown row's userId, `limit` = the page size (50).
 //   The stub below answers any `limit`, so a reload in one larger read and a reload page by page both pass.
-// - Rows are `tr[data-user-id]`; actions `[data-users-action]` by status (ACTIVE: profile, suspend;
-//   SUSPENDED: profile, resume; DISABLED: enable). "more" is `button[data-action="more"]`.
+// - Rows are `tr[data-user-id]`; actions `[data-users-action]` by status (ACTIVE: profile, reset, suspend;
+//   SUSPENDED: profile, reset, resume; DISABLED: enable). "more" is `button[data-action="more"]`.
+//   Amended by F2-WEB #5838 (claude/01TxaRJG): reset is back on ACTIVE and SUSPENDED rows (owner option A, 2026-11-01).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -160,7 +161,7 @@ describe('#4558: a row write keeps the rows already paged (§12)', () => {
     await act(c, 'u-075', 'suspend');
     const r = row(c, 'u-075');
     expect(r, 'the written row is still on screen').not.toBeNull();
-    expect(actions(r!)).toEqual(['profile', 'resume']);
+    expect(actions(r!)).toEqual(['profile', 'reset', 'resume']);
     expect(rows(c)).toBe(TOTAL);
     expect(c.querySelector('button[data-action="more"]')).toBeNull();
   });
@@ -172,7 +173,7 @@ describe('#4558: a row write keeps the rows already paged (§12)', () => {
     await act(c, 'u-070', 'enable');
     const r = row(c, 'u-070');
     expect(r, 'the written row is still on screen').not.toBeNull();
-    expect(actions(r!)).toEqual(['profile', 'suspend']);
+    expect(actions(r!)).toEqual(['profile', 'reset', 'suspend']);
     expect(rows(c)).toBeGreaterThanOrEqual(100);
     expect(c.querySelector('button[data-action="more"]'), '"more" is still offered').not.toBeNull();
   });
@@ -186,7 +187,7 @@ describe('#4558: a row write keeps the rows already paged (§12)', () => {
     expect(after).toHaveLength(1);
     expect(after[0]!.searchParams.get('before')).toBeNull();
     expect(rows(c)).toBe(50);
-    expect(actions(row(c, 'u-010')!)).toEqual(['profile', 'resume']);
+    expect(actions(row(c, 'u-010')!)).toEqual(['profile', 'reset', 'resume']);
     expect(c.querySelector('button[data-action="more"]')).not.toBeNull();
   });
 });
