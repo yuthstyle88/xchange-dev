@@ -1,6 +1,7 @@
 // TD-3 #1291: the audit trail (D7), oldest first, as the server sent it.
 import { For, Show, type JSX } from 'solid-js';
 import type { TransactionAuditEventDto } from '../../shared/api/generated/transaction_audit';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { t } from './texts';
 
 export function AuditSection(props: { events: TransactionAuditEventDto[] }): JSX.Element {
@@ -20,7 +21,7 @@ export function AuditSection(props: { events: TransactionAuditEventDto[] }): JSX
             <For each={props.events}>
               {(e) => (
                 <tr>
-                  <td>{e.at}</td>
+                  <td>{formatBangkokDateTime(e.at)}</td>
                   <td>
                     {e.actorId} · {e.actorRole}
                   </td>

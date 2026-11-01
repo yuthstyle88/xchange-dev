@@ -1,8 +1,13 @@
 // TD-3 #1291: the payment (D3).
 import type { JSX } from 'solid-js';
 import type { TxPaymentDto } from '../../shared/api/generated/transaction';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { Field } from './Field';
 import { t } from './texts';
+
+function tm(v: string | null | undefined): string | null | undefined {
+  return v ? formatBangkokDateTime(v) : v;
+}
 
 export function PaymentSection(props: { payment: TxPaymentDto }): JSX.Element {
   return (
@@ -14,7 +19,7 @@ export function PaymentSection(props: { payment: TxPaymentDto }): JSX.Element {
         <Field label={t('account')} value={props.payment.account} />
         <Field label={t('amountThb')} value={props.payment.amountThb} />
         <Field label={t('bankFeeThb')} value={props.payment.bankFeeThb} />
-        <Field label={t('paidAt')} value={props.payment.paidAt} />
+        <Field label={t('paidAt')} value={tm(props.payment.paidAt)} />
       </dl>
     </section>
   );
