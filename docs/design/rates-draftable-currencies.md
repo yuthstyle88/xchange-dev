@@ -19,7 +19,8 @@ So a currency that was never published can never enter a publication from the UI
 
 - `PUT /api/rate-drafts/{id}` replaces the draft's whole line set (`rate_draft_service.rs:304`).
 - `POST /api/rate-drafts` accepts any known code (`xc-kernel/src/money/currency_code.rs:11` lists EUR, JPY and CNY).
-- A line with no guard counts as in bound (`domain/draft/draft_evaluation.rs:80-81`, `:113-114`).
+- A line **with no guard is out of bound**. For each side, `pol.guard_for(currency, side)` returning `None` gives `is_out = true` (`api/crates/xc-rate/src/domain/draft/draft_evaluation.rs:80-81`, sell side `:113-114`; this doc used to cite these same lines with the meaning reversed). The same holds when there is no policy at all (`:73`, `:106`). The lines that let a side through are a different case: no *reference* price for an AUTO side (`:76-77`, `:109-110`). claude-4 measured this on xc-v3 (#564 issuecomment-6563174725): EUR/JPY/CNY with no guard evaluate `isInBound: false`.
+- An out-of-bound draft submitted by an EXECUTIVE is approved by its own proposer (`decide_self(.., "proposer_is_owner")`, `api/crates/xc-rate/src/application/draft/rate_draft_service.rs:767-770`). A RATE_MANAGER's goes to approval. So without a guard, a new currency does not publish "unguarded": it publishes out of bound, either self-approved or waiting for a second person.
 
 ## 2. Decision: the reference source decides what can be drafted
 
@@ -29,7 +30,7 @@ So a currency that was never published can never enter a publication from the UI
 | R2 | "New draft" keeps seeding from the publication. | A publication replaces the branch's whole set (`RatesDraft.test.tsx` header), so the draft must start from it. Adding is a separate act. |
 | R3 | An added line starts as `AUTO` / `AUTO` with no manual values. It is sent by the existing "save lines" PUT; nothing is written until then. | Same shape as the lines "New draft" sends. |
 | R4 | No reference (not read yet, or unreadable) ⇒ nothing to add, and a hint says so. | On xc-v3 every RatesDraft holder also holds ReferenceRatesRead (EXECUTIVE, RATE_MANAGER; measured by claude/b091f5e0), so this happens only for a custom group or a failed read. |
-| R5 | The policy card lists a guard row for each currency of the open draft too, after published and stored ones. | A new currency can get its guard before submit; without one it publishes unguarded. |
+| R5 | The policy card lists a guard row for each currency of the open draft too, after published and stored ones. **A new currency's guard must be saved on this card (DC-2) before the draft is submitted.** The guard numbers are the owner's; this design sets none. | Without a guard the line is out of bound (§1). An EXECUTIVE's submit then self-approves an out-of-bound publication, and anyone else's waits for approval. |
 | R6 | The BOT feed needs no change. | Once a draft carrying EUR is published, the feed's copy carries EUR from then on. |
 | R7 | Removing a currency from the draft is out of scope. | Not asked; stopping a currency has its own business questions. |
 
