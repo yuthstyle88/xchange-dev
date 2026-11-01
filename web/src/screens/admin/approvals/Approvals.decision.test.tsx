@@ -1,5 +1,10 @@
 // RE-5b (#1984): A06 status switch (Pending / Approved / Rejected) and decision block on decided cards.
 // One test per §9 behaviour table row.
+//
+// Amended by FE-T3a #5853 (claude/01TxaRJG): the approver `approverId` is a user id, so it moves from
+// the decision block's visible text to a `title` attribute (design `docs/design/fe-triage-1101.md` W13:
+// the approval card never prints a bare id as text). Only the approver assertions of rows 3, 4 and the
+// en row changed.
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
@@ -226,7 +231,8 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(decisionBlock).not.toBeNull();
 
     const blockText = normText(decisionBlock);
-    expect(blockText).toContain('u-9');
+    expect(decisionBlock!.querySelector('[title="u-9"]'), 'the approver is a title (W13)').not.toBeNull();
+    expect(blockText, 'the approver id is not visible text (W13)').not.toContain('u-9');
     expect(blockText).toContain(screenTh.approved);
     expect(blockText).toContain('ok');
     expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T10:00:00Z');
@@ -255,7 +261,8 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     const blockText = normText(decisionBlock);
     expect(blockText).toContain(screenTh.rejected);
     expect(blockText).toContain('spread exceeds branch limit');
-    expect(blockText).toContain('u-7');
+    expect(decisionBlock!.querySelector('[title="u-7"]'), 'the approver is a title (W13)').not.toBeNull();
+    expect(blockText, 'the approver id is not visible text (W13)').not.toContain('u-7');
     expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T11:30:00Z');
     expect(card.querySelectorAll('button').length).toBe(0);
   });
@@ -353,7 +360,8 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(blockText).toContain(screenEn.approved);
     expect(blockText).toContain(screenEn.decisionReason);
     expect(blockText).toContain(screenEn.decidedAt.trim());
-    expect(blockText).toContain('u-9');
+    expect(decisionBlock!.querySelector('[title="u-9"]'), 'the approver is a title (W13)').not.toBeNull();
+    expect(blockText, 'the approver id is not visible text (W13)').not.toContain('u-9');
     expect(blockText).toContain('ok');
     expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T10:00:00Z');
     expect(normText(root)).not.toMatch(THAI);
