@@ -57,6 +57,7 @@ function makeServer(configResponse: { status: number; body: unknown } = {
       rates: [
         makeDeskRate({ code: 'USD', buy: '35.00', sell: '35.50' }),
         makeDeskRate({ code: 'EUR', buy: '38.00', sell: null }),
+        makeDeskRate({ code: 'JPY', buy: null, sell: null }),
       ],
     }),
   },

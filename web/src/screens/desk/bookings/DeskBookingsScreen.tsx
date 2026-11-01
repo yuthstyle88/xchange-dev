@@ -146,12 +146,7 @@ export function DeskBookingsScreen(): JSX.Element {
   const currencies = () => {
     const r = rates();
     if (r === null) return ['USD'];
-    const codes = publishedCodes(r, activeSide());
-    // If rates exist but none define buy or sell (legacy test fixtures), fall back to all codes.
-    if (codes.length === 0 && r.length > 0 && !r.some((item) => item.buy !== null || item.sell !== null)) {
-      return r.map((item) => item.code).filter(Boolean);
-    }
-    return codes;
+    return publishedCodes(r, activeSide());
   };
   const [formBranchId, setFormBranchId] = createSignal('');
   const [formDate, setFormDate] = createSignal('');
@@ -1361,7 +1356,7 @@ export function DeskBookingsScreen(): JSX.Element {
                       </For>
                     </select>
                     <Show when={currencies().length === 0}>
-                      <div class="field-hint" data-row="no-published-rate">
+                      <div data-row="no-published-rate">
                         {t('noPublishedRate')}
                       </div>
                     </Show>
