@@ -76,6 +76,7 @@ const COUNTS = [
     shiftId: 'S-0001',
     kind: 'CLOSE',
     countedBy: 'EMP-007',
+    countedByName: 'Somchai Teller',
     countedAt: '2026-10-06T10:00:00Z',
     verifiedBy: null,
     verifiedAt: null,
@@ -403,7 +404,27 @@ describe('counts waiting (countVerify)', () => {
   it("shows each waiting count's figures as the server sent them", async () => {
     const el = await mount([VERIFY]);
     const s = text(section(el, 'counts-waiting'));
-    for (const figure of ['1000.50', '1000.75', '-0.25', '120.00', '100.00', '+7.00', 'EMP-007']) expect(s).toContain(figure);
+    // FE-T4b restates this row: the counter is named (`countedByName`), and the user id moves to the cell's title.
+    for (const figure of ['1000.50', '1000.75', '-0.25', '120.00', '100.00', '+7.00', 'Somchai Teller']) expect(s).toContain(figure);
+  });
+
+  it('FE-T4b N3: the counted-by cell shows countedByName, with countedBy only in its title', async () => {
+    const el = await mount([VERIFY]);
+    const cell = section(el, 'counts-waiting')!.querySelector('[data-counted-by]');
+    expect(cell, 'counted-by cell').not.toBeNull();
+    expect(cell!.textContent).toBe('Somchai Teller');
+    expect(cell!.getAttribute('title')).toBe('EMP-007');
+    expect(text(section(el, 'counts-waiting'))).not.toContain('EMP-007');
+  });
+
+  it('FE-T4b N4: a count with no countedByName shows "—" in the counted-by cell, never the user id as text', async () => {
+    server.counts = [{ ...COUNTS[0]!, countedByName: null }];
+    const el = await mount([VERIFY]);
+    const cell = section(el, 'counts-waiting')!.querySelector('[data-counted-by]');
+    expect(cell, 'counted-by cell').not.toBeNull();
+    expect(cell!.textContent).toBe('—');
+    expect(cell!.getAttribute('title')).toBe('EMP-007');
+    expect(text(section(el, 'counts-waiting'))).not.toContain('EMP-007');
   });
 
   it('Verify sends POST /api/cash-counts/{id}/verify {branch, id} with an Idempotency-Key, then reads the counts again', async () => {
