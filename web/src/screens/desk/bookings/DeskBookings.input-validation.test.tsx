@@ -60,7 +60,7 @@ const DESK_BOOKINGS = makeDeskBookingsData({
 const DESK_CONFIG = makeDeskConfig({
   branchId: BRANCH_ID,
   branchName: BRANCH_ID,
-  rates: [makeDeskRate({ code: 'USD' }), makeDeskRate({ code: 'EUR' }), makeDeskRate({ code: 'JPY' })],
+  rates: ['USD', 'EUR', 'JPY'].map((code) => makeDeskRate({ code, buy: '1.00', sell: '1.00' })),
 });
 
 type CreateAnswer = { status: number; body: unknown };
