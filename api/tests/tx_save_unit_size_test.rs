@@ -322,7 +322,7 @@ async fn a_demo_jpy_save_with_nothing_published_is_refused_while_vouched_records
 
     assert_eq!(
         refusal(shop.save(MAIN, demo_cmd, at(0)).await),
-        "rateUnavailable: no published line",
+        "rateUnavailable: no published line for JPY",
         "decision A2: a DEMO save with nothing published is refused"
     );
     let demo_rows: i64 = sqlx::query_scalar(
