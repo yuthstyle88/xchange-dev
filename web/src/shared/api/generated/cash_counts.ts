@@ -3,11 +3,11 @@
 /**
  * A row of `cash_counts`.
  */
-export type CashCountRow = { id: string, branchId: string, shiftId: string | null, kind: string, 
+export type CashCountRow = { id: string, branchId: string, shiftId: string | null, shiftOpenedAt: string | null, kind: string, 
 /**
- * Staff corrections §10: the closed set `WAITING` | `VERIFIED` | `REJECTED`.
+ * Staff corrections §10, T4/T10 (#5866): the closed set `WAITING` | `AWAITING_FINANCE` | `VERIFIED` | `REJECTED`.
  */
-status: "WAITING" | "VERIFIED" | "REJECTED", countedBy: string, countedAt: string, verifiedBy: string | null, verifiedAt: string | null, rejectedBy?: string | null, rejectedAt?: string | null, rejectReason?: string | null, note: string | null, totals: Array<CashCountTotalRow>, };
+status: "WAITING" | "AWAITING_FINANCE" | "VERIFIED" | "REJECTED", countedBy: string, countedByName: string | null, countedAt: string, verifiedBy: string | null, verifiedByName: string | null, verifiedAt: string | null, rejectedBy?: string | null, rejectedAt?: string | null, rejectReason?: string | null, approvalRequestId: string | null, superseded: boolean, note: string | null, totals: Array<CashCountTotalRow>, };
 
 /**
  * One currency total of a count: counted, expected and their difference, as strings.

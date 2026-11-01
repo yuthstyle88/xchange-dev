@@ -5,6 +5,7 @@ export const th = {
   skip: 'ข้าม',
   start: 'เริ่มให้บริการ',
   finish: 'เสร็จสิ้น',
+  finishConfirm: 'ยืนยันเสร็จสิ้น',
   release: 'ไม่มีการขาย',
   releaseConfirm: 'ยืนยันไม่มีการขาย',
   cancel: 'ยกเลิก',
@@ -16,6 +17,7 @@ export const th = {
   'error.noOpenShift': 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อน',
   'error.staleVersion': 'ข้อมูลคิวเปลี่ยนไปแล้ว กรุณาลองใหม่',
   'error.ticketHasSale': 'คิวนี้มีรายการขายแล้ว กรุณายกเลิกรายการขายก่อน',
+  'error.alreadyServing': 'เคาน์เตอร์นี้กำลังให้บริการคิวอื่นอยู่ กรุณาเสร็จสิ้นคิวปัจจุบันก่อน',
 };
 
 export const en: typeof th = {
@@ -24,6 +26,7 @@ export const en: typeof th = {
   skip: 'Skip',
   start: 'Start',
   finish: 'Finish',
+  finishConfirm: 'Confirm finish',
   release: 'ไม่มีการขาย',
   releaseConfirm: 'ยืนยันไม่มีการขาย',
   cancel: 'Cancel',
@@ -35,4 +38,5 @@ export const en: typeof th = {
   'error.noOpenShift': 'No open shift; open a shift first',
   'error.staleVersion': 'Ticket state changed; please try again',
   'error.ticketHasSale': 'คิวนี้มีรายการขายแล้ว กรุณายกเลิกรายการขายก่อน',
+  'error.alreadyServing': 'This counter is already serving a ticket. Finish it first.',
 };

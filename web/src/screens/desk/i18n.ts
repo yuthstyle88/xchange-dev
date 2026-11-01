@@ -44,6 +44,10 @@ export const th = {
   'shift.clockInFirst': 'กรุณาลงเวลาเข้างานก่อนเปิดกะ',
   'shift.openCountFirst': 'ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ',
   'shift.openCount': 'นับเปิดกะ',
+  // FE-T2 #5849: a 409 rateUnavailable names the code and side (the store words it, so the text lives here).
+  rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
+  sideBuy: 'ร้านรับซื้อ (BUY)',
+  sideSell: 'ร้านขาย (SELL)',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -90,4 +94,7 @@ export const en: Record<keyof typeof th, string> = {
   'shift.clockInFirst': 'กรุณาลงเวลาเข้างานก่อนเปิดกะ',
   'shift.openCountFirst': 'ยังไม่มีกะเปิด กรุณานับเงินเปิดกะ',
   'shift.openCount': 'นับเปิดกะ',
+  rateNotPublished: '{code} has no published rate at this branch for {side}.',
+  sideBuy: 'Shop buys (BUY)',
+  sideSell: 'Shop sells (SELL)',
 };

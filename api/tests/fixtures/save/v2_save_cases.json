@@ -1018,7 +1018,7 @@
      },
      "passport": "P1",
      "slip": null,
-     "v2Error": "rateUnavailable: no published line",
+     "v2Error": "rateUnavailable: no published line for JPY",
      "saved": null,
      "after": {
       "balances": null,

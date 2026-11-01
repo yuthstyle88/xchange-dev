@@ -2,6 +2,10 @@
 // called ticket, or by BRANCH_MANAGER", §5 routes). Written before the implementation by the FE-desk sub-controller
 // claude/dell-claude-1. Do not edit, delete or weaken these tests; add your own in another file.
 //
+// Amended by FE-T1a #5851 (claude/01TxaRJG): finish is two-step (design fe-triage-1101.md W2), so A2 no longer sends
+// finish on one click; the finish → finishConfirm path is pinned in TicketActions.finish-confirm.test.tsx. A1 is unchanged:
+// finishConfirm shows only after a click on finish.
+//
 // [required] by these tests:
 // - `TicketActions({ ticket, me, commands, onDone })` from `./TicketActions` (props as in the skeleton).
 // - Buttons carry `name`: `call`, `recall`, `skip`, `start`, `finish`, `cancel`; the cancel reason is
@@ -14,7 +18,7 @@
 //     SERVING, mine or manager     → finish, release (#5569)
 //     SERVING, another's           → none
 // - A button sends exactly one command through `commands` and calls `onDone()` once after it answers; while it is in
-//   flight every button is disabled.
+//   flight every button is disabled. Finish is the exception: it reveals `finishConfirm`, which sends (FE-T1a W2).
 // - Cancel needs a non-blank reason (sent trimmed); a blank one sends nothing and shows an alert.
 // - A refusal shows an alert (role=alert) with the refusal's own text for `notYourTicket`, `counterPaused`,
 //   `noOpenShift` and `staleVersion` (from `./i18n.ts` keys `error.<code>`), else the worded error; `onDone` is not called.
@@ -90,7 +94,7 @@ describe("TicketActions: commands", () => {
     ["recall", "CALLED", "u-me"],
     ["skip", "CALLED", "u-me"],
     ["start", "CALLED", "u-me"],
-    ["finish", "SERVING", "u-me"],
+    // FE-T1a #5851: finish left this list; it needs finishConfirm (TicketActions.finish-confirm.test.tsx T1a-1, T1a-2).
   ] as const)("A2 %s sends one command for the ticket, then onDone once", async (verb, status, teller) => {
     const commands = fakeCommands();
     const onDone = vi.fn();

@@ -1,7 +1,9 @@
 //! Published rates port and value objects.
 
+use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
+use rust_decimal::Decimal;
 use sqlx::{Postgres, Transaction};
 use std::fmt;
 use std::str::FromStr;
@@ -66,10 +68,26 @@ pub struct PublishedSide {
     pub value_tier: TierCode,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SellableLine {
+    pub code: CurrencyCode,
+    pub unit_size: UnitSize,
+    pub buy: Option<Decimal>,
+    pub sell: Option<Decimal>,
+    pub published_at: DateTime<Utc>,
+}
+
 pub trait PublishedRates: Send + Sync {
     /// The branch's current publication and its lines; None before the first publication.
     fn current<'a>(&'a self, branch: &'a BranchId)
     -> BoxFuture<'a, AppResult<Option<Publication>>>;
+
+    /// Sellable lines of the current publication (`ALL` group, at least one side non-null), ordered by code.
+    fn sellable<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+    ) -> BoxFuture<'a, AppResult<Vec<SellableLine>>>;
 
     /// One line of the current publication for a selector (currency, side, group, quantity), in the caller's transaction.
     fn line_for<'a>(

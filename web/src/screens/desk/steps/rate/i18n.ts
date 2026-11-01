@@ -14,6 +14,8 @@ export const th = {
   perUnit: 'ต่อ {unit} {code}',
   referenceRate: 'เรทอ้างอิง (ไม่บังคับ)',
   quoting: 'กำลังคำนวณใหม่…',
+  noPublishedRate: 'สาขานี้ยังไม่มีเรทประกาศสำหรับรายการ{side}',
+  rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -31,4 +33,6 @@ export const en: Record<keyof typeof th, string> = {
   perUnit: 'per {unit} {code}',
   referenceRate: 'Reference rate (optional)',
   quoting: 'Recalculating…',
+  noPublishedRate: 'No rate is published at this branch for {side}.',
+  rateNotPublished: '{code} has no published rate at this branch for {side}.',
 };

@@ -23,7 +23,7 @@ pub trait BookingQueueEvents: Send + Sync {
     ) -> BoxFuture<'a, AppResult<()>>;
 
     /// Called inside the queue's transaction when a ticket for `booking_id` ends.
-    /// If `reason == "dayClosed"`, moves the booking to `CANCELLED (dayClosed)`.
+    /// If `reason` is `"dayClosed"` or `"noSale"`, moves the booking to `CANCELLED` with that reason.
     /// Other reasons (e.g. `NO_SHOW`) leave the booking unchanged.
     fn on_ticket_ended_in<'a>(
         &'a self,

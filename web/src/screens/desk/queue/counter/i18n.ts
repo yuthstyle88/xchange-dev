@@ -11,6 +11,7 @@ export const th = {
   'error.queueClosed': 'คิวสาขาปิดอยู่',
   'error.noOpenShift': 'ยังไม่ได้เปิดกะ กรุณาเปิดกะก่อน',
   'error.counterPaused': 'เคาน์เตอร์พักอยู่ กรุณาเปิดรับคิวก่อน',
+  'error.alreadyServing': 'เคาน์เตอร์นี้กำลังให้บริการคิวอื่นอยู่ กรุณาเสร็จสิ้นคิวปัจจุบันก่อน',
 };
 
 export const en: typeof th = {
@@ -25,4 +26,5 @@ export const en: typeof th = {
   'error.queueClosed': 'Branch queue is closed',
   'error.noOpenShift': 'No open shift; open a shift first',
   'error.counterPaused': 'Counter is paused; resume before calling',
+  'error.alreadyServing': 'This counter is already serving a ticket. Finish it first.',
 };
