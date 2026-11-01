@@ -192,7 +192,9 @@ describe('Reconciliation Asia/Bangkok today and timestamps (#2498)', () => {
     const pendingPart = el.querySelector<HTMLElement>('[data-part="reversalsPending"]');
     expect(pendingPart).not.toBeNull();
     const expectedTh = new Date(ISO_TS).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-    expect(pendingPart!.textContent).toContain('RV-99');
+    // FE-T3b restates this line: the row prints the receipt from `subject`, and the request id moves to a title (design W13).
+    expect(pendingPart!.textContent).toContain('RC-42');
+    expect(pendingPart!.textContent).not.toContain('RV-99');
     expect(pendingPart!.textContent).toContain(expectedTh);
     expect(pendingPart!.textContent).not.toContain(ISO_TS);
   });
