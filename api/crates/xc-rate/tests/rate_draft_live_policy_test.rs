@@ -22,7 +22,14 @@
 //!   Result<DraftEvaluationOutcome, RateEngineError>`, with public `evaluation` (`is_in_bound()`)
 //!   and `policy: Option<RatePolicy>` (`RatePolicy::id() -> &str`, the version's uuid);
 //! - `PublishService::publish(&self, tx, branch, who, id, expected_version)`;
-//! - `ApprovalService::decide(&self, tx, request_id, who, Outcome, reason, key)`.
+//! - `ApprovalService::decide(&self, tx, request_id, who, Outcome, reason, key)`;
+//! - `Evaluation::out_of_bound() -> Vec<(CurrencyCode, Side)>`.
+//!
+//! Added by the same author on the design reviewer's follow-up (#5926 issuecomment-6565246345):
+//! row 6 of §4.5.1 must hold for AUTO sides too. Under no policy an AUTO side has no proposed rate
+//! (`rate_proposal.rs:97-104`) and `DraftEvaluation` skipped it, so an all-AUTO draft evaluated
+//! in-bound and submit closed it "by policy" with the fallback id `"1"`. D-6: under no policy every
+//! line is out-of-bound, whatever its mode, and no decision names a policy that does not exist.
 
 mod rate_engine_common;
 
@@ -32,6 +39,7 @@ use sqlx::{Postgres, Transaction};
 use xc_approval::domain::request::Outcome;
 use xc_auth::domain::access;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::Side;
 use xc_rate::application::draft::rate_draft_service::{DraftEvaluationOutcome, SubmitOutcome};
 use xc_rate::domain::draft::rate_draft::{DraftLine, DraftStatus, RateDraft};
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
@@ -410,6 +418,117 @@ async fn a_version_saved_after_submit_does_not_change_what_is_published() {
     assert!(
         stamped.iter().all(|s| s.as_deref() == Some(v2.as_str())),
         "every published line names v2, the version submit evaluated under; got {stamped:?}"
+    );
+    db.finish().await;
+}
+
+// ── no policy, AUTO sides (D-6; #5926 follow-up) ────────────────────────────
+
+fn both_usd_sides(outcome: &DraftEvaluationOutcome) -> bool {
+    let out = outcome.evaluation.out_of_bound();
+    out.iter()
+        .any(|(c, s)| c.as_str() == "USD" && *s == Side::Buy)
+        && out
+            .iter()
+            .any(|(c, s)| c.as_str() == "USD" && *s == Side::Sell)
+}
+
+#[tokio::test]
+async fn with_no_live_version_an_all_auto_draft_is_out_of_bound_on_both_sides() {
+    let db = TestDb::start().await;
+    let e = db.engine();
+    seed_usd_reference(&db).await;
+    new_version(&db, MAIN, usd_guard()).await;
+    let d = create_on(&db, &e, &main_branch(), &owner_user()).await;
+    close_live(&db, MAIN).await;
+
+    let got = simulate_on(&db, &e, &main_branch(), &d).await;
+    assert_eq!(policy_of(&got), None, "no version is live, so no policy");
+    assert!(
+        !got.evaluation.is_in_bound(),
+        "an AUTO line under no policy is out-of-bound (D-6)"
+    );
+    assert!(
+        both_usd_sides(&got),
+        "both AUTO sides are listed, got {:?}",
+        got.evaluation.out_of_bound()
+    );
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn a_draft_created_when_the_branch_never_had_a_policy_is_out_of_bound() {
+    let db = TestDb::start().await;
+    let e = db.engine();
+    seed_usd_reference(&db).await;
+    let d = create_on(&db, &e, &main_branch(), &owner_user()).await;
+    assert_eq!(
+        line_stamps(&db, &d).await,
+        vec![None],
+        "no version to stamp"
+    );
+
+    let got = simulate_on(&db, &e, &main_branch(), &d).await;
+    assert!(
+        !got.evaluation.is_in_bound(),
+        "an AUTO line under no policy is out-of-bound (D-6)"
+    );
+    assert!(both_usd_sides(&got));
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn with_no_live_version_a_rates_submit_of_an_all_auto_draft_waits_for_the_executive() {
+    let db = TestDb::start().await;
+    let e = db.engine();
+    seed_usd_reference(&db).await;
+    new_version(&db, MAIN, usd_guard()).await;
+    let d = create_on(&db, &e, &main_branch(), &rates_user()).await;
+    close_live(&db, MAIN).await;
+
+    let outcome = submit(&db, &e, &rates_user(), &d).await;
+
+    assert_eq!(
+        outcome.status,
+        DraftStatus::PendingApproval,
+        "out-of-bound under no policy: RATES's submit waits, it is not closed by a policy"
+    );
+    assert_eq!(evaluated_under(&db, &d).await, None);
+    assert_eq!(line_stamps(&db, &d).await, vec![None]);
+    let requests = db.requests_of(&d.id.to_string()).await;
+    assert_eq!(requests.len(), 1, "one request, got {requests:?}");
+    assert!(
+        db.decisions_of(&requests[0].0).await.is_empty(),
+        "nobody has decided it yet"
+    );
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn with_no_live_version_an_executive_submit_is_closed_by_the_proposer_never_by_policy_1() {
+    let db = TestDb::start().await;
+    let e = db.engine();
+    seed_usd_reference(&db).await;
+    new_version(&db, MAIN, usd_guard()).await;
+    let d = create_on(&db, &e, &main_branch(), &owner_user()).await;
+    close_live(&db, MAIN).await;
+
+    let outcome = submit(&db, &e, &owner_user(), &d).await;
+
+    assert_eq!(outcome.status, DraftStatus::Approved);
+    let requests = db.requests_of(&d.id.to_string()).await;
+    assert_eq!(requests.len(), 1, "one request, got {requests:?}");
+    let decisions = db.decisions_of(&requests[0].0).await;
+    assert_eq!(decisions.len(), 1, "one decision, got {decisions:?}");
+    let (approver, outcome_text, reason) = &decisions[0];
+    assert_eq!(outcome_text, "APPROVED");
+    assert_eq!(
+        reason, "proposer_is_owner",
+        "out-of-bound by the EXECUTIVE: the proposer's own decision (§4.6)"
+    );
+    assert!(
+        !approver.starts_with("policy:"),
+        "no policy closes a draft evaluated under no policy, got approver {approver}"
     );
     db.finish().await;
 }
