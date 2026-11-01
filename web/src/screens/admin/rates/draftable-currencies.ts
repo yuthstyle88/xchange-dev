@@ -3,7 +3,12 @@
 import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
 
 export function draftableCurrencies(reference: RatesReferenceData | null, inDraft: readonly string[]): string[] {
-  void reference;
-  void inDraft;
-  return [];
+  if (!reference?.rows) return [];
+  const skip = new Set(['', 'THB', ...inDraft.map((c) => c.trim().toUpperCase())]);
+  const out = new Set<string>();
+  for (const row of reference.rows) {
+    const code = (row.code ?? '').trim().toUpperCase();
+    if (!skip.has(code)) out.add(code);
+  }
+  return [...out].sort();
 }
