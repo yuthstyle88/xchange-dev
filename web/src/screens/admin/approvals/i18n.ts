@@ -36,6 +36,9 @@ export const th = {
   reversalAmount: 'ยอดเงิน: ',
   requestReason: 'เหตุผลที่ขอ: ',
   netDifference: 'ผลต่างสุทธิ: ',
+  receiptNumber: 'ใบเสร็จ: ',
+  customer: 'ลูกค้า: ',
+  countedBy: 'ผู้นับ: ',
 };
 
 export const en = {
@@ -76,4 +79,7 @@ export const en = {
   reversalAmount: 'Amount: ',
   requestReason: 'Request reason: ',
   netDifference: 'Net difference: ',
+  receiptNumber: 'Receipt: ',
+  customer: 'Customer: ',
+  countedBy: 'Counted by: ',
 };
