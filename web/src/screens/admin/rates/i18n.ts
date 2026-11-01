@@ -64,6 +64,8 @@ const baseTh = {
   // Draft section headers
   currentPublicationTitle: 'เรทที่เผยแพร่อยู่ปัจจุบัน',
   noPublication: 'ยังไม่มีการเผยแพร่เรท',
+  addCurrency: 'เพิ่มสกุลเงิน',
+  noCurrencyToAdd: 'ไม่มีสกุลเงินจากแหล่งอ้างอิงให้เพิ่ม',
 
   // #4912 input bounds & tier errors
   adjustPctInvalid: 'เปอร์เซ็นต์ปรับเรทต้องเป็นตัวเลขทศนิยมไม่เกิน 4 ตำแหน่ง',
@@ -134,6 +136,8 @@ const baseEn = {
   // Draft section headers
   currentPublicationTitle: 'Current Published Rates',
   noPublication: 'No published rates yet',
+  addCurrency: 'Add currency',
+  noCurrencyToAdd: 'No reference currency left to add',
 
   // #4912 input bounds & tier errors
   adjustPctInvalid: 'Adjustment percentage must be a number with at most 4 decimal places',

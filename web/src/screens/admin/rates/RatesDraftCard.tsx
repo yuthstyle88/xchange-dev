@@ -13,6 +13,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
 import { checkDecimal, RATE, RATE_PERCENT } from '../../../shared/ui/bounded';
 import { formatRate } from '../../../shared/ui/rate';
+import { draftableCurrencies } from './draftable-currencies';
 import './rates-draft.css';
 
 export interface OutOfBoundItem {
@@ -119,6 +120,22 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
     [] as string[],
     { equals: (a, b) => a.length === b.length && a.every((c, i) => c === b[i]) },
   );
+
+  const addableCurrencies = createMemo(() => draftableCurrencies(props.refData(), lineCurrencies()));
+  const [selectedAddCurrency, setSelectedAddCurrency] = createSignal('');
+  let addCurrencySelect: HTMLSelectElement | undefined;
+
+  const handleAddCurrency = (): void => {
+    const codes = addableCurrencies();
+    const picked = selectedAddCurrency() || addCurrencySelect?.value || '';
+    const currency = codes.includes(picked) ? picked : codes[0];
+    if (!currency) return;
+    setEditLines((prev) => [
+      ...prev,
+      { currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null },
+    ]);
+    setSelectedAddCurrency('');
+  };
 
   const updateLine = (currency: string, patch: Partial<RateDraftLineDto>): void => {
     setEditLines((prev) => prev.map((l) => (l.currency === currency ? { ...l, ...patch } : l)));
@@ -495,6 +512,26 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
               {props.t('adjustAll')}
             </button>
           </div>
+
+          <Show when={isEditable()}>
+            <Show
+              when={addableCurrencies().length > 0}
+              fallback={<div data-hint="no-currency-to-add">{props.t('noCurrencyToAdd')}</div>}
+            >
+              <div>
+                <select
+                  ref={addCurrencySelect}
+                  name="addCurrency"
+                  onChange={(e) => setSelectedAddCurrency(e.currentTarget.value)}
+                >
+                  <For each={addableCurrencies()}>{(code) => <option value={code}>{code}</option>}</For>
+                </select>
+                <button type="button" data-action="add-currency" onClick={handleAddCurrency}>
+                  {props.t('addCurrency')}
+                </button>
+              </div>
+            </Show>
+          </Show>
 
           <div class="table-scroll">
             <table class="rates-table">
