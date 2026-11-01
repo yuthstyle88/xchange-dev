@@ -162,6 +162,7 @@ fn reversal_html(
     original_number: &str,
     branch_name: &str,
     posted_at: DateTime<Utc>,
+    tz: Tz,
 ) -> AppResult<String> {
     let mut lines = String::new();
     for line in &t.lines {
@@ -201,7 +202,12 @@ fn reversal_html(
         number = escape(number),
         original = escape(original_number),
         branch = escape(branch_name),
-        at = escape(&posted_at.to_rfc3339()),
+        at = escape(
+            &posted_at
+                .with_timezone(&tz)
+                .format("%d/%m/%Y %H:%M")
+                .to_string()
+        ),
         reason = escape(&reversal.reason),
         amount = baht(i128::from(amount_minor)),
         way = escape(way),
@@ -366,7 +372,15 @@ impl PostReversal {
             )));
         };
         let number = format!("{original_number}-R2");
-        let html = reversal_html(&t, &reversal, &number, &original_number, &branch_name, now)?;
+        let html = reversal_html(
+            &t,
+            &reversal,
+            &number,
+            &original_number,
+            &branch_name,
+            now,
+            tz,
+        )?;
         let document_ref = self
             .files
             .store_receipt_in(tx, &reversal.branch_id, &who.id, &html, now)
