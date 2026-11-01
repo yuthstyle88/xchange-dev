@@ -30,14 +30,19 @@ struct CountSqlRow {
     id: String,
     branch_id: String,
     shift_id: Option<String>,
+    shift_opened_at: Option<DateTime<Utc>>,
     kind: String,
     counted_by: String,
+    counted_by_name: Option<String>,
     counted_at: DateTime<Utc>,
     verified_by: Option<String>,
+    verified_by_name: Option<String>,
     verified_at: Option<DateTime<Utc>>,
     rejected_by: Option<String>,
     rejected_at: Option<DateTime<Utc>>,
     reject_reason: Option<String>,
+    approval_request_id: Option<String>,
+    superseded: bool,
     note: Option<String>,
 }
 
@@ -52,6 +57,10 @@ struct TotalSqlRow {
 
 fn stamp(t: DateTime<Utc>) -> String {
     t.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+fn non_blank(s: Option<String>) -> Option<String> {
+    s.filter(|v| !v.trim().is_empty())
 }
 
 impl PagedView for CashCountsView {
@@ -72,15 +81,40 @@ impl PagedView for CashCountsView {
         let branch = branch.as_str().to_owned();
         let filter = filter.clone();
         async move {
+            // `superseded` uses the same newest-count predicate as `is_newest_count`
+            // (`api/crates/xc-cash/src/infrastructure/repository.rs:212-245`).
             let rows: Vec<CountSqlRow> = sqlx::query_as(
-                "SELECT c.id::text AS id, c.branch_id, c.shift_id, c.kind, c.counted_by::text AS counted_by, \
-                        c.counted_at, c.verified_by::text AS verified_by, c.verified_at, \
-                        c.rejected_by::text AS rejected_by, c.rejected_at, c.reject_reason, c.note \
+                "SELECT c.id::text AS id, c.branch_id, c.shift_id, s.opened_at AS shift_opened_at, \
+                        c.kind, c.counted_by::text AS counted_by, cu.name AS counted_by_name, \
+                        c.counted_at, c.verified_by::text AS verified_by, vu.name AS verified_by_name, \
+                        c.verified_at, c.rejected_by::text AS rejected_by, c.rejected_at, \
+                        c.reject_reason, ar.id::text AS approval_request_id, sup.superseded, c.note \
                  FROM cash_counts c \
+                 LEFT JOIN shifts s ON s.id = c.shift_id \
+                 LEFT JOIN users cu ON cu.id = c.counted_by \
+                 LEFT JOIN users vu ON vu.id = c.verified_by \
+                 LEFT JOIN approval_requests ar \
+                        ON ar.type = 'COUNT_DIFFERENCE' AND ar.status = 'PENDING' AND ar.object_id = c.id::text \
+                 CROSS JOIN LATERAL ( \
+                     SELECT EXISTS ( \
+                         SELECT 1 FROM cash_counts n \
+                         WHERE n.kind = c.kind \
+                           AND n.id <> c.id \
+                           AND (n.created_at > c.created_at OR n.counted_at > c.counted_at) \
+                           AND ((c.shift_id IS NOT NULL AND n.shift_id = c.shift_id) \
+                                OR (c.shift_id IS NULL AND n.shift_id IS NULL \
+                                    AND n.branch_id = c.branch_id AND n.counted_by = c.counted_by)) \
+                     ) AS superseded \
+                 ) sup \
                  WHERE c.branch_id = $1 \
                    AND ($2::text IS NULL OR c.shift_id = $2) \
                    AND ($3::text IS NULL \
-                        OR ($3 = 'WAITING' AND c.verified_by IS NULL AND c.rejected_by IS NULL) \
+                        OR ($3 = 'WAITING' \
+                            AND c.verified_by IS NULL AND c.rejected_by IS NULL \
+                            AND ar.id IS NULL AND NOT sup.superseded) \
+                        OR ($3 = 'AWAITING_FINANCE' \
+                            AND c.verified_by IS NULL AND c.rejected_by IS NULL \
+                            AND ar.id IS NOT NULL) \
                         OR ($3 = 'VERIFIED' AND c.verified_by IS NOT NULL) \
                         OR ($3 = 'REJECTED' AND c.rejected_by IS NOT NULL)) \
                    AND ($4::text IS NULL OR (c.created_at, c.id) < \
@@ -108,6 +142,7 @@ impl PagedView for CashCountsView {
             .map_err(AppError::Database)?;
             let mut by_count: BTreeMap<String, Vec<CashCountTotalRow>> = BTreeMap::new();
             for t in totals {
+                let difference = t.difference.or_else(|| t.expected.map(|e| t.counted - e));
                 by_count
                     .entry(t.count_id)
                     .or_default()
@@ -115,7 +150,7 @@ impl PagedView for CashCountsView {
                         currency: t.currency.trim().to_owned(),
                         counted: t.counted.to_string(),
                         expected: t.expected.map(|d| d.to_string()),
-                        difference: t.difference.map(|d| d.to_string()),
+                        difference: difference.map(|d| d.to_string()),
                     });
             }
 
@@ -126,6 +161,8 @@ impl PagedView for CashCountsView {
                         "VERIFIED"
                     } else if r.rejected_by.is_some() {
                         "REJECTED"
+                    } else if r.approval_request_id.is_some() {
+                        "AWAITING_FINANCE"
                     } else {
                         "WAITING"
                     }
@@ -135,15 +172,20 @@ impl PagedView for CashCountsView {
                         id: r.id,
                         branch_id: r.branch_id,
                         shift_id: r.shift_id,
+                        shift_opened_at: r.shift_opened_at.map(stamp),
                         kind: r.kind,
                         status,
                         counted_by: r.counted_by,
+                        counted_by_name: non_blank(r.counted_by_name),
                         counted_at: stamp(r.counted_at),
                         verified_by: r.verified_by,
+                        verified_by_name: non_blank(r.verified_by_name),
                         verified_at: r.verified_at.map(stamp),
                         rejected_by: r.rejected_by,
                         rejected_at: r.rejected_at.map(stamp),
                         reject_reason: r.reject_reason,
+                        approval_request_id: r.approval_request_id,
+                        superseded: r.superseded,
                         note: r.note,
                     }
                 })
