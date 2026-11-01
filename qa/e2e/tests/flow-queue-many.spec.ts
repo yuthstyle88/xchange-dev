@@ -6,7 +6,7 @@
 // Selectors and routes cited from web/src/screens/desk/queue/ and api/:
 // - CounterBar.tsx:67-82,114-139  button[name="issueWalkIn"|"callNext"|"openQueue"|"closeQueue"]
 // - Board.tsx:37-43,63-71         section (waiting / nowServing) > ul > li[data-ticket="<id>"] (board/i18n.ts:5,7,11-12,19,21,25-26)
-// - TicketActions.tsx:55-65,100-141 button[name="skip"|"start"|"finish"|"cancel"], input[name="cancelReason"], button[name="cancelConfirm"]
+// - TicketActions.tsx:55-65,100-141 button[name="skip"|"start"|"finish"|"finishConfirm"|"cancel"], input[name="cancelReason"], button[name="cancelConfirm"]
 // - queue-commands.ts:36-43,54-64 POST /api/queue/tickets, /api/queue/call-next, /api/queue/tickets/{id}/skip|start|finish|cancel
 // - queue_board.rs:76-94          GET /api/v3/views/queue_board?branch=… (lists only WAITING, CALLED, SERVING)
 import { expect, test } from '@playwright/test';
@@ -182,7 +182,10 @@ test.describe.serial('QA-F8 flow: queue with several tickets (order, skip = no-s
         const finishedBRes = await posted(
           teller,
           new RegExp(`^/api/queue/tickets/${encodeURIComponent(ticketB.id)}/finish$`),
-          () => finishBtnB.click(),
+          async () => {
+            await finishBtnB.click();
+            await rowB.locator('button[name="finishConfirm"]').click();
+          },
         );
         console.log(`[queue-many] finish B: POST /api/queue/tickets/${ticketB.id}/finish ${finishedBRes.text}`);
         expect(finishedBRes.ok, `finish ticket B accepted: ${finishedBRes.text}`).toBeTruthy();

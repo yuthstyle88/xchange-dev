@@ -11,7 +11,7 @@
 // - screens/customer/bookings/Bookings.tsx:377-494       .xc-booking-card[data-booking-id="<id>"], [data-action="cancel"], [data-action="confirm-cancel"], .xc-status-cancelled
 // - screens/desk/bookings/DeskBookingsScreen.tsx:30,618-704 [data-screen="desk-bookings"], .xc-booking-item[data-booking-id="<id>"], .xc-booking-no, .xc-ticket-number, .xc-status-CHECKED_IN, [data-action="check-in"]
 // - screens/desk/queue/board/Board.tsx:43,69-71          li[data-ticket="<id>"]
-// - screens/desk/queue/actions/TicketActions.tsx:58-63,100-140 button[name="call"], button[name="start"], button[name="finish"], button[name="cancel"], input[name="cancelReason"], button[name="cancelConfirm"]
+// - screens/desk/queue/actions/TicketActions.tsx:58-63,100-140 button[name="call"], button[name="start"], button[name="finish"], button[name="finishConfirm"], button[name="cancel"], input[name="cancelReason"], button[name="cancelConfirm"]
 // - screens/desk/steps/customer/step.tsx:243,269,279,293,331,354 input[name="passport"], input[name="name"], input[name="passportNo"], select[name="nationality"], input[name="identityChecked"], form.desk-form button[type="submit"] (i18n.ts:15,46)
 // - screens/desk/steps/booking/step.tsx:113              [data-row="held-booking"]
 // - screens/desk/steps/receipt/step.tsx:32-34            section.desk-form strong (/^XC-\d{8}-\d{6}$/)
@@ -531,7 +531,10 @@ test.describe.serial('J2 booked customer', () => {
       const finishedRes = await posted(
         teller,
         new RegExp(`^/api/queue/tickets/${encodeURIComponent(ticketId)}/finish$`),
-        () => finishBtn.click(),
+        async () => {
+          await finishBtn.click();
+          await servingRow.locator('button[name="finishConfirm"]').click();
+        },
       );
       console.log(`[J2] POST /api/queue/tickets/${ticketId}/finish ${finishedRes.text}`);
       expect(finishedRes.ok, `finish BOOKING ticket ${ticketId}: ${finishedRes.text}`).toBeTruthy();
