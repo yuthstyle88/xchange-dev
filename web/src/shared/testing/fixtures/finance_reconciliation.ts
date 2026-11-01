@@ -2,7 +2,7 @@
 // Do not edit by hand: run `npm run gen:fixtures`. A guard test fails when this file is stale.
 
 import type { CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter, FinanceSheet, InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput, ReversalPendingRow, ShortReceiptRow, TransactionTotals, TransferStatusCount, TransferSummary } from '../../api/generated/finance_reconciliation';
-import { makeReversalSubject } from './approval_requests';
+import { makeReversalSubject } from './common';
 
 export type { CertificationRow, CountLine, CountRow, ExceptionRow, FinanceReconciliationFilter, FinanceSheet, InTransitRow, IntegrityRow, MethodTotals, Part, ReconciliationCertifyInput, ReversalPendingRow, ShortReceiptRow, TransactionTotals, TransferStatusCount, TransferSummary } from '../../api/generated/finance_reconciliation';
 

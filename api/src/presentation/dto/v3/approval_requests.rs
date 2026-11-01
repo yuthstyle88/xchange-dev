@@ -34,7 +34,7 @@ pub struct ApprovalDecisionDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "approval_requests.ts")]
+#[ts(export_to = "common.ts")]
 pub struct ReversalSubjectLine {
     pub side: String,
     pub currency: String,
@@ -43,7 +43,8 @@ pub struct ReversalSubjectLine {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
-#[ts(export_to = "approval_requests.ts")]
+/// In `common.ts`: both `approval_requests` and `finance_reconciliation` carry it (`v3_types_test`).
+#[ts(export_to = "common.ts")]
 pub struct ReversalSubject {
     pub reversal_id: String,
     pub original_transaction_id: String,

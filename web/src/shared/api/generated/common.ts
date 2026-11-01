@@ -47,6 +47,13 @@ export type Rate = string;
 export type RateFreshnessDto = { stale: boolean, sourceDate: string | null, publishedAt: string | null, };
 
 /**
+ * In `common.ts`: both `approval_requests` and `finance_reconciliation` carry it (`v3_types_test`).
+ */
+export type ReversalSubject = { reversalId: string, originalTransactionId: string, receiptNumber: string, amountThb: string, reason: string, customerName: string | null, customerNo: string | null, requestedByName: string | null, shiftId: string | null, shiftOpenedAt: string | null, lines: Array<ReversalSubjectLine>, };
+
+export type ReversalSubjectLine = { side: string, currency: string, quantity: string, };
+
+/**
  * Refusal envelope.
  */
 export type V3ErrorBody = { error: V3ErrorDetail, };
