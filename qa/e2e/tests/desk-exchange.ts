@@ -73,7 +73,7 @@ export async function runDeskExchange(
     await opts.customer(teller);
   }
 
-  const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
+  const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|ยืนยันข้อมูล|Confirm booking|Confirm details/ });
   await expect(confirmBookingBtn, 'booking step shows (steps/booking/step.tsx:54)').toBeVisible({
     timeout: 15_000,
   });

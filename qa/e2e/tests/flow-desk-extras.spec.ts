@@ -307,7 +307,7 @@ test.describe.serial('QA-R9-9 desk draft begin, referral attach, counter pause/r
         await shot(teller, 'desk', 'r9-9-draft-begun');
 
         // 3. Complete the 1-USD Cash exchange so ReceiptStep renders ReferralCodeField (receipt/step.tsx:40).
-        const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ }); // booking/step.tsx:54
+        const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|ยืนยันข้อมูล|Confirm booking|Confirm details/ }); // booking/step.tsx:54
         await expect(confirmBookingBtn).toBeVisible({ timeout: 15_000 });
         openedQueue = await ensureQueueOpen(manager);
         await confirmBookingBtn.click();
