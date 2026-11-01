@@ -7,6 +7,7 @@ import { Approvals } from './Approvals';
 import { Toast } from '../parts/toast';
 import {
   makeApprovalRequestItemDto,
+  makeCountDifferenceSubject,
   makeReversalSubject,
 } from '../../../shared/testing/fixtures';
 
@@ -238,5 +239,20 @@ describe('FE-T3c: approval card shows the shift of the reversed sale', () => {
     expect(spans[1].hasAttribute('title')).toBe(false);
     expect(spans[1].getAttribute('title')).toBeNull();
     expect(text(spans[1])).toBe(formatBangkok(SHIFT_OPENED_AT, locale()));
+  });
+
+  it('B6: COUNT_DIFFERENCE card shows the shift row between counted-by and net difference; null shows none', async () => {
+    const count = (shiftId: string | null, shiftOpenedAt: string | null): Subject => ({ kind: 'countDifference', ...makeCountDifferenceSubject({ countedByName: 'สมหญิง', shiftId, shiftOpenedAt }) });
+    byStatus.PENDING = [
+      makeRequest('count-shift', 'COUNT_DIFFERENCE', {}, { subject: count(SHIFT_ID, SHIFT_OPENED_AT) }),
+      makeRequest('count-no-shift', 'COUNT_DIFFERENCE', {}, { subject: count(null, null) }),
+    ];
+    mount();
+    const rows = Array.from((await cardOf('count-shift')).querySelectorAll('.approval-proposer'));
+    const at = (p: string) => rows.findIndex((el) => text(el).startsWith(p));
+    expect([at('ผู้นับ:') + 1, at('กะที่เปิด:') + 1]).toEqual([at('กะที่เปิด:'), at('ผลต่างสุทธิ:')]);
+    const value = rows[at('กะที่เปิด:')]!.querySelectorAll('span')[1]!;
+    expect([value.getAttribute('title'), text(value)]).toEqual([SHIFT_ID, formatBangkok(SHIFT_OPENED_AT, locale())]);
+    expect(text(await cardOf('count-no-shift'))).not.toContain('กะที่เปิด:');
   });
 });
