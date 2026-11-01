@@ -1,3 +1,7 @@
+// Amended by FE-T1b #5852 (claude/01TxaRJG): design fe-triage-1101.md W4 gives CHECKED_IN and IN_SERVICE rows a cancel
+// (reason required) and nothing else. STATUS_CASES: CHECKED_IN cancel true, new IN_SERVICE row (cancel only); the
+// after-check-in test now expects cancel to stay. The cancel flow itself is pinned in
+// DeskBookingsScreen.in-service-cancel.test.tsx.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import {
@@ -26,7 +30,8 @@ const STAFF_TELLER = makeMe({
 const STATUS_CASES = [
   { status: 'PENDING_CUSTOMER_CONFIRMATION', checkIn: false, cancel: true, reschedule: true, reissueQr: true },
   { status: 'CONFIRMED', checkIn: true, cancel: true, reschedule: true, reissueQr: true },
-  { status: 'CHECKED_IN', checkIn: false, cancel: false, reschedule: false, reissueQr: true },
+  { status: 'CHECKED_IN', checkIn: false, cancel: true, reschedule: false, reissueQr: true },
+  { status: 'IN_SERVICE', checkIn: false, cancel: true, reschedule: false, reissueQr: false },
   { status: 'CANCELLED', checkIn: false, cancel: false, reschedule: false, reissueQr: false },
   { status: 'EXPIRED', checkIn: false, cancel: false, reschedule: false, reissueQr: false },
   { status: 'NO_SHOW', checkIn: false, cancel: false, reschedule: false, reissueQr: false },
@@ -154,7 +159,7 @@ describe('DeskBookingsScreen status-based action buttons (#3849)', () => {
     }
   });
 
-  it('after a check-in on this screen, cancel and reschedule disappear', async () => {
+  it('after a check-in on this screen, check-in and reschedule disappear; cancel stays (FE-T1b W4)', async () => {
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
 
@@ -173,7 +178,7 @@ describe('DeskBookingsScreen status-based action buttons (#3849)', () => {
     const updatedItem = host.querySelector('[data-booking-id="bk-confirmed"]');
     expect(updatedItem).not.toBeNull();
     expect(updatedItem!.querySelector('button[data-action="check-in"]')).toBeNull();
-    expect(updatedItem!.querySelector('button[data-action="cancel"]')).toBeNull();
+    expect(updatedItem!.querySelector('button[data-action="cancel"]')).not.toBeNull();
     expect(updatedItem!.querySelector('button[data-action="reschedule"]')).toBeNull();
     expect(updatedItem!.querySelector('button[data-action="reissue-qr"]')).not.toBeNull();
   });
