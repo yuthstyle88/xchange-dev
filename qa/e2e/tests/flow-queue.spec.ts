@@ -8,7 +8,7 @@
 // - CounterBar.tsx:114-126 button[name="openQueue"]    (POST /api/queue/open, queue-commands.ts:49,66)
 // - CounterBar.tsx:127-139 button[name="closeQueue"]   (POST /api/queue/close, queue-commands.ts:50,66)
 // - Board.tsx:43,69-71     li[data-ticket="<id>"]      (ticket row with displayNumber and status text; board/i18n.ts:11-12,25-26)
-// - TicketActions.tsx:58-63,100-107 button[name="start"] / button[name="finish"] (POST /api/queue/tickets/{id}/start|finish, queue-commands.ts:56-62)
+// - TicketActions.tsx:58-63,100-107 button[name="start"] / button[name="finish"] / button[name="finishConfirm"] (POST /api/queue/tickets/{id}/start|finish, queue-commands.ts:56-62)
 import { expect, test } from '@playwright/test';
 import { closeShift, ensureShiftClosed, openShift, posted, shot, signIn, users } from './helpers';
 
@@ -154,7 +154,10 @@ test.describe.serial('QA-F2 flow: queue walk-in to finish', () => {
         const finished = await posted(
           teller,
           new RegExp(`^/api/queue/tickets/${encodeURIComponent(issuedTicket.id)}/finish$`),
-          () => finishBtn.click(),
+          async () => {
+            await finishBtn.click();
+            await row.locator('button[name="finishConfirm"]').click();
+          },
         );
         console.log(`[queue] POST /api/queue/tickets/${issuedTicket.id}/finish ${finished.text}`);
         expect(finished.ok, `finish ticket accepted: ${finished.text}`).toBeTruthy();

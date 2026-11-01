@@ -16,6 +16,7 @@ const OWN_ERROR_KEYS = {
   queueClosed: 'error.queueClosed',
   noOpenShift: 'error.noOpenShift',
   counterPaused: 'error.counterPaused',
+  alreadyServing: 'error.alreadyServing',
 } as const satisfies Record<string, keyof typeof th>;
 
 function refusalMessage(err: unknown): string {
