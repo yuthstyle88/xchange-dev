@@ -3,6 +3,7 @@ import {
   createSignal,
   For,
   Show,
+  untrack,
   type JSX,
 } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
@@ -11,7 +12,7 @@ import type {
   AdminPermissionMatrixData,
   MatrixGroup,
 } from '../../../shared/api/generated/admin_permission_matrix';
-import type { AdminUserRole, AdminUserRow } from '../../../shared/api/generated/admin_users';
+import type { AdminUserRole, AdminUserRow, AdminUsersFilter } from '../../../shared/api/generated/admin_users';
 import type { UserChangeOutput } from '../../../shared/api/generated/user_disable';
 import type {
   UserResetPasswordInput,
@@ -98,6 +99,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const [activeTab, setActiveTab] = createSignal<UsersTabId>('users');
   const [users, setUsers] = createSignal<UserRow[]>([]);
   const [hasMore, setHasMore] = createSignal<boolean>(false);
+  const [searchText, setSearchText] = createSignal('');
+  const [appliedQ, setAppliedQ] = createSignal('');
   const [branches, setBranches] = createSignal<AdminBranchItem[]>([]);
   const [loading, setLoading] = createSignal<boolean>(false);
   const [pageError, setPageError] = createSignal<string | null>(null);
@@ -179,12 +182,14 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
   const loadUsers = async () => {
     const seq = ++usersSeq;
+    const q = appliedQ();
     setLoading(true);
     setPageError(null);
     try {
-      const rows = await api.page<UserRow>('admin_users', {
+      const rows = await api.page<UserRow, AdminUsersFilter>('admin_users', {
         branch: props.branch(),
         limit: PAGE_SIZE,
+        ...(q ? { filter: { q } } : {}),
       });
       if (seq !== usersSeq) return;
       setUsers(rows);
@@ -206,13 +211,15 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     const last = current[current.length - 1];
     if (!last) return;
     const seq = ++usersSeq;
+    const q = appliedQ();
     setLoading(true);
     setPageError(null);
     try {
-      const rows = await api.page<UserRow>('admin_users', {
+      const rows = await api.page<UserRow, AdminUsersFilter>('admin_users', {
         branch: props.branch(),
         before: last.userId,
         limit: PAGE_SIZE,
+        ...(q ? { filter: { q } } : {}),
       });
       if (seq !== usersSeq) return;
       setUsers([...current, ...rows]);
@@ -230,6 +237,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const reloadShown = async () => {
     const target = Math.max(users().length, PAGE_SIZE);
     const seq = ++usersSeq;
+    const q = appliedQ();
     setLoading(true);
     setPageError(null);
     try {
@@ -237,10 +245,11 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       let more = false;
       while (collected.length < target) {
         const last = collected[collected.length - 1];
-        const rows = await api.page<UserRow>('admin_users', {
+        const rows = await api.page<UserRow, AdminUsersFilter>('admin_users', {
           branch: props.branch(),
           ...(last ? { before: last.userId } : {}),
           limit: PAGE_SIZE,
+          ...(q ? { filter: { q } } : {}),
         });
         if (seq !== usersSeq) return;
         collected.push(...rows);
@@ -273,7 +282,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
     }
     activeBranch = branch;
     loadBranches();
-    loadUsers();
+    untrack(() => loadUsers());
   });
 
   // Which dialog is open (kind + user id). A dialog write's late answer only
@@ -726,6 +735,32 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
       <Show when={activeTab() === 'users'}>
         <div data-users-panel="users">
           <div class="users-toolbar">
+        <form
+          class="users-actions"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setAppliedQ(searchText().trim());
+            void loadUsers();
+          }}
+        >
+          <input
+            type="search"
+            class="users-input"
+            data-users-search
+            maxLength={100}
+            aria-label={t('searchLabel')}
+            placeholder={t('searchLabel')}
+            value={searchText()}
+            onInput={(e) => setSearchText(e.currentTarget.value)}
+          />
+          <button
+            type="submit"
+            class="users-btn"
+            data-users-search-submit
+          >
+            {t('searchButton')}
+          </button>
+        </form>
         <div class="users-actions">
           <button
             type="button"
