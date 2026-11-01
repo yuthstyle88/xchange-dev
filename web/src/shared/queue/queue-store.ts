@@ -48,6 +48,7 @@ class BranchQueueStore implements QueueStoreInternal {
 
   private inFlight = false;
   private inFlightPromise: Promise<void> | null = null;
+  private queuedPoll: Promise<void> | null = null;
   private stopped = false;
   private retainCount = 0;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -107,6 +108,15 @@ class BranchQueueStore implements QueueStoreInternal {
   refresh(): Promise<void> {
     if (this.stopped) {
       return Promise.resolve();
+    }
+    if (this.inFlight && this.inFlightPromise) {
+      if (!this.queuedPoll) {
+        this.queuedPoll = this.inFlightPromise.then(() => {
+          this.queuedPoll = null;
+          return this.poll();
+        });
+      }
+      return this.queuedPoll;
     }
     return this.poll();
   }

@@ -186,6 +186,11 @@ export const th = {
   matrixInvalidCode: 'รหัสกลุ่มต้องเป็น A-Z, 0-9 หรือ _ ความยาว 2–40 ตัวอักษร',
   matrixInvalidName: 'กรุณาระบุชื่อกลุ่ม (1–80 ตัวอักษร)',
   matrixCodeTaken: 'รหัสกลุ่มนี้ถูกใช้งานแล้ว',
+
+  resetConfirm: 'ยืนยันรีเซ็ตรหัสผ่าน',
+  resetCancel: 'ยกเลิก',
+  searchLabel: 'ค้นหาชื่อหรือรหัสพนักงาน',
+  searchButton: 'ค้นหา',
 };
 
 export const en = {
@@ -376,4 +381,9 @@ export const en = {
   matrixInvalidCode: 'Group code must be 2–40 characters of A–Z, 0–9, or _',
   matrixInvalidName: 'Group name is required (1–80 characters)',
   matrixCodeTaken: 'This group code is already in use.',
+
+  resetConfirm: 'Confirm password reset',
+  resetCancel: 'Cancel',
+  searchLabel: 'Search name or employee code',
+  searchButton: 'Search',
 };

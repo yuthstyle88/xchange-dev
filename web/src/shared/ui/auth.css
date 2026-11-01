@@ -136,6 +136,11 @@ body:has(.xc-auth) {
   margin: 1em 0;
 }
 
+.xc-auth .xc-auth-success {
+  color: #187151;
+  margin: 1em 0;
+}
+
 .xc-auth footer {
   text-align: center;
   font-size: 13px;

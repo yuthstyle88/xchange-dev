@@ -20,7 +20,7 @@ import { formatFaceValue } from '../../../shared/ui/currency-count/face-value';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
-import { CountForm, CountWaitingLine } from './CountForm';
+import { countDifferences, CountForm, CountWaitingLine } from './CountForm';
 import { countsToVerify, formatCountTime, myWaitingCloseCount, myWaitingOpenCount } from './counts';
 import { th, en } from './i18n';
 import { createWaitingCounts } from './waiting-counts';
@@ -265,8 +265,11 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     try {
       const answer = await cmd.send({ id, branch: props.ctx.me.branchId });
       if (answer?.status === 'AWAITING_FINANCE') {
+        const diffs = countDifferences(counts.rows().find((c) => c.id === id)?.totals ?? []);
         setNotice(
-          `${t('countAwaitingFinance')} (${t('approvalRequest')} ${answer.approvalRequestId ?? ''})`
+          diffs.length > 0
+            ? `${t('countAwaitingFinance')} (${diffs.map((d) => d.text).join(' · ')})`
+            : t('countAwaitingFinance')
         );
       } else {
         setNotice(t('saved'));
@@ -617,7 +620,20 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       {' · '}
                       <span title={c.id}>#{c.id.slice(0, 8)}</span>
                       <For each={c.totals}>
-                        {(tot) => <> · {tot.currency} {tot.counted}</>}
+                        {(tot) => (
+                          <>
+                            {' · '}
+                            {tot.currency} {tot.counted}
+                            <For each={countDifferences([tot])}>
+                              {(d) => (
+                                <>
+                                  {' · '}
+                                  <span data-count-difference={d.currency}>{d.text}</span>
+                                </>
+                              )}
+                            </For>
+                          </>
+                        )}
                       </For>
                     </span>
                     <Show when={rejectRowErrors()[c.id]}>

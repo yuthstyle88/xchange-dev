@@ -1,6 +1,7 @@
 // TD-3 #1291: the receipts and their reprint (D5). Revision 1 is the receipt; a later revision is the refund document.
 import { For, Show, type JSX } from 'solid-js';
 import type { TxReceiptDto } from '../../shared/api/generated/transaction';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { t } from './texts';
 
 export function ReceiptsSection(props: {
@@ -30,7 +31,7 @@ export function ReceiptsSection(props: {
                 <td>
                   {r.revision} · {r.revision === 1 ? t('receipt') : t('cancellationDoc')}
                 </td>
-                <td>{r.issuedAt}</td>
+                <td>{formatBangkokDateTime(r.issuedAt)}</td>
                 <td>
                   <Show when={props.canReprint || Boolean(props.disabledReason)}>
                     <button

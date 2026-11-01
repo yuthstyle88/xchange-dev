@@ -24,6 +24,11 @@
 // myCounter}` and names no employee and no server time. So the fixture is `QueueBoardData`; the server-clock row becomes
 // this browser's clock; S7's "an answer naming another account ends the store" is gone (no answer names one), and its
 // `me()` row keeps dropping `since`. Every other row is unchanged.
+//
+// Amended by FE-T7b #5855 (claude/01TxaRJG): S4's "refresh() while a request runs is skipped, not queued" becomes
+// "refresh() while a request runs queues exactly one more poll after it" (design docs/design/fe-triage-1101.md §2,
+// QueueStore). A tick, a focus and a change during a request stay skipped. The new rows R1-R5 sit under S4, and
+// `FakeServer.holdStale()` is added so a held request can answer the state it was sent against.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createEffect, createRoot, createSignal, type Accessor } from 'solid-js';
 import { ApiError, type ApiClient, type ViewParams } from '../api/client';
@@ -99,6 +104,7 @@ class FakeServer {
   /** When set, every request is refused with it. */
   fail: unknown = undefined;
   private holdNext = false;
+  private staleNext = false;
   private readonly held: Array<() => void> = [];
 
   constructor(readonly branch: string) {
@@ -113,6 +119,15 @@ class FakeServer {
     };
   }
 
+  /**
+   * FE-T7b #5855: like `hold()`, but the held request answers the version and data the server had when the request
+   * arrived, as a real server does: a write that commits while the answer is on its way is not in that answer.
+   */
+  holdStale(): () => void {
+    this.staleNext = true;
+    return this.hold();
+  }
+
   /** One write to the branch: the version moves and the data is new. */
   write(over: Partial<QueueBoardData> = {}): void {
     this.version += 1;
@@ -123,11 +138,19 @@ class FakeServer {
     view: async <T>(name: string, params: ViewParams = {}): Promise<ViewAnswer<T>> => {
       this.names.push(name);
       this.calls.push({ ...params });
+      const snapshot = this.staleNext ? { version: this.version, data: this.data } : undefined;
+      this.staleNext = false;
       if (this.holdNext) {
         this.holdNext = false;
         await new Promise<void>((resolve) => this.held.push(resolve));
       }
       if (this.fail !== undefined) throw this.fail;
+      if (snapshot !== undefined) {
+        if (params.since !== undefined && params.since === snapshot.version) {
+          return makeViewAnswer(undefined as unknown as T, { version: snapshot.version, changed: false });
+        }
+        return makeViewAnswer(snapshot.data as unknown as T, { version: snapshot.version, changed: true });
+      }
       if (params.since !== undefined && params.since === this.version) {
         return makeViewAnswer(undefined as unknown as T, { version: this.version, changed: false });
       }
@@ -398,8 +421,10 @@ describe('S3: it also polls at once on focus, on becoming visible, 100 ms after 
 
 // ── S4: single flight ────────────────────────────────────────────────────────
 
-describe('S4: one request in flight per store', () => {
-  it('a tick, a focus, a change and refresh() while a request runs are skipped, not queued', async () => {
+describe('S4: one request in flight per store; refresh() during it queues one more', () => {
+  // Amended by FE-T7b #5855: refresh() during the request now queues one poll after it (was: skipped). The tick,
+  // focus and change stay skipped, so the request count is 2 after the release, not 1, and the 5 s timer goes on.
+  it('a tick, a focus and a change while a request runs are skipped; refresh() queues exactly one more poll', async () => {
     const { branch, server } = setup();
     const release = server.hold();
     const { store } = retain(branch);
@@ -417,10 +442,160 @@ describe('S4: one request in flight per store', () => {
     release();
     await flush();
     expect(store().version()).toBe(7);
-    expect(server.calls).toHaveLength(1);
+    expect(server.calls).toHaveLength(2);
+    expect(server.calls[1]).toEqual({ branch, since: 7 });
 
     await vi.advanceTimersByTimeAsync(5_000);
+    expect(server.calls).toHaveLength(3);
+  });
+
+  it('S4-R1: a poll in flight answers the old state; refresh() during it leads to one more poll that shows the write, and resolves after it', async () => {
+    const { branch, server } = setup();
+    const { store } = retain(branch);
+    await flush();
+    expect(store().version()).toBe(7);
+
+    // A change event (an input blurs) starts a poll 100 ms later; it is still in flight when the command commits.
+    const release = server.holdStale();
+    document.body.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(100);
     expect(server.calls).toHaveLength(2);
+
+    server.write({ waiting: [] });
+    let seenOnResolve: number | undefined | 'pending' = 'pending';
+    void store().refresh().then(() => {
+      seenOnResolve = store().version();
+    });
+    await flush();
+    expect(server.calls).toHaveLength(2);
+    expect(seenOnResolve).toBe('pending');
+
+    release();
+    await flush();
+    expect(server.calls).toHaveLength(3);
+    expect(server.calls[2]).toEqual({ branch, since: 7 });
+    expect(store().version()).toBe(8);
+    expect(store().state()?.waiting).toEqual([]);
+    expect(seenOnResolve).toBe(8);
+  });
+
+  it('S4-R2: several refresh() calls during one poll give one extra poll, and all of them resolve after it', async () => {
+    const { branch, server } = setup();
+    const { store } = retain(branch);
+    await flush();
+
+    const release = server.holdStale();
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    expect(server.calls).toHaveLength(2);
+
+    server.write({ waiting: [] });
+    const seen: Array<number | undefined> = [];
+    for (let i = 0; i < 3; i += 1) {
+      void store().refresh().then(() => {
+        seen.push(store().version());
+      });
+    }
+    await flush();
+    expect(seen).toEqual([]);
+
+    release();
+    await flush();
+    expect(server.calls).toHaveLength(3);
+    expect(seen).toEqual([8, 8, 8]);
+    expect(store().state()?.waiting).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(server.calls).toHaveLength(3);
+  });
+
+  it('S4-R3: refresh() during the queued poll queues one more after that one', async () => {
+    const { branch, server } = setup();
+    const { store } = retain(branch);
+    await flush();
+
+    const releaseFirst = server.holdStale();
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    server.write({ waiting: [] });
+    void store().refresh();
+    await flush();
+
+    const releaseSecond = server.holdStale();
+    releaseFirst();
+    await flush();
+    expect(server.calls).toHaveLength(3);
+
+    server.write({ waiting: [ticket('kq-9', 9)] });
+    let done = false;
+    void store().refresh().then(() => {
+      done = true;
+    });
+    await flush();
+    expect(server.calls).toHaveLength(3);
+    expect(done).toBe(false);
+
+    releaseSecond();
+    await flush();
+    expect(server.calls).toHaveLength(4);
+    expect(server.calls[3]).toEqual({ branch, since: 8 });
+    expect(store().version()).toBe(9);
+    expect(store().state()?.waiting.map((w) => w.id)).toEqual(['kq-9']);
+    expect(done).toBe(true);
+  });
+
+  it('S4-R4: the queued poll still runs when the poll in flight fails offline, and its answer clears the error', async () => {
+    const { branch, server } = setup();
+    const { store } = retain(branch);
+    await flush();
+
+    const release = server.hold();
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    server.fail = new TypeError('Failed to fetch');
+    let done = false;
+    void store().refresh().then(() => {
+      done = true;
+    });
+    await flush();
+
+    const releaseSecond = server.hold();
+    release();
+    await flush();
+    expect(server.calls).toHaveLength(3);
+    expect(store().error()).toEqual({ kind: 'offline' });
+    expect(done).toBe(false);
+
+    server.fail = undefined;
+    server.write({ waiting: [] });
+    releaseSecond();
+    await flush();
+    expect(server.calls).toHaveLength(3);
+    expect(store().error()).toBeUndefined();
+    expect(store().version()).toBe(8);
+    expect(done).toBe(true);
+  });
+
+  it('S4-R5: when the poll in flight ends the store (401), the queued poll is not sent and refresh() still resolves', async () => {
+    const { branch, server, store } = setup();
+    retain(branch);
+    await flush();
+
+    const release = server.hold();
+    window.dispatchEvent(new Event('focus'));
+    await flush();
+    server.fail = new ApiError({ code: 'signIn', message: 'Please sign in', status: 401 });
+    let done = false;
+    void store.refresh().then(() => {
+      done = true;
+    });
+    await flush();
+
+    release();
+    await flush();
+    expect(store.error()).toEqual({ kind: 'ended', reason: 'expired' });
+    expect(server.calls).toHaveLength(2);
+    expect(done).toBe(true);
   });
 });
 

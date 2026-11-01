@@ -23,7 +23,7 @@ import {
 const EXCHANGE_AMOUNT = '5';
 // One 1,000 THB note from the branch SAFE covers both 5 USD BUY exchanges (2 * 160.50 = 321.00 THB).
 const OPENING_FLOAT_THB = 1000;
-const PHASE_CLOSED = /(ปิดกะ|^Closed$|^CLOSED$)/i;
+const PHASE_CLOSED = /(ปิดวันทำการแล้ว|^Day closed$|^CLOSED$)/i;
 
 interface UsersWithTeller2 {
   teller2?: Account;
@@ -184,7 +184,7 @@ async function saveOneCashBuyExchange(
   const reserveRes = await posted(tellerPage, /^\/api\/rpc$/, () => skipBtn.click());
   expect(reserveRes.ok, `[${label}] reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
-  const confirmBookingBtn = tellerPage.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
+  const confirmBookingBtn = tellerPage.getByRole('button', { name: /ยืนยันการจอง|ยืนยันข้อมูล|Confirm booking|Confirm details/ });
   await expect(confirmBookingBtn, `[${label}] booking step confirm button`).toBeVisible({ timeout: 15_000 });
   const openedQueue = manager ? await ensureQueueOpen(manager) : false;
   await confirmBookingBtn.click();

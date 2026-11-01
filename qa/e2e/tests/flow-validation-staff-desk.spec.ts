@@ -504,7 +504,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           const reserveRes = await posted(teller, /^\/api\/rpc$/, () => skipBtn.click());
           expect(reserveRes.ok, `reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
-          const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
+          const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|ยืนยันข้อมูล|Confirm booking|Confirm details/ });
           await expect(confirmBookingBtn, 'booking step visible (steps/booking/step.tsx:54)').toBeVisible({
             timeout: 15_000,
           });

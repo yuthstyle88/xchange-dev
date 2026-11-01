@@ -26,6 +26,9 @@
 //   (design user-management-rbac.md §13.3). ACTIVE and SUSPENDED rows offer `[data-users-action="reset"]` again; the
 //   temporary password shows once in the shared `[data-temp-password]` notice and Done is `[data-temp-password-done]`.
 //   A replayed answer carries no `temporaryPassword` (§13.4): no notice, and the `resetNoPassword` line asks to reset again.
+// - Amended by FE-T9 #5857 (claude/01TxaRJG): reset needs a second press (design fe-triage-1101.md §3 W11). Rows 6, 6b
+//   and 6c press `[data-users-action="reset"]` and then the row's `[data-users-action="reset-confirm"]`; nothing else in
+//   them changes. Reset alone and cancel are pinned in UsersScreen.w11.test.tsx (RC1-RC4).
 // - The profile form is `[data-users-form="profile"]` with inputs named employeeCode, department, position, tellCode
 //   and the button `[data-users-action="profile-save"]`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -232,6 +235,8 @@ describe('F2-WEB #5838: an admin resets a staff password (user-management-rbac.m
       const c = await mount();
       click(row(c, user.userId), '[data-users-action="reset"]');
       await settle();
+      click(row(c, user.userId), '[data-users-action="reset-confirm"]');
+      await settle();
       const w = writes.filter((x) => x.path === '/api/users/reset-password');
       expect(w).toHaveLength(1);
       expect(w[0]!.body).toEqual({ userId: user.userId });
@@ -255,6 +260,8 @@ describe('F2-WEB #5838: an admin resets a staff password (user-management-rbac.m
     const c = await mount();
     click(row(c, ACTIVE.userId), '[data-users-action="reset"]');
     await settle();
+    click(row(c, ACTIVE.userId), '[data-users-action="reset-confirm"]');
+    await settle();
     expect(c.querySelector('[role="alert"]')?.textContent).toBe('แก้ไขบัญชีของตัวเองไม่ได้');
     expect(c.querySelector('[data-temp-password]')).toBeNull();
     expect(c.textContent).not.toContain(word('successReset'));
@@ -267,6 +274,8 @@ describe('F2-WEB #5838: an admin resets a staff password (user-management-rbac.m
     };
     const c = await mount();
     click(row(c, ACTIVE.userId), '[data-users-action="reset"]');
+    await settle();
+    click(row(c, ACTIVE.userId), '[data-users-action="reset-confirm"]');
     await settle();
     expect(c.querySelector('[data-temp-password]')).toBeNull();
     expect(c.textContent).toContain(word('resetNoPassword'));

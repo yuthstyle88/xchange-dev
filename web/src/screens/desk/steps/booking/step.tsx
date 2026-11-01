@@ -35,6 +35,7 @@ function serveErrorMessage(err: unknown): string {
 
 function BookingStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
+  const isWalkIn = () => store.walkInTicket() !== undefined || (!hasEntryKey(store) && !store.heldBooking());
   const [error, setError] = createSignal<string | undefined>();
   const [serving, setServing] = createSignal(false);
 
@@ -82,7 +83,7 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
 
   return (
     <form class="desk-form" onSubmit={(ev) => void onSubmit(ev)}>
-      <h2>{t('heading')}</h2>
+      <h2>{t(isWalkIn() ? 'walkInHeading' : 'heading')}</h2>
       <label class="desk-field">
         <span>{t('name')}</span>
         <input name="name" readOnly value={store.fields().name} />
@@ -125,7 +126,7 @@ function BookingStep(props: { store: DeskStore }): JSX.Element {
           {t('back')}
         </button>
         <button type="submit" disabled={serving()}>
-          {t('submit')}
+          {t(isWalkIn() ? 'walkInSubmit' : 'submit')}
         </button>
       </div>
     </form>

@@ -14,6 +14,9 @@
 // The store is a stub with §5.3's names, so this file does not depend on `desk-store.ts`.
 // Restated by the FE lane controller claude/e92db6 for #5352 (owner: "G1 ก็ต้องเข้าคิว เสมือน จองเหมือกกัน"): the stub has
 // `api` and the walk-in queue fields, and G3, a walk-in, is served a queue ticket before step 3.
+// Amended by FE-T8 #5856 (claude/01TxaRJG): this stub is a walk-in sale (no entry, no held booking), so G1 and G3 now
+// expect the walk-in words of design fe-triage-1101.md W5 ("ข้อมูลรายการ", "ยืนยันข้อมูล →"). The v2 booking words stay in
+// i18n.ts for booking and kiosk sales (G0b).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
@@ -40,6 +43,8 @@ const HEADING = "ข้อมูลการจอง";
 const BACK = "← แก้ไขข้อมูลลูกค้า";
 const SUBMIT = "ยืนยันการจอง →";
 const NEED_NAME_STAFF = "กรุณาระบุชื่อลูกค้าและรหัสพนักงาน";
+const WALKIN_HEADING = "ข้อมูลรายการ";
+const WALKIN_SUBMIT = "ยืนยันข้อมูล →";
 
 const PATHS = { OWNER_DESK: { kind: "owner" }, STAFF_DESK: { kind: "staff" } } as const;
 
@@ -131,10 +136,10 @@ describe("steps/booking: the module", () => {
 
 for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
   describe(`steps/booking on ${which}`, () => {
-    it("G1 shows v2's heading, the passport name and the signed-in staff, both read-only", async () => {
+    it("G1 shows the walk-in heading, the passport name and the signed-in staff, both read-only", async () => {
       const store = stubStore(PATHS[which], { name: "JOHN DOE", staff: "ploy" });
       await mount(store);
-      expect(host.textContent).toContain(HEADING);
+      expect(host.textContent).toContain(WALKIN_HEADING);
       expect(control("name")?.value).toBe("JOHN DOE");
       expect(control("name")?.readOnly).toBe(true);
       expect(control("staff")?.value).toBe("ploy");
@@ -155,7 +160,7 @@ for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
     it("G3 submit goes to step 3 and makes no booking reference (D-10)", async () => {
       const store = stubStore(PATHS[which]);
       await mount(store);
-      expect(submit()?.textContent?.trim()).toBe(SUBMIT);
+      expect(submit()?.textContent?.trim()).toBe(WALKIN_SUBMIT);
       submit()!.click();
       await vi.waitFor(() => expect(store.go).toHaveBeenCalledWith(3));
       expect(store.api.command).toHaveBeenCalledWith("POST", "/api/queue/tickets/serve", { customerId: null }, "serve-key-1");

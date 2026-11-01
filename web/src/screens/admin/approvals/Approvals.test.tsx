@@ -25,7 +25,8 @@
 //   `./i18n.ts` (th and en, namespace `admin.approvals.*`).
 // - The component builds its own `new ApiClient()`; the fake API is the global `fetch`.
 // - On show it reads `approval_requests` with `branch` = the picked branch and `status=PENDING`.
-// - Each request is an element `[data-request="<id>"]` holding its proposer (`requestedBy`), the
+// - Each request is an element `[data-request="<id>"]` holding its proposer (`requestedBy`, as a `title`
+//   attribute only since FE-T3a #5853; never as visible text), the
 //   currencies its proposal lists out of bound, each with its side through the table (`sideBUY`,
 //   `sideSELL`; never the raw `BUY`/`SELL`), a reason input (the `<label>` whose text starts with
 //   the table's `decisionReason`), and the buttons `approve` and `reject` (found by whole text).
@@ -42,6 +43,10 @@
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the menu record's `roles: ['OWNER']` pin → `needs: 'ApprovalsDecide'` (#1030 §3.10: the menu follows
 // the permission its view and command need, `policy.rs:567-569`; the intended change §9 names).
+//
+// Amended by FE-T3a #5853 (claude/01TxaRJG): the proposer `requestedBy` is a user id, so it moves from
+// the card's visible text to a `title` attribute (design `docs/design/fe-triage-1101.md` W13: the
+// approval card never prints a bare id as text). Only the two proposer assertions changed.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -372,12 +377,14 @@ describe('RE-5 A06: the queue of pending requests (design §4.7)', () => {
     const m = mount();
     await settle();
     const r1 = text(card(m.el, 'r1'));
-    expect(r1).toContain('employee-RATES');
+    expect(card(m.el, 'r1').querySelector('[title="employee-RATES"]'), 'the proposer is a title (W13)').not.toBeNull();
+    expect(r1, 'the proposer id is not visible text (W13)').not.toContain('employee-RATES');
     expect(r1).toContain('USD');
     expect(r1, 'the USD sell side, through the table').toContain(say('sideSELL'));
     expect(r1).not.toContain(say('sideBUY'));
     const r2 = text(card(m.el, 'r2'));
-    expect(r2).toContain('rates-2');
+    expect(card(m.el, 'r2').querySelector('[title="rates-2"]'), 'the proposer is a title (W13)').not.toBeNull();
+    expect(r2, 'the proposer id is not visible text (W13)').not.toContain('rates-2');
     expect(r2).toContain('GBP');
     expect(r2, 'the GBP buy side, through the table').toContain(say('sideBUY'));
     expect(r2).not.toContain(say('sideSELL'));

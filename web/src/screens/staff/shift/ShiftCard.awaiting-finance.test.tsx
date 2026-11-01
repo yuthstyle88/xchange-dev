@@ -1,4 +1,6 @@
 // #3321: ShiftCard handleVerifyCount handles AWAITING_FINANCE response
+// Amended by FE-T4 #5850 (claude/01TxaRJG): the AWAITING_FINANCE notice no longer carries the approval request id
+// (design fe-triage-1101.md §3 W9); with no non-zero difference on the count it is the awaiting text alone.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
@@ -246,7 +248,7 @@ describe("#3321 ShiftCard count verify: AWAITING_FINANCE vs VERIFIED", () => {
     );
   });
 
-  it("row 2: verify answers {status: 'AWAITING_FINANCE', approvalRequestId: 'ar-1'} => notice holds awaiting text and ar-1, never Saved", async () => {
+  it("row 2: verify answers {status: 'AWAITING_FINANCE', approvalRequestId: 'ar-1'} => notice holds awaiting text without ar-1, never Saved", async () => {
     stub();
     answers[`/api/cash-counts/${C_OPEN}/verify`] = [
       { status: 200, body: { id: C_OPEN, status: "AWAITING_FINANCE", approvalRequestId: "ar-1" } },
@@ -258,8 +260,9 @@ describe("#3321 ShiftCard count verify: AWAITING_FINANCE vs VERIFIED", () => {
     await vi.waitFor(() => expect(q(tid("shift-notice"))).not.toBeNull());
 
     const noticeTh = must(tid("shift-notice")).textContent?.trim();
-    const expectedTh = `${th.countAwaitingFinance} (${th.approvalRequest} ar-1)`;
+    const expectedTh = th.countAwaitingFinance;
     expect(noticeTh).toBe(expectedTh);
+    expect(noticeTh).not.toContain("ar-1");
     expect(noticeTh).not.toContain(th.saved);
 
     // EN check
@@ -275,12 +278,13 @@ describe("#3321 ShiftCard count verify: AWAITING_FINANCE vs VERIFIED", () => {
     await vi.waitFor(() => expect(q(tid("shift-notice"))).not.toBeNull());
 
     const noticeEn = must(tid("shift-notice")).textContent?.trim();
-    const expectedEn = `${en.countAwaitingFinance} (${en.approvalRequest} ar-1)`;
+    const expectedEn = en.countAwaitingFinance;
     expect(noticeEn).toBe(expectedEn);
+    expect(noticeEn).not.toContain("ar-1");
     expect(noticeEn).not.toContain(en.saved);
   });
 
-  it("row 2 / §9 edge case: approvalRequestId null with AWAITING_FINANCE => awaiting text with empty id", async () => {
+  it("row 2 / §9 edge case: approvalRequestId null with AWAITING_FINANCE => awaiting text alone", async () => {
     stub();
     answers[`/api/cash-counts/${C_OPEN}/verify`] = [
       { status: 200, body: { id: C_OPEN, status: "AWAITING_FINANCE", approvalRequestId: null } },
@@ -292,7 +296,7 @@ describe("#3321 ShiftCard count verify: AWAITING_FINANCE vs VERIFIED", () => {
     await vi.waitFor(() => expect(q(tid("shift-notice"))).not.toBeNull());
 
     const notice = must(tid("shift-notice")).textContent?.trim();
-    const expected = `${th.countAwaitingFinance} (${th.approvalRequest} )`;
+    const expected = th.countAwaitingFinance;
     expect(notice).toBe(expected);
     expect(notice).not.toContain(th.saved);
   });
