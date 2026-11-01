@@ -973,7 +973,7 @@ export function DeskBookingsScreen(): JSX.Element {
                                   {t('checkIn')}
                                 </button>
                               </Show>
-                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION' || b.status === 'CHECKED_IN' || b.status === 'IN_SERVICE'}>
                                 <button
                                   type="button"
                                   data-action="cancel"
@@ -982,6 +982,8 @@ export function DeskBookingsScreen(): JSX.Element {
                                 >
                                   {t('cancel')}
                                 </button>
+                              </Show>
+                              <Show when={b.status === 'CONFIRMED' || b.status === 'PENDING_CUSTOMER_CONFIRMATION'}>
                                 <button
                                   type="button"
                                   data-action="reschedule"
