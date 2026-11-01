@@ -32,6 +32,10 @@ export const th = {
   connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
   withinLimit: 'อยู่ในวงเงิน',
   aboveLimit: 'เกินวงเงิน — ผู้บริหารตัดสิน',
+  originalTransaction: 'รายการเดิม: ',
+  reversalAmount: 'ยอดเงิน: ',
+  requestReason: 'เหตุผลที่ขอ: ',
+  netDifference: 'ผลต่างสุทธิ: ',
 };
 
 export const en = {
@@ -68,4 +72,8 @@ export const en = {
   connectionError: 'Connection error',
   withinLimit: 'Within the limit',
   aboveLimit: 'Above the limit — an executive decides',
+  originalTransaction: 'Original transaction: ',
+  reversalAmount: 'Amount: ',
+  requestReason: 'Request reason: ',
+  netDifference: 'Net difference: ',
 };
