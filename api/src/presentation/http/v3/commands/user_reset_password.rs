@@ -92,7 +92,13 @@ impl CommandAction for UserResetPasswordCommand {
             ));
         };
         let temp = users()
-            .reset_password(tx, who, request_ip().as_deref(), &user_id, identity.as_ref())
+            .reset_password(
+                tx,
+                who,
+                request_ip().as_deref(),
+                &user_id,
+                identity.as_ref(),
+            )
             .await
             .map_err(|e| match e {
                 ResetPasswordError::Change(c) => from_change_error(c),
