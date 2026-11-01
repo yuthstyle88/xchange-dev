@@ -16,6 +16,7 @@ const OWN_ERROR_KEYS = {
   noOpenShift: 'error.noOpenShift',
   staleVersion: 'error.staleVersion',
   ticketHasSale: 'error.ticketHasSale',
+  alreadyServing: 'error.alreadyServing',
 } as const satisfies Record<string, keyof typeof th>;
 
 function refusalMessage(err: unknown): string {
