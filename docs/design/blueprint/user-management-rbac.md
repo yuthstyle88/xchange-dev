@@ -282,7 +282,7 @@ One file per command, because `build.rs` registers each top-level `commands/` fi
 | F | What | Files (one owner each) |
 |---|---|---|
 | F1a, F1b, F1c | `userSuspend`, `userResume`, `userEnable` | `v3/commands/user_suspend.rs`, `user_resume.rs`, `user_enable.rs` (HTTP only; C1 writes the `UserService` bodies) |
-| F2 | `userResetPassword` (Q5) | `v3/commands/user_reset_password.rs`, plus the admin set-password method in `domain/identity/identity_client.rs` and `infrastructure/identity/http_identity_client.rs` after C4 merges; waits on ID-1's admin route |
+| F2 | `userResetPassword` (Q5) | see §13 (owner, 2026-11-01): `v3/commands/user_reset_password.rs`, the admin set-password method in `domain/identity/identity_client.rs` and `infrastructure/identity/http_identity_client.rs`, and `UserService::reset_password`; waits on ID-1 |
 | F3 | `userProfileSave` | `v3/commands/user_profile_save.rs` |
 | F4a, F4b | views `admin_user_audit`, `admin_login_history` | `v3/views/admin_user_audit.rs`, `admin_login_history.rs` |
 | F5 | view `admin_permission_matrix` | `v3/views/admin_permission_matrix.rs` |
@@ -1015,3 +1015,161 @@ The owner's rule (§11.8, §11.9): who may do what is the group's permissions, e
 | `reloadShown()` and the six call sites | `web/src/screens/admin/users/UsersScreen.tsx` | #4558 | logic |
 
 Up-front tests: `web/src/screens/admin/users/UsersScreen.row-write-paging.test.tsx` (branch `test/4558-row-write-paging`).
+
+## 13. F2: an admin resets a staff password through Identity (owner, 2026-11-01)
+
+> Written by claude/b091f5e0 (BE sub-controller) for the lane controller claude/608dff. Source: the F2 survey by
+> claude/86094638 (#564 issuecomment-6543264196) and the owner's choice of its option A (#564
+> issuecomment-6550673724). Code read at `7c0028cc`. This section replaces the F2 rows of §3.6 and §3.7 where they differ.
+
+**Why:** since "Identity for everyone" (I-2) xchange keeps no staff passwords, and Identity had no route that sets
+another identity's password. A staff member who forgets a password cannot sign in again, and nobody can help them.
+The owner allowed one Identity route for this: `POST /admin/identities/{id}/password` behind `X-Internal-Token`
+(ticket ID-1 in `108-platform-services`; design `services/identity/docs/ADMIN_SET_PASSWORD_DESIGN.md` there).
+**xchange generates the temporary password, never Identity.**
+
+### 13.1 Classes
+
+```mermaid
+classDiagram
+  class IdentityClient["xc-auth: domain/identity/identity_client.rs"] {
+    <<trait>>
+    +admin_set_password(subject, new_password, must_change) BoxFuture~Result~(), IdentityError~~
+  }
+  class HttpIdentityClient["xc-auth: infrastructure/identity/http_identity_client.rs"] {
+    +admin_set_password(...) POST /admin/identities/{subject}/password, sends X-Internal-Token
+  }
+  class IdentitySettings["xc-auth: infrastructure/identity/identity_settings.rs"] {
+    +internal_token Option~String~
+  }
+  class Settings["api: config/mod.rs"] {
+    reads IDENTITY_INTERNAL_TOKEN
+  }
+  class UserService["xc-auth: application/user/user_service.rs"] {
+    +reset_password(tx, actor, ip, user_id, identity) Result~TempPassword, ResetPasswordError~
+  }
+  class ResetPasswordError["xc-auth: application/user/user_service.rs"] {
+    Change(UserChangeError)
+    Identity(IdentityError)
+  }
+  class UserResetPasswordCommand["api: v3/commands/user_reset_password.rs (new)"] {
+    NAME userResetPassword
+    ROUTE POST /api/users/reset-password
+    +run() UserResetPasswordOutput
+    +stored_output() omits temporaryPassword
+  }
+  HttpIdentityClient ..|> IdentityClient
+  HttpIdentityClient --> IdentitySettings
+  Settings --> IdentitySettings
+  UserResetPasswordCommand --> UserService
+  UserResetPasswordCommand --> IdentityClient : built from settings.identity
+  UserService --> ResetPasswordError
+  UserService --> GrantGuard : check(ResetPassword)
+  UserService --> TempPassword : generate
+  UserService --> UserRepository : bump_version
+  UserService --> AccountAuditor : record(userResetPassword)
+  UserService --> IdentityClient : admin_set_password, last
+```
+
+| Type / member | File | Who writes it | Used by |
+|---|---|---|---|
+| `IdentitySettings::internal_token: Option<String>` | `xc-auth/src/infrastructure/identity/identity_settings.rs` | **skeleton** (ticket author, on `test/<F2-BE>`) | `HttpIdentityClient`, `config/mod.rs` |
+| `IdentityClient::admin_set_password`, **default body** answering `Err(IdentityError::unavailable("/admin/identities/{id}/password", 501, "not_implemented"))` | `xc-auth/src/domain/identity/identity_client.rs` | **skeleton** | `UserService::reset_password`; the default spares the two test fakes (`xc-auth/tests/rbac_f11a_session_test.rs`, `api/tests/kwq_c22_session_otp_verified_login_test.rs`) |
+| the `IdentitySettings` literal at `xc-auth/tests/identity_change_password_test.rs:92` gains `internal_token: None` | test file | **skeleton** (the worker must not edit tests) | — |
+| `HttpIdentityClient::admin_set_password` | `xc-auth/src/infrastructure/identity/http_identity_client.rs` | F2-BE | `UserService` |
+| `IDENTITY_INTERNAL_TOKEN` → `internal_token` | `api/src/config/mod.rs` (`:213-245`) | F2-BE | — |
+| `UserService::reset_password`, `ResetPasswordError` | `xc-auth/src/application/user/user_service.rs` | F2-BE | the command |
+| `UserResetPasswordCommand`, `UserResetPasswordInput`, `UserResetPasswordOutput` | `api/src/presentation/http/v3/commands/user_reset_password.rs` (new; `build.rs` registers it) | F2-BE | F2-WEB |
+| generated `user_reset_password.ts` | `web/src/shared/api/generated/user_reset_password.ts` | F2-BE (generated) | F2-WEB |
+
+**Where the logic lives.** §3.6 planned a delegate in `user_service.rs` to `application/user/reset_password.rs`. C1 never
+landed that stub (`git grep reset_password` finds nothing at `7c0028cc`), and no open ticket edits `user_service.rs`, so
+F2-BE writes the method body in `user_service.rs` itself, next to `disable` (`:272-321`).
+**`ResetPasswordError` is its own enum** rather than a new `UserChangeError` variant: a new variant would break the
+exhaustive `match` in `from_change_error` (`v3/commands/user_grant.rs:206`), a file outside F2-BE's scope.
+
+### 13.2 `UserService::reset_password`, in order [proposed]
+
+Same shape as `disable` (`user_service.rs:272-321`):
+1. load the user (`find_by_id`); none ⇒ `Change(NotFound)`;
+2. `GrantGuard::check(actor, target, &AccountAction::ResetPassword, owners_left)`; refused ⇒ `Change(Refused(_))`;
+3. `auth_subject` is `None` ⇒ `Change(NotBound)` (existing code `notBound`, 409);
+4. `TempPassword::generate()`;
+5. `repo.bump_version(tx, &user.id)`, so every xchange session of the target ends;
+6. `AccountAuditor::record(…, "userResetPassword", before = None, after = {"mustChangePassword": true}, ip)`; no password text;
+7. `identity.admin_set_password(subject, temp.expose(), true)`; refused ⇒ `Identity(e)`. **Last inside the transaction**,
+   so a refusal rolls back steps 5–6: no audit row, the version does not move.
+
+The status of the target is not checked: resetting a SUSPENDED or DISABLED user's password is allowed, and their status
+still stops them signing in.
+
+**Accepted gap:** Identity succeeds and the xchange commit then fails. The password has changed, but no audit row exists
+and the admin saw an error. The only way forward is another reset, which works. Not worth a two-phase protocol.
+
+### 13.3 Contract [required]
+
+`POST /api/users/reset-password`, policy row `userResetPassword` → `UsersManage` (`org_admin.rs:39`, already there).
+
+| | |
+|---|---|
+| Input | `{ "userId": "<uuid>" }` |
+| Output `200` | `{ "userId": "<uuid>", "temporaryPassword": "<16 chars>", "mustChangePassword": true }` |
+| `404 notFound` | no such user in the branch's organisation (`user_in_organisation`, as `userDisable`) |
+| `403 outOfScope` | the target is outside the caller's ADMIN branches (`GrantRefusal::NoScope`) |
+| `403 selfChange` | the caller resets their own password (they use F11) |
+| `400 roleNotAllowed` | the target holds ADMIN or EXECUTIVE and the caller is not an owner (`ProtectedTarget`) |
+| `409 notBound` | the user has no `auth_subject` |
+| `503 identityUnavailable` | Identity refused or is unreachable, or `IDENTITY_INTERNAL_TOKEN` / `IDENTITY_*` is not configured |
+
+**`HttpIdentityClient::admin_set_password`** [required on the wire]:
+- `POST {base_url}/admin/identities/{subject}/password`, body `{"newPassword": …, "mustChangePassword": …}`;
+- headers: everything `headers()` sends today (`http_identity_client.rs:50-70`, including `X-Api-Key`, because Identity's
+  admin routes sit inside the API-key guard too) **plus `X-Internal-Token: <internal_token>`**;
+- `internal_token` is `None` ⇒ `Err(IdentityError::unavailable(path, 503, "internal_token_not_configured"))`, no request sent;
+- `200` ⇒ `Ok(())`; `422` ⇒ `IdentityError::WeakPassword`; anything else ⇒ `IdentityError::unavailable(path, status, code)`.
+
+**`IDENTITY_INTERNAL_TOKEN`** [proposed]: optional, like `IDENTITY_API_KEY`. It does not count toward the five variables
+that must be set together (`config/mod.rs:223-245`); set alone with none of the five, it is the same configuration error.
+
+### 13.4 Security [required]
+
+- `stored_output` drops `temporaryPassword` (precedent `identity_reveal.rs:71`), so `idempotency_records.response` never
+  holds it. A replay answers `{userId, mustChangePassword}` without the password; the admin resets again.
+- Command answers are `Cache-Control: no-store` already (`v3/command.rs:240`).
+- `UserResetPasswordOutput`'s `Debug` must not print the password, and no log line carries it.
+- The next login reads `must_change_password = true` from Identity, so F8/F11 force the change.
+- The token copy on the host (`/etc/xc-identity/env` `INTERNAL_SERVICE_TOKEN` → `/etc/xc-v3/identity-client.env`
+  `IDENTITY_INTERNAL_TOKEN`) is a deploy step for the owner or the lane controller, never a worker's.
+
+### 13.5 Data migration
+
+None.
+1. Existing rows: unchanged. The audit row uses the existing `user_audit` table; `users.version` exists.
+2. Backfill: none, no new column.
+3. Deploy order: ID-1's Identity build first, then xchange with `IDENTITY_INTERNAL_TOKEN` set. An xchange build that runs
+   against an older Identity answers `503 identityUnavailable` (Identity's fallback `404`), and nothing is written.
+4. `down`: nothing to lose.
+
+### 13.6 Tests
+
+Up-front (layer 3), in the new file `api/tests/rbac_f2_reset_password_test.rs` on `test/<F2-BE>`. It uses the
+`x-test-as` callers of `rbac_audit_ip_test.rs` and the fake Identity of `tests/identity_signin_common`:
+- an org ADMIN resets a branch teller: `200`, a 16-character password; Identity got the same password, `mustChangePassword: true`, the internal token and the API key;
+- one `userResetPassword` row in `user_audit` with no password text, and `users.version` moved;
+- `idempotency_records.response` has no `temporaryPassword`;
+- a branch ADMIN of another branch: `403 outOfScope`; a non-owner resetting an ADMIN: `roleNotAllowed`; resetting oneself: `403 selfChange`; no `auth_subject`: `409 notBound`; none of them calls Identity;
+- Identity answers `500`: `503 identityUnavailable`, no audit row, version unchanged;
+- no `IDENTITY_INTERNAL_TOKEN`: `503 identityUnavailable`, Identity not called, nothing written.
+
+Existing tests to keep green, run by name: `rbac_c1a_user_commands_test`, `rbac_c1a_grant_guard_test` (xc-auth),
+`rbac_c1b_org_admin_rows_test` (xc-auth), `user_disable_creator_scope_test`, `rbac_f1a_test`, `rbac_audit_ip_test`,
+`rbac_f9_test`, `identity_signin_test`, `identity_change_password_test` (xc-auth), `rbac_f11a_session_test` (xc-auth),
+`kwq_c22_session_otp_verified_login_test`.
+
+### 13.7 Tickets
+
+| Ticket | Repo | Class | Model | Waits for |
+|---|---|---|---|---|
+| ID-1 admin set-password | `108-platform-services` | guarded | Argon | this design and the Identity design merged |
+| F2-BE client + service + command | `xchange` | guarded | Argon | ID-1 merged (the contract is fixed) |
+| F2-WEB Users screen button | `xchange` | mechanical | Flash | F2-BE's generated `user_reset_password.ts` (written by the FE controller) |
