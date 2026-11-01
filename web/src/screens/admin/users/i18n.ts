@@ -72,6 +72,8 @@ export const th = {
   successSuspended: 'ระงับบัญชีชั่วคราวเรียบร้อยแล้ว',
   successResumed: 'ยกเลิกการระงับบัญชีเรียบร้อยแล้ว',
   successEnabled: 'เปิดใช้งานบัญชีอีกครั้งเรียบร้อยแล้ว',
+  successReset: 'รีเซ็ตรหัสผ่านเรียบร้อยแล้ว ผู้ใช้ต้องเปลี่ยนรหัสผ่านเมื่อเข้าระบบครั้งถัดไป',
+  resetNoPassword: 'รีเซ็ตแล้ว แต่ไม่สามารถแสดงรหัสผ่านซ้ำได้ กรุณารีเซ็ตอีกครั้ง',
 
   tempPasswordTitle: 'รหัสผ่านชั่วคราว',
   tempPasswordOnce: 'รหัสผ่านนี้จะแสดงเพียงครั้งเดียว กรุณาคัดลอกและส่งมอบให้ผู้ใช้',
@@ -260,6 +262,8 @@ export const en = {
   successSuspended: 'User suspended successfully',
   successResumed: 'User resumed successfully',
   successEnabled: 'User enabled successfully',
+  successReset: 'Password reset. The user must change it at next sign-in.',
+  resetNoPassword: "The password was reset but can't be shown again. Reset once more.",
 
   tempPasswordTitle: 'Temporary Password',
   tempPasswordOnce: 'This password is shown only once. Copy and share it with the user now.',
