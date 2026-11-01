@@ -1,4 +1,6 @@
 // #2659: `desk-store.ts` `backToEdit()` re-quotes for the kept amount and currency after a refused save.
+// Amended by FE-T2 #5849 (claude/01TxaRJG): B4's 409 rateUnavailable is now worded by the desk (`rateNotPublished`,
+// naming the code and side) instead of the shared "try later" `error.rateUnavailable`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot } from 'solid-js';
 import { ApiClient } from '../../shared/api/client';
@@ -262,7 +264,7 @@ describe('DeskStore backToEdit (#2659)', () => {
     await flush();
 
     expect(store.quote()).toBeUndefined();
-    expect(store.quoteError()).toEqual({ message: 'อัตราแลกเปลี่ยนยังไม่พร้อมให้บริการในขณะนี้ กรุณาลองใหม่ภายหลัง' });
+    expect(store.quoteError()).toEqual({ message: 'สาขานี้ไม่มีเรทประกาศของ USD สำหรับรายการร้านรับซื้อ (BUY)' });
   });
 
   it('B5 clears staffDraftId and resets step to 0', async () => {

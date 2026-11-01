@@ -4,6 +4,7 @@ import { createSignal, For, Show, type JSX } from 'solid-js';
 import { screenT, t as sharedT } from '../../../../shared/i18n';
 import { checkDecimal, foreignAmount } from '../../../../shared/ui/bounded';
 import type { DeskStore, DeskType } from '../../desk-store';
+import { publishedCodes } from '../../published-rates';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
 
@@ -32,7 +33,7 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
       : undefined;
   };
   const currencies = () => {
-    const codes = (store.config()?.rates ?? []).map((r) => r.code);
+    const codes = publishedCodes(store.config()?.rates ?? [], store.type());
     const current = store.currency();
     return current !== '' && !codes.includes(current) ? [current, ...codes] : codes;
   };
@@ -88,6 +89,11 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
           <For each={currencies()}>{(code) => <option value={code}>{code}</option>}</For>
         </select>
       </label>
+      <Show when={store.config() && currencies().length === 0}>
+        <p class="desk-notice" data-desk-notice="no-published-rate">
+          {t('noPublishedRate', { side: t(store.type() === 'BUY' ? 'typeBuy' : 'typeSell') })}
+        </p>
+      </Show>
 
       <label class="desk-field">
         <span>{t('amount')}</span>
