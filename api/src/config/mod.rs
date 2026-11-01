@@ -218,6 +218,9 @@ impl Settings {
         let identity_audience = env_map.get("IDENTITY_AUDIENCE");
         let identity_issuer = env_map.get("IDENTITY_ISSUER");
         let identity_api_key = env_map.get("IDENTITY_API_KEY");
+        let identity_internal_token = env_map
+            .get("IDENTITY_INTERNAL_TOKEN")
+            .filter(|s| !s.is_empty());
 
         let required = [
             ("IDENTITY_BASE_URL", identity_base_url),
@@ -230,6 +233,7 @@ impl Settings {
 
         let identity = if count == 5 {
             let api_key = identity_api_key.cloned();
+            let internal_token = identity_internal_token.cloned();
             Some(IdentitySettings {
                 base_url: identity_base_url.unwrap().clone(),
                 client_id: identity_client_id.unwrap().clone(),
@@ -237,8 +241,9 @@ impl Settings {
                 audience: identity_audience.unwrap().clone(),
                 issuer: identity_issuer.unwrap().clone(),
                 api_key,
+                internal_token,
             })
-        } else if count == 0 && identity_api_key.is_none() {
+        } else if count == 0 && identity_api_key.is_none() && identity_internal_token.is_none() {
             None
         } else {
             return Err(config::ConfigError::Message(

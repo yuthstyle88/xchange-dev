@@ -17,7 +17,9 @@ use crate::domain::access::{
 use crate::domain::identity::identity_client::{
     IdentityClient, IdentityError, IdentityRegisterRequest,
 };
-use crate::domain::user::{CustodyHolds, User, UserProfile, UserRepository, UserStatus};
+use crate::domain::user::{
+    CustodyHolds, TempPassword, User, UserProfile, UserRepository, UserStatus,
+};
 use crate::infrastructure::user::PgUserRepository;
 
 fn generate_uuid() -> String {
@@ -78,6 +80,25 @@ impl std::error::Error for UserChangeError {}
 impl From<AppError> for UserChangeError {
     fn from(e: AppError) -> Self {
         Self::App(e)
+    }
+}
+
+/// Why an admin password reset (`UserService::reset_password`, design §13) is refused.
+#[derive(Debug)]
+pub enum ResetPasswordError {
+    Change(UserChangeError),
+    Identity(IdentityError),
+}
+
+impl From<UserChangeError> for ResetPasswordError {
+    fn from(e: UserChangeError) -> Self {
+        Self::Change(e)
+    }
+}
+
+impl From<AppError> for ResetPasswordError {
+    fn from(e: AppError) -> Self {
+        Self::Change(UserChangeError::App(e))
     }
 }
 
@@ -320,6 +341,58 @@ impl<R: UserRepository> UserService<R> {
         )
         .await?;
         Ok(())
+    }
+
+    /// Resets a staff member's password through Identity (`userResetPassword`, design §13.2):
+    /// bumps `users.version`, writes one `userResetPassword` audit row, then calls Identity last
+    /// so a refusal rolls back the transaction.
+    pub async fn reset_password(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        actor: &Actor,
+        ip: Option<&str>,
+        user_id: &str,
+        identity: &dyn IdentityClient,
+    ) -> Result<TempPassword, ResetPasswordError> {
+        let user = self
+            .repo
+            .find_by_id(tx, user_id)
+            .await?
+            .ok_or(UserChangeError::NotFound)?;
+        let target = TargetUser {
+            id: user.id.clone(),
+            status: user.status,
+            roles: user.roles,
+            has_auth_subject: user.auth_subject.is_some(),
+        };
+        let owners_left = self
+            .repo
+            .count_active_owners(tx, &user.organization_id)
+            .await?;
+        GrantGuard::check(actor, &target, &AccountAction::ResetPassword, owners_left)
+            .map_err(UserChangeError::Refused)?;
+        let Some(ref subject) = user.auth_subject else {
+            return Err(ResetPasswordError::Change(UserChangeError::NotBound));
+        };
+        let temp = TempPassword::generate();
+        self.repo.bump_version(tx, &user.id).await?;
+        AccountAuditor::record(
+            &*self.repo,
+            tx,
+            &actor.user_id,
+            &user.id,
+            "userResetPassword",
+            &user.organization_id,
+            None,
+            Some(json!({ "mustChangePassword": true })),
+            ip,
+        )
+        .await?;
+        identity
+            .admin_set_password(subject, temp.expose(), true)
+            .await
+            .map_err(ResetPasswordError::Identity)?;
+        Ok(temp)
     }
 
     /// ACTIVE → SUSPENDED (§3.2). RBAC function ticket.

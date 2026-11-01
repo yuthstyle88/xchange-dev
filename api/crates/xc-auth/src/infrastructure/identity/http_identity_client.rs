@@ -86,13 +86,22 @@ impl HttpIdentityClient {
         client_ip: Option<&str>,
         bearer: Option<&str>,
     ) -> Result<T, IdentityError> {
-        let url = format!("{}{path}", self.settings.base_url.trim_end_matches('/'));
         let mut headers = self.headers(client_ip);
         if let Some(token) = bearer {
             if let Ok(v) = HeaderValue::from_str(&format!("Bearer {token}")) {
                 headers.insert(AUTHORIZATION, v);
             }
         }
+        self.send_with_headers(path, body, headers).await
+    }
+
+    async fn send_with_headers<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: Value,
+        headers: HeaderMap,
+    ) -> Result<T, IdentityError> {
+        let url = format!("{}{path}", self.settings.base_url.trim_end_matches('/'));
 
         let response = match self
             .client
@@ -353,6 +362,44 @@ impl IdentityClient for HttpIdentityClient {
                 )
                 .await?;
             Ok(())
+        })
+    }
+
+    fn admin_set_password<'a>(
+        &'a self,
+        subject: &'a str,
+        new_password: &'a str,
+        must_change: bool,
+    ) -> BoxFuture<'a, Result<(), IdentityError>> {
+        Box::pin(async move {
+            let path = format!("/admin/identities/{subject}/password");
+            let Some(ref token) = self.settings.internal_token else {
+                return Err(IdentityError::unavailable(
+                    path,
+                    503,
+                    "internal_token_not_configured",
+                ));
+            };
+            let mut headers = self.headers(None);
+            let v = HeaderValue::from_str(token).map_err(|_| {
+                IdentityError::unavailable(&path, 503, "internal_token_not_configured")
+            })?;
+            headers.insert(HeaderName::from_static("x-internal-token"), v);
+            let body = serde_json::json!({
+                "newPassword": new_password,
+                "mustChangePassword": must_change,
+            });
+            match self.send_with_headers::<Value>(&path, body, headers).await {
+                Ok(_) => Ok(()),
+                Err(IdentityError::WeakPassword) => Err(IdentityError::WeakPassword),
+                Err(IdentityError::Unavailable {
+                    path, status, code, ..
+                }) => Err(IdentityError::unavailable(path, status, code)),
+                Err(other) => {
+                    let (status, code, _) = other.refusal();
+                    Err(IdentityError::unavailable(path, status, code))
+                }
+            }
         })
     }
 }
