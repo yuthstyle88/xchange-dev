@@ -1,19 +1,15 @@
 //! Desk configuration core reader (§4.1).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
-use rust_decimal::Decimal;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_kernel::money::UnitSize;
 use xc_rate::application::branch::service::BranchService;
-use xc_rate::application::rate::service::RateService;
-use xc_rate::domain::rate::entities::rate_source::RateSource;
+use xc_rate::domain::publication::published_rates::PublishedRates;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
-use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
+use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 use xc_shift::application::shift::service::ShiftService;
 
 use crate::application::settings::payment_settings::PaymentSettingsService;
@@ -60,53 +56,23 @@ impl DeskConfigCore {
 
         let admin_url = format!("/?branch={}", uri_component(&branch_id));
 
-        let source: Arc<dyn RateSource> = Arc::new(BotRateSource::bot());
-        let rate_service = RateService::new(branch_tx.clone(), source);
-        let raw_rates = rate_service.current(branch).await?;
+        let mut tx = state.db.begin().await.map_err(AppError::Database)?;
+        let published_rates = PgPublishedRates::new(state.db.clone());
+        let sellable = published_rates.sellable(&mut tx, branch).await?;
 
-        let unit_size_rows =
-            sqlx::query_as::<_, (String, Decimal)>("SELECT code, unit_size FROM currencies")
-                .fetch_all(&state.db)
-                .await
-                .map_err(AppError::Database)?;
-        let mut unit_sizes: HashMap<String, UnitSize> =
-            HashMap::with_capacity(unit_size_rows.len());
-        for (code, dec) in unit_size_rows {
-            let u = UnitSize::from_decimal(dec)
-                .map_err(|e| AppError::Internal(format!("invalid unit_size for {code}: {e}")))?;
-            unit_sizes.insert(code.trim().to_string(), u);
-        }
-
-        let rates: Vec<DeskRate> = raw_rates
+        let rates: Vec<DeskRate> = sellable
             .into_iter()
-            .filter(|r| !r.code.is_thb())
-            .map(|r| {
-                let code_str = r.code.as_str().to_string();
-                let unit_size = unit_sizes.get(&code_str).ok_or_else(|| {
-                    AppError::Internal(format!("missing currency unit_size for {code_str}"))
-                })?;
-                let publication = match (r.buy.is_some() || r.sell.is_some(), r.updated_at) {
-                    (true, Some(t)) => Some(t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
-                    (true, None) => {
-                        return Err(AppError::Internal(format!(
-                            "rate {} has no publication timestamp",
-                            r.code
-                        )));
-                    }
-                    (false, Some(t)) => {
-                        Some(t.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-                    }
-                    (false, None) => None,
-                };
-                Ok(DeskRate {
-                    code: code_str,
-                    unit_size: unit_size.to_string(),
-                    buy: r.buy.as_ref().map(|b| b.to_string()),
-                    sell: r.sell.as_ref().map(|s| s.to_string()),
-                    publication,
-                })
+            .map(|r| DeskRate {
+                code: r.code.as_str().to_string(),
+                unit_size: r.unit_size.to_string(),
+                buy: r.buy.map(|b| b.to_string()),
+                sell: r.sell.map(|s| s.to_string()),
+                publication: Some(
+                    r.published_at
+                        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                ),
             })
-            .collect::<AppResult<Vec<_>>>()?;
+            .collect();
 
         let store = BranchSettingStore::new(state.db.clone());
         let branch_repo = PgBranchRepository::new(state.db.clone());

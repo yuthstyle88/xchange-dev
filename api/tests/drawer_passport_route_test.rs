@@ -332,7 +332,7 @@ async fn a_save_carrying_drawer_order_id_is_answered_as_without_it() {
         .await
         .assert_refused(
             400,
-            "rateUnavailable: no published line",
+            "rateUnavailable: no published line for USD",
             "a DEMO save with nothing published (decision A2)",
         );
     snapshot_common::publish_rate_per_one(&room.desk.db.pool, "MAIN", "USD", "1", "1").await;

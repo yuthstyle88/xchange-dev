@@ -233,12 +233,30 @@ impl Room {
     }
 
     /// The rates the server holds for `branch`, THB excluded, in its order. See the file header:
-    /// re-pointed at the published rates when #548 lands.
+    /// re-pointed at the branch's sellable published lines, ordered by code (#5864).
     async fn server_rates(&self, branch: &str) -> Vec<Value> {
-        self.desk_config_v2(branch).await["rates"]
-            .as_array()
-            .expect("adminDeskConfig's rates")
-            .clone()
+        let rows: Vec<(String, Option<Decimal>, Option<Decimal>)> = sqlx::query_as(
+            "SELECT trim(l.currency_code), l.buy_rate, l.sell_rate \
+             FROM branches b JOIN published_rate_lines l \
+               ON l.publication_id = b.current_publication_id \
+             WHERE b.id = $1 AND l.denomination_group = 'ALL' \
+               AND l.tier_lower_exclusive_thb IS NULL \
+               AND (l.buy_rate IS NOT NULL OR l.sell_rate IS NOT NULL) \
+             ORDER BY 1",
+        )
+        .bind(branch)
+        .fetch_all(&self.desk.db.pool)
+        .await
+        .expect("read the branch's sellable lines");
+        rows.into_iter()
+            .map(|(code, buy, sell)| {
+                json!({
+                    "code": code,
+                    "buy": buy.map(|d| d.to_string()),
+                    "sell": sell.map(|d| d.to_string()),
+                })
+            })
+            .collect()
     }
 
     /// Puts a rate in force for `code` in `branch`. See the file header.
