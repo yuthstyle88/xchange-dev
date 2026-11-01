@@ -604,7 +604,11 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           {(total, i) => (
                             <tr>
                               <td>{i() === 0 ? row.kind : ''}</td>
-                              <td>{i() === 0 ? row.countedBy : ''}</td>
+                              <Show when={i() === 0} fallback={<td />}>
+                                <td data-counted-by title={row.countedBy}>
+                                  {row.countedByName ?? '—'}
+                                </td>
+                              </Show>
                               <td>{i() === 0 ? when(row.countedAt) : ''}</td>
                               <td>
                                 <strong>{total.currency}</strong>
