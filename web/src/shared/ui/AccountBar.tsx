@@ -9,7 +9,7 @@ import { QueueCard } from './QueueCard';
 const noticeClient = new ApiClient();
 
 /** A role code's label, `shell.account.role.<camelCase>`; a code with no key shows as itself. */
-function roleLabel(code: string): string {
+export function roleLabel(code: string): string {
   const camel = code.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
   const key = `shell.account.role.${camel}`;
   return Object.prototype.hasOwnProperty.call(th, key) ? t(key as Key) : code;

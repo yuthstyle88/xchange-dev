@@ -2,6 +2,7 @@
 import { For, Show, type JSX } from 'solid-js';
 import type { TransactionAuditEventDto } from '../../shared/api/generated/transaction_audit';
 import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
+import { roleLabel } from '../../shared/ui/AccountBar';
 import { t } from './texts';
 
 export function AuditSection(props: { events: TransactionAuditEventDto[] }): JSX.Element {
@@ -22,8 +23,8 @@ export function AuditSection(props: { events: TransactionAuditEventDto[] }): JSX
               {(e) => (
                 <tr>
                   <td>{formatBangkokDateTime(e.at)}</td>
-                  <td>
-                    {e.actorId} · {e.actorRole}
+                  <td title={e.actorId}>
+                    {e.actorName ? `${e.actorName} · ${roleLabel(e.actorRole)}` : roleLabel(e.actorRole)}
                   </td>
                   <td>{e.action}</td>
                 </tr>
