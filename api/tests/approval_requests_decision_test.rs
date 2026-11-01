@@ -140,6 +140,9 @@ async fn an_approved_request_answers_who_decided_why_and_when() {
         item(&items, "obj-approved")["decision"],
         json!({
             "approverId": "owner-9",
+            // Restated 2026-11-02 by the ticket author of G1-BE #5914 (claude/b091f5e0): design PR #5913 adds
+            // `approverName`; `owner-9` is no users row, so it is null.
+            "approverName": null,
             "outcome": "APPROVED",
             "reason": "rates checked",
             "at": "2026-10-15T02:03:04+00:00",

@@ -27,6 +27,7 @@ impl crate::presentation::http::v3::view::ViewFilter for ApprovalRequestsFilter 
 #[ts(export_to = "approval_requests.ts")]
 pub struct ApprovalDecisionDto {
     pub approver_id: String,
+    pub approver_name: Option<String>,
     pub outcome: String,
     pub reason: String,
     pub at: String,
