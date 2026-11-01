@@ -34,6 +34,7 @@ export function LoginScreen(props: {
   const [pending, setPending] = createSignal(false);
   const [mustChange, setMustChange] = createSignal(false);
   const [errorKey, setErrorKey] = createSignal<keyof typeof loginI18n.th | undefined>(undefined);
+  const [notice, setNotice] = createSignal('');
 
   onMount(async () => {
     try {
@@ -65,6 +66,7 @@ export function LoginScreen(props: {
     submitted = true;
     setPending(true);
     setErrorKey(undefined);
+    setNotice('');
 
     try {
       const res = await props.auth.login({ identifier, password });
@@ -103,7 +105,7 @@ export function LoginScreen(props: {
           auth={props.auth}
           onDone={() => {
             setMustChange(false);
-            setErrorKey('changeDone');
+            setNotice(t('changeDone'));
           }}
         />
       ) : (
@@ -127,6 +129,9 @@ export function LoginScreen(props: {
               {t('submit')}
             </button>
           </div>
+          <p role="status" class="xc-auth-success">
+            {notice()}
+          </p>
           <p id="message" role="alert">
             {message()}
           </p>
