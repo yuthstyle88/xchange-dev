@@ -69,6 +69,7 @@ function ReversalRow(props: {
           props.row.subject.reason,
           props.row.subject.requestedByName,
           props.row.subject.customerName,
+          props.row.subject.shiftOpenedAt ? `${t('shift')}${stamp(props.row.subject.shiftOpenedAt)}` : null,
           stamp(props.row.createdAt),
         ]
           .filter((p): p is string => Boolean(p))
