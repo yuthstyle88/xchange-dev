@@ -3,7 +3,8 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { DeskBookingItemDto, DeskBookingsData } from '../../../shared/api/generated/desk_bookings';
-import type { DeskConfig } from '../../../shared/api/generated/desk_config';
+import type { DeskConfig, DeskRate } from '../../../shared/api/generated/desk_config';
+import { publishedCodes } from '../published-rates';
 import type {
   BookingCancelOutput,
   BookingCheckInOutput,
@@ -140,7 +141,13 @@ export function DeskBookingsScreen(): JSX.Element {
 
   // New booking modal state
   const [showNewBookingModal, setShowNewBookingModal] = createSignal(false);
-  const [currencies, setCurrencies] = createSignal<string[]>(['USD']);
+  const [rates, setRates] = createSignal<DeskRate[] | null>(null);
+  const activeSide = () => (formShopSide() === 'BUY' ? 'BUY' : 'SELL');
+  const currencies = () => {
+    const r = rates();
+    if (r === null) return ['USD'];
+    return publishedCodes(r, activeSide());
+  };
   const [formBranchId, setFormBranchId] = createSignal('');
   const [formDate, setFormDate] = createSignal('');
   const [formSlotId, setFormSlotId] = createSignal('');
@@ -149,6 +156,16 @@ export function DeskBookingsScreen(): JSX.Element {
   let newBookingSlotsSeq = 0;
   const [formShopSide, setFormShopSide] = createSignal('SELL');
   const [formCurrency, setFormCurrency] = createSignal('USD');
+
+  function handleSideChange(val: string): void {
+    if (val === formShopSide()) return;
+    setFormShopSide(val);
+    const list = currencies();
+    if (!list.includes(formCurrency())) {
+      setFormCurrency(list[0] ?? '');
+    }
+    void requestBookingQuote();
+  }
   const [formQuantity, setFormQuantity] = createSignal('');
   const [quantityInvalid, setQuantityInvalid] = createSignal(false);
   const [formDisplayName, setFormDisplayName] = createSignal('');
@@ -354,12 +371,11 @@ export function DeskBookingsScreen(): JSX.Element {
       void api
         .view<DeskConfig>('desk_config', resolvedBranch ? { branch: resolvedBranch } : undefined)
         .then((cfgEnv) => {
-          const codes = (cfgEnv.data?.rates ?? []).map((r) => r.code).filter(Boolean);
-          if (codes.length > 0) {
-            setCurrencies(codes);
-            if (!codes.includes(formCurrency())) {
-              setFormCurrency(codes[0]!);
-            }
+          const cfgRates = cfgEnv.data?.rates ?? [];
+          setRates(cfgRates);
+          const list = currencies();
+          if (!list.includes(formCurrency())) {
+            setFormCurrency(list[0] ?? '');
           }
         })
         .catch(() => {
@@ -711,6 +727,10 @@ export function DeskBookingsScreen(): JSX.Element {
     setFormPhone('');
     setFormReferralCode('');
     setFieldErrors({});
+    const list = currencies();
+    if (!list.includes(formCurrency())) {
+      setFormCurrency(list[0] ?? '');
+    }
   }
 
   let isSubmittingBooking = false;
@@ -1301,14 +1321,10 @@ export function DeskBookingsScreen(): JSX.Element {
                       name="shopSide"
                       value={formShopSide()}
                       onInput={(e) => {
-                        if (e.currentTarget.value === formShopSide()) return;
-                        setFormShopSide(e.currentTarget.value);
-                        void requestBookingQuote();
+                        handleSideChange(e.currentTarget.value);
                       }}
                       onChange={(e) => {
-                        if (e.currentTarget.value === formShopSide()) return;
-                        setFormShopSide(e.currentTarget.value);
-                        void requestBookingQuote();
+                        handleSideChange(e.currentTarget.value);
                       }}
                     >
                       <option value="BUY">BUY</option>
@@ -1339,6 +1355,11 @@ export function DeskBookingsScreen(): JSX.Element {
                         {(code) => <option value={code}>{code}</option>}
                       </For>
                     </select>
+                    <Show when={currencies().length === 0}>
+                      <div data-row="no-published-rate">
+                        {t('noPublishedRate')}
+                      </div>
+                    </Show>
                     <Show when={fieldErrors().currency}>
                       {(msg) => (
                         <div role="alert" class="field-error">
