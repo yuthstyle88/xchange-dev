@@ -41,9 +41,20 @@ function makeSheet(branch: string, date: string) {
       data: [
         {
           requestId: 'RV-99',
-          transactionId: 'TX-42',
-          requestedBy: 'u-teller',
           createdAt: ISO_TS,
+          subject: {
+            reversalId: 'RV-99',
+            originalTransactionId: 'TX-42',
+            receiptNumber: 'RC-42',
+            amountThb: '100.00',
+            reason: 'reason',
+            customerName: null,
+            customerNo: null,
+            requestedByName: 'u-teller',
+            shiftId: null,
+            shiftOpenedAt: null,
+            lines: [],
+          },
         },
       ],
     },

@@ -12,8 +12,16 @@ import { ReversalsPart } from './ReversalsPart';
 beforeAll(() => warmModules(() => import('./ReversalsPart')), 60_000);
 
 const ROWS = [
-  makeReversalPendingRow({ requestId: 'req-1', transactionId: 'tx-1', requestedBy: 'u-teller', createdAt: '2026-10-19T02:00:00Z' }),
-  makeReversalPendingRow({ requestId: 'req-2', transactionId: 'tx-2', requestedBy: 'u-teller', createdAt: '2026-10-19T03:00:00Z' }),
+  makeReversalPendingRow({
+    requestId: 'req-1',
+    createdAt: '2026-10-19T02:00:00Z',
+    subject: { ...makeReversalPendingRow().subject, receiptNumber: 'tx-1', requestedByName: 'u-teller' },
+  }),
+  makeReversalPendingRow({
+    requestId: 'req-2',
+    createdAt: '2026-10-19T03:00:00Z',
+    subject: { ...makeReversalPendingRow().subject, receiptNumber: 'tx-2', requestedByName: 'u-teller' },
+  }),
 ];
 
 interface Sent {
@@ -82,7 +90,7 @@ describe('A4: F01 pending reversals are approved or rejected on the sheet', () =
     mount();
     for (const r of ROWS) {
       expect(row(r.requestId), r.requestId).not.toBeNull();
-      expect(row(r.requestId)!.textContent).toContain(r.transactionId);
+      expect(row(r.requestId)!.textContent).toContain(r.subject.receiptNumber);
       expect(button(r.requestId, 'approve'), `approve ${r.requestId}`).not.toBeNull();
       expect(button(r.requestId, 'reject'), `reject ${r.requestId}`).not.toBeNull();
       expect(reason(r.requestId), `reason ${r.requestId}`).not.toBeNull();

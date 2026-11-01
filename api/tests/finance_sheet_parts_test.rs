@@ -280,6 +280,37 @@ impl Room {
         requested_at: DateTime<Utc>,
         status: &str,
     ) {
+        let customer_id = unique("cust");
+        sqlx::query(
+            "INSERT INTO customers (id, mode, created_at, organization_id, customer_no, display_name) \
+             VALUES ($1, 'LIVE', now(), $2::uuid, $1, $1)",
+        )
+        .bind(&customer_id)
+        .bind(ORG)
+        .execute(&self.pool)
+        .await
+        .expect("insert customer");
+
+        let orig_tx_id = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO transactions (id, organization_id, branch_id, mode, status, document_ref, shift_id, \
+               submission_id, payload_hash, customer_id, customer_name, nationality, staff_id, booking_no, notes, \
+               value_date, paid_at, recorded_at, recorded_by, completed_at) \
+             VALUES ($1, $2::uuid, $3, 'LIVE', 'COMPLETED', $4, 'SH-' || $3, $4, 'hash', $5, $5, 'TH', \
+               $6, '', '', $7, $8, $8, $6, $8)",
+        )
+        .bind(orig_tx_id)
+        .bind(ORG)
+        .bind(branch_id)
+        .bind(unique("doc"))
+        .bind(&customer_id)
+        .bind(requested_by)
+        .bind(date(DAY))
+        .bind(requested_at)
+        .execute(&self.pool)
+        .await
+        .expect("insert transaction");
+
         sqlx::query(
             "INSERT INTO approval_requests (id, type, branch_id, object_id, object_version_hash, policy_version, proposed_payload, requested_by, requested_at, status, idempotency_key, organization_id) \
              VALUES ($1, 'TRANSACTION_REVERSAL', $2, $3, 'hash', 'v1', '{}'::jsonb, $4, $5, $6, $7, '00000000-0000-0000-0000-000000000001')",
@@ -294,6 +325,23 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("insert approval request");
+
+        sqlx::query(
+            "INSERT INTO reversals (id, organization_id, branch_id, original_transaction_id, status, reason, \
+               amount_thb, business_date, approval_request_id, requested_by, requested_at) \
+             VALUES ($1::uuid, $2::uuid, $3, $4, 'REQUESTED', 'reason', 100.00, $5, $6, $7, $8)",
+        )
+        .bind(transaction_id)
+        .bind(ORG)
+        .bind(branch_id)
+        .bind(orig_tx_id)
+        .bind(date(DAY))
+        .bind(id)
+        .bind(requested_by)
+        .bind(requested_at)
+        .execute(&self.pool)
+        .await
+        .expect("insert reversal");
     }
 }
 
@@ -957,16 +1005,16 @@ async fn reversals_pending_lists_pending_requests_oldest_first() {
         pending_older.to_string(),
         "first row must be the older request (kills F6)"
     );
-    assert_eq!(rows[0].transaction_id, tx_id_older);
-    assert_eq!(rows[0].requested_by, user_id(COUNTER));
+    assert_eq!(rows[0].subject.reversal_id, tx_id_older);
+    assert_eq!(rows[0].subject.requested_by_name.as_deref(), Some(COUNTER));
 
     assert_eq!(
         rows[1].request_id,
         pending_newer.to_string(),
         "second row must be the newer request"
     );
-    assert_eq!(rows[1].transaction_id, tx_id_newer);
-    assert_eq!(rows[1].requested_by, user_id(COUNTER));
+    assert_eq!(rows[1].subject.reversal_id, tx_id_newer);
+    assert_eq!(rows[1].subject.requested_by_name.as_deref(), Some(COUNTER));
 }
 
 // ------------------------------------------------------------ Row 7

@@ -398,7 +398,7 @@ impl SheetPartsPort for SheetParts {
     ) -> BoxFuture<'a, AppResult<Part<Vec<ReversalPendingRow>>>> {
         Box::pin(async move {
             let rows = sqlx::query(
-                "SELECT id, object_id, requested_by, requested_at \
+                "SELECT id, object_id, requested_at \
                  FROM approval_requests \
                  WHERE branch_id = $1 \
                    AND type = 'TRANSACTION_REVERSAL' \
@@ -410,20 +410,32 @@ impl SheetPartsPort for SheetParts {
             .await
             .map_err(AppError::Database)?;
 
-            let result = rows
+            let parsed: Vec<(Uuid, Uuid, DateTime<Utc>)> = rows
                 .into_iter()
-                .map(|r| {
+                .filter_map(|r| {
                     let id: Uuid = r.get("id");
                     let object_id: String = r.get("object_id");
-                    let requested_by: String = r.get("requested_by");
                     let requested_at: DateTime<Utc> = r.get("requested_at");
+                    let rev_id = Uuid::parse_str(&object_id).ok()?;
+                    Some((id, rev_id, requested_at))
+                })
+                .collect();
 
-                    ReversalPendingRow {
+            let rev_ids: Vec<Uuid> = parsed.iter().map(|(_, rev_id, _)| *rev_id).collect();
+            let subjects = crate::presentation::dto::v3::approval_requests::load_reversal_subjects(
+                &self.pool, branch, &rev_ids,
+            )
+            .await?;
+
+            let result = parsed
+                .into_iter()
+                .filter_map(|(id, rev_id, requested_at)| {
+                    let subject = subjects.get(&rev_id)?.clone();
+                    Some(ReversalPendingRow {
                         request_id: id.to_string(),
-                        transaction_id: object_id,
-                        requested_by,
                         created_at: requested_at.to_rfc3339(),
-                    }
+                        subject,
+                    })
                 })
                 .collect();
 

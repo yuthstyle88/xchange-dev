@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::presentation::dto::v3::approval_requests::ReversalSubject;
+
 /// One part of the sheet. An unavailable part names, in `reason`, the ticket it waits for, and has no `data`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -144,9 +146,8 @@ pub struct IntegrityRow {
 #[ts(export_to = "finance_reconciliation.ts")]
 pub struct ReversalPendingRow {
     pub request_id: String,
-    pub transaction_id: String,
-    pub requested_by: String,
     pub created_at: String,
+    pub subject: ReversalSubject,
 }
 
 /// One certification of the branch-day; `stale` when its hash is not the sheet's current one.
