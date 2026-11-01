@@ -219,7 +219,7 @@ impl BookingQueueEvents for BookingLifecycle {
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move {
-            if reason != "dayClosed" {
+            if reason != "dayClosed" && reason != "noSale" {
                 return Ok(());
             }
 
