@@ -137,6 +137,24 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
   const reversalDetail = () => {
     if (props.request.type !== 'TRANSACTION_REVERSAL') return null;
+    const subj = props.request.subject;
+    if (subj?.kind === 'reversal') {
+      const customer = subj.customerName
+        ? subj.customerNo
+          ? `${subj.customerName} (${subj.customerNo})`
+          : subj.customerName
+        : null;
+      return {
+        receipt: subj.receiptNumber,
+        original: subj.originalTransactionId,
+        amount: subj.amountThb,
+        why: subj.reason,
+        customer,
+        shiftId: subj.shiftId,
+        shiftOpenedAt: subj.shiftOpenedAt,
+      };
+    }
+
     const payload = payloadObject();
     if (!payload) return null;
 
@@ -155,11 +173,30 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       typeof rawReason === 'string' && rawReason.length > 0 ? rawReason : null;
 
     if (!original && !amount && !why) return null;
-    return { original, amount, why };
+    return {
+      receipt: null as string | null,
+      original,
+      amount,
+      why,
+      customer: null as string | null,
+      shiftId: null as string | null,
+      shiftOpenedAt: null as string | null,
+    };
   };
 
   const countDetail = () => {
     if (props.request.type !== 'COUNT_DIFFERENCE') return null;
+    const subj = props.request.subject;
+    if (subj?.kind === 'countDifference') {
+      return {
+        countedBy: subj.countedBy,
+        countedByName: subj.countedByName ?? '—',
+        value: subj.netDifferenceThb,
+        shiftId: subj.shiftId,
+        shiftOpenedAt: subj.shiftOpenedAt,
+      };
+    }
+
     const payload = payloadObject();
     if (!payload) return null;
 
@@ -170,7 +207,13 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         : null;
 
     if (value === null) return null;
-    return { value };
+    return {
+      countedBy: null as string | null,
+      countedByName: null as string | null,
+      value,
+      shiftId: null as string | null,
+      shiftOpenedAt: null as string | null,
+    };
   };
 
   const handleApprove = async () => {
@@ -253,7 +296,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
         <div class="approval-proposer">
           <span>{t('requestedBy')}</span>
-          <strong title={props.request.requestedBy}>—</strong>
+          <strong title={props.request.requestedBy}>{props.request.requestedByName ?? '—'}</strong>
         </div>
 
         <Show when={cashTransferDetail()}>
@@ -273,11 +316,18 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         <Show when={reversalDetail()}>
           {(d) => (
             <>
-              {d().original && (
+              {d().receipt ? (
                 <div class="approval-proposer">
-                  <span>{t('originalTransaction')}</span>
-                  <span title={d().original!}>#{d().original!.slice(0, 8)}</span>
+                  <span>{t('receiptNumber')}</span>
+                  <span title={d().original ?? undefined}>{d().receipt}</span>
                 </div>
+              ) : (
+                d().original && (
+                  <div class="approval-proposer">
+                    <span>{t('originalTransaction')}</span>
+                    <span title={d().original!}>#{d().original!.slice(0, 8)}</span>
+                  </div>
+                )
               )}
               {d().amount && (
                 <div class="approval-proposer">
@@ -291,16 +341,42 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   <span>{d().why}</span>
                 </div>
               )}
+              {d().customer && (
+                <div class="approval-proposer">
+                  <span>{t('customer')}</span>
+                  <span>{d().customer}</span>
+                </div>
+              )}
+              {d().shiftOpenedAt && (
+                <div class="approval-proposer">
+                  <span>{t('shift')}</span>
+                  <span title={d().shiftId ?? undefined}>{formatDecidedAt(d().shiftOpenedAt!)}</span>
+                </div>
+              )}
             </>
           )}
         </Show>
 
         <Show when={countDetail()}>
           {(d) => (
-            <div class="approval-proposer">
-              <span>{t('netDifference')}</span>
-              <span>{formatMoney(d().value)} THB</span>
-            </div>
+            <>
+              {d().countedBy !== null && (
+                <div class="approval-proposer">
+                  <span>{t('countedBy')}</span>
+                  <span title={d().countedBy!}>{d().countedByName}</span>
+                </div>
+              )}
+              {d().shiftOpenedAt && (
+                <div class="approval-proposer">
+                  <span>{t('shift')}</span>
+                  <span title={d().shiftId ?? undefined}>{formatDecidedAt(d().shiftOpenedAt!)}</span>
+                </div>
+              )}
+              <div class="approval-proposer">
+                <span>{t('netDifference')}</span>
+                <span>{formatMoney(d().value)} THB</span>
+              </div>
+            </>
           )}
         </Show>
 

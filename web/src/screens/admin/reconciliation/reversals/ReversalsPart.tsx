@@ -5,6 +5,7 @@ import { ApiClient } from '../../../../shared/api/client';
 import type { ReversalPendingRow } from '../../../../shared/api/generated/finance_reconciliation';
 import { screenT } from '../../../../shared/i18n';
 import { fieldError } from '../../../../shared/i18n/field-error';
+import { formatMoney } from '../../../../shared/ui/MoneyText';
 import { decideRefusal, decideWrite, type DecideOutcome } from '../../parts/decide';
 import { Empty, stamp } from '../parts';
 import * as table from './i18n';
@@ -61,8 +62,18 @@ function ReversalRow(props: {
 
   return (
     <li data-request={props.row.requestId}>
-      <span>
-        {props.row.requestId} {props.row.subject.receiptNumber} {props.row.subject.requestedByName ?? ''} {stamp(props.row.createdAt)}
+      <span data-summary title={props.row.requestId}>
+        {[
+          props.row.subject.receiptNumber,
+          props.row.subject.amountThb ? `${formatMoney(props.row.subject.amountThb)} THB` : null,
+          props.row.subject.reason,
+          props.row.subject.requestedByName,
+          props.row.subject.customerName,
+          props.row.subject.shiftOpenedAt ? `${t('shift')}${stamp(props.row.subject.shiftOpenedAt)}` : null,
+          stamp(props.row.createdAt),
+        ]
+          .filter((p): p is string => Boolean(p))
+          .join(' · ')}
       </span>
       <input
         type="text"

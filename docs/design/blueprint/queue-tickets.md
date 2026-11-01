@@ -213,7 +213,7 @@ separate routes.
 - the branch version and the estimate refresh (`StatusService::refresh_in`), as for every transition (§4.3);
 - the teller holds no CALLED or SERVING ticket, so `alreadyServing` no longer fires;
 - a kiosk-linked ticket tells its request through `KioskQueueEvents::on_ticket_ended_in(.., Cancelled { reason: "noSale" })`, as `cancel_in` does (`queue_desk.rs:845-857`);
-- a booking's ticket is released like a walk-in. As with `cancel`, no booking event is sent.
+- a booking's ticket tells its booking `BookingQueueEvents::on_ticket_ended_in(.., "noSale")`, which ends the booking `CANCELLED (noSale)` (booking-slots §4.2a, staff e2e 2026-11-01 T1). A manual `finish` that no COMPLETED sale names tells it the same; a sale's own completion (`finish_for_sale_in`) tells nothing.
 
 **Class diagram (the delta).**
 

@@ -75,7 +75,7 @@ classDiagram
     +lines: Vec~ReversalSubjectLine side currency quantity~
   }
   class CountDifferenceSubject {
-    +countId +kind +countedBy +countedByName: Option
+    +countId +countKind +countedBy +countedByName: Option
     +shiftId: Option +shiftOpenedAt: Option +netDifferenceThb
     +lines: Vec~CountSubjectLine currency counted expected difference~
   }
@@ -104,7 +104,7 @@ classDiagram
 | `requestedByName` | `users.name` of `reversals.requested_by` (blank → `null`, as `queue_board.rs:89-91`) |
 | `shiftId`, `shiftOpenedAt` | the original transaction's `shift_id` → `shifts.opened_at` (the shift the sale was made in) |
 | `lines` | the original's `transaction_lines` (`shop_side` as `side`, `currency`, `quantity`), in `line_no` order, as `views/transaction.rs:96-98` reads them |
-| `countedBy`, `countedByName`, `kind`, `shiftId`, `shiftOpenedAt` | `cash_counts` → `users.name`, `shifts.opened_at` |
+| `countedBy`, `countedByName`, `countKind`, `shiftId`, `shiftOpenedAt` | `cash_counts` (`counted_by`, `kind`) → `users.name`, `shifts.opened_at` |
 | `netDifferenceThb` | the request's payload `net_difference_thb` (`count_difference.rs:236-239`) |
 | count `lines` | `cash_count_totals` of the count, by currency |
 | `ApprovalRequestItemDto.requestedByName` | `users.name` of `approval_requests.requested_by`, every type |
@@ -112,6 +112,16 @@ classDiagram
 - `[required]` loaders take a list of ids and run one query per table (no per-row queries); unknown ids are absent from the map.
 - `[required]` `subject` is `null` for every other request type and when its object no longer exists.
 - `[required]` `ReversalPendingRow` becomes `{ requestId, createdAt, subject }`. The misnamed `transactionId` goes.
+- `[required]` The count's own kind is `countKind`, never `kind`: `ApprovalSubject` is tagged with `kind`
+  (`"reversal"` / `"countDifference"`), so a field of that name would print the key twice.
+- `[required]` `ReversalPendingRow.subject` is a bare `ReversalSubject` (no `kind` tag); the view's `subject` is the
+  tagged enum. The two carry the same fields apart from `kind`.
+- The approval_requests view lists only the requests the caller may decide (`approval_requests.rs:125-127`), as today.
+- Changing `ReversalPendingRow` breaks the web code that reads the old keys. T3-BE carries the minimal compile fix
+  (generated types, the fixture `web/src/shared/testing/fixtures/finance_reconciliation.ts`,
+  `web/src/screens/admin/reconciliation/reversals/ReversalsPart.tsx` and its test,
+  `web/src/screens/admin/reconciliation/Reconciliation.bangkok.test.tsx`); the FE ticket that renders the subject
+  waits on it.
 - `[required]` **The finance sheet's figures hash does not take names.** Today `figures_hash` hashes `reversals_pending`
   whole (`api/src/application/finance/reconciliation.rs:144-155`). From now on it hashes, per pending row, only
   `requestId`, `subject.reversalId`, `subject.amountThb` and `createdAt`, so renaming a user or a customer does not
@@ -125,7 +135,7 @@ classDiagram
 - `CashCountRow` (`api/src/presentation/dto/v3/cash.rs:169-191`; query `api/src/presentation/http/v3/views/cash_counts.rs:75-89`)
   carries user ids only.
 - A CLOSE count's `difference` is written only at verify (`count_service.rs:1251-1270`), so the teller who just counted sees none.
-- A verify answered `AwaitingFinance` writes nothing on the count (`count_service.rs:1285-1310`). The view derives
+- A verify answered `AwaitingFinance` stores the count's `difference` (`count_service.rs:1260-1271`) but not `verified_by` (`:1285-1310`). The view derives
   `WAITING` from `verified_by IS NULL AND rejected_by IS NULL` (`cash_counts.rs:83`, `:125-131`), so the manager keeps
   seeing ยืนยัน/ปฏิเสธ on a count that is with FINANCE.
 - A recount makes the older count of the same (shift, kind) unverifiable (`NotNewestCount`, `count_service.rs:1152-1153`,

@@ -72,7 +72,7 @@ Already decided elsewhere, not asked again:
 | B6 | **Every booking has a customer** (`customer_id NOT NULL`, one customer per company, PR 639 K1). APP: the signed-in customer (`Actor.customer_id`). DESK: a customer the teller picks, or one created from a display name and a phone (`ContactReserve`, §5). PARTNER: created from the contact Broker sends. No plain name or phone on the booking. | §07 Booking `customer_id FK`; PR 639 K2 (PII only in `customer_identities`) |
 | B7 | **The QR is an opaque token, never stored.** `token = base64url(HMAC-SHA256(qr_key, booking_id ‖ qr_version))`, `qr_key` derived from the PII key file with HKDF (`info = "xc-booking-qr-v1"`). The row stores `qr_token_hash = SHA-256(token)` (unique) and `qr_version`. The owner's view recomputes the token; nothing stores it, so an idempotency replay never carries it. Re-issuing bumps `qr_version` and the old QR stops working. | §07 *"QR ใช้ opaque token hash ไม่ใส่ PII"*, §18 |
 | B8 | **Check-in issues the BOOKING ticket in the same transaction** (`QueueTickets::issue_in`, `IssueSource::Booking`). The teller proves the owner by the QR or by ticking that the identity was checked; the kiosk by the QR. A refused issue (`queueClosed`) leaves the booking `CONFIRMED`. A `CHECKED_IN` booking whose ticket ended `NO_SHOW` may check in again and gets a new ticket (Q-A3; §16 *1:0..N ticket history*). | §10 *"check-in ตรวจ QR/เจ้าของ"*, Q-A2, Q-A3 |
-| B9 | **The queue moves the booking forward.** The booking's ticket becoming `SERVING` makes the booking `IN_SERVICE`; its ticket cancelled with `dayClosed` makes it `CANCELLED` (`dayClosed`). The queue calls the `BookingQueueEvents` port (xc-kernel), so `xc-queue` does not depend on `xc-booking`. | queue-tickets Q5, Q8 |
+| B9 | **The queue moves the booking forward.** The booking's ticket becoming `SERVING` makes the booking `IN_SERVICE`; its ticket cancelled with `dayClosed` makes it `CANCELLED` (`dayClosed`); its ticket ended at the desk with no sale (released `noSale`, or finished with no COMPLETED sale naming it) makes it `CANCELLED` (`noSale`) and gives its place back (§4.2a). The queue calls the `BookingQueueEvents` port (xc-kernel), so `xc-queue` does not depend on `xc-booking`. | queue-tickets Q5, Q8, §4.6; staff e2e 2026-11-01 T1 |
 | B10 | **Completion completes the booking.** The transaction's completion runs `BookingSaveStep` (kept, quote-transaction D-7): `before_in` requires the booking `CHECKED_IN` or `IN_SERVICE`, the same branch and the same customer; `after_in` makes it `COMPLETED` with `transaction_id`. Side, currency and quantity may differ from the request (a queue place, B1). One booking → at most one completed transaction (unique `transaction_id`). | §06, §08 *"1:N → 0..1 completed"*, quote-transaction §6.4 |
 | B11 | **Time rules are data.** Cancellation cutoff (Q-B2, seeded 60 min), no-show grace (Q-B3, seeded 15 min) and confirmation expiry (Q-B4, seeded 60 min) live in `booking_policies` per organisation, editable by ADMIN; slot length, capacity and horizon (Q-B1) in `booking_slot_rules` per branch, entered by ADMIN with no default. No number is in code. | §12 Booking *"slot length/capacity; cutoff ยกเลิก; no-show grace; confirmation expiry"* |
 | B12 | **Expiry and no-show are written by a sweeper**, every minute, compare-and-set, actor `system`: `PENDING_CUSTOMER_CONFIRMATION` past `confirm_expires_at` → `EXPIRED`; `CONFIRMED` past `slot.start_at + grace` → `NO_SHOW`; `CHECKED_IN` with no active ticket after the slot's service date → `CANCELLED` (`dayEnded`). Each releases its place. Readers also treat an overdue row as its final state, so a late sweep never shows a wrong state. | §06, §12 |
@@ -191,9 +191,46 @@ booking_events(id uuid PK, organization_id, booking_id text NOT NULL REFERENCES 
   cancel:  PENDING | CONFIRMED  ──customer (any time) or teller (reason)──▶ CANCELLED
            CHECKED_IN | IN_SERVICE ──teller (reason)──▶ CANCELLED   (CHECKED_IN also cancels its active ticket)
            CHECKED_IN | IN_SERVICE ──ticket cancelled dayClosed──▶ CANCELLED (dayClosed)
+           CHECKED_IN | IN_SERVICE ──ticket ended at the desk, no sale──▶ CANCELLED (noSale)   (§4.2a)
            CHECKED_IN, no active ticket, after its service date (sweeper) ──▶ CANCELLED (dayEnded)
   final:   COMPLETED, CANCELLED, NO_SHOW, EXPIRED
 ```
+
+### 4.2a A desk exit with no sale ends the booking (staff e2e 2026-11-01, T1)
+
+**Why.** On 2026-11-01 (`#564` issuecomment-6554085352, step 4) a teller ended booking `B261101-0009`'s SERVING ticket
+with no sale. The ticket ended, but the booking stayed `IN_SERVICE`: `QueueDesk::release_in` and `finish_in` send no
+booking event, and `BookingLifecycle::on_ticket_ended_in` returns early for every reason but `dayClosed`
+(`lifecycle.rs:213-224`, main `a174fb95`). Nothing else moves an `IN_SERVICE` booking, so it stays there for good.
+
+**The rule.** `BookingQueueEvents::on_ticket_ended_in` takes one more reason, `noSale` (`queue_ticket.rs` `NO_SALE`):
+
+| Ticket end at the desk | The desk tells the booking | Booking `CHECKED_IN` / `IN_SERVICE` | Booking in any other state |
+|---|---|---|---|
+| `release` (SERVING → CANCELLED `noSale`, queue-tickets §4.6) | `on_ticket_ended_in(.., "noSale")` | `CANCELLED`, `ended_reason = noSale`, one `CANCEL` event (reason `noSale`, actor `system:queue`), its slot place released | unchanged |
+| `finish` (SERVING → COMPLETED) and no `transactions` row with `status = 'COMPLETED'` names the ticket | `on_ticket_ended_in(.., "noSale")` | as above | unchanged |
+| `finish` with a COMPLETED sale naming the ticket | nothing | — (the sale already made it `COMPLETED`, B10) | — |
+| a sale's own completion (`WalkInDesk::finish_for_sale_in`) | nothing (unchanged path) | — | — |
+| day close (`dayClosed`) | unchanged | unchanged (`CANCELLED dayClosed`) | unchanged |
+| any other reason (`customerLeft`, skip, …) | — | unchanged | unchanged |
+
+- `COMPLETED` is not a possible end: the table's CHECK ties `COMPLETED` to a `transaction_id` (`20261205131000_booking_slots.sql:110`), and no sale exists. The owner's ruling for the ticket (#5541, 2026-10-29, *"ยกเลิกได้ ระบุว่าไม่มีการขาย"*) is the same one carried to the booking: cancelled, with the reason that there was no sale.
+- The place goes back to the slot as for `dayClosed` and a teller cancel (`booking_service.rs` `cancel_in`: a holding state releases its place).
+- The port is called inside the desk's transaction, after the ticket's `UPDATE` and its event. Its error is the command's answer and rolls the ticket back.
+- No migration: `CANCELLED` and `ended_reason` exist. Rows already stuck (`B261101-0009`) are not touched by this change; a teller can cancel them with a reason (`BookingMachine::cancel`, staff, from `IN_SERVICE`), which needs no SQL.
+
+**Who changes what** (one function ticket, files disjoint from other open work):
+
+| Class | File | Change |
+|---|---|---|
+| `QueueDesk::release_in`, `QueueDesk::finish_in` | `api/crates/xc-queue/src/application/desk/queue_desk.rs` | tell `booking_events` as the table says |
+| `BookingLifecycle` (`impl BookingQueueEvents`) | `api/crates/xc-booking/src/application/lifecycle.rs` | handle `noSale` as `dayClosed`, with its own reason |
+| `BookingQueueEvents` (doc comment only) | `api/crates/xc-kernel/src/booking_queue_events.rs` | name both reasons |
+
+**Up-front tests** (`test/5859`, ticket #5859): `api/crates/xc-queue/tests/queue_desk_release_booking_test.rs` (the desk tells the port,
+after the ticket moved; walk-ins tell nothing; a port error rolls back) and
+`api/crates/xc-booking/tests/lifecycle_no_sale_test.rs` (the booking ends `CANCELLED noSale` and frees its place; an
+ended booking and other reasons are unchanged).
 
 ### 4.3 Rules the machine enforces
 
