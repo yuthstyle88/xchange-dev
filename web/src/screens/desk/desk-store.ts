@@ -15,7 +15,9 @@ import { wordedError } from '../../shared/i18n/worded-error';
 import { checkDecimal, MONEY } from '../../shared/ui/bounded';
 import * as screenI18n from './i18n';
 import type { HeldBooking } from './held-ticket';
+import { publishedCodes } from './published-rates';
 import { createSaver, newKey, type SaveAnswer } from './save';
+import * as rateTexts from './steps/rate/i18n';
 
 export type { HeldBooking } from './held-ticket';
 export type { SaveAnswer } from './save';
@@ -160,9 +162,19 @@ export function pageBranch(path: DeskPath, me: Me | undefined): string {
 }
 
 const t = screenT('desk', screenI18n);
+const rateT = screenT('desk.steps.rate', rateTexts);
 
-function quoteErrorOf(e: unknown, fallback: string): { field?: string; message: string } {
+function quoteErrorOf(
+  e: unknown,
+  fallback: string,
+  code: string,
+  type: DeskType,
+): { field?: string; message: string } {
   if (e instanceof ApiError) {
+    if (e.code === 'rateUnavailable') {
+      const side = rateT(type === 'BUY' ? 'typeBuy' : 'typeSell');
+      return { message: rateT('rateNotPublished', { code, side }) };
+    }
     if (e.code === 'couponInvalid') {
       return { field: 'couponCode', message: t('couponInvalid') };
     }
@@ -235,8 +247,9 @@ export function createDeskStore(
     .then((answer) => {
       const c = answer.data;
       setConfig(c);
-      if (c && currency() === '' && c.rates.length > 0) {
-        setCurrencyS(c.rates[0].code);
+      if (c && currency() === '') {
+        const first = publishedCodes(c.rates, type())[0];
+        if (first) setCurrencyS(first);
       }
     })
     .catch((e: unknown) => {
@@ -285,6 +298,8 @@ export function createDeskStore(
     }
     const mine = ++quoteSeq;
     setQuoting(true);
+    const reqCurrency = currency();
+    const reqType = type();
     const coupon = couponCode().trim();
     const body: QuotesCommandInput = {
       branch: null,
@@ -293,8 +308,8 @@ export function createDeskStore(
       channel: 'DESK',
       lines: [
         {
-          currency: currency(),
-          shopSide: type(),
+          currency: reqCurrency,
+          shopSide: reqType,
           quantity: amount(),
           feeThb: feeThb === '' ? null : feeThb,
           denominationGroup: null,
@@ -317,7 +332,7 @@ export function createDeskStore(
     } catch (e) {
       if (mine !== quoteSeq) return quote();
       setQuote(undefined);
-      setQuoteError(quoteErrorOf(e, t('quoteFailed')));
+      setQuoteError(quoteErrorOf(e, t('quoteFailed'), reqCurrency, reqType));
       return undefined;
     } finally {
       if (mine === quoteSeq) setQuoting(false);
@@ -329,8 +344,19 @@ export function createDeskStore(
     quoteSeq += 1;
   });
 
+  function followType(): void {
+    const rates = config()?.rates;
+    if (!entry() && rates) {
+      const codes = publishedCodes(rates, type());
+      if (!codes.includes(currency())) {
+        setCurrencyS(codes[0] ?? '');
+      }
+    }
+  }
+
   function setType(v: DeskType): void {
     setTypeS(v);
+    followType();
     scheduleQuote();
   }
   function setCurrency(v: string): void {
@@ -499,6 +525,7 @@ export function createDeskStore(
     setPaymentChecked(false);
     setCountConfirmed(false);
     setEntry(undefined);
+    followType();
     setOutcome('idle');
     setTransactionState(undefined);
     setSaveError(undefined);
