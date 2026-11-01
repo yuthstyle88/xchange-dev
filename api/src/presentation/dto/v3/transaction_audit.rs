@@ -20,6 +20,7 @@ impl crate::presentation::http::v3::view::ViewFilter for TransactionAuditFilter 
 pub struct TransactionAuditEventDto {
     pub at: String,
     pub actor_id: String,
+    pub actor_name: Option<String>,
     pub actor_role: String,
     pub action: String,
 }
