@@ -1,6 +1,7 @@
 // APP-16 customer book screen (design customer-app.md §4.5, §9.1 C02, #985).
 import {
   createEffect,
+  createMemo,
   createSignal,
   onCleanup,
   onMount,
@@ -22,6 +23,7 @@ import { IndicativeBenefit } from '../benefit-estimate/IndicativeBenefit';
 import type { BookingSlotItemDto, BookingSlotsData } from '../../../shared/api/generated/booking_slots';
 import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/api/generated/bookings';
 import type { PlannerBenefitDto } from '../../../shared/api/generated/planner_preview';
+import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import { th, en, zh } from './i18n';
 import './book.css';
 
@@ -282,14 +284,19 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
 
   let previewSeq = 0;
   let createFailed = false;
+  const [ratesPoller, setRatesPoller] = createSignal<PublicPoller<PublishedRatesData> | undefined>();
 
   createEffect(() => {
     const org = hostOrg();
     const id = branchId();
     const br = id ? branches().find((b) => b.id === id) : undefined;
-    if (!org || !br?.code) return;
+    if (!org || !br?.code) {
+      setRatesPoller(undefined);
+      return;
+    }
     const url = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(br.code)}/rates`;
-    const poller = new PublicPoller<unknown>(url, fetchFn, props.ratesIntervalMs ?? 10_000, 300_000);
+    const poller = new PublicPoller<PublishedRatesData>(url, fetchFn, props.ratesIntervalMs ?? 10_000, 300_000);
+    setRatesPoller(poller);
     poller.start();
     onCleanup(() => poller.stop());
     let prev: unknown;
@@ -301,6 +308,20 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       }
       prev = data;
     });
+  });
+
+  const bookCurrencies = createMemo(() => {
+    const lines = ratesPoller()?.data()?.lines ?? [];
+    const side = shopSide();
+    return Array.from(
+      new Set(lines.filter((l) => (side === 'BUY' ? l.buyRate : l.sellRate) !== null).map((l) => l.currency)),
+    );
+  });
+
+  createEffect(() => {
+    if (!bookCurrencies().includes(currency())) {
+      setCurrency(bookCurrencies()[0] ?? '');
+    }
   });
 
   createEffect(() => {
@@ -393,7 +414,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       ((document.querySelector('select[name="shopSide"]') as HTMLSelectElement)?.value as 'BUY' | 'SELL') ||
       'BUY';
     const currentCurrency =
-      currency() || (document.querySelector('select[name="currency"]') as HTMLSelectElement)?.value || 'USD';
+      currency() || (document.querySelector('select[name="currency"]') as HTMLSelectElement)?.value || '';
     const currentQtyStr = (
       quantity() ||
       (document.querySelector('input[name="quantity"]') as HTMLInputElement)?.value ||
@@ -732,12 +753,13 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               void updatePreview();
             }}
           >
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="JPY">JPY</option>
-            <option value="GBP">GBP</option>
-            <option value="SGD">SGD</option>
+            <For each={bookCurrencies()}>
+              {(c) => <option value={c}>{c}</option>}
+            </For>
           </select>
+          <Show when={branchId() && bookCurrencies().length === 0}>
+            <div data-hint="no-published-currency">{t('noPublishedCurrency')}</div>
+          </Show>
           <Show when={fieldErrors().currency}>
             <div class="field-error xc-book-error" data-field-error="currency" role="alert">
               {fieldErrors().currency}
