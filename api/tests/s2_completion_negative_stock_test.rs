@@ -11,7 +11,10 @@
 //!   the exchange stays CONFIRMED, and the request's `object_id` is the exchange's id, which is what
 //!   `LedgerCashPostings::allows_negative` compares with the posting's source (`ledger_postings.rs:889`).
 //! - The owner, verbatim on #564 (2026-10-19 08:57Z, relayed by claude/a90ab16c): *"#3405 plain stockInsufficient
-//!   after a rejection"*.
+//!   after a rejection"*. **Superseded 2026-11-02** by the owner's *"A ตามเสนอ"* (G5 option A, relayed by
+//!   claude/608dff): a rejection cancels the exchange with the decision's reason, and the retry answers
+//!   `409 staleVersion` (`ledger-inventory.md` §5.1.1). Restated by that design's ticket author (claude/b091f5e0):
+//!   the rejection test below, and a new audit test after it.
 //!
 //! Not pinned here, on purpose (each waits on a ruling; see #3405):
 //! - the request id inside the 409 body: `V3Error` has no slot for it (`api/src/presentation/http/v3/error.rs:9-14`);
@@ -353,10 +356,20 @@ async fn s2_once_the_branch_manager_approves_the_retry_completes_and_the_drawer_
     c.finish().await;
 }
 
-// ------------------------------------------------------------ the owner's answer: after a rejection
+// ------------------------------------------------------------ the owner's answer: after a rejection (§5.1.1)
+
+/// `(cancelled_at IS NOT NULL, cancel_reason)` of the exchange, read from the row.
+async fn cancel_of(c: &Counter, t: &ExchangeTransaction) -> (bool, Option<String>) {
+    sqlx::query_as("SELECT cancelled_at IS NOT NULL, cancel_reason FROM transactions WHERE id = $1")
+        .bind(t.id.0)
+        .fetch_one(&c.desk.db.pool)
+        .await
+        .expect("read the exchange's cancel columns")
+}
 
 #[actix_web::test]
-async fn s2_after_a_rejection_the_teller_gets_stock_insufficient_noting_it_and_no_new_request() {
+async fn s2_after_a_rejection_the_exchange_is_cancelled_with_the_reason_and_the_retry_is_stale_version()
+ {
     let c = Counter::start().await;
     let t = short_sell(&c).await;
     let key = unique("key");
@@ -367,25 +380,87 @@ async fn s2_after_a_rejection_the_teller_gets_stock_insufficient_noting_it_and_n
     assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
     decide(&c, &rows[0].0, "REJECTED").await;
 
-    let after = complete(&c, &t, &key).await;
+    let stored = c.desk.stored(t.id).await;
     assert_eq!(
-        (after.status, after.code()),
-        (StatusCode::CONFLICT, "stockInsufficient"),
-        "the owner: plain stockInsufficient after a rejection: {}",
-        after.text
+        stored.status,
+        TransactionStatus::Cancelled,
+        "§5.1.1: the rejection cancels the exchange in the decision's transaction"
     );
-    assert!(
-        after.message().to_lowercase().contains("reject"),
-        "the owner: the answer notes the rejection: {:?}",
-        after.message()
+    assert_eq!(
+        cancel_of(&c, &t).await,
+        (true, Some("S2 up-front test".to_owned())),
+        "§5.1.1: cancel_reason is the decision's reason, verbatim"
     );
+    assert_eq!(stored.document_ref, None, "no number was issued");
+    assert_eq!(
+        expected(&c, "USD").await,
+        "1000.00",
+        "the drawer's USD did not move"
+    );
+    assert_eq!(
+        expected(&c, "THB").await,
+        "10000.00",
+        "the drawer's THB did not move"
+    );
+
+    for k in [key.clone(), unique("key")] {
+        let after = complete(&c, &t, &k).await;
+        assert_eq!(
+            (after.status, after.code()),
+            (StatusCode::CONFLICT, "staleVersion"),
+            "§5.1.1: the desk's next complete, same or new key: {}",
+            after.text
+        );
+        assert_eq!(
+            after.message(),
+            "staleVersion: a CANCELLED exchange is not completed",
+            "{}",
+            after.text
+        );
+    }
     let rows = requests(&c, &t).await;
     assert_eq!(rows.len(), 1, "no new request: {rows:?}");
     assert_eq!(
         rows[0].1, "REJECTED",
         "the rejected request is never reused or reopened"
     );
-    assert_not_completed(&c, &t).await;
+    c.finish().await;
+}
+
+#[actix_web::test]
+async fn s2_the_cancel_after_a_rejection_leaves_one_audit_row_by_the_approver() {
+    let c = Counter::start().await;
+    let t = short_sell(&c).await;
+
+    let first = complete(&c, &t, &unique("key")).await;
+    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
+    let rows = requests(&c, &t).await;
+    decide(&c, &rows[0].0, "REJECTED").await;
+
+    let approver: String = sqlx::query_scalar(
+        "SELECT approver_id FROM approval_decisions WHERE request_id::text = $1",
+    )
+    .bind(&rows[0].0)
+    .fetch_one(&c.desk.db.pool)
+    .await
+    .expect("the decision's approver");
+    let audit: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT actor_id, after_redacted->>'status', after_redacted->>'reason' FROM audit_events \
+         WHERE action = 'transaction.cancelled' AND object_ref = $1",
+    )
+    .bind(t.id.0.to_string())
+    .fetch_all(&c.desk.db.pool)
+    .await
+    .expect("read the cancel's audit rows");
+    assert_eq!(
+        audit,
+        vec![(
+            approver,
+            Some("CANCELLED".to_owned()),
+            Some("S2 up-front test".to_owned())
+        )],
+        "§5.1.1: one transaction.cancelled row, by the deciding manager, with the decision's reason"
+    );
     c.finish().await;
 }
 
