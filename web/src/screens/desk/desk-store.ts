@@ -17,7 +17,6 @@ import * as screenI18n from './i18n';
 import type { HeldBooking } from './held-ticket';
 import { publishedCodes } from './published-rates';
 import { createSaver, newKey, type SaveAnswer } from './save';
-import * as rateTexts from './steps/rate/i18n';
 
 export type { HeldBooking } from './held-ticket';
 export type { SaveAnswer } from './save';
@@ -162,7 +161,6 @@ export function pageBranch(path: DeskPath, me: Me | undefined): string {
 }
 
 const t = screenT('desk', screenI18n);
-const rateT = screenT('desk.steps.rate', rateTexts);
 
 function quoteErrorOf(
   e: unknown,
@@ -172,8 +170,8 @@ function quoteErrorOf(
 ): { field?: string; message: string } {
   if (e instanceof ApiError) {
     if (e.code === 'rateUnavailable') {
-      const side = rateT(type === 'BUY' ? 'typeBuy' : 'typeSell');
-      return { message: rateT('rateNotPublished', { code, side }) };
+      const side = t(type === 'BUY' ? 'sideBuy' : 'sideSell');
+      return { message: t('rateNotPublished', { code, side }) };
     }
     if (e.code === 'couponInvalid') {
       return { field: 'couponCode', message: t('couponInvalid') };
