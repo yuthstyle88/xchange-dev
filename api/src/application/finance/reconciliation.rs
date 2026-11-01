@@ -125,7 +125,24 @@ struct HashedFigures<'a> {
     counts: &'a Part<Vec<CountRow>>,
     transfers: &'a Part<TransferSummary>,
     integrity: &'a Part<Vec<IntegrityRow>>,
-    reversals_pending: &'a Part<Vec<ReversalPendingRow>>,
+    reversals_pending: HashedPart<'a, Vec<HashedReversalPendingRow<'a>>>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HashedPart<'a, T> {
+    available: bool,
+    reason: &'a Option<String>,
+    data: Option<T>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HashedReversalPendingRow<'a> {
+    request_id: &'a str,
+    reversal_id: &'a str,
+    amount_thb: &'a str,
+    created_at: &'a str,
 }
 
 /// What a certification stores in `figures`: the six parts as the certifier saw them.
@@ -142,12 +159,26 @@ struct ShownFigures<'a> {
 
 /// Lower-hex SHA-256 of the compact JSON of the hashed parts: availability and reasons are figures too.
 fn figures_hash(s: &FinanceSheet) -> AppResult<String> {
+    let reversals_pending = HashedPart {
+        available: s.reversals_pending.available,
+        reason: &s.reversals_pending.reason,
+        data: s.reversals_pending.data.as_ref().map(|rows| {
+            rows.iter()
+                .map(|r| HashedReversalPendingRow {
+                    request_id: &r.request_id,
+                    reversal_id: &r.subject.reversal_id,
+                    amount_thb: &r.subject.amount_thb,
+                    created_at: &r.created_at,
+                })
+                .collect()
+        }),
+    };
     let hashed = HashedFigures {
         transactions: &s.transactions,
         counts: &s.counts,
         transfers: &s.transfers,
         integrity: &s.integrity,
-        reversals_pending: &s.reversals_pending,
+        reversals_pending,
     };
     let bytes = serde_json::to_vec(&hashed)
         .map_err(|e| AppError::Internal(format!("hash the figures: {e}")))?;

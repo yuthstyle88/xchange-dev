@@ -118,9 +118,20 @@ export function makeReconciliationCertifyInput(o: Partial<ReconciliationCertifyI
 export function makeReversalPendingRow(o: Partial<ReversalPendingRow> = {}): ReversalPendingRow {
   return {
     requestId: 'reversal_pending_row-1',
-    transactionId: 'reversal_pending_row-1',
-    requestedBy: 'requestedBy',
     createdAt: '2026-01-01T00:00:00Z',
+    subject: {
+      reversalId: 'reversal_subject-1',
+      originalTransactionId: 'reversal_subject-1',
+      receiptNumber: 'receiptNumber',
+      amountThb: '0.00',
+      reason: 'reason',
+      customerName: null,
+      customerNo: null,
+      requestedByName: null,
+      shiftId: null,
+      shiftOpenedAt: null,
+      lines: [],
+    },
     ...o,
   };
 }

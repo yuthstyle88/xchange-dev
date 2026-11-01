@@ -2,8 +2,18 @@
 
 export type ApprovalDecisionDto = { approverId: string, outcome: string, reason: string, at: string, };
 
-export type ApprovalRequestItemDto = { id: string, type: string, branchId: string | null, objectId: string, objectVersionHash: string, policyVersion: string, proposedPayload: any, requestedBy: string, requestedAt: string, status: string, decision: ApprovalDecisionDto | null, };
+export type ApprovalRequestItemDto = { id: string, type: string, branchId: string | null, objectId: string, objectVersionHash: string, policyVersion: string, proposedPayload: any, requestedBy: string, requestedByName: string | null, requestedAt: string, status: string, decision: ApprovalDecisionDto | null, subject: ApprovalSubject | null, };
 
 export type ApprovalRequestsData = { requests: Array<ApprovalRequestItemDto>, };
 
 export type ApprovalRequestsFilter = { status: string | null, type: string | null, };
+
+export type ApprovalSubject = { "kind": "reversal" } & ReversalSubject | { "kind": "countDifference" } & CountDifferenceSubject;
+
+export type CountDifferenceSubject = { countId: string, countKind: string, countedBy: string, countedByName: string | null, shiftId: string | null, shiftOpenedAt: string | null, netDifferenceThb: string, lines: Array<CountSubjectLine>, };
+
+export type CountSubjectLine = { currency: string, counted: string, expected: string | null, difference: string | null, };
+
+export type ReversalSubject = { reversalId: string, originalTransactionId: string, receiptNumber: string, amountThb: string, reason: string, customerName: string | null, customerNo: string | null, requestedByName: string | null, shiftId: string | null, shiftOpenedAt: string | null, lines: Array<ReversalSubjectLine>, };
+
+export type ReversalSubjectLine = { side: string, currency: string, quantity: string, };
