@@ -1,8 +1,9 @@
 // Step 3, payment (design xchange-v3-wave3-desk.md §3.2 rows "3 Payment", "3 payments", "3 cash count", §3.6 B2–B3,
 // D-4, D-7, §5.4; #543 Part 1). The net is the quote line's `settleThb` as answered (D-4); the save is `store.submit()`.
-import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { screenT, t as sharedT } from '../../../../shared/i18n';
 import { checkDecimal, MONEY } from '../../../../shared/ui/bounded';
+import { yieldQueueCard } from '../../../../shared/ui/queue-card-yield';
 import type { DeskStore } from '../../desk-store';
 import type { DeskStep } from '../../steps';
 import { isOpen, METHODS, ruleFor } from './channels';
@@ -25,6 +26,10 @@ function slipRefused(file: File): boolean {
 
 function PaymentStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
+  createEffect(() => {
+    const release = yieldQueueCard();
+    onCleanup(release);
+  });
   let slipEl: HTMLInputElement | undefined;
   const [error, setError] = createSignal<string | undefined>();
   const [slipError, setSlipError] = createSignal<string | undefined>();

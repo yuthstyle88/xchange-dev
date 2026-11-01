@@ -195,7 +195,7 @@ test.describe.serial('F6 desk exchange', () => {
         console.log(`[F6] POST /api/rpc (reserveCustomer) ${reserveRes.text}`);
         expect(reserveRes.ok, `reserveCustomer on skip: ${reserveRes.text}`).toBeTruthy();
 
-        const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|Confirm booking/ });
+        const confirmBookingBtn = teller.getByRole('button', { name: /ยืนยันการจอง|ยืนยันข้อมูล|Confirm booking|Confirm details/ });
         await expect(confirmBookingBtn, 'booking step shows (steps/booking/step.tsx:54)').toBeVisible({
           timeout: 15_000,
         });

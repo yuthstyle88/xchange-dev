@@ -8,6 +8,7 @@ import { locale, screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { Card, CardActions } from '../../../shared/ui/Card';
+import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import {
   decideRefusal,
@@ -95,8 +96,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
     return [];
   };
 
-  const cashTransferDetail = () => {
-    if (props.request.type !== 'CASH_TRANSFER') return null;
+  const payloadObject = (): Record<string, unknown> | null => {
     let payload = props.request.proposedPayload;
     if (typeof payload === 'string') {
       try {
@@ -106,6 +106,13 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       }
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    return payload as Record<string, unknown>;
+  };
+
+  const cashTransferDetail = () => {
+    if (props.request.type !== 'CASH_TRANSFER') return null;
+    const payload = payloadObject();
+    if (!payload) return null;
 
     const rawTransferId = payload.transfer_id ?? payload.transferId;
     const transferId =
@@ -126,6 +133,44 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
     if (!transferId && !fromBranch && withinLimit === null) return null;
     return { transferId, fromBranch, withinLimit };
+  };
+
+  const reversalDetail = () => {
+    if (props.request.type !== 'TRANSACTION_REVERSAL') return null;
+    const payload = payloadObject();
+    if (!payload) return null;
+
+    const rawOrig = payload.originalTransactionId;
+    const original =
+      typeof rawOrig === 'string' && rawOrig.length > 0 ? rawOrig : null;
+
+    const rawAmount = payload.amountThb;
+    const amount =
+      typeof rawAmount === 'string' && /^-?\d+(\.\d+)?$/.test(rawAmount)
+        ? rawAmount
+        : null;
+
+    const rawReason = payload.reason;
+    const why =
+      typeof rawReason === 'string' && rawReason.length > 0 ? rawReason : null;
+
+    if (!original && !amount && !why) return null;
+    return { original, amount, why };
+  };
+
+  const countDetail = () => {
+    if (props.request.type !== 'COUNT_DIFFERENCE') return null;
+    const payload = payloadObject();
+    if (!payload) return null;
+
+    const rawDiff = payload.net_difference_thb;
+    const value =
+      typeof rawDiff === 'string' && /^-?\d+(\.\d+)?$/.test(rawDiff)
+        ? rawDiff
+        : null;
+
+    if (value === null) return null;
+    return { value };
   };
 
   const handleApprove = async () => {
@@ -208,7 +253,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
         <div class="approval-proposer">
           <span>{t('requestedBy')}</span>
-          <strong>{props.request.requestedBy}</strong>
+          <strong title={props.request.requestedBy}>—</strong>
         </div>
 
         <Show when={cashTransferDetail()}>
@@ -221,6 +266,40 @@ function RequestCard(props: RequestCardProps): JSX.Element {
               {d().withinLimit !== null && (
                 <span>{d().withinLimit ? t('withinLimit') : t('aboveLimit')}</span>
               )}
+            </div>
+          )}
+        </Show>
+
+        <Show when={reversalDetail()}>
+          {(d) => (
+            <>
+              {d().original && (
+                <div class="approval-proposer">
+                  <span>{t('originalTransaction')}</span>
+                  <span title={d().original!}>#{d().original!.slice(0, 8)}</span>
+                </div>
+              )}
+              {d().amount && (
+                <div class="approval-proposer">
+                  <span>{t('reversalAmount')}</span>
+                  <span>{formatMoney(d().amount!)} THB</span>
+                </div>
+              )}
+              {d().why && (
+                <div class="approval-proposer">
+                  <span>{t('requestReason')}</span>
+                  <span>{d().why}</span>
+                </div>
+              )}
+            </>
+          )}
+        </Show>
+
+        <Show when={countDetail()}>
+          {(d) => (
+            <div class="approval-proposer">
+              <span>{t('netDifference')}</span>
+              <span>{formatMoney(d().value)} THB</span>
             </div>
           )}
         </Show>
@@ -252,7 +331,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   <>
                     <div class="approval-proposer">
                       <span>{t('decidedBy')}</span>
-                      <strong>{dec().approverId}</strong>
+                      <strong title={dec().approverId}>—</strong>
                     </div>
                     <div class="approval-proposer">
                       <span>{t('decisionOutcome')}</span>

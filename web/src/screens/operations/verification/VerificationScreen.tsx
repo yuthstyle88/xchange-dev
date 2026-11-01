@@ -39,6 +39,7 @@ import type {
   VerificationQueueItem,
 } from '../../../shared/api/generated/verification_queue';
 import { screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { can } from '../../staff/parts/can';
 import { en, th } from './i18n';
@@ -717,7 +718,7 @@ export function VerificationScreen(): JSX.Element {
     const transition =
       beforeStatus || afterStatus ? ` (${beforeStatus || '-'} -> ${afterStatus || '-'})` : '';
     const actorRole = ev.actorRole ?? raw.role ?? '';
-    const timestamp = ev.at ?? raw.createdAt ?? '';
+    const timestamp = formatBangkokDateTime(ev.at ?? raw.createdAt ?? '');
     return `${ev.action}${transition} · ${actorRole} · ${timestamp}`;
   }
 
@@ -792,7 +793,7 @@ export function VerificationScreen(): JSX.Element {
                         <td>{item.identityLast4 ?? '-'}</td>
                         <td>{item.status}</td>
                         <td>{item.branchId ?? st('branchOrgWide')}</td>
-                        <td>{item.submittedAt ?? '-'}</td>
+                        <td>{item.submittedAt ? formatBangkokDateTime(item.submittedAt) : '-'}</td>
                       </tr>
                     )}
                   </For>
@@ -832,7 +833,7 @@ export function VerificationScreen(): JSX.Element {
                       <dd>{detail().version}</dd>
                       <Show when={detail().expiresAt}>
                         <dt>{st('caseExpiresAtLabel')}</dt>
-                        <dd>{detail().expiresAt}</dd>
+                        <dd>{formatBangkokDateTime(detail().expiresAt!)}</dd>
                       </Show>
                       <Show when={detail().decisionReasonCode}>
                         <dt>{st('caseReasonLabel')}</dt>

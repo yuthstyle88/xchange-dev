@@ -1,7 +1,7 @@
-import { createEffect, createSignal, onCleanup, onMount, type Accessor, type JSX } from 'solid-js';
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import type { CashLineInput, CountSubmitInput } from '../../../shared/api/generated/cash';
-import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
+import type { CashCountRow, CashCountTotalRow } from '../../../shared/api/generated/cash_counts';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { MyShift } from '../../../shared/api/generated/my_shift';
 import { screenT } from '../../../shared/i18n';
@@ -9,11 +9,34 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { formatMoney } from '../../../shared/ui/MoneyText';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
 import type { StaffCtx } from '../cards';
 import { command } from '../parts/command';
 import { formatCountTime } from './counts';
 import { en, th } from './i18n';
+
+const SHIFT_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Bangkok',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+export function countDifferences(
+  totals: readonly CashCountTotalRow[],
+): { currency: string; text: string }[] {
+  const t = screenT('staff.shift', { th, en });
+  const out: { currency: string; text: string }[] = [];
+  for (const tot of totals) {
+    const v = tot.difference;
+    if (v !== null && /[1-9]/.test(v)) {
+      const signed = v.startsWith('-') ? formatMoney(v) : `+${formatMoney(v)}`;
+      out.push({ currency: tot.currency, text: `${t('difference')} ${tot.currency} ${signed}` });
+    }
+  }
+  return out;
+}
 
 export interface CountFormProps {
   ctx: StaffCtx;
@@ -96,6 +119,22 @@ export function CountForm(p: CountFormProps): JSX.Element {
   };
 
   const saveDisabled = (): boolean => p.busy() || denoms().length === 0 || !myShiftLoaded();
+
+  const shiftAge = (): string | null => {
+    if (p.kind !== 'CLOSE') return null;
+    const shift = myShift();
+    if (!shift) return null;
+    const opened = new Date(shift.openedAt);
+    if (Number.isNaN(opened.getTime())) return null;
+    const [oy, om, od] = SHIFT_DAY_FMT.format(opened).split('-');
+    const [ny, nm, nd] = SHIFT_DAY_FMT.format(new Date()).split('-');
+    const n = Math.round(
+      (Date.UTC(+ny!, +nm! - 1, +nd!) - Date.UTC(+oy!, +om! - 1, +od!)) / 86_400_000,
+    );
+    if (n < 1) return null;
+    const date = `${od}/${om}/${oy}`;
+    return n === 1 ? t('shiftOpenedOneDayAgo', { date }) : t('shiftOpenedDaysAgo', { date, n });
+  };
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -180,6 +219,9 @@ export function CountForm(p: CountFormProps): JSX.Element {
         setQuantity={(id, v) => setQuantities((prev) => ({ ...prev, [id]: v }))}
         lineErrors={lineErrors()}
       />
+      <Show when={shiftAge()}>
+        {(text) => <p data-testid="shift-age">{text()}</p>}
+      </Show>
       <div class="xc-shift-form-actions">
         <button
           type="submit"
@@ -206,6 +248,14 @@ export function CountWaitingLine(p: { kind: 'OPEN' | 'CLOSE'; row: CashCountRow 
       data-testid={p.kind === 'OPEN' ? 'shift-open-waiting' : 'shift-close-waiting'}
     >
       {t(p.kind === 'OPEN' ? 'openWaiting' : 'closeWaiting')} ({formatCountTime(p.row.countedAt)})
+      <For each={countDifferences(p.row.totals)}>
+        {(d) => (
+          <>
+            {' · '}
+            <span data-count-difference={d.currency}>{d.text}</span>
+          </>
+        )}
+      </For>
     </div>
   );
 }
