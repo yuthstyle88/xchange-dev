@@ -77,11 +77,7 @@ describe('fe-text-number-bounds (#4972)', () => {
 
     // 3. ReversalsPart component
     dispose();
-    const revRow = makeReversalPendingRow({
-      requestId: 'rev-1',
-      transactionId: 'tx-1',
-      requestedBy: 'u-teller',
-    });
+    const revRow = makeReversalPendingRow({ requestId: 'rev-1' });
     dispose = render(
       () => <ReversalsPart rows={[revRow]} branch="MAIN" onDecided={async () => {}} />,
       container,
