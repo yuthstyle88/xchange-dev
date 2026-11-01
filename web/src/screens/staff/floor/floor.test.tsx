@@ -2,6 +2,7 @@
 // Written before the implementation by the up-front test writer (claude/709ec749, on the xchange FE lane controller
 // claude/5edf7bb5's order, the owner having ordered it on 2026-10-11). Do not edit, delete or weaken; add tests in a
 // file of your own.
+// Amended by FE-T11 #5858 (claude/01TxaRJG): th phase.CLOSED is "ปิดวันทำการแล้ว" (design fe-triage-1101.md §3 W7), not "ปิดกะ".
 //
 // Design: docs/design/xchange-v3-wave3-staff.md (SD)
 //   §4      floor/: phase, clock in/out (clock), start service and cut-off (dayStartService, dayCutoff;
@@ -394,7 +395,7 @@ describe("S-4 the card record (SD:§4)", () => {
     expect(th("phase.OPEN")).toBe("เปิดรับรายการ");
     expect(th("phase.CUT_OFF")).toBe("ตัดรายการแล้ว / รอนับ");
     expect(th("phase.COUNTING")).toBe("กำลังตรวจและส่งมอบ");
-    expect(th("phase.CLOSED")).toBe("ปิดกะ");
+    expect(th("phase.CLOSED")).toBe("ปิดวันทำการแล้ว");
     expect(th("clockIn")).toBe("ลงเวลาเข้า");
   });
 
