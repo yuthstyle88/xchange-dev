@@ -72,10 +72,6 @@ pub const ALLOWLIST: &[(&str, &str)] = &[
         "parses the stored currencies.unit_size read back from the database, not client input",
     ),
     (
-        "src/presentation/http/v3/desk/config.rs",
-        "stored currency unit_size read back from database (O-G1-2)",
-    ),
-    (
         "src/presentation/http/v3/views/admin_cash.rs",
         "admin cash view read back from database, plus Decimal::from_str literals in its #[cfg(test)] module; not client input",
     ),

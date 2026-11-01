@@ -207,9 +207,10 @@ impl QuoteService {
         let published_side = match published_side {
             Some(s) => s,
             None => {
-                return Err(AppError::Domain(
-                    "rateUnavailable: no published line".to_string(),
-                ));
+                return Err(AppError::Domain(format!(
+                    "rateUnavailable: no published line for {}",
+                    line_req.currency
+                )));
             }
         };
 
