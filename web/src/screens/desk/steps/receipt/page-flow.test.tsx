@@ -4,8 +4,10 @@
 // the page are not done. Without `steps/booking`, `steps/payment` and `steps/receipt` the skip at step 1 lands on the
 // page's empty panel and this test goes red at "step 2". Written before the implementation by the test-writer
 // (claude/709ec749, on the FE lane controller claude/5edf7bb5's order). Do not edit, delete or weaken.
+// Amended by FE-T8 #5856 (claude/01TxaRJG): W2 walks a walk-in sale, so its step-2 heading is the walk-in
+// `ข้อมูลรายการ` (design fe-triage-1101.md W5) instead of v2's `ข้อมูลการจอง`, which stays for booking and kiosk sales.
 //
-// [required]: the headings of steps 2–4 are v2's (§3.6b): `ข้อมูลการจอง`, `ชำระเงินและเอกสารบัญชี`,
+// [required]: the headings of steps 2–4 are `ข้อมูลรายการ` (a walk-in, W5), `ชำระเงินและเอกสารบัญชี`,
 // `ใบเสร็จรายการแลกเงิน`; their controls are the names pinned in `steps/{booking,payment}/step.test.tsx`.
 // The answers are the generated types (`QuoteDto`, `TransactionDto`, `DeskConfig`). `…/complete` is TX-5's (#873, not
 // merged): its fake answers a `TransactionDto` with `status: "COMPLETED"`, and only `id` and `status` are read.
@@ -29,7 +31,7 @@ import { withOpenShift } from "../../shift/open-shift.testing";
 const HEAD = {
   rate: "เลือกเรทและจำนวนเงิน",
   customer: "พาสปอร์ต / ข้อมูลลูกค้า",
-  booking: "ข้อมูลการจอง",
+  booking: "ข้อมูลรายการ",
   payment: "ชำระเงินและเอกสารบัญชี",
   receipt: "ใบเสร็จรายการแลกเงิน",
 };
