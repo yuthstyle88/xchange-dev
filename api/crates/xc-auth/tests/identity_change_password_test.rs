@@ -96,6 +96,7 @@ impl Fake {
                 audience: "xchange".into(),
                 issuer: "auth-service".into(),
                 api_key: Some("api-key-1".into()),
+                internal_token: None,
             },
             "x-forwarded-for",
         )

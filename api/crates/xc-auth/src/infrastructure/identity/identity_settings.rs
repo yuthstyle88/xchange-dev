@@ -6,6 +6,9 @@ pub struct IdentitySettings {
     pub audience: String,
     pub issuer: String,
     pub api_key: Option<String>,
+    /// Identity's `INTERNAL_SERVICE_TOKEN`, sent as `X-Internal-Token` on its admin routes (design
+    /// `user-management-rbac.md` §13). `None` = admin calls answer `identityUnavailable`.
+    pub internal_token: Option<String>,
 }
 
 impl std::fmt::Debug for IdentitySettings {
