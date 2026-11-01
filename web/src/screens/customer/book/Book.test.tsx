@@ -2,6 +2,7 @@
 
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setAudience, setLang } from '../../../shared/i18n';
+import { makePublishedLineDto, makePublishedRatesData } from '../../../shared/testing/fixtures';
 
 interface NodeFs {
   readFileSync(file: string, encoding: string): string;
@@ -154,6 +155,14 @@ function setupMockBackend(options: {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    // Branch public rates (FE-T2c #5907: the currency list comes from these lines, so the stub publishes USD)
+    if (/^\/api\/public\/orgs\/[^/]+\/branches\/[^/]+\/rates$/.test(path)) {
+      return new Response(
+        JSON.stringify(makePublishedRatesData({ lines: [makePublishedLineDto({ currency: 'USD', buyRate: '35.10', sellRate: '35.40' })] })),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
     }
 
     // Public branches

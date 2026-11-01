@@ -38,6 +38,7 @@ export const th = {
   netDifference: 'ผลต่างสุทธิ: ',
   receiptNumber: 'ใบเสร็จ: ',
   customer: 'ลูกค้า: ',
+  shift: 'กะที่เปิด: ',
   countedBy: 'ผู้นับ: ',
 };
 
@@ -81,5 +82,6 @@ export const en = {
   netDifference: 'Net difference: ',
   receiptNumber: 'Receipt: ',
   customer: 'Customer: ',
+  shift: 'Shift opened: ',
   countedBy: 'Counted by: ',
 };

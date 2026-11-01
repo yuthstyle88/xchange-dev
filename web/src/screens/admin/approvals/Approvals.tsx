@@ -150,6 +150,8 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         amount: subj.amountThb,
         why: subj.reason,
         customer,
+        shiftId: subj.shiftId,
+        shiftOpenedAt: subj.shiftOpenedAt,
       };
     }
 
@@ -171,7 +173,15 @@ function RequestCard(props: RequestCardProps): JSX.Element {
       typeof rawReason === 'string' && rawReason.length > 0 ? rawReason : null;
 
     if (!original && !amount && !why) return null;
-    return { receipt: null as string | null, original, amount, why, customer: null as string | null };
+    return {
+      receipt: null as string | null,
+      original,
+      amount,
+      why,
+      customer: null as string | null,
+      shiftId: null as string | null,
+      shiftOpenedAt: null as string | null,
+    };
   };
 
   const countDetail = () => {
@@ -182,6 +192,8 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         countedBy: subj.countedBy,
         countedByName: subj.countedByName ?? '—',
         value: subj.netDifferenceThb,
+        shiftId: subj.shiftId,
+        shiftOpenedAt: subj.shiftOpenedAt,
       };
     }
 
@@ -195,7 +207,13 @@ function RequestCard(props: RequestCardProps): JSX.Element {
         : null;
 
     if (value === null) return null;
-    return { countedBy: null as string | null, countedByName: null as string | null, value };
+    return {
+      countedBy: null as string | null,
+      countedByName: null as string | null,
+      value,
+      shiftId: null as string | null,
+      shiftOpenedAt: null as string | null,
+    };
   };
 
   const handleApprove = async () => {
@@ -329,6 +347,12 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   <span>{d().customer}</span>
                 </div>
               )}
+              {d().shiftOpenedAt && (
+                <div class="approval-proposer">
+                  <span>{t('shift')}</span>
+                  <span title={d().shiftId ?? undefined}>{formatDecidedAt(d().shiftOpenedAt!)}</span>
+                </div>
+              )}
             </>
           )}
         </Show>
@@ -340,6 +364,12 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                 <div class="approval-proposer">
                   <span>{t('countedBy')}</span>
                   <span title={d().countedBy!}>{d().countedByName}</span>
+                </div>
+              )}
+              {d().shiftOpenedAt && (
+                <div class="approval-proposer">
+                  <span>{t('shift')}</span>
+                  <span title={d().shiftId ?? undefined}>{formatDecidedAt(d().shiftOpenedAt!)}</span>
                 </div>
               )}
               <div class="approval-proposer">
