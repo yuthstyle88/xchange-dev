@@ -13,6 +13,7 @@ import type {
   TransactionAuditEventDto,
   TransactionAuditViewData,
 } from '../../shared/api/generated/transaction_audit';
+import type { TransactionCancelInput } from '../../shared/api/generated/transactions';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { ReceiptFrame } from '../../shared/receipt/ReceiptFrame';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../shared/ui/PermissionsUnavailable';
@@ -51,6 +52,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   const [events, setEvents] = createSignal<TransactionAuditEventDto[]>([]);
   const [message, setMessage] = createSignal<string | null>(null);
   const [asking, setAsking] = createSignal(false);
+  const [cancelling, setCancelling] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [pendingRequest, setPendingRequest] = createSignal(false);
 
@@ -72,6 +74,10 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     id === null
       ? null
       : command<{ reason: string }, unknown>(api, 'POST', `/api/transactions/${encodeURIComponent(id)}/reversal-requests`);
+  const cancel =
+    id === null
+      ? null
+      : command<TransactionCancelInput, unknown>(api, 'POST', `/api/transactions/${encodeURIComponent(id)}/cancel`);
 
   let loadSeq = 0;
 
@@ -184,6 +190,21 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     }
   }
 
+  async function sendCancel(reason: string): Promise<void> {
+    if (id === null || cancel === null || !can(me(), 'ExchangeTransact')) return;
+    setMessage(null);
+    setBusy(true);
+    try {
+      await cancel.send({ id, reason });
+      setMessage(t('cancelDone'));
+      await load(false, true);
+    } catch (err) {
+      setMessage(wordedError(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const disabledReason = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
 
   const canRequest = () => {
@@ -192,6 +213,12 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
     if (pendingRequest()) return false;
     if (current.reversal !== null && current.reversal.status !== 'REJECTED') return false;
     return meError() !== null || can(me(), 'ReversalRequest');
+  };
+
+  const canCancel = () => {
+    const current = tx();
+    if (current === null || current.status !== 'CONFIRMED' || current.documentRef !== null) return false;
+    return meError() !== null || can(me(), 'ExchangeTransact');
   };
 
   return (
@@ -252,6 +279,21 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
                   </button>
                 </div>
               </Show>
+              <Show when={canCancel()}>
+                <div class="xc-dtx-actions">
+                  <button
+                    type="button"
+                    data-action="cancel-transaction"
+                    disabled={busy() || meError() !== null}
+                    title={disabledReason()}
+                    onClick={() => {
+                      if (meError() === null) setCancelling(true);
+                    }}
+                  >
+                    {t('cancelTransaction')}
+                  </button>
+                </div>
+              </Show>
               <AuditSection events={events()} />
             </>
           )}
@@ -270,6 +312,20 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
           }
         }}
         onCancel={() => setAsking(false)}
+      />
+      <ReasonDialog
+        open={cancelling()}
+        title={t('cancelReasonTitle')}
+        required
+        maxLength={500}
+        onConfirm={async (reason) => {
+          try {
+            await sendCancel(reason);
+          } finally {
+            setCancelling(false);
+          }
+        }}
+        onCancel={() => setCancelling(false)}
       />
     </div>
   );
