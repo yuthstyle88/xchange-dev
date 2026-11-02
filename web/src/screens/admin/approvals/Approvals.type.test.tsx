@@ -304,6 +304,17 @@ describe('#3332 Approvals: type display and type filter switch (§8)', () => {
     expect(root.querySelector('[data-request="req-cash-1"]')).not.toBeNull();
   });
 
+  // #5979 A1 (desk §5.4e FE-A): the filter offers exactly TYPE_CASES' types besides "all"; a removed type cannot come back unnoticed.
+  it('A1 the type filter offers exactly the listed types', async () => {
+    currentRequests = [];
+    mount();
+    await vi.waitFor(() => expect(root.querySelector('button[data-type-filter=""]')).not.toBeNull());
+    const offered = [...root.querySelectorAll<HTMLButtonElement>('button[data-type-filter]')]
+      .map((b) => b.getAttribute('data-type-filter') ?? '')
+      .filter((type) => type !== '');
+    expect([...offered].sort()).toEqual(TYPE_CASES.map((c) => c.type).sort());
+  });
+
   // Row 7: a RATE_PUBLICATION request
   it('row 7: a RATE_PUBLICATION request shows เผยแพร่เรท as today', async () => {
     currentRequests = [makeRequest('req-rate-1', 'RATE_PUBLICATION', 'PENDING')];
