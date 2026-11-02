@@ -137,13 +137,16 @@ async fn ex_managers_print_and_process_device_jobs() {
 
 #[actix_web::test]
 async fn admin_manages_users_and_system_settings() {
-    // C4 (§03 A05: UsersManage is ADMIN's), C5 (§02 ADMIN "ตั้งค่าระบบ": SystemSettings);
-    // SYSTEM is ADMIN on its branch
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings (payment-methods save) is EXECUTIVE (OWNER) only; ADMIN (SYSTEM) is refused on payment-methods save while keeping BranchesManage (adminCreateBranch).
     let room = Room::open().await;
     let a = room
         .ask("SYSTEM", "/api/payment-methods", "save", json!({}))
         .await;
-    not_refused_with(&a, PAYMENT_OWNER_ONLY, "SYSTEM payment-methods save");
+    refused(&a, 403, PAYMENT_OWNER_ONLY, "SYSTEM payment-methods save");
+    let a = room
+        .ask("OWNER", "/api/payment-methods", "save", json!({}))
+        .await;
+    not_refused_with(&a, PAYMENT_OWNER_ONLY, "OWNER payment-methods save");
     let a = room
         .ask("SYSTEM", "/api/rpc", "adminCreateBranch", json!({}))
         .await;

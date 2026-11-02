@@ -72,22 +72,24 @@ fn the_payment_settings_are_read_by_anybody_signed_in() {
 
 #[test]
 fn the_payment_settings_are_saved_by_executive_and_admin() {
-    // C5: SystemSettings (was: the owner alone)
+    // Restated for #6004 (user-management-rbac.md §11.11): PaymentMethods save is a setting (SystemSettings), held by EXECUTIVE only; ADMIN is refused with PAYMENT_OWNER_ONLY (403).
     assert_eq!(
         ask(Some(&owner()), EntryPath::PaymentMethods, "save"),
         Ok(())
     );
-    for r in [Role::Executive, Role::Admin] {
-        assert_eq!(
-            ask(Some(&staff(r, B2)), EntryPath::PaymentMethods, "save"),
-            Ok(()),
-            "{}",
-            r.as_str()
-        );
-    }
+    assert_eq!(
+        ask(
+            Some(&staff(Role::Executive, B2)),
+            EntryPath::PaymentMethods,
+            "save"
+        ),
+        Ok(()),
+        "{}",
+        Role::Executive.as_str()
+    );
     for r in BLUEPRINT
         .into_iter()
-        .filter(|r| !matches!(r, Role::Executive | Role::Admin))
+        .filter(|r| !matches!(r, Role::Executive))
     {
         assert_eq!(
             said(ask(Some(&staff(r, B2)), EntryPath::PaymentMethods, "save")),

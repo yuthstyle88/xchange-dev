@@ -37,7 +37,8 @@ fn actor(roles: Vec<ScopedRole>, session: Option<&str>) -> Actor {
 }
 
 fn check(a: &Actor, target: &Target) -> Result<BranchId, Refusal> {
-    Authorizer::check(Some(a), Permission::SystemSettings, target, now()).map(|g| g.branch)
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; use BranchesManage to test ADMIN org-level and branch-scoped grants.
+    Authorizer::check(Some(a), Permission::BranchesManage, target, now()).map(|g| g.branch)
 }
 
 #[test]

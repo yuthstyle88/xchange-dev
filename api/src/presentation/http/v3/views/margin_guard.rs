@@ -33,7 +33,7 @@ type MarginGuardRow = (Option<String>, Option<String>, Option<DateTime<Utc>>);
 
 impl BranchView for MarginGuardView {
     const NAME: &'static str = "margin_guard";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "marginGuardSet");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "marginGuardRead");
     type Data = MarginGuardData;
     type Filter = NoFilter;
 

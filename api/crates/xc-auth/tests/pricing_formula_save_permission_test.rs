@@ -67,7 +67,8 @@ fn f2_it_enters_the_seed_at_version_9_once_and_is_never_removed() {
         vec![9],
         "SEED_ADDITIONS has (9, PricingFormulaSave) once"
     );
-    assert_eq!(RoleGrants::SEED_VERSION, 9);
+    // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10; (9, PricingFormulaSave) is unchanged.
+    assert_eq!(RoleGrants::SEED_VERSION, 10);
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, q)| q != P),
         "it is never removed"

@@ -18,8 +18,14 @@ pub const ROWS: &[AreaRow] = &[
     },
     AreaRow {
         path: EntryPath::Rpc,
+        action: "exchangeSettingsRead",
+        need: Need::Permission(Permission::SettingsRead),
+        scope: RowScope::Request,
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
         action: "branchExchangeLimitSave",
-        need: Need::Permission(Permission::BranchesManage),
+        need: Need::Permission(Permission::BranchSettingsSave),
         scope: RowScope::Request,
     },
 ];

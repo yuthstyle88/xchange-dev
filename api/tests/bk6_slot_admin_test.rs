@@ -126,7 +126,12 @@ async fn slot_admin_routes_refuse_without_branches_manage() {
 
 #[actix_web::test]
 async fn slot_rule_set_updates_rule_and_generates_slots() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet is a branch setting (BranchSettingsSave), held by EXECUTIVE only.
     let db = TestDb::start().await;
+    sqlx::query("ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey")
+        .execute(&db.pool)
+        .await
+        .expect("drop fk");
     let uri = format!("/api/branches/{B01}/booking-slot-rule");
     let payload = json!({
         "branch": B01,
@@ -137,7 +142,7 @@ async fn slot_rule_set_updates_rule_and_generates_slots() {
 
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &uri,
         Some(payload),
@@ -148,7 +153,7 @@ async fn slot_rule_set_updates_rule_and_generates_slots() {
     assert_eq!(
         res.status,
         StatusCode::OK,
-        "slotRuleSet by ADMIN must succeed 200; got {} {}",
+        "slotRuleSet by EXECUTIVE must succeed 200; got {} {}",
         res.status,
         res.text
     );
@@ -204,6 +209,7 @@ async fn closure_add_and_remove_manages_branch_closures() {
 
 #[actix_web::test]
 async fn slot_capacity_set_refuses_capacity_below_reserved() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotCapacitySet is a branch setting (BranchSettingsSave), held by EXECUTIVE only.
     let db = TestDb::start().await;
     let slot_id = Uuid::new_v4();
     let now = Utc::now();
@@ -227,7 +233,7 @@ async fn slot_capacity_set_refuses_capacity_below_reserved() {
 
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &uri,
         Some(payload),
@@ -248,6 +254,7 @@ async fn slot_capacity_set_refuses_capacity_below_reserved() {
 
 #[actix_web::test]
 async fn slot_capacity_set_updates_capacity() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotCapacitySet is a branch setting (BranchSettingsSave), held by EXECUTIVE only.
     let db = TestDb::start().await;
     let slot_id = Uuid::new_v4();
     let now = Utc::now();
@@ -269,7 +276,7 @@ async fn slot_capacity_set_updates_capacity() {
 
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &uri,
         Some(payload),
@@ -343,7 +350,14 @@ async fn slot_close_and_open_toggles_slot_status() {
 
 #[actix_web::test]
 async fn booking_policy_set_updates_policy() {
+    // Restated for #6004 (user-management-rbac.md §11.11): bookingPolicySet is a setting (BranchSettingsSave), held by EXECUTIVE only.
     let db = TestDb::start().await;
+    sqlx::query(
+        "ALTER TABLE booking_policies DROP CONSTRAINT IF EXISTS booking_policies_updated_by_fkey",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("drop fk");
     let uri = "/api/booking-policy";
     let payload = json!({
         "branch": B01,
@@ -354,7 +368,7 @@ async fn booking_policy_set_updates_policy() {
 
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         uri,
         Some(payload),
@@ -373,7 +387,15 @@ async fn booking_policy_set_updates_policy() {
 
 #[actix_web::test]
 async fn slot_admin_idempotency_replay_and_conflict() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet, slotCapacitySet, and bookingPolicySet require BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
+    for stmt in [
+        "ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey",
+        "ALTER TABLE booking_policies DROP CONSTRAINT IF EXISTS booking_policies_updated_by_fkey",
+        "ALTER TABLE branch_closures DROP CONSTRAINT IF EXISTS branch_closures_created_by_fkey",
+    ] {
+        sqlx::query(stmt).execute(&db.pool).await.expect("drop fk");
+    }
     let slot_id = Uuid::new_v4();
     let now = Utc::now();
     seed_slot(
@@ -464,7 +486,7 @@ async fn slot_admin_idempotency_replay_and_conflict() {
         // 1. Initial call
         let res1 = call(
             &db,
-            Some("ADMIN@*"),
+            Some("EXECUTIVE@*"),
             method.clone(),
             &uri,
             payload1.clone(),
@@ -482,7 +504,7 @@ async fn slot_admin_idempotency_replay_and_conflict() {
         // 2. Replay with identical payload
         let res2 = call(
             &db,
-            Some("ADMIN@*"),
+            Some("EXECUTIVE@*"),
             method.clone(),
             &uri,
             payload1,
@@ -498,7 +520,7 @@ async fn slot_admin_idempotency_replay_and_conflict() {
         );
 
         // 3. Conflict with different payload
-        let res3 = call(&db, Some("ADMIN@*"), method, &uri, payload2, Some(&key)).await;
+        let res3 = call(&db, Some("EXECUTIVE@*"), method, &uri, payload2, Some(&key)).await;
         assert_eq!(
             res3.status,
             StatusCode::CONFLICT,

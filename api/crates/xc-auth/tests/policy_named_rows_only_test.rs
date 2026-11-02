@@ -63,7 +63,12 @@ const UNKNOWN: &[&str] = &[
 
 #[test]
 fn f3_row1_each_named_row_keeps_its_permission() {
+    // Restated for #6004 (user-management-rbac.md §11.11): setPrinter and setDrawer map to BranchesManage.
     for &(on, name, p) in NAMED {
+        let p = match (on, name) {
+            (EntryPath::Devices, "setPrinter" | "setDrawer") => Permission::BranchesManage,
+            _ => p,
+        };
         assert_eq!(
             Policy::need(on, &action(name)),
             Some(Need::Permission(p)),
@@ -74,7 +79,12 @@ fn f3_row1_each_named_row_keeps_its_permission() {
 
 #[test]
 fn f3_row2_each_named_row_is_one_request_scoped_area_row() {
+    // Restated for #6004 (user-management-rbac.md §11.11): setPrinter and setDrawer map to BranchesManage.
     for &(on, name, p) in NAMED {
+        let p = match (on, name) {
+            (EntryPath::Devices, "setPrinter" | "setDrawer") => Permission::BranchesManage,
+            _ => p,
+        };
         let rows: Vec<_> = AREA_ROWS
             .iter()
             .flat_map(|area| area.iter())

@@ -513,6 +513,7 @@ async fn an_empty_floor_list_removes_the_branchs_floors() {
 /// §9 / §11.2: roles without `AlertSettingsSave` in `RoleGrants::seed(role)` are refused both routes, and nothing is written.
 #[actix_web::test]
 async fn other_roles_are_refused_and_nothing_is_written() {
+    // Restated for #6004 (user-management-rbac.md §11.11): AlertSettingsSave is EXECUTIVE only so non-holders are refused on save, while branch_alert_settings view requires SettingsRead so every staff role reads it.
     let db = TestDb::start().await;
     let candidates = [
         ("EXECUTIVE@*", Role::Executive),
@@ -531,15 +532,16 @@ async fn other_roles_are_refused_and_nothing_is_written() {
             .any(|r| !RoleGrants::seed(*r).contains(&Permission::AlertSettingsSave)),
         "§11.2 must leave some role without AlertSettingsSave, or this test refuses nobody"
     );
-    for (who, _) in candidates
+    for (who, role) in candidates
         .into_iter()
         .filter(|(_, r)| !RoleGrants::seed(*r).contains(&Permission::AlertSettingsSave))
     {
         let s = save(&db, who, body(B01, Some(30), &[("USD", "10")], None)).await;
         assert_ne!(s.status, StatusCode::OK, "{who} saves: {}", s.text);
         assert_eq!(code(&s), "roleNotAllowedHere", "{who} saves: {}", s.text);
+        assert!(RoleGrants::seed(role).contains(&Permission::SettingsRead));
         let r = read(&db, who, B01).await;
-        assert_eq!(code(&r), "roleNotAllowedHere", "{who} reads: {}", r.text);
+        assert_eq!(r.status, StatusCode::OK, "{who} reads: {}", r.text);
     }
     assert_eq!(db.settings_rows().await, 0);
     assert_eq!(db.floor_rows().await, 0);

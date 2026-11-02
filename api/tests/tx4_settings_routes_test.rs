@@ -233,7 +233,10 @@ async fn s1_settings_answer_the_new_ttl_store_it_and_write_one_audit_row() {
 
 #[actix_web::test]
 async fn s2_settings_refuse_a_caller_without_system_settings() {
-    premise(Permission::SystemSettings);
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is held by EXECUTIVE only; TELLER and ADMIN lack it.
+    assert!(!RoleGrants::seed(AccessRole::Teller).contains(&Permission::SystemSettings));
+    assert!(!RoleGrants::seed(AccessRole::Admin).contains(&Permission::SystemSettings));
+    assert!(RoleGrants::seed(AccessRole::Executive).contains(&Permission::SystemSettings));
     let desk = Desk::start().await;
     let audits = audit_rows(&desk).await;
     let a = call(
@@ -366,7 +369,11 @@ async fn l2_null_clears_the_limit_and_is_audited_with_the_old_value() {
 
 #[actix_web::test]
 async fn l3_the_limit_refuses_a_caller_without_branches_manage() {
+    // Restated for #6004 (user-management-rbac.md §11.11): branchExchangeLimitSave requires BranchSettingsSave (EXECUTIVE only).
     premise(Permission::BranchesManage);
+    assert!(!RoleGrants::seed(AccessRole::Teller).contains(&Permission::BranchSettingsSave));
+    assert!(!RoleGrants::seed(AccessRole::Admin).contains(&Permission::BranchSettingsSave));
+    assert!(RoleGrants::seed(AccessRole::Executive).contains(&Permission::BranchSettingsSave));
     let desk = Desk::start().await;
     let audits = audit_rows(&desk).await;
     let a = call(

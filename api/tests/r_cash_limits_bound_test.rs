@@ -259,8 +259,9 @@ fn refused(a: &Answer, what: &str) {
 
 #[actix_web::test]
 async fn the_largest_limit_the_column_holds_is_accepted_with_its_decimals() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("999999999999999999.99")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("999999999999999999.99")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(
         a.body["countDifferenceLimitThb"], "999999999999999999.99",
@@ -274,13 +275,14 @@ async fn the_largest_limit_the_column_holds_is_accepted_with_its_decimals() {
 
 #[actix_web::test]
 async fn ten_to_the_eighteen_is_refused_with_or_without_decimals_and_nothing_is_written() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
     for text in [
         "1000000000000000000",
         "1000000000000000000.00",
         "99999999999999999999",
     ] {
-        let a = save(&db, FINANCE, B01, json!(text)).await;
+        let a = save(&db, "EXECUTIVE@XC-B01", B01, json!(text)).await;
         refused(&a, text);
     }
     assert_eq!(db.rows().await, 0, "nothing written");
@@ -289,9 +291,10 @@ async fn ten_to_the_eighteen_is_refused_with_or_without_decimals_and_nothing_is_
 
 #[actix_web::test]
 async fn a_third_decimal_a_negative_and_a_non_number_are_refused() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
     for text in ["1.234", "-1", "-0.01", "abc", ""] {
-        let a = save(&db, FINANCE, B01, json!(text)).await;
+        let a = save(&db, "EXECUTIVE@XC-B01", B01, json!(text)).await;
         refused(&a, text);
     }
     assert_eq!(db.rows().await, 0, "nothing written");
@@ -300,11 +303,12 @@ async fn a_third_decimal_a_negative_and_a_non_number_are_refused() {
 
 #[actix_web::test]
 async fn an_ordinary_limit_and_zero_are_accepted() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("500.50")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("500.50")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], "500.50", "{}", a.text);
-    let a = save(&db, FINANCE, B01, json!("0")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("0")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], "0.00", "{}", a.text);
     db.finish().await;

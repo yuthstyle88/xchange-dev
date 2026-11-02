@@ -327,14 +327,11 @@ const EVERY_ROLE: [BpRole; 9] = [
 
 #[test]
 fn only_executive_holds_consent_policy_manage() {
+    // Restated for #6004 (user-management-rbac.md §11.11): ConsentPolicyManage is a setting, held by EXECUTIVE only.
     for role in EVERY_ROLE {
         assert_eq!(
             RoleGrants::seed(role).contains(&Permission::ConsentPolicyManage),
-            // Follows §11.2 seed: Executive, RateManager and BranchManager have Customers Full (ConsentPolicyManage)
-            matches!(
-                role,
-                BpRole::Executive | BpRole::RateManager | BpRole::BranchManager
-            ),
+            matches!(role, BpRole::Executive),
             "{}",
             role.as_str()
         );
@@ -870,13 +867,19 @@ fn routes() -> Vec<(Method, &'static str, Option<Value>)> {
 
 #[tokio::test]
 async fn nobody_and_every_staff_role_are_refused_by_the_policy_and_write_nothing() {
+    // Restated for #6004 (user-management-rbac.md §11.11): ConsentPolicyManage is held by EXECUTIVE only; consent_texts view inherits consentTexts (SettingsRead), so staff roles read 200 while writes are refused.
     let db = Db::start().await;
     let act = Action::new(CONSENT_POLICY);
     let Some(Need::Permission(perm)) = Policy::need(EntryPath::Rpc, &act) else {
         panic!("(Rpc, {CONSENT_POLICY:?}) needs a permission");
     };
     let mut callers = vec![String::new()];
-    callers.extend(STAFF_ROLES.iter().map(|r| format!("staff:{r}:MAIN")));
+    callers.extend(
+        STAFF_ROLES
+            .iter()
+            .chain(["BACKEND", "MANAGER", "RATES"].iter())
+            .map(|r| format!("staff:{r}:MAIN")),
+    );
     for who in &callers {
         let actor: Option<Actor> = callers_of(who).user;
         let holds = actor.as_ref().is_some_and(|ac| {
@@ -890,9 +893,14 @@ async fn nobody_and_every_staff_role_are_refused_by_the_policy_and_write_nothing
         let err = policy.expect_err("the policy refuses everyone without the permission");
         for (method, uri, body) in routes() {
             let a = call(&db, who, method.clone(), uri, body).await;
+            let expected = if method == Method::GET && !who.is_empty() {
+                StatusCode::OK.as_u16()
+            } else {
+                err.status()
+            };
             assert_eq!(
                 a.status.as_u16(),
-                err.status(),
+                expected,
                 "{method} {uri} as {who:?}: {}",
                 a.text
             );

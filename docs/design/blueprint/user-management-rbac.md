@@ -441,8 +441,8 @@ The expected shape, given the current table:
 
 | Role | DASHBOARD | CUSTOMERS | DOCUMENTS | RATES_STOCK | FINANCE | RISK | REPORTS | USER_MANAGEMENT | SYSTEM_SETTINGS | AUDIT_LOGS |
 |---|---|---|---|---|---|---|---|---|---|---|
-| EXECUTIVE | FULL | FULL | FULL | FULL | FULL | — | FULL | FULL | FULL | VIEW |
-| ADMIN | — | — | — | — | — | — | VIEW | FULL | FULL | VIEW |
+| EXECUTIVE | VIEW | FULL | FULL | FULL | FULL | — | FULL | FULL | — | VIEW |
+| ADMIN | — | — | — | — | — | — | VIEW | FULL | — | VIEW |
 | RATE_MANAGER | — | FULL | VIEW | FULL | — | — | FULL | — | — | — |
 | BRANCH_MANAGER | — | FULL | FULL | — | — | — | VIEW | — | — | — |
 | TELLER | — | CREATE | VIEW | — | — | — | — | — | — | — |
@@ -864,7 +864,7 @@ It narrows the 2026-10-19 ruling in §11.2 ("`ApprovalsDecide` … the matrix do
 `ApprovalsDecide` is the only approval permission today (`permission.rs:11`). It opens `approvalDecide` / `approvalRead` (`policy.rs:92`) and the transfer flow (`transfer_flow.rs:173-176`). It does not say *which* kinds a group decides.
 
 **The rule:**
-- **One permission per decision, ten in all** (the cash transfer has two, because the limit already splits who decides it). The tenth, `ApproveLedgerAdjustment`, is `ledger-inventory.md` §13.3's, entered at seed version 8.
+- **One permission per decision, ten in all** (the cash transfer has two, because the limit already splits who decides it). The tenth, `ApproveLedgerAdjustment`, is `ledger-inventory.md` §13.3's, entered at seed version 8 (`RoleGrants::SEED_VERSION` is 10 as of §11.11).
 - Each `may_decide` keeps every rule that is not about the role and replaces its role test with the shared core `ApprovalDecider` (below). Proposer ≠ decider, the organisation check, the transfer's limit split and `allows_self_decision` all stay.
 - **Seeded so that ship day changes nothing.** The seed gives each permission to exactly the base role that decides it today.
 - **Scope stays per kind.** *Branch* kinds need a row that `covers` the request's branch, which is `ScopedRole::covers`, `scoped_role.rs:58-63`. *Organisation* kinds accept any row, as today. A BRANCH_MANAGER row always has a branch (`scope_rule.rs:33-36`), so for the branch kinds `covers` is exactly today's "row on the request branch".
@@ -1055,18 +1055,20 @@ The controller's ruling B2 (a), on #564 issuecomment-6580563236: `CashTransferPo
 | Permission | Verdict | After |
 |---|---|---|
 | `CashLimitsManage`, `CashTransferPolicySet`, `CashTargetSet` | setting | **no module; seeded to EXECUTIVE only**, like `PricingFormulaSave` (#5733) |
-| `RatePolicySave`, `RateAlertSettingsSave`, `OrgStartingPricesManage` | setting | the same: RATE_MANAGER keeps drafting and publishing rates (`RatesDraft`, the approval kinds) but no longer saves their policy |
-| `SystemSettings` | setting | the same: ADMIN loses it, and the Owner keeps it through EXECUTIVE |
+| `RateAlertSettingsSave` | setting | no module; seeded to EXECUTIVE only; RATE_MANAGER loses it at seed version 10 |
+| `OrgStartingPricesManage` | setting | no module; seeded to EXECUTIVE only (`rates.md` §12.6 and the bound-vs-work-product rule: the organisation's starting cost basis is an Owner bound, whereas rate drafts and publications are RATE_MANAGER's work product) |
+| `RatePolicySave` (`ratePolicySave` and its inheritors `ratesAutoPause`, `ratesAutoResume`, `ratesMaxSpreadSave`, `ratesAutoConfigSave`, `ratesUpdatePolicySave`; `marginGuardSet`) | operation (controller ruling A, #564 issuecomment-6585258665) | stays in RatesStock/Full with `RATE_MANAGER` and `EXECUTIVE`; `PricingFormulaSave` (#5733) already gates the formula itself |
+| `SystemSettings` | setting | no module; seeded to EXECUTIVE only: ADMIN loses it (`exchangeSettingsSave`, `appSettingsSave`, and the payment-methods `save` on `POST /api/payment-methods` stay on `SystemSettings` as settings), while `DeviceSetup`, `setPrinter` and `setDrawer` move to `BranchesManage` so ADMIN keeps branch device setup |
 | `AlertSettingsSave` | setting | already EXECUTIVE-only by seed; made no-module so Dashboard/Full never implies it |
-| `BranchSettingsSave` (**new**, no module, EXECUTIVE only) | setting | takes `bookingPolicySet`, `slotRuleSet`, `slotCapacitySet` and `branchExchangeLimitSave` from `BranchesManage`, which keeps the daily operations |
+| `BranchSettingsSave` (**new**, no module, EXECUTIVE only) | setting | takes `bookingPolicySet`, `slotRuleSet`, `slotCapacitySet` and `branchExchangeLimitSave` from `BranchesManage`, which keeps the daily operations (`closureAdd`/`Remove`, `slotOpen`/`Close`, `admin_booking_slots`) |
 | `FinanceReconcile` | operation | unchanged (Finance/Full) |
 | `LoyaltyRulesManage`, `MarketingCampaigns` | operation with an Owner approval | unchanged: the maker drafts, and the Owner approves through `ApproveLoyaltyRuleVersion`/`ApproveCampaignVersion` (§11.9), which already is maker-checker |
-| `ConsentPolicyManage` | **open, for the controller** | consent texts are legal content, not a number; Customers/Full gives it to RATE_MANAGER and BRANCH_MANAGER today |
+| `ConsentPolicyManage` | setting | no module; seeded to EXECUTIVE only per the controller's ruling (#564 issuecomment-6585258665): PDPA consent versions and retention rules are legal policy set by the Owner, so `RATE_MANAGER` and `BRANCH_MANAGER` lose it at seed version 10 |
 | `UsersManage` | operation (user administration) | unchanged |
 
-**One read for every setting (♻️).** A new no-module `SettingsRead` is seeded to **every staff role** (the owner: finance, branch managers and tellers read the settings and work within them).
-- These rows move to it: `cashLimitsRead`, `rateAlertSettings`, `orgStartingPrices` and `branchAlertSettings`.
-- The `cash_transfer_policy` view stops inheriting `transferPolicySave` and gets its own row, `transferPolicyRead` → `SettingsRead`.
+**One read for every setting (♻️).** A new no-module `SettingsRead` is seeded to **every staff role** (the owner: finance, branch managers and tellers read the settings and work within them). Every settings read row uses `RowScope::Request`:
+- Existing read rows moved to `SettingsRead` (scope `Request`): `cashLimitsRead`, `rateAlertSettings`, `orgStartingPrices` and `branch_alert_settings`.
+- Four new read rows added on `SettingsRead` (scope `Request`) so views stop inheriting their save permission: `transferPolicyRead` (for `cash_transfer_policy`), `exchangeSettingsRead` (for `exchange_settings`), `marginGuardRead` (for `margin_guard`), and `consentTexts` (for `consent_texts`).
 - `staff_floor/reader.rs:97` reads with `SettingsRead`.
 - The FE shows the screens read-only, with "ตั้งค่าโดยเจ้าของ" (set by the owner), when the caller lacks the save permission (claude/01TxaRJG's FE half, §11.10).
 
@@ -1078,7 +1080,7 @@ The controller's ruling B2 (a), on #564 issuecomment-6580563236: `CashTransferPo
 
 **Data migration.** No SQL. `RoleGrants::SEED_VERSION` goes 9 → 10.
 1. **Existing rows:**
-   - `SEED_REMOVALS` gains `(10, p)` for each permission leaving a built-in group: FINANCE loses `CashLimitsManage`, `CashTransferPolicySet` and `CashTargetSet`; RATE_MANAGER loses the three rate settings; ADMIN loses `SystemSettings`.
+   - `SEED_REMOVALS` gains `(10, p)` for each of the seven permissions leaving a built-in group: FINANCE loses `CashLimitsManage`, `CashTransferPolicySet` and `CashTargetSet`; RATE_MANAGER loses `RateAlertSettingsSave`, `OrgStartingPricesManage` and `ConsentPolicyManage`; BRANCH_MANAGER loses `ConsentPolicyManage`; ADMIN loses `SystemSettings`.
    - `SEED_ADDITIONS` gains `(10, SettingsRead)` for every staff group and `(10, BranchSettingsSave)` for EXECUTIVE.
    - The boot path applies both to built-in groups with `seed_version < 10` (§11.5 item 2). **Custom groups keep their explicit `role_permission_grants` rows**, and the Owner removes them on screen if wanted.
 2. **Backfill:** none beyond the boot seed. Measure before deploy who it reaches: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;`.

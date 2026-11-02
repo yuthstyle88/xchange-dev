@@ -36,9 +36,14 @@ async fn set_hours(db: &TestDb, hours: Value) {
 }
 
 async fn set_rule(db: &TestDb, slot_minutes: i32) {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
+    sqlx::query("ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey")
+        .execute(&db.pool)
+        .await
+        .expect("drop fk");
     let a = call(
         db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/branches/{B01}/booking-slot-rule"),
         Some(json!({

@@ -30,7 +30,7 @@ impl ConsentTextsBranchView {
 
 impl BranchView for ConsentTextsBranchView {
     const NAME: &'static str = "consent_texts";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "consentPolicy");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "consentTexts");
     const VERSIONED: bool = false;
     type Data = ConsentTextsData;
     type Filter = NoFilter;

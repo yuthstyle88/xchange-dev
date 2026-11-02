@@ -19,7 +19,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "cashLimitsRead",
-        need: Need::Permission(Permission::CashLimitsManage),
+        need: Need::Permission(Permission::SettingsRead),
         scope: RowScope::Request,
     },
 ];

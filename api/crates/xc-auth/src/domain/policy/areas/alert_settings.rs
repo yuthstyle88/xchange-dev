@@ -9,7 +9,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "branchAlertSettings",
-        need: Need::Permission(Permission::AlertSettingsSave),
+        need: Need::Permission(Permission::SettingsRead),
         scope: RowScope::Request,
     },
     AreaRow {

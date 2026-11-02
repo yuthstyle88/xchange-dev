@@ -243,8 +243,9 @@ fn code(a: &Answer) -> String {
 
 #[actix_web::test]
 async fn row1_limit_of_19_integer_digits_is_refused_and_nothing_is_written() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("1000000000000000000")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("1000000000000000000")).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "validationFailed", "{}", a.text);
     assert_eq!(
@@ -258,8 +259,9 @@ async fn row1_limit_of_19_integer_digits_is_refused_and_nothing_is_written() {
 
 #[actix_web::test]
 async fn row2_limit_of_18_integer_digits_is_accepted_and_stored() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("999999999999999999")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("999999999999999999")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(
         a.body["countDifferenceLimitThb"], "999999999999999999.00",
@@ -273,8 +275,9 @@ async fn row2_limit_of_18_integer_digits_is_accepted_and_stored() {
 
 #[actix_web::test]
 async fn row3_negative_zero_is_refused_and_nothing_is_written() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("-0.00")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B01, json!("-0.00")).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(code(&a), "validationFailed", "{}", a.text);
     assert_eq!(
