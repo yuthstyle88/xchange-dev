@@ -83,6 +83,7 @@ export const AVAILABLE_ROLES = [
   'VERIFICATION_REVIEWER',
   'ADMIN',
   'EXECUTIVE',
+  'MARKETING',
 ] as const;
 
 export function UsersScreen(props: AdminMenuProps): JSX.Element {
