@@ -13,19 +13,6 @@ const t = screenT('desk.steps.receipt', texts);
 
 export type PrintState = 'idle' | 'printing' | 'printed' | 'failed';
 
-function renderStockWaitNext(id: string): JSX.Element {
-  const [before, after] = t('stockWaitNext').split('{ref}');
-  return (
-    <>
-      {before}
-      <Show when={id !== ''}>
-        <span title={id}>#{id.slice(0, 8)}</span>
-      </Show>
-      {after}
-    </>
-  );
-}
-
 function ReceiptStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
   const saved = () => (store.outcome() === 'saved' ? store.saved() : undefined);
@@ -33,7 +20,7 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
   const adminHref = () => `${store.config()?.adminUrl ?? '/'}#transactions`;
   const devicesHref = () => `/devices?branch=${encodeURIComponent(store.branch())}`;
   const newEnabled = () =>
-    (!stockWait() || stockWait()!.rejected) && (store.outcome() === 'saved' || store.outcome() === 'refused');
+    !stockWait() && (store.outcome() === 'saved' || store.outcome() === 'refused');
 
   const [printState, setPrintState] = createSignal<PrintState>('idle');
   const [printReason, setPrintReason] = createSignal('');
@@ -76,21 +63,12 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
       <Switch fallback={<p class="desk-notice">{t('waiting')}</p>}>
         <Match when={stockWait()}>
           {(wait) => (
-            <Show
-              when={!wait().rejected}
-              fallback={
-                <>
-                  <p class="desk-error" role="alert">
-                    {t('stockRejectedCancelled')}
-                  </p>
-                  <Show when={store.saveError()}>
-                    <p class="desk-error">{store.saveError()}</p>
-                  </Show>
-                </>
-              }
-            >
+            <>
               <p class="desk-notice">{t('stockWaitTitle')}</p>
-              <p class="desk-notice">{renderStockWaitNext(wait().requestId)}</p>
+              <Show when={wait().message !== ''}>
+                <p class="desk-notice">{wait().message}</p>
+              </Show>
+              <p class="desk-notice">{t('stockWaitNext')}</p>
               <Show when={store.saveError()}>
                 <p class="desk-error" role="alert">
                   {store.saveError()}
@@ -101,7 +79,7 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
                   {t('cancelSale')}
                 </button>
               </div>
-            </Show>
+            </>
           )}
         </Match>
         <Match when={store.outcome() === 'saving'}>
