@@ -1,7 +1,18 @@
 //! LG-3b (#926, ledger design §3.3): a branch's count-difference limit (`cash_limits`).
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use xc_kernel::money::CurrencyCode;
+
+/// One per-branch, per-currency drawer low-cash level (`ledger-inventory.md` §5.1.3 item 2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "cash_limits.ts")]
+pub struct DrawerLowLevel {
+    pub currency: String,
+    pub low_level: String,
+}
 
 /// The `cash_limits` view's answer, and what `cashLimitsSave` answers after a save.
 /// `countDifferenceLimitThb` is a decimal string with two places, or `null` (no limit: every
@@ -16,6 +27,7 @@ pub struct CashLimitsData {
     pub updated_by: Option<String>,
     pub updated_by_name: Option<String>,
     pub updated_at: Option<String>,
+    pub drawer_low_levels: Vec<DrawerLowLevel>,
 }
 
 pub type CashLimitsRow = (
@@ -29,7 +41,18 @@ impl CashLimitsData {
     /// The answer for `branch` from its `cash_limits` row, read as
     /// `(count_difference_limit_thb::text, updated_by, updated_by_name, updated_at)`; `None` is a branch with no
     /// row. The save and the view both answer through this, so they answer the same object.
-    pub fn of(branch: &str, row: Option<CashLimitsRow>) -> Self {
+    pub fn of(
+        branch: &str,
+        row: Option<CashLimitsRow>,
+        levels: Vec<(CurrencyCode, Decimal)>,
+    ) -> Self {
+        let drawer_low_levels = levels
+            .into_iter()
+            .map(|(currency, low_level)| DrawerLowLevel {
+                currency: currency.as_str().to_owned(),
+                low_level: low_level.normalize().to_string(),
+            })
+            .collect();
         match row {
             Some((limit, by, name, at)) => Self {
                 branch: branch.to_owned(),
@@ -37,6 +60,7 @@ impl CashLimitsData {
                 updated_by: Some(by),
                 updated_by_name: name,
                 updated_at: Some(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                drawer_low_levels,
             },
             None => Self {
                 branch: branch.to_owned(),
@@ -44,6 +68,7 @@ impl CashLimitsData {
                 updated_by: None,
                 updated_by_name: None,
                 updated_at: None,
+                drawer_low_levels,
             },
         }
     }
@@ -55,4 +80,12 @@ impl CashLimitsData {
 #[ts(export_to = "cash_limits_save.ts")]
 pub struct CashLimitsSaveInput {
     pub count_difference_limit_thb: Option<String>,
+}
+
+/// The body of `PUT /api/cash-limits/drawer-low-levels`, beside the seam's `branch`.
+#[derive(Debug, Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "drawer_low_levels_save.ts")]
+pub struct DrawerLowLevelsSaveInput {
+    pub levels: Vec<DrawerLowLevel>,
 }

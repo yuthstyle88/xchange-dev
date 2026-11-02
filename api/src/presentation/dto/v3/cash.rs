@@ -285,4 +285,6 @@ pub struct MyShiftBalance {
     pub code: String,
     pub opening: String,
     pub expected: String,
+    pub low_cash_level: Option<String>,
+    pub low: bool,
 }

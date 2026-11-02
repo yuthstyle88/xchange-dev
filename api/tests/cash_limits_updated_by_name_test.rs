@@ -280,6 +280,8 @@ async fn row_3_a_branch_with_no_row() {
             "updatedBy": null,
             "updatedByName": null,
             "updatedAt": null,
+            // Restated 2026-11-02 by claude/b091f5e0 (ledger-inventory.md §5.1.3): the new field is added.
+            "drawerLowLevels": [],
         }),
         "{}",
         r.text

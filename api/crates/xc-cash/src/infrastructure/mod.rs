@@ -1,6 +1,7 @@
 //! Infrastructure layer for cash bounded context.
 
 pub mod custody_holds;
+pub mod drawer_low_levels;
 pub mod inventory;
 pub mod ledger;
 pub mod ledger_postings;
