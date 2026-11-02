@@ -33,7 +33,7 @@ use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_cash::application::ledger_approval::negative_stock::NegativeStockSource;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, PostingRequest, TransactionLineId,
 };
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
@@ -637,9 +637,11 @@ async fn t1_overage_with_no_history_on_a_tier_only_publication_is_costed_at_tier
     pool.close().await;
 }
 
-/// T2: an approved NEGATIVE_STOCK SELL of 10 USD with no history, publication tier-only: provisional cost 325.00.
+/// T2, restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// a short SELL of 10 USD is refused `stockInsufficient` even with an APPROVED `NEGATIVE_STOCK` request, so no
+/// provisional cost is ever taken. It used to post at tier 1's BUY (325.00).
 #[tokio::test]
-async fn t2_short_sale_with_no_history_on_a_tier_only_publication_is_costed_at_tier_1() {
+async fn t2_short_sale_on_a_tier_only_publication_is_refused_even_when_approved() {
     let (pool, branch) = db().await;
     let shift_id = seed_shift(&pool, &branch).await;
     publish(&pool, &branch, 0, &usd_tiers(Some("32.50")), true).await;
@@ -648,7 +650,7 @@ async fn t2_short_sale_with_no_history_on_a_tier_only_publication_is_costed_at_t
     let (approved, short_tx) = approved_negative_stock(&pool, &postings, &branch, short_line).await;
 
     let mut tx = pool.begin().await.expect("begin");
-    let res = postings
+    let err = postings
         .post_in(
             &mut tx,
             &sell_legs(
@@ -661,21 +663,10 @@ async fn t2_short_sale_with_no_history_on_a_tier_only_publication_is_costed_at_t
             Some(approved),
         )
         .await
-        .expect("T2: an approved short sale posts on a tier-only publication (main refuses missing_buy_rate)");
-    // cost = round2(10 × 32.50) = 325.00; margin = 334.00 − 325.00 = 9.00.
-    assert_eq!(
-        res.costs,
-        vec![LineCost {
-            line: short_line,
-            cost_basis_thb: money("325.00"),
-            realized_margin_thb: Some(delta("9.00")),
-        }],
-        "T2: provisional cost at tier 1's BUY 32.50"
-    );
-    assert_eq!(
-        position(&mut tx, &branch, "USD").await,
-        (d("-10"), d("-325.00")),
-        "T2: position −10 / −325.00"
+        .expect_err("§5.1.2: no approval lets the position go below zero");
+    assert!(
+        format!("{err:?}").contains("stockInsufficient"),
+        "T2: refused stockInsufficient: {err:?}"
     );
     tx.rollback().await.expect("rollback");
     pool.close().await;

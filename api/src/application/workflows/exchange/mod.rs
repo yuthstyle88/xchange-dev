@@ -10,7 +10,6 @@ pub mod complete;
 pub mod confirm;
 pub mod create;
 pub mod effects;
-pub mod negative_stock_gate;
 pub mod negative_stock_source;
 pub mod quote;
 pub mod reversal_approval;

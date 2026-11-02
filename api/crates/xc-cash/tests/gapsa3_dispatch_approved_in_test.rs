@@ -434,16 +434,17 @@ async fn gapsa3_dispatch_in_beyond_the_safe_answers_the_ports_refusal() {
     tx.rollback().await.expect("roll back");
 }
 
-/// An APPROVED `NEGATIVE_STOCK` request keyed on this transfer, made at its APPROVED state, lets the dispatch take
-/// the safe below zero by the shortfall (500.00 − 600.00 = −100.00).
+/// Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// even an APPROVED `NEGATIVE_STOCK` request keyed on this transfer no longer lets the dispatch take the safe below
+/// zero. It used to (N-1, R1 of 2026-10-27). The dispatch is refused by the port and writes nothing.
 #[tokio::test]
-async fn gapsa3_dispatch_approved_in_with_an_approved_request_takes_the_safe_below_zero() {
+async fn gapsa3_dispatch_approved_in_with_an_approved_request_is_still_refused() {
     let db = Db::fresh().await;
     let m = approved_transfer(&db, 12).await;
     let request = approved_negative_stock(&db, &m.from, &m.id).await;
 
     let mut tx = db.locked(&m.from).await;
-    let t = within(
+    let result = within(
         "dispatch_approved_in",
         db.transfers().dispatch_approved_in(
             &mut tx,
@@ -454,24 +455,18 @@ async fn gapsa3_dispatch_approved_in_with_an_approved_request_takes_the_safe_bel
             Some(request),
         ),
     )
-    .await
-    .expect("N-1: an approved request lets the dispatch go below zero");
-    assert_eq!(t.status.as_str(), "DISPATCHED");
-    tx.commit().await.expect("the caller commits");
-
+    .await;
+    assert_port_refusal(result, "§5.1.2: an approved request for this transfer");
     assert_eq!(
-        db.committed_text(&status_of(&m.id)).await.as_deref(),
-        Some("DISPATCHED")
+        on_text(&mut tx, &status_of(&m.id)).await.as_deref(),
+        Some("APPROVED")
     );
     assert_eq!(
-        db.committed(&safe_usd(&m.from)).await,
-        -10_000,
-        "the safe is below zero by the shortfall"
+        on(&mut tx, &safe_usd(&m.from)).await,
+        50_000,
+        "the safe did not move"
     );
-    assert!(
-        db.committed(&postings_of(&m.id)).await > 0,
-        "the dispatch posting names the transfer"
-    );
+    tx.rollback().await.expect("roll back");
 }
 
 /// An APPROVED `NEGATIVE_STOCK` request for another transfer does not let this one go below zero.

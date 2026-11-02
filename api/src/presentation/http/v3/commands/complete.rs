@@ -23,7 +23,6 @@ use xc_kernel::ids::BranchId;
 
 use super::transactions::{refusal, save_steps};
 use crate::application::workflows::exchange::complete::{CompleteExchange, ExchangeEffects};
-use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::application::workflows::save_step::{SaveActor, SaveStep};
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
@@ -114,8 +113,6 @@ async fn this_branchs(
 }
 
 pub struct TransactionCompleteCommand {
-    pool: PgPool,
-    approvals: Arc<xc_approval::application::approval_service::ApprovalService>,
     service: CompleteExchange,
 }
 
@@ -126,11 +123,7 @@ impl TransactionCompleteCommand {
         steps: Vec<Arc<dyn SaveStep>>,
         effects: ExchangeEffects,
     ) -> Self {
-        let approvals =
-            crate::presentation::http::v3::commands::make_approval_service(pool.clone());
         Self {
-            pool: pool.clone(),
-            approvals,
             service: CompleteExchange::new(
                 pool,
                 files,
@@ -156,26 +149,18 @@ impl CommandAction for TransactionCompleteCommand {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = this_branchs(tx, branch, &input.id).await?;
         let actor = save_actor(who)?;
         let done = match self.service.run_in(tx, id, &actor, Utc::now()).await {
             Ok(done) => done,
-            Err(e) if stock_insufficient(&e).is_some() => {
-                let refusal = stock_insufficient(&e).unwrap_or_default();
-                return Err(stock_refusal_answer(
-                    &self.pool,
-                    &self.approvals,
-                    &NegativeStockObject::Transaction(id),
-                    branch,
-                    refusal,
-                    who,
-                    key.as_str(),
-                )
-                .await);
+            Err(e) => {
+                if let Some(refusal) = stock_insufficient(&e) {
+                    return Err(stock_refusal_answer(refusal));
+                }
+                return Err(complete_refusal(e));
             }
-            Err(e) => return Err(complete_refusal(e)),
         };
         Ok(TransactionCompletedDto {
             transaction: TransactionDto::from_domain(&done.transaction),

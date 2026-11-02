@@ -368,8 +368,9 @@ async fn r10_a_sell_beyond_the_drawer_answers_stock_insufficient_and_moves_nothi
     let a = complete(&c, &id_of(&t), ME, Some(&unique("key"))).await;
     assert_eq!(
         (a.status, a.code()),
-        // re-expected for #3405 (owner: negative stock waits for approval)
-        (StatusCode::CONFLICT, "approvalRequired"),
+        // re-expected 2026-11-02 by claude/b091f5e0 for `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ";
+        // it was `approvalRequired` under #3405)
+        (StatusCode::CONFLICT, "stockInsufficient"),
         "body {}",
         a.text
     );

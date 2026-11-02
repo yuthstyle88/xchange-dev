@@ -26,7 +26,6 @@ use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
 use xc_kernel::ids::BranchId;
 
 use crate::application::workflows::exchange::complete::ExchangeEffects;
-use crate::application::workflows::exchange::negative_stock_gate::NegativeStockObject;
 use crate::application::workflows::exchange::reversal_post::PostReversal;
 use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
@@ -122,16 +121,12 @@ async fn this_branchs(
 
 pub struct ReversalPostCommand {
     pool: PgPool,
-    approvals: Arc<xc_approval::application::approval_service::ApprovalService>,
     service: PostReversal,
 }
 
 impl ReversalPostCommand {
     pub fn new(pool: PgPool, files: FileService) -> Self {
-        let approvals =
-            crate::presentation::http::v3::commands::make_approval_service(pool.clone());
         Self {
-            approvals,
             service: PostReversal::new(
                 pool.clone(),
                 files,
@@ -157,22 +152,13 @@ impl CommandAction for ReversalPostCommand {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = this_branchs(tx, branch, &input.id).await?;
         let actor = save_actor(who)?;
         if let Err(e) = self.service.run_in(tx, id, &actor, Utc::now()).await {
             if let Some(refusal) = stock_insufficient(&e) {
-                return Err(stock_refusal_answer(
-                    &self.pool,
-                    &self.approvals,
-                    &NegativeStockObject::Reversal(id),
-                    branch,
-                    refusal,
-                    who,
-                    key.as_str(),
-                )
-                .await);
+                return Err(stock_refusal_answer(refusal));
             }
             return Err(refusal(e));
         }
