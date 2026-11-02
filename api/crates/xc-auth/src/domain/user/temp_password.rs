@@ -1,5 +1,6 @@
 //! Temporary password (design §3.4, V.9 :90-95): 16 characters, letters and digits only, never `0 O o 1 l I`
-//! (ruling #564 issuecomment-6246076019 Q3). No Display, Serialize or Clone.
+//! (ruling #564 issuecomment-6246076019 Q3). Always holds at least one digit, one upper-case and one lower-case
+//! letter (#5952). No Display, Serialize or Clone.
 
 use ring::rand::{SecureRandom, SystemRandom};
 
@@ -10,7 +11,21 @@ pub struct TempPassword(String);
 
 impl TempPassword {
     /// Unbiased (rejection sampling) from `ring::rand::SystemRandom`.
+    /// Repeats draw until the password holds at least one digit, one upper and one lower letter.
     pub fn generate() -> TempPassword {
+        loop {
+            let p = Self::draw();
+            let b = p.0.as_bytes();
+            if b.iter().any(u8::is_ascii_digit)
+                && b.iter().any(u8::is_ascii_uppercase)
+                && b.iter().any(u8::is_ascii_lowercase)
+            {
+                return p;
+            }
+        }
+    }
+
+    fn draw() -> TempPassword {
         let rng = SystemRandom::new();
         let mut out = String::with_capacity(LEN);
         let mut buf = [0u8; 32];
