@@ -274,6 +274,7 @@ pub struct MyShift {
     pub status: String,
     pub opened_at: String,
     pub balances: Vec<MyShiftBalance>,
+    pub incoming_transfers: Vec<CashTransferRow>,
 }
 
 /// One currency of the caller's shift: opening and expected, as strings.

@@ -3,6 +3,7 @@
 pub mod action;
 mod booking_error_map;
 pub mod caller;
+pub mod cash_transfer_rows;
 pub mod command;
 pub mod commands;
 pub mod desk;
