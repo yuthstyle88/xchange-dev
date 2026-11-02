@@ -4288,6 +4288,8 @@ dependencies = [
  "futures",
  "pos-error",
  "pos-infra",
+ "serde",
+ "serde_json",
  "sqlx",
  "thiserror",
  "tokio",

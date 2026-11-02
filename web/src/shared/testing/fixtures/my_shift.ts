@@ -21,6 +21,8 @@ export function makeMyShiftBalance(o: Partial<MyShiftBalance> = {}): MyShiftBala
     code: 'USD',
     opening: 'opening',
     expected: 'expected',
+    lowCashLevel: null,
+    low: false,
     ...o,
   };
 }

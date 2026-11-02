@@ -12,6 +12,7 @@ use rust_decimal::Decimal;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::infrastructure::drawer_low_levels::DrawerLowLevels;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Bound, Sign};
 
@@ -81,7 +82,11 @@ impl CommandAction for CashLimitsSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
-        Ok(CashLimitsData::of(branch.as_str(), Some(row)))
+        let levels = DrawerLowLevels::for_branch_in(tx, branch)
+            .await
+            .map_err(|_| server_error())?;
+
+        Ok(CashLimitsData::of(branch.as_str(), Some(row), levels))
     }
 }
 

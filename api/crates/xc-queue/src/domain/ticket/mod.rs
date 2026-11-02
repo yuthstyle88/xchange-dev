@@ -3,6 +3,7 @@
 pub mod call_order;
 pub mod display_number;
 pub mod issue_source;
+pub mod live_ticket;
 pub mod queue_error;
 pub mod queue_event;
 pub mod queue_ticket;
