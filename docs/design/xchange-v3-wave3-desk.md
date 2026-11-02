@@ -454,55 +454,136 @@ export interface DeskEntry { param: 'booking' | 'kiosk'; load(store: DeskStore, 
 `admin/parts/pending-write.tsx` is **not** reused. It posts only to `/api/rpc`, treats every failure as "not confirmed"
 and inspects through `admin_request_status`, which cannot see exchanges (`abandon_request.rs:155-201`).
 
-### 5.4a Complete waits for a negative-stock approval (G5, amended 2026-11-02)
+### 5.4a Complete waits for a drawer top-up (G5; amended 2026-11-02 for "ต้องเติมเงินก่อน ห้ามติดลบ")
 
-**Why.** This state had no screen. `POST /api/transactions/:id/complete` answers `409 approvalRequired` with the message `approvalRequired: <request id>` when the posting would take a drawer or position below zero. §5.4 item 4 treats every coded 4xx as a refusal "shown as sent". So the teller saw the raw text `approvalRequired: 167d8c93-…`, with print disabled, and `save.ts` dropped the transaction as if it had been refused, so the next submit would be a new exchange. Seen on xc-v3 at main `98bb41db` (staff rerun, #564 issuecomment-6565110996).
+**Owner's decision** (relayed by the lane controller claude/608dff, 15:5x ICT 2026-11-02): *"ต้องเติมเงินก่อน ห้ามติดลบ"*. Cash never goes below zero, and no approval lets it. This replaces the earlier version of this section, in which complete waited for a `NEGATIVE_STOCK` approval and a rejection cancelled the exchange (S4). There is no approval request any more, so there is no request id, no rejection and no S4.
 
-**What the server does (main `de7a4f51`):**
+**What the server does** (`docs/design/blueprint/ledger-inventory.md` §5.1.2 and §5.1.3, merged in #5956 and #5971):
 
 | Fact | Source |
 |---|---|
-| A short posting at complete opens (or re-reads) one `NEGATIVE_STOCK` request for the transaction and answers `409 approvalRequired`, message `approvalRequired: <request id>` | `api/src/presentation/http/v3/negative_stock.rs:46-51`; `negative_stock_gate.rs:73-128` (an already pending request is re-read, not duplicated) |
-| Before the S4 BE change, a resent complete after a rejection answers `409 stockInsufficient … was rejected` (`negative_stock.rs:52-57`). With it (owner's option A), a rejection cancels the exchange, and complete answers `409 staleVersion` | `negative_stock.rs:52-57`; `complete.rs:214-218` |
-| Only the request's branch BRANCH_MANAGER decides it, never the requester | `api/crates/xc-cash/src/application/ledger_approval/negative_stock.rs:64-86` |
-| An approval writes nothing to the transaction: it stays `CONFIRMED`, and the **next** complete posts. A rejection cancels it (S4, BE change) | `negative_stock.rs:53-62` (`on_decided`, today a no-op); `NegativeStockGate::approved_for_in` |
-| A refused command keeps no idempotency answer (the claim is released), so resending complete with the same key runs it again | `api/src/presentation/http/v3/command.rs:560` (only a success replays), `:647-649` (`release` on error) |
-| The teller cannot read approval requests (`approvalRead` needs `ApprovalsDecide`) | `api/crates/xc-auth/src/domain/policy/areas/approvals.rs:27-31` |
-| The teller can cancel a `CONFIRMED` transaction (`saveTransaction`) | `api/src/presentation/http/v3/commands/transactions.rs:3`, `TransactionCancelInput {id, reason}` |
+| A complete that would take a drawer, safe or position below zero answers `409 {"error":{"code":"stockInsufficient","message":…}}`, with no `field`, and opens no request. The exchange stays `CONFIRMED` | §5.1.2 "What the desk sees" |
+| The message names each short place, e.g. `ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: THB ลิ้นชัก ขาด 1711.46` | §5.1.2 |
+| A refused command releases its Idempotency-Key, so the same complete, with the same key, posts once the drawer has been topped up | §5.1.2; `api/src/presentation/http/v3/command.rs:647-649` |
+| Create (`POST /api/transactions`) refuses a cash exchange the drawer cannot pay, with the same body, and writes nothing. Complete keeps its refusal for a drawer that changed between create and complete | §5.1.3 item 1 |
+| The top-up lands when the drawer's own teller receives the SAFE_TO_DRAWER transfer on the staff page | `cash-shift-transfer.md:93-95`; the teller's receive card, #5957 |
+| `approvalRequired` is no longer answered for stock; the `NEGATIVE_STOCK` type and `ApproveNegativeStock` stay only for old rows, and the generated types do not change | §5.1.2 "Unchanged for the FE" |
 
-**Rule.** `approvalRequired` from **complete** is a wait, not a refusal. The desk keeps the transaction and its complete key, and finds out the decision by resending complete. `StockWait = { requestId: string; rejected: boolean }` (the request id is the message's text after `approvalRequired: `).
+**Rule.** `stockInsufficient` from **complete** is a wait, not a refusal. The desk keeps the transaction and its complete key and resends complete until it posts. `StockWait = { message: string }`, the server's message as sent.
 
 | Row | Server answer | Desk |
 |---|---|---|
-| S1 | complete → `409 approvalRequired` | `outcome` stays `saving`, `transactionState` `CONFIRMED`, `stockWait` = `{requestId, rejected: false}`. The receipt step shows `stockWaitTitle`, then `stockWaitNext` with `#<first 8 of the id>`, the full id in `title`. The raw message is never shown. Print stays disabled (no receipt yet) |
-| S2 | still waiting | every `APPROVAL_POLL_MS` (15 s), complete is resent with the **same** Idempotency-Key. No new create, no new key, no other request |
-| S3 | complete → `COMPLETED` | saved as today (§5.4 item 4). `stockWait` cleared, polling stops, print enabled |
-| S4 | the manager rejects: the server has already cancelled the exchange (owner 2026-11-02, *"A ตามเสนอ"*; BE design by claude/b091f5e0), so the next complete answers `409 staleVersion`, message `staleVersion: a CANCELLED exchange is not completed` (`complete.rs:215-220`; the same key re-runs, `command.rs:560`, `:648`). The exchange's `cancelReason` is the manager's reject reason, verbatim (free text, 1–500 characters, `approval_decide.rs:77-89`; as `ExchangeTransactionSubject`, `quote-transaction.md:629`), confirmed by claude/b091f5e0 on 2026-11-02 | polling stops, and the desk reads `transaction?id=` once (`TransactionRead`, the teller's). `CANCELLED` → §5.4's CANCELLED row (the next submit is a new exchange), and `stockWait` = `{requestId, rejected: true}` until `startNew` or `backToEdit`. The receipt step shows `stockRejectedCancelled`, then the manager's reason as sent (`cancelReason`, which §5.4's CANCELLED row puts in `saveError`), and offers `newExchange`, with no `cancelSale` button. The raw `staleVersion` message is never shown. Any other state → §5.4 item 4, as answered |
-| S5 | the teller presses `cancelSale` while still waiting (S1) | `POST /api/transactions/:id/cancel` `{id, reason: t('stockCancelReason')}` with its own key. The answer `CANCELLED` goes through §5.4's CANCELLED row (the next submit is a new exchange). A refusal there is shown as sent; the wait is kept |
-| S6 | `stockInsufficient` or `approvalRequired` from **create** or **confirm** | unchanged: §5.4 item 4's refusal (only complete posts stock) |
+| S1 | complete → `409 stockInsufficient` | `outcome` stays `saving`, `transactionState` `CONFIRMED`, `stockWait` = `{message}`. The receipt step shows `stockWaitTitle`, the server's message as sent (it names the currency, the place and how much is short), then `stockWaitNext`. Print stays disabled (no receipt yet). The desk re-reads `my_shift` (§5.4c) |
+| S2 | still short | every `APPROVAL_POLL_MS` (15 s), complete is resent with the **same** Idempotency-Key. No new create, no new key, no other request. `stockWait.message` follows the latest answer |
+| S3 | complete → `COMPLETED` | saved as today (§5.4 item 4). `stockWait` cleared, the resend stops, print enabled |
+| S5 | the teller presses `cancelSale` while waiting | `POST /api/transactions/:id/cancel` `{id, reason: t('stockCancelReason')}` with its own key. The answer `CANCELLED` goes through §5.4's CANCELLED row (the next submit is a new exchange). A refusal there is shown as sent; the wait is kept |
+| S6 | `stockInsufficient` from **create** or **confirm** | §5.4 item 4's refusal, shown as sent: create wrote nothing, so there is nothing to wait on. The teller tops up, then submits again (a new create, a new key; a new quote if this one expired, §5.4 item 2). The desk re-reads `my_shift` (§5.4c) |
+| S7 | complete → any other 409, including `approvalRequired` or `staleVersion` | §5.4 item 4's refusal, shown as sent. The S4 path (read the transaction after a rejection) is removed |
+
+The over-limit approval wait (`PENDING_APPROVAL`, `watchApproval` in `save.ts`) is a different thing and is unchanged.
 
 Words (receipt step, `steps/receipt/i18n.ts`, TH/EN):
 
+| Key | Change | th | en |
+|---|---|---|---|
+| `stockWaitTitle` | reworded | `เงินในลิ้นชักไม่พอจ่ายรายการนี้` | `The drawer does not hold enough to pay this transaction` |
+| `stockWaitNext` | reworded, no `{ref}` | `ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักนี้ แล้วกดรับเงินที่หน้ากะ เมื่อเงินเข้าลิ้นชักแล้วหน้านี้จะบันทึกรายการต่อเอง` | `Ask the branch manager to move cash from the safe into this drawer, then receive it on the shift page. This page completes the transaction by itself once the cash is in the drawer` |
+| `stockRejectedCancelled` | removed | — | — |
+| `cancelSale` | unchanged | `ยกเลิกรายการนี้` | `Cancel this transaction` |
+
+`stockCancelReason` (desk `i18n.ts`): th `ยกเลิกระหว่างรอเติมเงินเข้าลิ้นชัก` · en `Cancelled while waiting for the drawer to be topped up`.
+
+### 5.4b Key-in: the quote says whether the drawer can pay (§5.1.3 item 1)
+
+**Owner's requirement** (on #5956, relayed by claude/608dff): *"พนักงานเค้าต้องทราบ ตอน คีย์ แล้ว ต้องเตือนให้ เติม เงิน หากพบเงินเหลือน้อย"*. The server judges; the desk shows the server's answer and computes nothing.
+
+The DESK quote gains three fields (§5.1.3, `[required]` there): `drawerShortfall: [{currency, place: "DRAWER", shortBy}]`, `drawerShortfallMessage: string | null` (the same text as the refusal) and `belowLowCashLevel: string[]`. They are advisory: the quote is still issued, and the teller may still tell the customer the price.
+
+| Row | Quote | Rate step (`steps/rate/step.tsx`), before the teller goes on |
+|---|---|---|
+| K1 | `drawerShortfall` not empty | a warning (`role="alert"`, `data-testid="drawer-shortfall"`) under the amounts: `drawerShortTitle`, then `drawerShortfallMessage` as sent, then `drawerShortNext`. The teller can still go on; create refuses it (S6) until the drawer is topped up |
+| K2 | `drawerShortfall` empty, `belowLowCashLevel` not empty | a note (`data-testid="drawer-low-after"`, not an alert): `drawerLowAfter` with the currencies joined by `, ` |
+| K3 | both empty, or the fields absent (a quote with no open shift, or a server without §5.1.3) | nothing |
+| K4 | a new quote replaces the old one (amount or currency changed) | the warning follows the new quote; an old warning never stays |
+
+Words (`steps/rate/i18n.ts`, TH/EN):
+
 | Key | th | en |
 |---|---|---|
-| `stockWaitTitle` | `ยอดเงินในลิ้นชักไม่พอสำหรับรายการนี้ ต้องให้ผู้จัดการสาขาอนุมัติก่อน` | `The drawer does not hold enough for this transaction. The branch manager must approve it first` |
-| `stockWaitNext` | `ให้ผู้จัดการสาขาอนุมัติคำขอ {ref} ที่หน้าอนุมัติ เมื่ออนุมัติแล้วหน้านี้จะบันทึกรายการต่อเอง` | `Ask the branch manager to approve request {ref} on the Approvals page. This page completes the transaction by itself once it is approved` |
-| `stockRejectedCancelled` | `ผู้จัดการสาขาไม่อนุมัติ รายการนี้ถูกยกเลิกแล้ว เริ่มรายการใหม่ได้` | `The branch manager rejected it. This transaction has been cancelled; you can start a new one` |
-| `cancelSale` | `ยกเลิกรายการนี้` | `Cancel this transaction` |
+| `drawerShortTitle` | `เงินในลิ้นชักไม่พอจ่ายรายการนี้` | `The drawer does not hold enough to pay this` |
+| `drawerShortNext` | `ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ` | `Ask the branch manager to move cash from the safe into the drawer before saving` |
+| `drawerLowAfter` | `หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย: {currencies}` | `After this transaction the drawer will be low on: {currencies}` |
 
-`stockCancelReason` (desk `i18n.ts`, the reason S5 sends to cancel): th `ยกเลิกระหว่างรอผู้จัดการสาขาอนุมัติยอดติดลบ` · en `Cancelled while waiting for the branch manager's negative-stock approval`.
+### 5.4c The standing low-cash warning (§5.1.3 item 2)
 
-Cancelling while still waiting (S5) leaves the `NEGATIVE_STOCK` request `PENDING`; there is no withdrawal (`quote-transaction.md:379`). If the manager decides it later, either way, the decide answers `409 staleVersion` and writes nothing, because the request's version hash covers `transactions.status` (claude/b091f5e0, 2026-11-02). The desk half needs no migration and no BE change; S4's cancel-on-reject is the BE half (claude/b091f5e0's design and ticket), and the desk does not depend on its internals, only on the answers in S4.
+The desk shows the owner's text, verbatim, while the drawer is at or below its branch level in any currency: **"เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ"**.
+
+- **Read.** `my_shift`, whose `MyShiftBalance` gains `lowCashLevel: string | null` and `low: boolean` (§5.1.3). The desk does not read `my_shift` today: the shift gate reads `staff_floor`, and only once, when the desk starts (`desk/shift/DeskShiftGate.tsx`). §5.1.3 says the desk re-reads `my_shift` "on its 60-second poll". **There is no such poll**, and this design adds none (`CLAUDE.md` § polled endpoints). The desk reads `my_shift`:
+  - when the shift gate turns `open`;
+  - after each save that ends `COMPLETED` (§5.4 item 6), and after each `stockInsufficient` answer (S1, S6);
+  - when the page becomes visible again (`visibilitychange` to `visible`), which covers the teller coming back from the staff page after receiving a top-up.
+- **Who owns it.** A new `LowCash` reader, `web/src/screens/desk/low-cash.ts`, holds the last answer and exposes `low(): string[]` (the codes of the balances with `low: true`, in the view's order) and `reload()`. The banner is a new `LowCashBanner` in `web/src/screens/desk/LowCashBanner.tsx`, placed once in `DeskPage.tsx` above the steps.
+
+| Row | `my_shift` | Desk |
+|---|---|---|
+| L1 | any balance `low: true` | a banner (`role="status"`, `data-testid="low-cash"`): the owner's text, then the currencies (`lowCashCurrencies`, joined by `, `) |
+| L2 | no balance low, or `my_shift` is `null` | no banner |
+| L3 | the next read after a top-up is received, or after a sale brings cash in | the banner goes; nothing to press |
+| L4 | the read fails | the last answer stays as it was (no banner if there was none) and no error is shown: the banner is a warning, and the save path reports its own refusals. The next trigger reads again |
+| L5 | no trigger fires | no request: the desk never reads `my_shift` on a timer |
+
+Words (desk `i18n.ts`, TH/EN): `lowCashTitle` th `เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ` · en `The drawer is running low. Ask the manager to move cash from the safe`; `lowCashCurrencies` th `สกุลที่เหลือน้อย: {currencies}` · en `Low on: {currencies}`.
+
+### 5.4d `#cash-limits`: the drawer low-cash levels (§5.1.3 item 2b)
+
+Finance sets the levels on `#cash-limits`, beside the count-difference limit, under the same permission (`CashLimitsManage`). The server reads `CashLimitsData.drawerLowLevels: [{currency, lowLevel}]` and saves with `drawerLowLevelsSave`, `PUT /api/cash-limits/drawer-low-levels`, body `{branch, levels: [{currency, lowLevel}]}`, which replaces the branch's whole set and answers `CashLimitsData` (§5.1.3).
+
+- **Where.** A new `DrawerLowLevels` component, `web/src/screens/admin/cash-limits/DrawerLowLevels.tsx`, rendered by `CashLimits.tsx` under the limit form. It takes the loaded `CashLimitsData` and an `onSaved(data)` that `CashLimits.tsx` already has (`applyData`), so both parts show the same answer. Its words go into the screen's `i18n.ts`.
+- `CashLimits.tsx` and `i18n.ts` are also #5951's files (the setter's name), so this ticket is released after #5951 merges.
+
+| Row | Case | Screen |
+|---|---|---|
+| C1 | the view answers levels | one row per level: the currency code (read-only) and the level (decimal input), in the answer's order |
+| C2 | `drawerLowLevels` is `[]` | the empty line `levelsEmpty` and the add button |
+| C3 | add | a new row with a currency input (3 letters, upper-cased as typed) and a level input; the server judges whether the currency exists |
+| C4 | remove | the row goes from the form; it is deleted only when the form is saved |
+| C5 | save | exactly one keyed `PUT /api/cash-limits/drawer-low-levels` with `{branch, levels}` in the form's order, the levels as typed (trimmed). The answer goes through `applyData`; notice `levelsSaved` |
+| C6 | save refused `400 validationFailed` | the refusal worded the way the screen's `limitsError` words the limit's (`CashLimits.tsx:47-56`), under the levels form; the form keeps what was typed |
+| C7 | permission | nothing new: the whole screen is behind `CashLimitsManage` (`admin/cash-limits/menu.ts`, `needs`), the same permission the save needs |
+| C8 | an empty form is saved | sent as `levels: []`, which clears every level (§5.1.3: rows not listed are deleted) |
+
+Words (`admin/cash-limits/i18n.ts`, TH/EN): `levelsTitle` `ระดับเงินในลิ้นชักที่ต้องเตือน` / `Drawer low-cash levels`; `levelsHelp` `เมื่อเงินในลิ้นชักของกะใดเหลือเท่านี้หรือน้อยกว่า หน้าแลกเงินจะเตือนให้ผู้จัดการโอนเงินจากตู้เซฟ` / `When a shift's drawer holds this much or less, the desk warns the teller to ask the manager for a top-up`; `levelsEmpty` `ยังไม่ได้ตั้งระดับ` / `No level set`; `levelCurrency` `สกุลเงิน` / `Currency`; `levelAmount` `ระดับ` / `Level`; `levelAdd` `เพิ่มสกุลเงิน` / `Add a currency`; `levelRemove` `ลบ` / `Remove`; `levelsSave` `บันทึกระดับ` / `Save levels`; `levelsSaved` `บันทึกระดับแล้ว` / `Levels saved`.
+
+### 5.4e Classes, tickets and order
 
 ```mermaid
 classDiagram
-  class DeskStore { <<web/src/screens/desk/desk-store.ts>> +stockWait: Accessor~StockWait | undefined~ +cancelStockWait() Promise~void~ }
+  class DeskStore { <<web/src/screens/desk/desk-store.ts>> +stockWait: Accessor~StockWait | undefined~ +cancelStockWait() Promise~void~ +lowCash: LowCash }
   class SaveSink { <<web/src/screens/desk/save.ts>> +setStockWait(w: StockWait | undefined) }
   class createSaver { <<web/src/screens/desk/save.ts>> +submit() +reset() +cancelStockWait() Promise~void~ }
-  class ReceiptStep { <<web/src/screens/desk/steps/receipt/step.tsx>> S1 and S4 words, cancelSale while waiting }
+  class StockWait { <<web/src/screens/desk/save.ts>> +message: string }
+  class ReceiptStep { <<web/src/screens/desk/steps/receipt/step.tsx>> S1 words, cancelSale while waiting }
+  class RateStep { <<web/src/screens/desk/steps/rate/step.tsx>> K1-K4 from the quote }
+  class LowCash { <<web/src/screens/desk/low-cash.ts  new>> +low() string[] +reload() Promise~void~ }
+  class LowCashBanner { <<web/src/screens/desk/LowCashBanner.tsx  new>> L1-L5 }
+  class DrawerLowLevels { <<web/src/screens/admin/cash-limits/DrawerLowLevels.tsx  new>> C1-C8 }
+  class CashLimits { <<web/src/screens/admin/cash-limits/CashLimits.tsx>> renders DrawerLowLevels }
   DeskStore --> createSaver : owns, implements SaveSink
+  createSaver --> LowCash : reload after COMPLETED and stockInsufficient
   ReceiptStep --> DeskStore : reads stockWait, calls cancelStockWait
+  LowCashBanner --> LowCash : reads low()
+  CashLimits --> DrawerLowLevels : data, onSaved
 ```
+
+| Ticket | Rows | File scope | Class | Released when |
+|---|---|---|---|---|
+| FE-W (wait) | S1–S7 | `save.ts`, `desk-store.ts`, `steps/receipt/step.tsx`, `steps/receipt/i18n.ts`, desk `i18n.ts`, `save.stock-wait.test.ts`, `steps/receipt/stock-wait.test.tsx` | logic | the server no-negative ticket (#5963) is on main |
+| FE-K (key-in) | K1–K4 | `steps/rate/step.tsx`, `steps/rate/i18n.ts`, a new rate test | logic | the quote fields of §5.1.3 are in `generated/quote.ts` on main |
+| FE-L (banner) | L1–L5 | `low-cash.ts` (new), `LowCashBanner.tsx` (new), `DeskPage.tsx`, `save.ts` and `desk-store.ts` (the `reload` calls only), a new test | logic | `low` is in `generated/my_shift.ts` on main, and FE-W has merged, because both change `save.ts` and `desk-store.ts` |
+| FE-C (levels) | C1–C8 | `DrawerLowLevels.tsx` (new), `CashLimits.tsx`, `admin/cash-limits/i18n.ts`, a new test | mechanical | `drawerLowLevels` is in `generated/cash_limits.ts` on main, and #5951 has merged |
+| FE-A (approvals) | `NEGATIVE_STOCK` leaves the type list (no new request of that type is ever opened; 0 PENDING on xc-v3 at 15:41 ICT, §5.1.2) | `admin/approvals/Approvals.tsx`, `admin/approvals/i18n.ts`, `Approvals.type.test.tsx` | mechanical | the server no-negative ticket (#5963) is on main. `ApproveNegativeStock` stays in the permission matrix, because the permission stays |
+
+Each logic ticket carries up-front tests on its own `test/<n>` branch, written by this design's author. FE-W restates `save.stock-wait.test.ts` and `steps/receipt/stock-wait.test.tsx`: S4 and its tests are removed, citing the owner's decision above.
 
 ### 5.5 Pending refunds step (owner 2026-10-11)
 

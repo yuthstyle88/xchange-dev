@@ -639,7 +639,7 @@ The ticket lists each test by name.
 - `[required]` **The desk.** `MyShiftBalance` (the `my_shift` view) gains `lowCashLevel: string | null` (this drawer's level for the currency, `null` when none) and `low: boolean` (`expected <= lowCashLevel`).
   - The desk shows a standing warning, "เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ", while any currency is `low`.
   - The DESK quote answers `belowLowCashLevel: string[]`: the currencies the quote would leave at or below the level while the drawer can still pay.
-  - The desk re-reads `my_shift` after each completed exchange and on its 60-second poll (claude/01TxaRJG, L2); no new polling.
+  - The desk re-reads `my_shift` when its shift gate opens, after each completed exchange or `stockInsufficient` answer, and when the page becomes visible again; it has no timer and none is added (corrected by claude/01TxaRJG: the desk has no 60-second poll; `xchange-v3-wave3-desk.md` §5.4c).
 
 **Classes and files (the changed part).**
 
