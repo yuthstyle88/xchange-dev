@@ -9,6 +9,7 @@ pub mod cancel;
 pub mod complete;
 pub mod confirm;
 pub mod create;
+pub mod drawer_check;
 pub mod effects;
 pub mod negative_stock_source;
 pub mod quote;

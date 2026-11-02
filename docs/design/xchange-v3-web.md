@@ -185,6 +185,7 @@ can be fixed there:
 - [required] `message` is v2's sentence, byte for byte, where one exists (W6). `code` is stable and camelCase.
   `field` is present only when exactly one field is wrong, and is the request body's key for it.
 - The HTTP status is the one v2 used for that refusal.
+- `details` (added 2026-11-02, `queue-tickets.md` §4.7 "The refusal names the blocking tickets"): an optional JSON object carrying a refusal's data, for the screen to read instead of parsing `message`. `[required]` It is present only when a refusal sets it; every other body is unchanged. `V3Error` gains `details: Option<serde_json::Value>` and a `with_details(value)` builder (`api/src/presentation/http/v3/error.rs`), so any refusal can use it. The first user is `ticketStillServing` (`details.tickets`). The FE's `ApiError` (`web/src/shared/api/client.ts`) gains `details?: unknown`.
 - The screen's form (§5.3 `useForm`) focuses that field and marks it red. No `REFUSALS` table is needed in a v3 screen.
 
 ### 4.4 Who may read a view (W8)

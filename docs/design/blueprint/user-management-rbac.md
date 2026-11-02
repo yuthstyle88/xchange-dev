@@ -1028,6 +1028,70 @@ The owner allowed one Identity route for this: `POST /admin/identities/{id}/pass
 (ticket ID-1 in `108-platform-services`; design `services/identity/docs/ADMIN_SET_PASSWORD_DESIGN.md` there).
 **xchange generates the temporary password, never Identity.**
 
+### 11.11 Business settings are saved by EXECUTIVE only; every staff role reads them (owner, 2026-11-02)
+
+**Owner's orders** (relayed by the lane controller claude/608dff, notices of 22:0x–22:3x ICT 2026-11-02; `user-set-settings.md`, PR #5993):
+- *"เจ้าของเป็น คนตั้งค่า ไว้ ให้ ฝ่ายการเงินปฏิบัติ ตาม"* (the owner sets the values; finance follows them);
+- *"ทำเหมือน ระบบ ธนาคาร ทั่วไป"* (do it the way an ordinary banking system does).
+
+The controller's ruling B2 (a), on #564 issuecomment-6580563236: `CashTransferPolicySet` is EXECUTIVE-only, as the owner's A5 ruling already said (`cash-shift-transfer.md:80`). The banking notice widens that to every settings save.
+
+**Measured** (main, 2026-11-02; swept the `action:`/`need:` pairs in `xc-auth/src/domain/policy/areas/*.rs`). Five settings saves sit in modules that other roles hold at Full, so a module level, not a decision, gives those roles the save:
+
+| Permission | Its module (`permission_module.rs:99-110`) | Holders at Full (`role_grants.rs:168-210`) | Its rows |
+|---|---|---|---|
+| `CashLimitsManage` | Finance/Full | EXECUTIVE, **FINANCE** | `cashLimitsSave`, **`cashLimitsRead`**; `drawerLowLevelsSave` inherits the save (#5997) |
+| `CashTransferPolicySet` | Finance/Full | EXECUTIVE, **FINANCE** | `transferPolicySave`; the `cash_transfer_policy` view inherits it |
+| `CashTargetSet` | Finance/Full | EXECUTIVE, **FINANCE** | `dayTarget`; a read gate in `staff_floor/reader.rs:97` |
+| `RatePolicySave`, `RateAlertSettingsSave`, `OrgStartingPricesManage` | RatesStock/Full | EXECUTIVE, **RATE_MANAGER** | `marginGuardSet`, the rate policy save, `rateAlertSettingsSave` and **`rateAlertSettings`**, `orgStartingPriceSave` and **`orgStartingPrices`** |
+| `SystemSettings` | SystemSettings/Full | EXECUTIVE, **ADMIN** | `exchangeSettingsSave`, `appSettingsSave` |
+| `AlertSettingsSave` | Dashboard/Full | EXECUTIVE only | `branchAlertSettingsSave` and **`branchAlertSettings`** |
+| `BranchesManage` | UserManagement/Full | EXECUTIVE, ADMIN | a **mix**: settings (`bookingPolicySet`, `slotRuleSet`, `slotCapacitySet`, `branchExchangeLimitSave`) and daily operations (`closureAdd`/`Remove`, `slotOpen`/`Close`, `admin_booking_slots`) |
+
+**Rows in bold are reads.** Today a read shares its save's permission, so moving the save alone would cut the readers off.
+
+**Verdicts** (setting = the Owner sets it; operation = staff run it):
+
+| Permission | Verdict | After |
+|---|---|---|
+| `CashLimitsManage`, `CashTransferPolicySet`, `CashTargetSet` | setting | **no module; seeded to EXECUTIVE only**, like `PricingFormulaSave` (#5733) |
+| `RatePolicySave`, `RateAlertSettingsSave`, `OrgStartingPricesManage` | setting | the same: RATE_MANAGER keeps drafting and publishing rates (`RatesDraft`, the approval kinds) but no longer saves their policy |
+| `SystemSettings` | setting | the same: ADMIN loses it, and the Owner keeps it through EXECUTIVE |
+| `AlertSettingsSave` | setting | already EXECUTIVE-only by seed; made no-module so Dashboard/Full never implies it |
+| `BranchSettingsSave` (**new**, no module, EXECUTIVE only) | setting | takes `bookingPolicySet`, `slotRuleSet`, `slotCapacitySet` and `branchExchangeLimitSave` from `BranchesManage`, which keeps the daily operations |
+| `FinanceReconcile` | operation | unchanged (Finance/Full) |
+| `LoyaltyRulesManage`, `MarketingCampaigns` | operation with an Owner approval | unchanged: the maker drafts, and the Owner approves through `ApproveLoyaltyRuleVersion`/`ApproveCampaignVersion` (§11.9), which already is maker-checker |
+| `ConsentPolicyManage` | **open, for the controller** | consent texts are legal content, not a number; Customers/Full gives it to RATE_MANAGER and BRANCH_MANAGER today |
+| `UsersManage` | operation (user administration) | unchanged |
+
+**One read for every setting (♻️).** A new no-module `SettingsRead` is seeded to **every staff role** (the owner: finance, branch managers and tellers read the settings and work within them).
+- These rows move to it: `cashLimitsRead`, `rateAlertSettings`, `orgStartingPrices` and `branchAlertSettings`.
+- The `cash_transfer_policy` view stops inheriting `transferPolicySave` and gets its own row, `transferPolicyRead` → `SettingsRead`.
+- `staff_floor/reader.rs:97` reads with `SettingsRead`.
+- The FE shows the screens read-only, with "ตั้งค่าโดยเจ้าของ" (set by the owner), when the caller lacks the save permission (claude/01TxaRJG's FE half, §11.10).
+
+**Not in this section** (the user-settings design follows):
+- the Owner's OTP on every save;
+- a department's change as a request the Owner approves;
+- the shared settings audit trail with old and new values;
+- the approval-authority matrix.
+
+**Data migration.** No SQL. `RoleGrants::SEED_VERSION` goes 9 → 10.
+1. **Existing rows:**
+   - `SEED_REMOVALS` gains `(10, p)` for each permission leaving a built-in group: FINANCE loses `CashLimitsManage`, `CashTransferPolicySet` and `CashTargetSet`; RATE_MANAGER loses the three rate settings; ADMIN loses `SystemSettings`.
+   - `SEED_ADDITIONS` gains `(10, SettingsRead)` for every staff group and `(10, BranchSettingsSave)` for EXECUTIVE.
+   - The boot path applies both to built-in groups with `seed_version < 10` (§11.5 item 2). **Custom groups keep their explicit `role_permission_grants` rows**, and the Owner removes them on screen if wanted.
+2. **Backfill:** none beyond the boot seed. Measure before deploy who it reaches: `SELECT role_code, count(*) FROM user_roles GROUP BY 1;`.
+3. **Deploy order:** a binary change only.
+4. **`down`:** a binary rollback restores today's static table. Rows the boot seed removed are re-added by the old binary's `seed_missing` only for groups with no rows, so a rollback after the removals needs the Owner to re-grant on screen. Stated so it is not a surprise.
+
+**Tests (one ticket, `class:logic`):**
+- for each setting save above, a FINANCE (or RATE_MANAGER, or ADMIN) caller is refused `roleNotAllowedHere`, and the Owner account (ADMIN+EXECUTIVE) saves;
+- each read row answers FINANCE and a TELLER;
+- `FinanceReconcile` still answers FINANCE;
+- the seed test pins version 10.
+
+
 ### 13.1 Classes
 
 ```mermaid

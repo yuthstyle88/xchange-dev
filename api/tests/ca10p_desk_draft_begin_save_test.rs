@@ -14,6 +14,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use xc_cash::domain::posting::CashPostings;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
@@ -186,6 +187,33 @@ impl TestDb {
             user_id(spec)
         ))
         .await;
+        // Restated 2026-11-02 by claude/b091f5e0 (ticket author of #5983), citing `ledger-inventory.md` §5.1.3: create now
+        // refuses a cash exchange the drawer cannot pay, so the drawer this test's USD 150 BUY pays from holds THB
+        // 100,000 through the ledger. What the test pins (the draft gate at cutoff) is unchanged.
+        let mut tx = self.pool.begin().await.expect("begin");
+        xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+            .post_in(
+                &mut tx,
+                &[xc_cash::domain::posting::PostingRequest {
+                    from: xc_cash::domain::posting::CashPlace::Bank,
+                    to: xc_cash::domain::posting::CashPlace::Drawer(id.clone()),
+                    currency: xc_kernel::money::CurrencyCode::THB,
+                    quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                        "100000.00".parse().expect("an amount"),
+                    ),
+                    source: xc_cash::domain::ledger::posting::SourceRef {
+                        source_type: xc_cash::domain::ledger::posting::SourceType::Opening,
+                        source_id: unique("fund-drawer"),
+                        source_key: "fund".to_owned(),
+                    },
+                    line: None,
+                    reverses: None,
+                }],
+                None,
+            )
+            .await
+            .expect("fund the drawer");
+        tx.commit().await.expect("commit");
     }
 
     async fn finish(self) {

@@ -20,17 +20,19 @@ use xc_kernel::money::{
 
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 
+use crate::application::workflows::exchange::drawer_check;
 use crate::application::workflows::exchange::quote::{
     QuoteRequest, QuoteRequestLine, QuoteService,
 };
 use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::quote::QuoteDto;
+use crate::presentation::dto::v3::quote::{DrawerShortfallDto, QuoteDto};
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, Locks, role_not_allowed_here,
 };
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::negative_stock::shortfall_message;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -330,6 +332,21 @@ impl CommandAction for QuotesCommand {
                     )
                 })?;
 
+        let quote_needs: Vec<(CurrencyCode, Decimal)> = quote
+            .lines
+            .iter()
+            .flat_map(|l| {
+                let settle = Decimal::from_i128_with_scale(l.settle_thb.minor_i128(), 2);
+                drawer_check::needs(
+                    l.shop_side,
+                    l.currency,
+                    l.quantity.value(),
+                    settle,
+                    quote.cash_settlement,
+                )
+            })
+            .collect();
+
         let mut dto = QuoteDto::from_domain(quote, pub_version).map_err(|e| {
             V3Error::new(
                 "serverError",
@@ -338,6 +355,49 @@ impl CommandAction for QuotesCommand {
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
         })?;
+        if channel == QuoteChannel::Desk {
+            let shift_id: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM shifts \
+                 WHERE branch_id = $1 AND teller_id::text = $2 AND status = 'OPEN' \
+                 ORDER BY opened_at DESC LIMIT 1",
+            )
+            .bind(branch.as_str())
+            .bind(&who.user_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "serverError",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
+            if let Some(shift_id) = shift_id {
+                let shortfall = drawer_check::drawer_shortfall_in(tx, &shift_id, &quote_needs)
+                    .await
+                    .map_err(|e| {
+                        V3Error::new(
+                            "serverError",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    })?;
+                if !shortfall.lines.is_empty() {
+                    dto.drawer_shortfall_message = Some(shortfall_message(&shortfall));
+                    dto.drawer_shortfall = shortfall
+                        .lines
+                        .into_iter()
+                        .map(|l| DrawerShortfallDto {
+                            currency: l.currency.as_str().to_owned(),
+                            place: l.place.as_str().to_owned(),
+                            short_by: l.short_by.normalize().to_string(),
+                        })
+                        .collect();
+                }
+            }
+        }
         let published = crate::presentation::http::v3::published_rates::published_rates_data(
             &self.pool, branch,
         )
