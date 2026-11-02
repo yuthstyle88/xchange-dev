@@ -169,13 +169,7 @@ struct Answer {
     body: Value,
 }
 
-async fn call(
-    db: &TestDb,
-    who: &str,
-    method: Method,
-    uri: &str,
-    body: Option<Value>,
-) -> Answer {
+async fn call(db: &TestDb, who: &str, method: Method, uri: &str, body: Option<Value>) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
     let reader: Arc<dyn SessionReader> = Arc::new(HeaderUsers);
     let app = atest::init_service(
@@ -258,8 +252,15 @@ async fn row_2_then_the_view_reads_it() {
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(r.body["data"]["updatedByName"], "Finance One", "{}", r.text);
     assert_eq!(r.body["data"]["updatedBy"], USER_1, "{}", r.text);
-    assert_eq!(r.body["data"]["countDifferenceLimitThb"], "5000.00", "{}", r.text);
-    assert_eq!(r.body["data"], s.body, "save and read must answer identical data");
+    assert_eq!(
+        r.body["data"]["countDifferenceLimitThb"], "5000.00",
+        "{}",
+        r.text
+    );
+    assert_eq!(
+        r.body["data"], s.body,
+        "save and read must answer identical data"
+    );
 
     db.finish().await;
 }

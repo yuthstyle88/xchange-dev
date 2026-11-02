@@ -17,7 +17,9 @@ use xc_kernel::money::{Bound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::cash_limits::{CashLimitsData, CashLimitsRow, CashLimitsSaveInput};
+use crate::presentation::dto::v3::cash_limits::{
+    CashLimitsData, CashLimitsRow, CashLimitsSaveInput,
+};
 use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
