@@ -24,8 +24,7 @@ export interface SaveAnswer {
 }
 
 export interface StockWait {
-  requestId: string;
-  rejected: boolean;
+  message: string;
 }
 
 export interface SaveSink {
@@ -264,20 +263,10 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
           try {
             s.tx = await completeWrite.send({ id: tx.id });
           } catch (e) {
-            if (e instanceof ApiError && e.status === 409) {
-              if (e.code === 'approvalRequired') {
-                const prefix = 'approvalRequired: ';
-                const requestId = e.message.startsWith(prefix) ? e.message.slice(prefix.length).trim() : '';
-                setStockWait({ requestId, rejected: false });
-                watchStock();
-                return 'saving';
-              }
-              if (stockWait && e.code === 'staleVersion') {
-                stopWatch();
-                setStockWait({ requestId: stockWait.requestId, rejected: true });
-                s.tx = await readTransaction(tx.id);
-                break;
-              }
+            if (e instanceof ApiError && e.status === 409 && e.code === 'stockInsufficient') {
+              setStockWait({ message: e.message });
+              watchStock();
+              return 'saving';
             }
             throw e;
           }
@@ -390,7 +379,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
       setStockWait(undefined);
       await advance(s);
     } catch (e) {
-      if (stockWait && !stockWait.rejected) watchStock();
+      if (stockWait) watchStock();
       sink.setSaveError(wordedError(e));
     }
   }

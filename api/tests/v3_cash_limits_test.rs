@@ -360,9 +360,11 @@ async fn a_branch_without_a_row_reads_as_no_limit() {
     let db = TestDb::start().await;
     let r = read(&db, FINANCE, B01).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    // Restated 2026-11-02 by claude/b091f5e0 (lane controller claude/608dff's ruling for #5951: `CashLimitsData` gains
+    // `updatedByName`, the setter's `users.name`, `null` with no row): only the new field is added.
     assert_eq!(
         r.body["data"],
-        json!({ "branch": B01, "countDifferenceLimitThb": null, "updatedBy": null, "updatedAt": null })
+        json!({ "branch": B01, "countDifferenceLimitThb": null, "updatedBy": null, "updatedByName": null, "updatedAt": null })
     );
     db.finish().await;
 }
