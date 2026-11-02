@@ -10,6 +10,7 @@ import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error'
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
+import { DrawerLowLevels } from './DrawerLowLevels';
 import * as table from './i18n';
 import './cash-limits.css';
 
@@ -44,7 +45,7 @@ function isLimitFieldRefusal(err: unknown): boolean {
   return false;
 }
 
-function limitsError(err: unknown): string {
+export function limitsError(err: unknown): string {
   if (isServerFailure(err)) return wordedError(err);
   if (isLimitFieldRefusal(err)) return t('error.countDifferenceLimitThb');
   if (err instanceof ApiError && err.code in OWN_TEXT) return t(OWN_TEXT[err.code]!);
@@ -242,6 +243,8 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
           </form>
         </CardBody>
       </Card>
+
+      <DrawerLowLevels data={current} branch={props.branch} onSaved={applyData} />
     </div>
   );
 }
