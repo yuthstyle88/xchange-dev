@@ -13,6 +13,7 @@ use xc_kernel::ids::BranchId;
 use crate::application::status::status_service::StatusService;
 use crate::domain::counter::counter::{Counter, CounterStatus};
 use crate::domain::repository::QueueRepository;
+use crate::domain::ticket::live_ticket::LiveTicket;
 use crate::domain::ticket::queue_error::QueueError;
 
 #[derive(Clone)]
@@ -204,19 +205,28 @@ impl CounterService {
         teller_id: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let has_live_ticket: bool = sqlx::query_scalar(
-            "SELECT EXISTS (\
-                SELECT 1 FROM queue_tickets \
-                WHERE branch_id = $1 AND counter_teller_id = $2::uuid AND status IN ('CALLED', 'SERVING')\
-             )",
+        let rows: Vec<(String, String, String, Option<String>)> = sqlx::query_as(
+            "SELECT t.display_number, t.status, t.counter_teller_id::text, NULLIF(btrim(u.name), '') \
+             FROM queue_tickets t LEFT JOIN users u ON u.id = t.counter_teller_id \
+             WHERE t.branch_id = $1 AND t.counter_teller_id = $2::uuid AND t.status IN ('CALLED', 'SERVING') \
+             ORDER BY t.called_at, t.display_number",
         )
         .bind(branch.as_str())
         .bind(teller_id)
-        .fetch_one(&mut **tx)
+        .fetch_all(&mut **tx)
         .await?;
 
-        if has_live_ticket {
-            return Err(QueueError::TicketStillServing.into());
+        if !rows.is_empty() {
+            let tickets = rows
+                .into_iter()
+                .map(|(number, status, teller_id, teller_name)| LiveTicket {
+                    number,
+                    status,
+                    teller_id,
+                    teller_name,
+                })
+                .collect();
+            return Err(QueueError::TicketStillServing(tickets).into());
         }
 
         sqlx::query("DELETE FROM queue_counters WHERE branch_id = $1 AND teller_id = $2::uuid")

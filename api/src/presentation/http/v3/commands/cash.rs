@@ -39,7 +39,7 @@ use xc_queue::application::counter::counter_service::CounterService;
 use xc_queue::application::day::queue_day_hook::QueueDayHook;
 use xc_queue::application::status::status_service::StatusService;
 use xc_queue::domain::repository::QueueRepository;
-use xc_queue::domain::ticket::queue_error::QueueError;
+use xc_queue::domain::ticket::live_ticket::LiveTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::bootstrap::AppState;
@@ -53,6 +53,9 @@ use crate::presentation::dto::v3::cash_transfer_policy::{
     CashTransferPolicyData, TransferPolicySaveInput,
 };
 use crate::presentation::dto::v3::staff_corrections::{CountRejectInput, CountRejected};
+use crate::presentation::dto::v3::ticket_still_serving::{
+    LiveTicketDto, TicketStillServingDetails,
+};
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
@@ -206,13 +209,19 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             }
         }
         // #5675: the shift close's queue hook refused, the teller still holds a CALLED or SERVING ticket.
-        AppError::Validation(message) if message == QueueError::TicketStillServing.code() => {
-            V3Error::new(
-                "ticketStillServing",
-                None,
-                TICKET_STILL_SERVING_TH,
-                StatusCode::CONFLICT,
-            )
+        AppError::Validation(message) if message.starts_with("ticketStillServing") => {
+            let tickets: Vec<LiveTicketDto> = LiveTicket::from_refusal(&message)
+                .into_iter()
+                .map(LiveTicketDto::from)
+                .collect();
+            let numbers: Vec<&str> = tickets.iter().map(|t| t.number.as_str()).collect();
+            let text = if numbers.is_empty() {
+                TICKET_STILL_SERVING_TH.to_owned()
+            } else {
+                format!("{TICKET_STILL_SERVING_TH}: {}", numbers.join(", "))
+            };
+            V3Error::new("ticketStillServing", None, text, StatusCode::CONFLICT)
+                .with_details(TicketStillServingDetails { tickets })
         }
         AppError::Validation(message) => V3Error::new(
             "validationFailed",
@@ -624,6 +633,7 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     CountVerifyOutput::export_all(&cfg)?;
     CashRecordOutput::export_all(&cfg)?;
     crate::presentation::dto::v3::staff_corrections::export_types(dir)?;
+    crate::presentation::dto::v3::ticket_still_serving::export_types(dir)?;
     TransferPolicySaveInput::export_all(&cfg)?;
     Ok(())
 }

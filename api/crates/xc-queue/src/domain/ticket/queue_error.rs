@@ -3,6 +3,8 @@
 
 use pos_error::AppError;
 
+use crate::domain::ticket::live_ticket::LiveTicket;
+
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum QueueError {
     /// The branch's queue is closed (or has no status row): no new ticket (§4.3 row 1).
@@ -40,7 +42,7 @@ pub enum QueueError {
     /// #5675: a shift close while the closing teller holds a CALLED or SERVING ticket at their
     /// counter in that branch (design `queue-tickets.md` §4.7).
     #[error("ticketStillServing")]
-    TicketStillServing,
+    TicketStillServing(Vec<LiveTicket>),
 }
 
 impl QueueError {
@@ -57,7 +59,7 @@ impl QueueError {
             Self::NotFound => "notFound",
             Self::OutsideServiceHours => "outsideServiceHours",
             Self::TicketHasSale => "ticketHasSale",
-            Self::TicketStillServing => "ticketStillServing",
+            Self::TicketStillServing(_) => "ticketStillServing",
         }
     }
 }
@@ -69,6 +71,9 @@ impl From<QueueError> for AppError {
         match err {
             QueueError::StaleVersion => {
                 AppError::Conflict(QueueError::StaleVersion.code().to_owned())
+            }
+            QueueError::TicketStillServing(tickets) => {
+                AppError::Validation(LiveTicket::refusal(&tickets))
             }
             other => AppError::Validation(other.code().to_owned()),
         }
