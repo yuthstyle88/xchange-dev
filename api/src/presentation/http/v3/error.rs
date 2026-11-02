@@ -12,6 +12,7 @@ pub struct V3Error {
     pub field_path: Option<String>,
     pub message: String,
     pub status: StatusCode,
+    pub details: Option<serde_json::Value>,
 }
 
 impl V3Error {
@@ -28,6 +29,7 @@ impl V3Error {
             field_path: None,
             message: message.into(),
             status,
+            details: None,
         }
     }
 
@@ -44,7 +46,14 @@ impl V3Error {
             field_path: Some(field_path.into()),
             message: message.into(),
             status,
+            details: None,
         }
+    }
+
+    /// Attaches structured `details` under `error` on the wire (§4.3).
+    pub fn with_details(mut self, value: impl serde::Serialize) -> Self {
+        self.details = Some(serde_json::to_value(value).expect("serialize error details"));
+        self
     }
 }
 
@@ -71,22 +80,25 @@ impl ResponseError for V3Error {
             &self.message
         };
 
-        let body = if let Some(field) = self.field_path.as_deref().or(self.field) {
-            serde_json::json!({
-                "error": {
-                    "code": self.code,
-                    "field": field,
-                    "message": message,
-                }
-            })
-        } else {
-            serde_json::json!({
-                "error": {
-                    "code": self.code,
-                    "message": message,
-                }
-            })
-        };
+        let mut error = serde_json::Map::new();
+        error.insert(
+            "code".to_owned(),
+            serde_json::Value::String(self.code.to_owned()),
+        );
+        if let Some(field) = self.field_path.as_deref().or(self.field) {
+            error.insert(
+                "field".to_owned(),
+                serde_json::Value::String(field.to_owned()),
+            );
+        }
+        error.insert(
+            "message".to_owned(),
+            serde_json::Value::String(message.to_owned()),
+        );
+        if let Some(details) = &self.details {
+            error.insert("details".to_owned(), details.clone());
+        }
+        let body = serde_json::json!({ "error": error });
 
         HttpResponse::build(self.status)
             .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -106,6 +118,7 @@ impl From<PolicyError> for V3Error {
             field_path: None,
             message: err.to_string(),
             status,
+            details: None,
         }
     }
 }
