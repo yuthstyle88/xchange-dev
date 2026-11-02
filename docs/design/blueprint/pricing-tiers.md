@@ -1120,8 +1120,12 @@ The result is posted on #564 and #5055.
 3. **"Not set" is a refusal, with no number.** A draft line with tier rows on a branch whose live policy version has no four valid rows is refused at the one writer (`insert_line_tiers`): `RateEngineError::ValidationFailed("valueBands: the branch has no saved tier bands; the Owner sets them on the rate policy")`. Nothing is written. `pricingApprove` already turns that into the currency's error code (`validationFailed`, `commands/pricing_approve.rs:503-506`) and keeps the other currencies. A branch push records that branch as failed (§15.4), and a FOLLOW round records the same. Publish keeps a second check, which answers the same error rather than panicking.
    Why a refusal and not V.9's numbers as a fallback: a fallback is the constant again (#5993). The Owner sees "not set" on the rate policy screen, and the refusal says where to set it.
 4. **The writer validates bounds whenever they are given.** `ratePolicySave` runs `PolicyTiers::new` on any non-empty `valueTiers`, whatever `valueTiersOn` says. Clearing them (`valueTiers: []`) stays allowed. After that, the next MANUAL approve, push or copy of a tiered line refuses as in item 3.
+   - **A bands-only save (BE owns it).** Today each row's `buyMarginPct`/`sellMarginPct` goes through `RatePercent::parse` (`rate_policy_save.rs:259-272`), and the FE sends `""` for a hidden, empty margin (`RatesPolicyCard.tsx:441-452`). That save answers 400.
+   - The BE therefore accepts a **blank margin only when the resolved `valueTiersOn` is false**, and stores it as `0`. Margins are read only by AUTO tiers (`TierProposal`, `PolicyTiers::margin`), and those need `value_tiers_on`, so a stored `0` changes no price.
+   - With `valueTiersOn` true, a blank margin stays 400 `validationFailed`, field `valueTiers`. Turning tiers on therefore needs real margins entered.
+   - The rule lives in the BE parse, so any caller can save bands alone. The FE (item 6) needs no payload change.
 5. **Reads show the saved bands whatever `value_tiers_on` says.** `pricing_board.bands` reads `bands_of_version` and is empty when not set. `published_rates.bandHeadings` reads the bounds on the publication's own tier lines, so the board heads what was published.
-6. **The FE** (claude/01TxaRJG): the band editor on the rate policy card shows while tiers are off, with "ยังไม่ได้ตั้ง" (not set) when the branch has no bands; `tierIssue` (`RatesPolicyCard.tsx:319-321`) checks the bounds whatever the switch. Margins stay hidden while tiers are off. No DTO field changes.
+6. **The FE** (claude/01TxaRJG): the band editor on the rate policy card shows while tiers are off, with "ยังไม่ได้ตั้ง" (not set) when the branch has no bands; `tierIssue` (`RatesPolicyCard.tsx:319-321`) checks the bounds whatever the switch. Margins stay hidden while tiers are off, and their blank values go out as today (`""`); the BE accepts them (item 4). No DTO field changes.
 
 **Class diagram (changed only; no new type).**
 
@@ -1172,11 +1176,13 @@ classDiagram
 | B-5 | MAIN has no band rows (xc-v3 today); MANUAL approve USD | USD's result is `validationFailed`; no `pricing_tier_sets` row, no draft, no publication; another currency in the same call still publishes |
 | B-6 | MANUAL push to branch C, which has no band rows | C is reported failed; MAIN and the other branches publish |
 | B-7 | `ratePolicySave` with tiers off and three rows, or non-rising bounds | 400 `validationFailed`, field `valueTiers` |
+| B-7a | Owner `ratePolicySave`, `valueTiersOn: false`, four bounds 10,000 / 50,000 / 200,000 / –, every margin `""` | 200; four rows stored with margins `0`; B-1/B-2's publish then uses those bounds |
+| B-7b | the same with `valueTiersOn: true` | 400 `validationFailed`, field `valueTiers` (margins required when tiers are on) |
 | B-8 | `ratePolicySave` by a RATE_MANAGER that changes a bound | 403 `roleNotAllowedHere` (unchanged, pinned) |
 | B-9 | `pricing_board` with tiers off and bands saved | `bands` lists them; with none saved, `bands` is empty |
 | B-10 | `published_rates` after B-3 | `bandHeadings` equal the published lines' bounds |
 | B-11 | AUTO currency, tiers on (`TierProposal`) | unchanged |
-| B-12 | after the change, `git grep -nE '10_000|50_000|200_000' -- api/crates/xc-rate/src` | no band constant |
+| B-12 | after the change, `git grep -n v9_bands -- api` and `git grep -nE '10_000|50_000|200_000' -- api/crates/xc-rate/src/application/publication/publish_service.rs` | both empty: no `v9_bands` symbol and no band constant in `publish_service.rs` |
 
 **Tests that pin the constant, and how each is restated** (each with `// Restated for row 1 (pricing-tiers.md §15.14)`):
 
@@ -1193,7 +1199,9 @@ The rows above come from a grep for `v9_bands` and the three constants. The tick
 **Data migration.** None: no table, column, constraint or default changes.
 1. **Existing rows:** `rate_policy_value_tiers` rows keep their meaning; a version saved with tiers off keeps its rows, and they now count as bands. Published tier lines keep the bounds they were published with (a publication is history). xc-v3 has none (measured above).
 2. **Backfill:** none. A branch with no band rows refuses MANUAL/FOLLOW approve until the Owner saves them (B-5), which is the "not set" behaviour. On xc-v3 that is MAIN today. To keep V.9 parity, the Owner saves 10,000 / 50,000 / 200,000 on the rate policy screen; nobody seeds them. Count before deploy: `SELECT count(*) FROM rate_policy_versions pv WHERE pv.valid_to IS NULL AND NOT EXISTS (SELECT 1 FROM rate_policy_value_tiers t WHERE t.policy_version_id = pv.id);`.
-3. **Deploy order:** binary only. The old binary ignores the rows, as before.
+3. **Deploy order:** binary only, with no schema step. The old binary ignores the rows, as before.
+   - **The BE ticket and the FE half (item 6) go out in the same deploy.** After the BE change, a branch with no bands refuses every MANUAL approve (B-5). With tiers off, the Owner can enter bands only through item 6's editor. Deploying the BE alone stops day pricing at MAIN on xc-v3.
+   - **After the deploy, before the first MANUAL approve:** the Owner saves MAIN's bands on the rate policy screen (10,000 / 50,000 / 200,000 for V.9 parity, B-7a). Then check that the count in item 2 is 0 for every branch that prices MANUAL or FOLLOW.
 4. **`down`:** nothing to lose.
 
-**Ticket (cut after this section merges):** one `class:logic` ticket on Argon. File scope: the six files in the table above, the five test files and their flip-table files, and `docs/design/blueprint/pricing-tiers.md` only if the code finds this section wrong. The FE half (item 6) is claude/01TxaRJG's.
+**Ticket (cut after this section merges):** one `class:logic` ticket on Argon. File scope: the six files in the table above, the five test files and their flip-table files, and `docs/design/blueprint/pricing-tiers.md` only if the code finds this section wrong. The FE half (item 6) is claude/01TxaRJG's, and it ships in the same deploy (Data migration item 3).
