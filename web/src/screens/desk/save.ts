@@ -265,6 +265,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
           } catch (e) {
             if (e instanceof ApiError && e.status === 409 && e.code === 'stockInsufficient') {
               setStockWait({ message: e.message });
+              void store.lowCash.reload();
               watchStock();
               return 'saving';
             }
@@ -285,6 +286,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
           };
           sink.setSaved(answer);
           sink.setOutcome('saved');
+          void store.lowCash.reload();
           try {
             await store.entry()?.afterSave?.(store, answer);
           } catch {
@@ -360,6 +362,9 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         sink.setOutcome('refused');
         if (e instanceof ApiError && e.code === 'quoteExpired') {
           void store.requote();
+        }
+        if (e instanceof ApiError && e.code === 'stockInsufficient') {
+          void store.lowCash.reload();
         }
         return 'refused';
       }
