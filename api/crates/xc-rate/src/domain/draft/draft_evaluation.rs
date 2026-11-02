@@ -54,6 +54,17 @@ impl DraftEvaluation {
         formulas: &[PriceFormula],
     ) -> Evaluation {
         let mut out_of_bound = Vec::new();
+        if policy.is_none() {
+            for line in lines {
+                if !out_of_bound.contains(&(line.currency, Side::Buy)) {
+                    out_of_bound.push((line.currency, Side::Buy));
+                }
+                if !out_of_bound.contains(&(line.currency, Side::Sell)) {
+                    out_of_bound.push((line.currency, Side::Sell));
+                }
+            }
+            return Evaluation::new(out_of_bound);
+        }
         let default_formula = PriceFormula::default();
 
         for (i, line) in lines.iter().enumerate() {

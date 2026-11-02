@@ -456,6 +456,17 @@ async fn two_policy_versions_in_one_draft_publishes_each_line_under_its_own_poli
         .await;
     let draft = settle(tx, got).await.expect("draft created");
 
+    let mut tx = db.begin().await;
+    let got: Result<SubmitOutcome, RateEngineError> = e
+        .drafts
+        .submit(&mut tx, &main_branch(), &owner_user(), &draft.id, &key())
+        .await;
+    let outcome = settle(tx, got).await.expect("draft submitted");
+    assert_eq!(outcome.status, DraftStatus::Approved);
+
+    // Restated by the ticket author of rates §4.5.1 (claude/b091f5e0, 2026-11-02): submit now evaluates
+    // under the live version and stamps it on every line, so the per-line versions are set after
+    // submit. What this test pins is unchanged: publish reads each line's own version.
     // Bind USD and EUR to policy A, GBP to policy B
     sqlx::query(
         "UPDATE rate_draft_lines SET policy_version_id = $1::uuid \
@@ -476,14 +487,6 @@ async fn two_policy_versions_in_one_draft_publishes_each_line_under_its_own_poli
     .execute(&db.pool)
     .await
     .expect("bind GBP to pol_b");
-
-    let mut tx = db.begin().await;
-    let got: Result<SubmitOutcome, RateEngineError> = e
-        .drafts
-        .submit(&mut tx, &main_branch(), &owner_user(), &draft.id, &key())
-        .await;
-    let outcome = settle(tx, got).await.expect("draft submitted");
-    assert_eq!(outcome.status, DraftStatus::Approved);
 
     let pub_ref = publish_draft(&db, &e, &draft, None).await;
     assert_eq!(pub_ref.version, 1);

@@ -125,6 +125,23 @@ fn decode_tier_rows(
     Ok(map)
 }
 
+async fn live_policy_version(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+) -> Result<Option<Uuid>, RateEngineError> {
+    let policy_row: Option<(Uuid,)> = sqlx::query_as(
+        "SELECT id FROM rate_policy_versions \
+         WHERE branch_id = $1 AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now()) \
+         ORDER BY version DESC LIMIT 1",
+    )
+    .bind(branch.as_str())
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+    Ok(policy_row.map(|r| r.0))
+}
+
 impl RateDraftService {
     pub fn new(pool: PgPool, approvals: Arc<ApprovalService>) -> Self {
         Self { pool, approvals }
@@ -158,17 +175,7 @@ impl RateDraftService {
         let who_str = who.user_id.as_str();
 
         // Find active policy version for branch
-        let policy_row: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM rate_policy_versions \
-             WHERE branch_id = $1 AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now()) \
-             ORDER BY version DESC LIMIT 1",
-        )
-        .bind(branch_str)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| RateEngineError::Database(e.to_string()))?;
-
-        let policy_id = policy_row.map(|r| r.0);
+        let policy_id = live_policy_version(tx, branch).await?;
 
         sqlx::query(
             "INSERT INTO rate_drafts (id, branch_id, status, created_by, version) \
@@ -282,17 +289,7 @@ impl RateDraftService {
         let new_version = current_version + 1;
         let branch_str = branch.as_str();
 
-        let policy_row: Option<(Uuid,)> = sqlx::query_as(
-            "SELECT id FROM rate_policy_versions \
-             WHERE branch_id = $1 AND valid_from <= now() AND (valid_to IS NULL OR valid_to > now()) \
-             ORDER BY version DESC LIMIT 1",
-        )
-        .bind(branch_str)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| RateEngineError::Database(e.to_string()))?;
-
-        let policy_id = policy_row.map(|r| r.0);
+        let policy_id = live_policy_version(tx, branch).await?;
 
         sqlx::query("UPDATE rate_drafts SET version = $1, updated_at = now() WHERE id = $2")
             .bind(new_version)
@@ -399,7 +396,7 @@ impl RateDraftService {
         let mut lines = Vec::new();
         let mut line_policy_ids = Vec::new();
         let mut ref_ids: Vec<Uuid> = Vec::new();
-        let mut policy_version_id: Option<Uuid> = None;
+        let policy_version_id = live_policy_version(tx, branch).await?;
 
         for r in &db_lines {
             let line_id: Uuid = r.get("id");
@@ -419,9 +416,6 @@ impl RateDraftService {
                 if !ref_ids.contains(&rf) {
                     ref_ids.push(rf);
                 }
-            }
-            if policy_version_id.is_none() {
-                policy_version_id = pol_id;
             }
 
             let buy = match buy_mode.as_str() {
@@ -653,6 +647,14 @@ impl RateDraftService {
             ));
         }
 
+        let live_id = live_policy_version(tx, branch).await?;
+        sqlx::query("UPDATE rate_draft_lines SET policy_version_id = $2 WHERE draft_id = $1")
+            .bind(id.as_uuid())
+            .bind(live_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
         let eval_res = self.evaluate(tx, branch, id).await?;
 
         let auto_line_ids: Vec<Uuid> = sqlx::query_scalar(
@@ -756,11 +758,12 @@ impl RateDraftService {
             }
         };
 
-        let final_status = if eval_res.evaluation.is_in_bound() {
-            let pol_ver = eval_res.policy.as_ref().map(|p| p.id()).unwrap_or("1");
+        let final_status = if let (true, Some(pol)) =
+            (eval_res.evaluation.is_in_bound(), eval_res.policy.as_ref())
+        {
             let decide_res = self
                 .approvals
-                .decide_by_policy(tx, &request.id, pol_ver)
+                .decide_by_policy(tx, &request.id, pol.id())
                 .await;
             decide_res.map_err(|e| RateEngineError::Internal(e.to_string()))?;
             DraftStatus::Approved
