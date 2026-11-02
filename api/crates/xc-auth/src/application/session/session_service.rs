@@ -324,7 +324,7 @@ impl SessionService {
     }
 
     /// R5 at sign-in: the branch a new session of `user_id` starts on, from its valid roles, the organisation's
-    /// branches and the user's last choice. Sign-in is not a choice: `last_branch_id` is only read.
+    /// branches and the user's last choice. A sign-in stores its pick into an empty slot only (§14.2).
     async fn initial_branch_in(
         conn: &mut sqlx::PgConnection,
         user_id: &str,
@@ -388,6 +388,16 @@ impl SessionService {
             .await
             .map_err(|e| SessionError::Database(e.to_string()))?;
         let branch = Self::initial_branch_in(&mut conn, user_id, now).await?;
+        if let Some(ref b) = branch {
+            sqlx::query(
+                "UPDATE users SET last_branch_id = $2 WHERE id = $1::uuid AND last_branch_id IS NULL",
+            )
+            .bind(user_id)
+            .bind(b.as_str())
+            .execute(&mut *conn)
+            .await
+            .map_err(|e| SessionError::Database(e.to_string()))?;
+        }
         sqlx::query(
             "INSERT INTO user_sessions (hash, user_id, version, expires, refresh_token_enc, organization_id, branch_id, must_change_password) \
              VALUES ($1, $2::uuid, $3, $4, $5, $6::uuid, $7, $8)",
