@@ -396,6 +396,8 @@ export interface DeskStore {
   transactionState: Accessor<TransactionState | undefined>;   // the server's, as last answered (§5.4)
   saveError: Accessor<string | undefined>;
   saved: Accessor<SaveAnswer | undefined>;
+  stockWait: Accessor<StockWait | undefined>;           // §5.4a: complete waits for a NEGATIVE_STOCK approval
+  cancelStockWait(): Promise<void>;                     // §5.4a: cancels the waiting transaction (POST …/cancel)
   submit(): Promise<SaveOutcome>;                      // first call builds and caches the payload; later calls resend it
   backToEdit(): void;                                   // DK-1: drop booking, submission, payload, staffDraftId; step 0
   startNew(): boolean;                                  // asks when unsaved (dh:118); keeps staff and valueDate; clears staffDraftId
@@ -451,6 +453,56 @@ export interface DeskEntry { param: 'booking' | 'kiosk'; load(store: DeskStore, 
 
 `admin/parts/pending-write.tsx` is **not** reused. It posts only to `/api/rpc`, treats every failure as "not confirmed"
 and inspects through `admin_request_status`, which cannot see exchanges (`abandon_request.rs:155-201`).
+
+### 5.4a Complete waits for a negative-stock approval (G5, amended 2026-11-02)
+
+**Why.** This state had no screen. `POST /api/transactions/:id/complete` answers `409 approvalRequired` with the message `approvalRequired: <request id>` when the posting would take a drawer or position below zero. §5.4 item 4 treats every coded 4xx as a refusal "shown as sent". So the teller saw the raw text `approvalRequired: 167d8c93-…`, with print disabled, and `save.ts` dropped the transaction as if it had been refused, so the next submit would be a new exchange. Seen on xc-v3 at main `98bb41db` (staff rerun, #564 issuecomment-6565110996).
+
+**What the server does (main `de7a4f51`):**
+
+| Fact | Source |
+|---|---|
+| A short posting at complete opens (or re-reads) one `NEGATIVE_STOCK` request for the transaction and answers `409 approvalRequired`, message `approvalRequired: <request id>` | `api/src/presentation/http/v3/negative_stock.rs:46-51`; `negative_stock_gate.rs:73-128` (an already pending request is re-read, not duplicated) |
+| Before the S4 BE change, a resent complete after a rejection answers `409 stockInsufficient … was rejected` (`negative_stock.rs:52-57`). With it (owner's option A), a rejection cancels the exchange, and complete answers `409 staleVersion` | `negative_stock.rs:52-57`; `complete.rs:214-218` |
+| Only the request's branch BRANCH_MANAGER decides it, never the requester | `api/crates/xc-cash/src/application/ledger_approval/negative_stock.rs:64-86` |
+| An approval writes nothing to the transaction: it stays `CONFIRMED`, and the **next** complete posts. A rejection cancels it (S4, BE change) | `negative_stock.rs:53-62` (`on_decided`, today a no-op); `NegativeStockGate::approved_for_in` |
+| A refused command keeps no idempotency answer (the claim is released), so resending complete with the same key runs it again | `api/src/presentation/http/v3/command.rs:560` (only a success replays), `:647-649` (`release` on error) |
+| The teller cannot read approval requests (`approvalRead` needs `ApprovalsDecide`) | `api/crates/xc-auth/src/domain/policy/areas/approvals.rs:27-31` |
+| The teller can cancel a `CONFIRMED` transaction (`saveTransaction`) | `api/src/presentation/http/v3/commands/transactions.rs:3`, `TransactionCancelInput {id, reason}` |
+
+**Rule.** `approvalRequired` from **complete** is a wait, not a refusal. The desk keeps the transaction and its complete key, and finds out the decision by resending complete. `StockWait = { requestId: string; rejected: boolean }` (the request id is the message's text after `approvalRequired: `).
+
+| Row | Server answer | Desk |
+|---|---|---|
+| S1 | complete → `409 approvalRequired` | `outcome` stays `saving`, `transactionState` `CONFIRMED`, `stockWait` = `{requestId, rejected: false}`. The receipt step shows `stockWaitTitle`, then `stockWaitNext` with `#<first 8 of the id>`, the full id in `title`. The raw message is never shown. Print stays disabled (no receipt yet) |
+| S2 | still waiting | every `APPROVAL_POLL_MS` (15 s), complete is resent with the **same** Idempotency-Key. No new create, no new key, no other request |
+| S3 | complete → `COMPLETED` | saved as today (§5.4 item 4). `stockWait` cleared, polling stops, print enabled |
+| S4 | the manager rejects: the server has already cancelled the exchange (owner 2026-11-02, *"A ตามเสนอ"*; BE design by claude/b091f5e0), so the next complete answers `409 staleVersion`, message `staleVersion: a CANCELLED exchange is not completed` (`complete.rs:215-220`; the same key re-runs, `command.rs:560`, `:648`). The exchange's `cancelReason` is the manager's reject reason, verbatim (free text, 1–500 characters, `approval_decide.rs:77-89`; as `ExchangeTransactionSubject`, `quote-transaction.md:629`), confirmed by claude/b091f5e0 on 2026-11-02 | polling stops, and the desk reads `transaction?id=` once (`TransactionRead`, the teller's). `CANCELLED` → §5.4's CANCELLED row (the next submit is a new exchange), and `stockWait` = `{requestId, rejected: true}` until `startNew` or `backToEdit`. The receipt step shows `stockRejectedCancelled`, then the manager's reason as sent (`cancelReason`, which §5.4's CANCELLED row puts in `saveError`), and offers `newExchange`, with no `cancelSale` button. The raw `staleVersion` message is never shown. Any other state → §5.4 item 4, as answered |
+| S5 | the teller presses `cancelSale` while still waiting (S1) | `POST /api/transactions/:id/cancel` `{id, reason: t('stockCancelReason')}` with its own key. The answer `CANCELLED` goes through §5.4's CANCELLED row (the next submit is a new exchange). A refusal there is shown as sent; the wait is kept |
+| S6 | `stockInsufficient` or `approvalRequired` from **create** or **confirm** | unchanged: §5.4 item 4's refusal (only complete posts stock) |
+
+Words (receipt step, `steps/receipt/i18n.ts`, TH/EN):
+
+| Key | th | en |
+|---|---|---|
+| `stockWaitTitle` | `ยอดเงินในลิ้นชักไม่พอสำหรับรายการนี้ ต้องให้ผู้จัดการสาขาอนุมัติก่อน` | `The drawer does not hold enough for this transaction. The branch manager must approve it first` |
+| `stockWaitNext` | `ให้ผู้จัดการสาขาอนุมัติคำขอ {ref} ที่หน้าอนุมัติ เมื่ออนุมัติแล้วหน้านี้จะบันทึกรายการต่อเอง` | `Ask the branch manager to approve request {ref} on the Approvals page. This page completes the transaction by itself once it is approved` |
+| `stockRejectedCancelled` | `ผู้จัดการสาขาไม่อนุมัติ รายการนี้ถูกยกเลิกแล้ว เริ่มรายการใหม่ได้` | `The branch manager rejected it. This transaction has been cancelled; you can start a new one` |
+| `cancelSale` | `ยกเลิกรายการนี้` | `Cancel this transaction` |
+
+`stockCancelReason` (desk `i18n.ts`, the reason S5 sends to cancel): th `ยกเลิกระหว่างรอผู้จัดการสาขาอนุมัติยอดติดลบ` · en `Cancelled while waiting for the branch manager's negative-stock approval`.
+
+Cancelling while still waiting (S5) leaves the `NEGATIVE_STOCK` request `PENDING`; there is no withdrawal (`quote-transaction.md:379`). If the manager decides it later, either way, the decide answers `409 staleVersion` and writes nothing, because the request's version hash covers `transactions.status` (claude/b091f5e0, 2026-11-02). The desk half needs no migration and no BE change; S4's cancel-on-reject is the BE half (claude/b091f5e0's design and ticket), and the desk does not depend on its internals, only on the answers in S4.
+
+```mermaid
+classDiagram
+  class DeskStore { <<web/src/screens/desk/desk-store.ts>> +stockWait: Accessor~StockWait | undefined~ +cancelStockWait() Promise~void~ }
+  class SaveSink { <<web/src/screens/desk/save.ts>> +setStockWait(w: StockWait | undefined) }
+  class createSaver { <<web/src/screens/desk/save.ts>> +submit() +reset() +cancelStockWait() Promise~void~ }
+  class ReceiptStep { <<web/src/screens/desk/steps/receipt/step.tsx>> S1 and S4 words, cancelSale while waiting }
+  DeskStore --> createSaver : owns, implements SaveSink
+  ReceiptStep --> DeskStore : reads stockWait, calls cancelStockWait
+```
 
 ### 5.5 Pending refunds step (owner 2026-10-11)
 
