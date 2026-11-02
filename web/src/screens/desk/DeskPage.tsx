@@ -1,7 +1,8 @@
-import { For, Show, type JSX } from 'solid-js';
+import { createEffect, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import './desk.css';
 import * as screenI18n from './i18n';
+import { LowCashBanner } from './LowCashBanner';
 import type { DeskStep, FrameStore } from './steps';
 
 interface TaskMod<S> {
@@ -27,7 +28,16 @@ export function DeskPage<S extends FrameStore>(props: {
   const shiftOpen = () => (props.shift ? props.shift.open() : true);
   const withEntry = props.store as S & {
     entry?: () => { banner: () => string; actions?: () => JSX.Element } | undefined;
+    lowCash?: { low(): string[]; reload(): Promise<void> };
   };
+  let wasOpen = false;
+  createEffect(() => {
+    const open = shiftOpen();
+    if (open && !wasOpen) {
+      void withEntry.lowCash?.reload();
+    }
+    wasOpen = open;
+  });
 
   return (
     <div class="desk-page">
@@ -38,6 +48,9 @@ export function DeskPage<S extends FrameStore>(props: {
             {entry().actions?.()}
           </div>
         )}
+      </Show>
+      <Show when={shiftOpen() && withEntry.lowCash}>
+        {(lc) => <LowCashBanner lowCash={lc()} />}
       </Show>
       <nav class="desk-nav">
         <Show when={shiftOpen()}>

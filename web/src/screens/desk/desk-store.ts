@@ -16,9 +16,11 @@ import { checkDecimal, MONEY } from '../../shared/ui/bounded';
 import * as screenI18n from './i18n';
 import type { HeldBooking } from './held-ticket';
 import { publishedCodes } from './published-rates';
+import { createLowCash, type LowCash } from './low-cash';
 import { createSaver, newKey, type SaveAnswer, type StockWait } from './save';
 
 export type { HeldBooking } from './held-ticket';
+export type { LowCash } from './low-cash';
 export type { SaveAnswer, StockWait } from './save';
 
 export type DeskType = 'BUY' | 'SELL';
@@ -132,6 +134,7 @@ export interface DeskStore {
   saveError: Accessor<string | undefined>;
   saved: Accessor<SaveAnswer | undefined>;
   stockWait: Accessor<StockWait | undefined>;
+  lowCash: LowCash;
   cancelStockWait(): Promise<void>;
   submit(): Promise<SaveOutcome>;
   backToEdit(): void;
@@ -240,6 +243,7 @@ export function createDeskStore(
   const [saveError, setSaveError] = createSignal<string | undefined>();
   const [saved, setSaved] = createSignal<SaveAnswer | undefined>();
   const [stockWait, setStockWait] = createSignal<StockWait | undefined>();
+  const lowCash = createLowCash(api);
 
   // ── the config view: read once, on create (§3.1 L3, no polling) ──
   const b = branch();
@@ -462,6 +466,7 @@ export function createDeskStore(
     saveError,
     saved,
     stockWait,
+    lowCash,
     cancelStockWait: () => saver.cancelStockWait(),
     submit: () => saver.submit(),
     backToEdit,
