@@ -93,6 +93,7 @@ pub struct QuoteDto {
     pub cash_settlement: bool,
     pub drawer_shortfall: Vec<DrawerShortfallDto>,
     pub drawer_shortfall_message: Option<String>,
+    pub below_low_cash_level: Vec<String>,
 }
 
 impl QuoteDto {
@@ -184,6 +185,7 @@ impl QuoteDto {
             cash_settlement: quote.cash_settlement,
             drawer_shortfall: Vec::new(),
             drawer_shortfall_message: None,
+            below_low_cash_level: Vec::new(),
         })
     }
 }

@@ -12,6 +12,7 @@ use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::infrastructure::drawer_low_levels::DrawerLowLevels;
 use xc_kernel::ids::BranchId;
 use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 
@@ -42,6 +43,7 @@ impl BranchView for MyShiftView {
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
         let shift_balances = self.shift_balances.clone();
+        let branch_id = branch.clone();
         let branch = branch.as_str().to_owned();
         let me = who.user_id.clone();
         async move {
@@ -59,6 +61,9 @@ impl BranchView for MyShiftView {
                 return Ok(None);
             };
             let balances = shift_balances.shift_balances(&id).await?;
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
+            let low_levels = DrawerLowLevels::for_branch_in(&mut tx, &branch_id).await?;
+            tx.commit().await.map_err(AppError::Database)?;
             let transfer_rows: Vec<TransferSqlRow> = sqlx::query_as(AssertSqlSafe(format!(
                 "SELECT {TRANSFER_COLUMNS} \
                  FROM cash_transfers t \
@@ -76,10 +81,18 @@ impl BranchView for MyShiftView {
                 opened_at: opened_at.to_rfc3339_opts(SecondsFormat::Millis, true),
                 balances: balances
                     .into_iter()
-                    .map(|b| MyShiftBalance {
-                        code: b.currency.as_str().to_owned(),
-                        opening: b.opening.to_string(),
-                        expected: b.expected.to_string(),
+                    .map(|b| {
+                        let level = low_levels
+                            .iter()
+                            .find(|(c, _)| *c == b.currency)
+                            .map(|(_, l)| *l);
+                        MyShiftBalance {
+                            code: b.currency.as_str().to_owned(),
+                            opening: b.opening.to_string(),
+                            expected: b.expected.to_string(),
+                            low_cash_level: level.map(|l| l.normalize().to_string()),
+                            low: level.is_some_and(|l| b.expected.value() <= l),
+                        }
                     })
                     .collect(),
                 incoming_transfers,
