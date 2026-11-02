@@ -173,7 +173,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
               <strong>
                 {t('current', {
                   limit: c().countDifferenceLimitThb ?? '',
-                  updatedBy: c().updatedBy ?? '',
+                  updatedBy: c().updatedByName || '—',
                   updatedAt: c().updatedAt ? when(c().updatedAt!) : '',
                 })}
               </strong>
