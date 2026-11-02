@@ -407,10 +407,8 @@ impl CommandAction for TransactionCreateCommand {
                 .lines
                 .iter()
                 .flat_map(|l| {
-                    let settle = rust_decimal::Decimal::from_i128_with_scale(
-                        l.settle_thb.minor_i128(),
-                        2,
-                    );
+                    let settle =
+                        rust_decimal::Decimal::from_i128_with_scale(l.settle_thb.minor_i128(), 2);
                     drawer_check::needs(l.shop_side, l.currency, l.quantity.value(), settle, cash)
                 })
                 .collect();

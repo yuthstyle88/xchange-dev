@@ -374,17 +374,16 @@ impl CommandAction for QuotesCommand {
                 )
             })?;
             if let Some(shift_id) = shift_id {
-                let shortfall =
-                    drawer_check::drawer_shortfall_in(tx, &shift_id, &quote_needs)
-                        .await
-                        .map_err(|e| {
-                            V3Error::new(
-                                "serverError",
-                                None,
-                                e.to_string(),
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                            )
-                        })?;
+                let shortfall = drawer_check::drawer_shortfall_in(tx, &shift_id, &quote_needs)
+                    .await
+                    .map_err(|e| {
+                        V3Error::new(
+                            "serverError",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        )
+                    })?;
                 if !shortfall.lines.is_empty() {
                     dto.drawer_shortfall_message = Some(shortfall_message(&shortfall));
                     dto.drawer_shortfall = shortfall
