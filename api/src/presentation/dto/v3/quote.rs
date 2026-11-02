@@ -66,6 +66,15 @@ pub struct QuoteLineDto {
     pub pricing_hidden_reason: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "quote.ts")]
+pub struct DrawerShortfallDto {
+    pub currency: String,
+    pub place: String,
+    pub short_by: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "quote.ts")]
@@ -82,6 +91,8 @@ pub struct QuoteDto {
     pub benefit_basis: QuoteBenefitBasis,
     pub stale: bool,
     pub cash_settlement: bool,
+    pub drawer_shortfall: Vec<DrawerShortfallDto>,
+    pub drawer_shortfall_message: Option<String>,
 }
 
 impl QuoteDto {
@@ -171,6 +182,8 @@ impl QuoteDto {
             benefit_basis,
             stale: quote.stale,
             cash_settlement: quote.cash_settlement,
+            drawer_shortfall: Vec::new(),
+            drawer_shortfall_message: None,
         })
     }
 }
