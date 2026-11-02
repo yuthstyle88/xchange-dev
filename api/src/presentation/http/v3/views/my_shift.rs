@@ -8,7 +8,7 @@ use std::sync::Arc;
 use actix_web::web;
 use chrono::{DateTime, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
-use sqlx::PgPool;
+use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -18,6 +18,9 @@ use xc_shift::domain::shift::repositories::shift_balances::ShiftBalances;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::cash::{MyShift, MyShiftBalance};
 use crate::presentation::dto::v3::common::NoFilter;
+use crate::presentation::http::v3::cash_transfer_rows::{
+    TRANSFER_COLUMNS, TransferSqlRow, with_lines,
+};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 struct MyShiftView {
@@ -56,6 +59,17 @@ impl BranchView for MyShiftView {
                 return Ok(None);
             };
             let balances = shift_balances.shift_balances(&id).await?;
+            let transfer_rows: Vec<TransferSqlRow> = sqlx::query_as(AssertSqlSafe(format!(
+                "SELECT {TRANSFER_COLUMNS} \
+                 FROM cash_transfers t \
+                 WHERE t.to_shift_id = $1 AND t.status = 'DISPATCHED' \
+                 ORDER BY t.created_at, t.id"
+            )))
+            .bind(&id)
+            .fetch_all(&pool)
+            .await
+            .map_err(AppError::Database)?;
+            let incoming_transfers = with_lines(&pool, transfer_rows).await?;
             Ok(Some(MyShift {
                 id,
                 status,
@@ -68,6 +82,7 @@ impl BranchView for MyShiftView {
                         expected: b.expected.to_string(),
                     })
                     .collect(),
+                incoming_transfers,
             }))
         }
     }
@@ -85,7 +100,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
-    MyShiftBalance::export_all(&cfg)?;
-    MyShift::export_all(&cfg)?;
+    MyShiftBalance::export(&cfg)?;
+    MyShift::export(&cfg)?;
     Ok(())
 }
