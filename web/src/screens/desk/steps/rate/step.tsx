@@ -134,6 +134,27 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
         </Show>
       </div>
 
+      <Show
+        when={store.quote()?.drawerShortfall?.length ? store.quote() : undefined}
+        fallback={
+          <Show when={store.quote()?.belowLowCashLevel?.length ? store.quote()!.belowLowCashLevel : undefined}>
+            {(low) => (
+              <p class="desk-notice" data-testid="drawer-low-after">
+                {t('drawerLowAfter', { currencies: low().join(', ') })}
+              </p>
+            )}
+          </Show>
+        }
+      >
+        {(q) => (
+          <div class="desk-notice" role="alert" data-testid="drawer-shortfall">
+            <p>{t('drawerShortTitle')}</p>
+            <Show when={q().drawerShortfallMessage}>{(m) => <p>{m()}</p>}</Show>
+            <p>{t('drawerShortNext')}</p>
+          </div>
+        )}
+      </Show>
+
       <label class="desk-field">
         <span>{t('referenceRate')}</span>
         <input
