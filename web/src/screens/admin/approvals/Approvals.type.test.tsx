@@ -54,7 +54,6 @@ const TYPE_CASES = [
   { type: 'EXCHANGE_TRANSACTION', th: th.exchangeTransaction, en: en.exchangeTransaction },
   { type: 'TRANSACTION_REVERSAL', th: th.transactionReversal, en: en.transactionReversal },
   { type: 'COUNT_DIFFERENCE', th: th.countDifference, en: en.countDifference },
-  { type: 'NEGATIVE_STOCK', th: th.negativeStock, en: en.negativeStock },
   { type: 'CASH_TRANSFER', th: th.cashTransfer, en: en.cashTransfer },
 ] as const;
 
@@ -276,13 +275,13 @@ describe('#3332 Approvals: type display and type filter switch (§8)', () => {
     });
     expect(resolveOldRead).not.toBeNull();
 
-    // 2. Quickly switch to NEGATIVE_STOCK
-    currentRequests = [makeRequest('req-neg-1', 'NEGATIVE_STOCK', 'PENDING')];
-    typeButton('NEGATIVE_STOCK').click();
+    // 2. Quickly switch to CASH_TRANSFER
+    currentRequests = [makeRequest('req-cash-1', 'CASH_TRANSFER', 'PENDING')];
+    typeButton('CASH_TRANSFER').click();
 
-    // 3. NEGATIVE_STOCK resolves and renders
+    // 3. CASH_TRANSFER resolves and renders
     await vi.waitFor(() => {
-      expect(root.querySelector('[data-request="req-neg-1"]')).not.toBeNull();
+      expect(root.querySelector('[data-request="req-cash-1"]')).not.toBeNull();
     });
 
     // 4. Old in-flight COUNT_DIFFERENCE read now resolves with stale data
@@ -300,9 +299,9 @@ describe('#3332 Approvals: type display and type filter switch (§8)', () => {
     // Let any microtasks settle
     await new Promise((r) => setTimeout(r, 20));
 
-    // Stale COUNT_DIFFERENCE card was not shown; only NEGATIVE_STOCK is present
+    // Stale COUNT_DIFFERENCE card was not shown; only CASH_TRANSFER is present
     expect(root.querySelector('[data-request="req-count-diff-old"]')).toBeNull();
-    expect(root.querySelector('[data-request="req-neg-1"]')).not.toBeNull();
+    expect(root.querySelector('[data-request="req-cash-1"]')).not.toBeNull();
   });
 
   // Row 7: a RATE_PUBLICATION request

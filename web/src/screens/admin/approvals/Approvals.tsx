@@ -36,7 +36,6 @@ const TYPE_LABEL: Record<string, ApprovalTypeKey> = {
   EXCHANGE_TRANSACTION: 'exchangeTransaction',
   TRANSACTION_REVERSAL: 'transactionReversal',
   COUNT_DIFFERENCE: 'countDifference',
-  NEGATIVE_STOCK: 'negativeStock',
   CASH_TRANSFER: 'cashTransfer',
 };
 
@@ -48,7 +47,6 @@ const APPROVAL_TYPES = [
   'EXCHANGE_TRANSACTION',
   'TRANSACTION_REVERSAL',
   'COUNT_DIFFERENCE',
-  'NEGATIVE_STOCK',
   'CASH_TRANSFER',
 ] as const;
 
