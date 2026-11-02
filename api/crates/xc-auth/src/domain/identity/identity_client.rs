@@ -161,8 +161,8 @@ pub trait IdentityClient: Send + Sync + 'static {
         }
     }
 
-    /// Creates an Identity account server-side (#1157). Only the staff create and the
-    /// `create-owner` bootstrap call this; no public route reaches it. No OTP is sent.
+    /// Creates an Identity account server-side (#1157): called by the staff create, the
+    /// `create-owner` bootstrap, and customer sign-up for an unknown phone (#5954). No OTP is sent.
     fn register<'a>(
         &'a self,
         request: &'a IdentityRegisterRequest<'a>,
