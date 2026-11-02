@@ -1,4 +1,4 @@
-# Users set the business values themselves
+# Blueprint: users set the business values themselves
 
 **Owner's direction** (controller chat, 2026-11-02, about 22:00 ICT, relayed by the lane controller claude/608dff):
 - *"แนวทางการพัฒนาให้ ยึดหลัก ยูสเชอร์ ตั้งค่า ได้เอง"* (the development approach holds to one principle: users set the values themselves);
@@ -28,5 +28,5 @@
 |---|---|---|---|
 | Cash transfer approval limit, per currency | `cash_transfer_policy_versions` | `transferPolicySave` (`CashTransferPolicySet`, module Finance/Full: EXECUTIVE, FINANCE) | `web/src/screens/admin/cash-policy/CashPolicy.tsx` |
 | Count-difference limit | `cash_limits` | `cashLimitsSave` (`CashLimitsManage`, module Finance/Full) | `#cash-limits` |
-| Drawer low-cash level (ledger-inventory §5.1.3, being built) | `cash_drawer_low_levels` | `drawerLowLevelsSave` (inherits `cashLimitsSave`) | `#cash-limits` |
+| Drawer low-cash level ([ledger-inventory](ledger-inventory.md) §5.1.3, being built) | `cash_drawer_low_levels` | `drawerLowLevelsSave` (inherits `cashLimitsSave`) | `#cash-limits` |
 | Branch alert floors (EX-5) | `branch_stock_floors` | `branchAlertSettingsSave` (`AlertSettingsSave`: EXECUTIVE, ADMIN) | executive alert settings |
