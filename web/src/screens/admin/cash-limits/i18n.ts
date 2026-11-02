@@ -15,6 +15,15 @@ export const th = {
   'error.idempotencyConflict': 'คำขอนี้ถูกส่งไปแล้วด้วยข้อมูลอื่น กรุณาโหลดหน้าใหม่แล้วบันทึกอีกครั้ง',
   unreadable: 'อ่านเกณฑ์ปัจจุบันไม่สำเร็จ แก้ไขไม่ได้จนกว่าจะโหลดได้',
   retry: 'ลองอีกครั้ง',
+  levelsTitle: 'ระดับเงินในลิ้นชักที่ต้องเตือน',
+  levelsHelp: 'เมื่อเงินในลิ้นชักของกะใดเหลือเท่านี้หรือน้อยกว่า หน้าแลกเงินจะเตือนให้ผู้จัดการโอนเงินจากตู้เซฟ',
+  levelsEmpty: 'ยังไม่ได้ตั้งระดับ',
+  levelCurrency: 'สกุลเงิน',
+  levelAmount: 'ระดับ',
+  levelAdd: 'เพิ่มสกุลเงิน',
+  levelRemove: 'ลบ',
+  levelsSave: 'บันทึกระดับ',
+  levelsSaved: 'บันทึกระดับแล้ว',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -33,4 +42,13 @@ export const en: Record<keyof typeof th, string> = {
   'error.idempotencyConflict': 'This request was already sent with other data; reload the page and save again',
   unreadable: "Couldn't read the current limit; it can't be changed until it loads",
   retry: 'Try again',
+  levelsTitle: 'Drawer low-cash levels',
+  levelsHelp: "When a shift's drawer holds this much or less, the desk warns the teller to ask the manager for a top-up",
+  levelsEmpty: 'No level set',
+  levelCurrency: 'Currency',
+  levelAmount: 'Level',
+  levelAdd: 'Add a currency',
+  levelRemove: 'Remove',
+  levelsSave: 'Save levels',
+  levelsSaved: 'Levels saved',
 };
