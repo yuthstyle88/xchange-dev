@@ -17,8 +17,8 @@ export const th = {
   noPublishedRate: 'สาขานี้ยังไม่มีเรทประกาศสำหรับรายการ{side}',
   rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
   drawerShortTitle: 'เงินในลิ้นชักไม่พอจ่ายรายการนี้',
-  drawerShortNext: 'ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ',
-  drawerLowAfter: 'หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย: {currencies}',
+  drawerShortNext: 'ให้ผู้จัดการสาขาเบิก OD จากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ',
+  drawerLowAfter: 'หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย ควรเบิก OD: {currencies}',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
