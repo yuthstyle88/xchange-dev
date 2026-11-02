@@ -36,7 +36,7 @@ const OTHER_SHIFT = "SH-11111111-0000-4000-8000-000000000002";
 const ME = "00000000-0000-4000-8000-0000000000c1";
 const T_IN = "f0000000-0000-4000-8000-000000000001";
 
-function me(permissions: string[]): StaffMeView {
+function me(permissions: string[]) {
   return makeStaffMeView({
     userId: ME,
     name: "Teller 1",
@@ -165,7 +165,7 @@ async function receiveFive() {
   await settle();
 }
 
-const TELLER = ["ShiftOperate", "ExchangeTransact"];
+const SHIFT_ONLY = ["ShiftOperate", "ExchangeTransact"];
 
 beforeAll(() => warmModules(() => import("./card"), () => import("../main")), 60_000);
 
@@ -190,12 +190,12 @@ afterEach(() => {
 describe("#5957 card visibility", () => {
   it("V1: ShiftOperate with an open shift sees the card", async () => {
     const card = await loadCard();
-    expect(card.visible({ me: me(TELLER), floor: floor(true), refresh: async () => {} })).toBe(true);
+    expect(card.visible({ me: me(SHIFT_ONLY), floor: floor(true), refresh: async () => {} })).toBe(true);
   });
 
   it("V2: ShiftOperate with no open shift does not", async () => {
     const card = await loadCard();
-    expect(card.visible({ me: me(TELLER), floor: floor(false), refresh: async () => {} })).toBe(false);
+    expect(card.visible({ me: me(SHIFT_ONLY), floor: floor(false), refresh: async () => {} })).toBe(false);
   });
 
   it("V3: CashManage sees it, as today", async () => {
@@ -212,7 +212,7 @@ describe("#5957 card visibility", () => {
 describe("#5957 the teller's mode", () => {
   it("T1: lists my_shift.incomingTransfers with only a receive action, and never reads cash_transfers", async () => {
     stub();
-    await mount(me(TELLER));
+    await mount(me(SHIFT_ONLY));
     await vi.waitFor(() => expect(inRow(T_IN, "transfer-receive")).not.toBeNull());
 
     expect(reads).toContain("my_shift");
@@ -226,7 +226,7 @@ describe("#5957 the teller's mode", () => {
   it("T2: receive sends one keyed POST with the counted lines, then re-reads my_shift and the row is gone", async () => {
     myShiftAnswers = [myShift([INCOMING]), myShift([])];
     stub();
-    const { refresh } = await mount(me(TELLER));
+    const { refresh } = await mount(me(SHIFT_ONLY));
     await vi.waitFor(() => expect(inRow(T_IN, "transfer-receive")).not.toBeNull());
     const before = reads.filter((r) => r === "my_shift").length;
 
@@ -255,7 +255,7 @@ describe("#5957 the teller's mode", () => {
         body: { error: { code: "validationFailed", message: "only the shift's teller may receive into drawer" } },
       },
     ];
-    await mount(me(TELLER));
+    await mount(me(SHIFT_ONLY));
     await vi.waitFor(() => expect(inRow(T_IN, "transfer-receive")).not.toBeNull());
 
     await receiveFive();
@@ -271,7 +271,7 @@ describe("#5957 the teller's mode", () => {
   it("T4: no incoming transfer: the empty line and no rows", async () => {
     myShiftAnswers = [myShift([])];
     stub();
-    await mount(me(TELLER));
+    await mount(me(SHIFT_ONLY));
     await settle();
     expect(reads).toContain("my_shift");
     expect(reads).not.toContain("cash_transfers");
@@ -282,7 +282,7 @@ describe("#5957 the teller's mode", () => {
   it("edge: my_shift answers null (the shift closed meanwhile): the empty line, no error", async () => {
     myShiftAnswers = [null];
     stub();
-    await mount(me(TELLER));
+    await mount(me(SHIFT_ONLY));
     await settle();
     expect(reads).toContain("my_shift");
     expect(host.querySelectorAll("[data-transfer-id]")).toHaveLength(0);
@@ -292,7 +292,7 @@ describe("#5957 the teller's mode", () => {
   it("edge: a transfer for another shift is not listed even if the read carried it", async () => {
     myShiftAnswers = [myShift([{ ...INCOMING, toShiftId: OTHER_SHIFT }])];
     stub();
-    await mount(me(TELLER));
+    await mount(me(SHIFT_ONLY));
     await settle();
     expect(reads).toContain("my_shift");
     expect(q(`[data-transfer-id="${T_IN}"]`)).toBeNull();
