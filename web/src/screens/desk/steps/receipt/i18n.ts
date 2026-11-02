@@ -21,9 +21,9 @@ export const th = {
   printAgain: 'พิมพ์อีกครั้ง',
   printFailed: 'บันทึกรายการแล้ว แต่พิมพ์ใบเสร็จไม่สำเร็จ — {reason}',
   receiptMissing: 'ไม่พบใบเสร็จของรายการนี้ กรุณาลองใหม่หรือแจ้งผู้ดูแล',
-  stockWaitTitle: 'ยอดเงินในลิ้นชักไม่พอสำหรับรายการนี้ ต้องให้ผู้จัดการสาขาอนุมัติก่อน',
-  stockWaitNext: 'ให้ผู้จัดการสาขาอนุมัติคำขอ {ref} ที่หน้าอนุมัติ เมื่ออนุมัติแล้วหน้านี้จะบันทึกรายการต่อเอง',
-  stockRejectedCancelled: 'ผู้จัดการสาขาไม่อนุมัติ รายการนี้ถูกยกเลิกแล้ว เริ่มรายการใหม่ได้',
+  stockWaitTitle: 'เงินในลิ้นชักไม่พอจ่ายรายการนี้',
+  stockWaitNext:
+    'ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักนี้ แล้วกดรับเงินที่หน้ากะ เมื่อเงินเข้าลิ้นชักแล้วหน้านี้จะบันทึกรายการต่อเอง',
   cancelSale: 'ยกเลิกรายการนี้',
 } as const;
 
@@ -48,9 +48,8 @@ export const en: Record<keyof typeof th, string> = {
   printAgain: 'Print again',
   printFailed: 'Transaction saved, but printing failed — {reason}',
   receiptMissing: 'Receipt not found for this transaction. Please try again or contact administrator',
-  stockWaitTitle: 'The drawer does not hold enough for this transaction. The branch manager must approve it first',
+  stockWaitTitle: 'The drawer does not hold enough to pay this transaction',
   stockWaitNext:
-    'Ask the branch manager to approve request {ref} on the Approvals page. This page completes the transaction by itself once it is approved',
-  stockRejectedCancelled: 'The branch manager rejected it. This transaction has been cancelled; you can start a new one',
+    'Ask the branch manager to move cash from the safe into this drawer, then receive it on the shift page. This page completes the transaction by itself once the cash is in the drawer',
   cancelSale: 'Cancel this transaction',
 };
