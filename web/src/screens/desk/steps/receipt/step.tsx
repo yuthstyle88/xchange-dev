@@ -13,12 +13,27 @@ const t = screenT('desk.steps.receipt', texts);
 
 export type PrintState = 'idle' | 'printing' | 'printed' | 'failed';
 
+function renderStockWaitNext(id: string): JSX.Element {
+  const [before, after] = t('stockWaitNext').split('{ref}');
+  return (
+    <>
+      {before}
+      <Show when={id !== ''}>
+        <span title={id}>#{id.slice(0, 8)}</span>
+      </Show>
+      {after}
+    </>
+  );
+}
+
 function ReceiptStep(props: { store: DeskStore }): JSX.Element {
   const store = props.store;
   const saved = () => (store.outcome() === 'saved' ? store.saved() : undefined);
+  const stockWait = () => store.stockWait?.();
   const adminHref = () => `${store.config()?.adminUrl ?? '/'}#transactions`;
   const devicesHref = () => `/devices?branch=${encodeURIComponent(store.branch())}`;
-  const newEnabled = () => store.outcome() === 'saved' || store.outcome() === 'refused';
+  const newEnabled = () =>
+    (!stockWait() || stockWait()!.rejected) && (store.outcome() === 'saved' || store.outcome() === 'refused');
 
   const [printState, setPrintState] = createSignal<PrintState>('idle');
   const [printReason, setPrintReason] = createSignal('');
@@ -59,6 +74,36 @@ function ReceiptStep(props: { store: DeskStore }): JSX.Element {
     <section class="desk-form">
       <h2>{t('heading')}</h2>
       <Switch fallback={<p class="desk-notice">{t('waiting')}</p>}>
+        <Match when={stockWait()}>
+          {(wait) => (
+            <Show
+              when={!wait().rejected}
+              fallback={
+                <>
+                  <p class="desk-error" role="alert">
+                    {t('stockRejectedCancelled')}
+                  </p>
+                  <Show when={store.saveError()}>
+                    <p class="desk-error">{store.saveError()}</p>
+                  </Show>
+                </>
+              }
+            >
+              <p class="desk-notice">{t('stockWaitTitle')}</p>
+              <p class="desk-notice">{renderStockWaitNext(wait().requestId)}</p>
+              <Show when={store.saveError()}>
+                <p class="desk-error" role="alert">
+                  {store.saveError()}
+                </p>
+              </Show>
+              <div class="desk-actions">
+                <button type="button" onClick={() => void store.cancelStockWait()}>
+                  {t('cancelSale')}
+                </button>
+              </div>
+            </Show>
+          )}
+        </Match>
         <Match when={store.outcome() === 'saving'}>
           <p class="desk-notice">
             {store.transactionState() === 'PENDING_APPROVAL' ? t('pendingApproval') : t('saving')}

@@ -48,6 +48,7 @@ export const th = {
   rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
   sideBuy: 'ร้านรับซื้อ (BUY)',
   sideSell: 'ร้านขาย (SELL)',
+  stockCancelReason: 'ยกเลิกระหว่างรอผู้จัดการสาขาอนุมัติยอดติดลบ',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -97,4 +98,5 @@ export const en: Record<keyof typeof th, string> = {
   rateNotPublished: '{code} has no published rate at this branch for {side}.',
   sideBuy: 'Shop buys (BUY)',
   sideSell: 'Shop sells (SELL)',
+  stockCancelReason: "Cancelled while waiting for the branch manager's negative-stock approval",
 };
