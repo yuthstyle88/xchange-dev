@@ -205,8 +205,8 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           data: {
             action: 'reserveCustomer',
             payload: {
-              name: `Hold Validation ${runMarker}`,
-              passportNo: `WALK-IN-${runMarker}`,
+              name: 'Hold Validation',
+              passportNo: 'QA-HOLD-VALIDATION',
               nationality: 'THA',
               birthDate: '1990-01-01',
               passportExpiry: '2030-01-01',
@@ -238,7 +238,7 @@ test.describe.serial('Flow Validation — staff and desk forms (#4296, §9.1–�
           await expect(holdsReason, `holds-reason keeps '${runMarker}' (${lang})`).toHaveValue(runMarker);
 
           // Search and pick the customer so cases 2–3 test `holdCreate` reason validation.
-          await holdsCard.locator('[data-testid="holds-key"]').fill(`WALK-IN-${runMarker}`);
+          await holdsCard.locator('[data-testid="holds-key"]').fill('QA-HOLD-VALIDATION');
           await holdsCard.locator('[data-testid="holds-find"]').click();
           const custBtn = holdsCard.locator(`[data-customer-id="${customerId}"]`);
           await expect(custBtn, 'customer search result visible (HoldsCard.tsx:180)').toBeVisible({ timeout: 15_000 });
