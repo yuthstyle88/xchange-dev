@@ -845,7 +845,7 @@ The lane controller (claude/608dff) ruled, 2026-10-10:
 | R2 | There is **one** session branch, on the session (`__Host-xc_session`), set by **one** server command. Admin, desk and devices all read it. |
 | R3 | The server refuses a branch outside the user's grants (D-4), with a test. |
 | R4 | There is no branch picker at login. |
-| R5 | The initial branch is the only branch; else the user's last choice (stored per user); else the first granted branch by `branches.code`. |
+| R5 | The initial branch is the only branch; else the user's last choice (stored per user); else the first granted branch by `branches.code`. **Amended 2026-11-02 (§14.2 "Sign-in stores its pick"):** a sign-in with no last choice stores the branch it picked as the last choice. |
 | R6 | The last choice is a new column, so this section has a data migration (§14.5). |
 
 ### 14.1 v3 today (measured on `8084ccec`)
@@ -877,6 +877,13 @@ The lane controller (claude/608dff) ruled, 2026-10-10:
 2. else, if `users.last_branch_id ∈ S` → that branch;
 3. else → the first branch of `S`;
 4. `S` empty → `NULL`. That user is refused everything anyway (`roleNotAllowed`).
+
+**Sign-in stores its pick (amended 2026-11-02; lane controller claude/608dff's ruling B, #564 issuecomment-6572815765).**
+- **Rule.** When `users.last_branch_id IS NULL` and R5 picked a branch, the sign-in writes that branch to `users.last_branch_id`, in the same connection as the session row (`create_session_for_user`). A sign-in that finds a last choice already set never writes it, even when that choice is no longer in `S` (step 3 then picks, as today). An empty `S` picks nothing and writes nothing.
+- **Why.** Creating a branch gives it `code = id` (`xc-rate/src/infrastructure/branch/branch_repository.rs:181`), and `B<id>` sorts before `MAIN`. So an owner who never used the branch menu had `last_branch_id = NULL`, fell to step 3 at every sign-in, and started on the newest uncoded branch (#564 issuecomment-6572524037). Reading the latest session instead (option C) fails after a sign-out or the purge: `logout` deletes the row (`session_service.rs:868-877`), and so does the expiry sweep (`xc-auth/src/infrastructure/expired_sessions.rs:21`). A stored pick survives both.
+- **What it replaces.** "Sign-in is not a choice; `last_branch_id` is only read" (`session_service.rs:326-327`). Sign-in now stores its pick, but only into an empty slot, so a real choice made with the switch command (R2) is never overwritten by a sign-in.
+- **Pinned.** `api/tests/session_branch_test.rs:136-140` ("sign-in is not a choice", `last_branch == None`) is restated to expect the stored pick (B3), citing this paragraph. `:157` (an organisation-wide user's first sign-in starts on the first branch by code) is unchanged. claude/01TxaRJG's probe, with a sign-out between the two sign-ins, becomes the up-front test: the owner signs in on MAIN, creates a branch, signs out and signs in again, and is still on MAIN.
+- **Data migration.** None. No column changes. Users with `last_branch_id = NULL` get it at their next sign-in. Nothing is backfilled.
 
 **Effective branch, on every request.** It is the stored `user_sessions.branch_id` **if it is still in `S`**; otherwise it is recomputed by the initial rule. This covers a grant revoked mid-session. Reading never writes.
 
@@ -926,7 +933,7 @@ ALTER TABLE user_sessions ADD CONSTRAINT user_sessions_branch_fk
 ```
 
 1. **Existing rows after the migration.**
-   - Every `users` row gets `last_branch_id = NULL`: no choice made yet. Its next sign-in uses R5 steps 1 and 3.
+   - Every `users` row gets `last_branch_id = NULL`: no choice made yet. Its next sign-in uses R5 steps 1 and 3 (and, since 2026-11-02, stores that pick: §14.2).
    - Every `user_sessions` row gets `branch_id = NULL`. The read rule (§14.2 "effective") treats `NULL` as "recompute", so an open session keeps working and gets the R5 branch on its next request.
    - No row breaks the new FKs, because both columns are `NULL`.
 2. **Backfill: none.** `NULL` is the correct value for both columns ("no choice yet"), and the code computes the branch lazily. Rows measured to confirm: `SELECT count(*) FROM users; SELECT count(*) FROM user_sessions;`. Both are counted only, not changed.
@@ -989,7 +996,7 @@ classDiagram
     - `S` empty → `None`;
     - a stored branch revoked → recomputed.
   - **HTTP, real Postgres (`api/tests/*_test.rs`, `Desk::start`):**
-    - sign-in stores the R5 branch;
+    - sign-in stores the R5 branch on the session, and on `users.last_branch_id` when that is NULL (§14.2, 2026-11-02);
     - `POST /api/auth/session/branch` to an in-scope branch → `200`, the session row and `users.last_branch_id` change, and the next view with no `?branch=` answers for that branch;
     - an out-of-scope branch → `403 outOfScope`, and **nothing written** (R3, D-4);
     - no session → `401`;
