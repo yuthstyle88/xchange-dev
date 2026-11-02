@@ -28,6 +28,12 @@
 //! through the ledger. The harness is `transfer_receive_open_shift_and_dispatch_source_test.rs`'s, with a USD 1,000
 //! transfer limit and an `Idempotency-Key` the test chooses.
 //!
+//! **Restated 2026-11-02 by claude/b091f5e0** (ticket author of the no-negative ticket), citing
+//! `ledger-inventory.md` §5.1.2 (owner: *"ต้องเติมเงินก่อน ห้ามติดลบ"*), which reverses R1: a dispatch beyond its source
+//! drawer or safe answers `409 stockInsufficient` naming the shortfall and opens **no** request; after a top-up of the
+//! source the same key dispatches, and nothing goes below zero. The approve-to-negative decisions above are superseded
+//! by the tests as they now read.
+//!
 //! Needs `TEST_DATABASE_URL` naming a database whose name ends in `_test`; nothing skips. Each test works in a schema
 //! of its own, with every migration applied.
 
@@ -396,14 +402,23 @@ async fn post(room: &Room, who: &Who, uri: &str, body: Value, key: &str) -> Answ
     }
 }
 
-fn assert_approval_required(a: &Answer, what: &str) {
+/// §5.1.2: refused, naming the shortfall, with no request opened.
+fn assert_refused(a: &Answer, message: &str, what: &str) {
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "{what}: N-1 / §5.1 — a dispatch beyond the source asks for approval: {}",
+        (StatusCode::CONFLICT, "stockInsufficient"),
+        "{what}: §5.1.2 — no approval, top up first: {}",
         a.text
     );
+    assert_eq!(
+        a.message(),
+        message,
+        "{what}: the message names the shortfall"
+    );
 }
+
+const SAFE_SHORT: &str = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: USD ตู้เซฟ ขาด 100";
+const DRAWER_SHORT: &str = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: USD ลิ้นชัก ขาด 100";
 
 fn assert_dispatched(a: &Answer, what: &str) {
     assert_eq!(a.status, StatusCode::OK, "{what}: {}", a.text);
@@ -527,44 +542,28 @@ async fn assert_not_dispatched(room: &Room, id: &str, what: &str) {
     );
 }
 
-// ------------------------------------------------------------ a shortfall opens one PENDING request
+// ------------------------------------------------------------ §5.1.2: a shortfall is refused, no request
 
-/// BRANCH USD 600 out of a USD 500 safe: 409 `approvalRequired`, one PENDING request naming the transfer's stored id
-/// on the dispatcher's branch, and nothing dispatched.
+/// BRANCH USD 600 out of a USD 500 safe: refused naming the safe's shortfall, no request, nothing dispatched.
 #[actix_web::test]
-async fn gapsa3_beyond_the_safe_opens_one_pending_request_answering_approval_required() {
+async fn gapsa3_beyond_the_safe_is_refused_naming_the_shortfall_and_opens_no_request() {
     let room = Room::start().await;
     let c = cast(&room).await;
     let id = branch_move(&room, &c, 12).await;
 
     let a = dispatch(&room, &c, &id, &unique("key")).await;
 
-    assert_approval_required(&a, "beyond the safe");
-    let rows = room.requests(&id).await;
-    assert_eq!(
-        rows.len(),
-        1,
-        "one NEGATIVE_STOCK request names the transfer: {rows:?}"
-    );
-    assert_eq!(rows[0].1, "PENDING");
-    assert_eq!(
-        rows[0].2.as_deref(),
-        Some(B01),
-        "the request is the dispatcher's branch's, so B01's manager may decide it"
-    );
-    assert_eq!(
-        room.all_negative_stock().await,
-        1,
-        "the only NEGATIVE_STOCK request is the one keyed on the transfer"
-    );
-    assert_not_dispatched(&room, &id, "pending").await;
+    assert_refused(&a, SAFE_SHORT, "beyond the safe");
+    assert_eq!(room.all_negative_stock().await, 0, "§5.1.2: no request");
+    assert_not_dispatched(&room, &id, "refused").await;
     room.finish().await;
 }
 
-/// DRAWER_TO_SAFE USD 200 out of a drawer holding USD 100: the drawer is a source like the safe. 409
-/// `approvalRequired`; once approved, the retry dispatches and the drawer is USD 100.00 below zero.
+/// DRAWER_TO_SAFE USD 200 out of a drawer holding USD 100: refused; after USD 100 more in the drawer, the same key
+/// dispatches and the drawer ends at zero.
 #[actix_web::test]
-async fn gapsa3_a_dispatch_beyond_the_drawer_asks_and_once_approved_takes_the_drawer_below_zero() {
+async fn gapsa3_a_dispatch_beyond_the_drawer_is_refused_and_after_a_top_up_the_same_key_dispatches()
+{
     let room = Room::start().await;
     let c = cast(&room).await;
     fund(&room.pool, CashPlace::Drawer(SHIFT.to_owned()), "100.00").await;
@@ -575,161 +574,117 @@ async fn gapsa3_a_dispatch_beyond_the_drawer_asks_and_once_approved_takes_the_dr
         json!({ "kind": "DRAWER_TO_SAFE", "fromShiftId": SHIFT }),
     )
     .await;
+    let key = unique("key");
 
-    let first = dispatch(&room, &c, &id, &unique("key")).await;
-    assert_approval_required(&first, "beyond the drawer");
+    let first = dispatch(&room, &c, &id, &key).await;
+    assert_refused(&first, DRAWER_SHORT, "beyond the drawer");
     assert_eq!(room.stored(&id).await, ("APPROVED".to_owned(), 0));
     assert_eq!(
         room.usd("drawer").await,
         "100.00",
         "the drawer did not move"
     );
-    let rows = room.requests(&id).await;
-    assert_eq!(rows.len(), 1, "{rows:?}");
-    assert_eq!(rows[0].2.as_deref(), Some(B01));
-    decide(&room, &c, &rows[0].0, "APPROVED").await;
 
-    let retry = dispatch(&room, &c, &id, &unique("key")).await;
-    assert_dispatched(&retry, "the retry after approval");
-    assert_eq!(
-        room.usd("drawer").await,
-        "-100.00",
-        "N-1: the drawer goes below zero by the shortfall (100.00 − 200.00)"
-    );
-    assert_eq!(room.requests(&id).await.len(), 1, "no other request");
+    fund(&room.pool, CashPlace::Drawer(SHIFT.to_owned()), "100.00").await;
+    let retry = dispatch(&room, &c, &id, &key).await;
+    assert_dispatched(&retry, "the same key after the top-up");
+    assert_eq!(room.usd("drawer").await, "0.00", "§5.1.2: never below zero");
+    assert_eq!(room.all_negative_stock().await, 0, "no request");
     room.finish().await;
 }
 
-// ------------------------------------------------------------ no second request while one is pending
+// ------------------------------------------------------------ the same refusal, whatever the key
 
 #[actix_web::test]
-async fn gapsa3_the_same_key_again_opens_no_second_request() {
+async fn gapsa3_the_same_key_again_is_refused_the_same_and_opens_no_request() {
     let room = Room::start().await;
     let c = cast(&room).await;
     let id = branch_move(&room, &c, 12).await;
     let key = unique("key");
 
-    assert_approval_required(&dispatch(&room, &c, &id, &key).await, "first");
-    let again = dispatch(&room, &c, &id, &key).await;
-    assert_approval_required(&again, "the same key again");
-    assert_eq!(room.requests(&id).await.len(), 1, "still one request");
+    assert_refused(&dispatch(&room, &c, &id, &key).await, SAFE_SHORT, "first");
+    assert_refused(
+        &dispatch(&room, &c, &id, &key).await,
+        SAFE_SHORT,
+        "same key",
+    );
+    assert_eq!(room.all_negative_stock().await, 0, "no request");
     assert_not_dispatched(&room, &id, "same key").await;
     room.finish().await;
 }
 
 #[actix_web::test]
-async fn gapsa3_a_new_key_while_a_request_is_pending_opens_no_second_request() {
+async fn gapsa3_a_new_key_is_refused_the_same_and_opens_no_request() {
     let room = Room::start().await;
     let c = cast(&room).await;
     let id = branch_move(&room, &c, 12).await;
 
-    assert_approval_required(&dispatch(&room, &c, &id, &unique("key")).await, "first");
-    let other = dispatch(&room, &c, &id, &unique("key")).await;
-    assert_approval_required(&other, "a new key while pending (AlreadyPending)");
-    let rows = room.requests(&id).await;
-    assert_eq!(rows.len(), 1, "still one request: {rows:?}");
-    assert_eq!(rows[0].1, "PENDING");
+    assert_refused(
+        &dispatch(&room, &c, &id, &unique("key")).await,
+        SAFE_SHORT,
+        "first",
+    );
+    assert_refused(
+        &dispatch(&room, &c, &id, &unique("key")).await,
+        SAFE_SHORT,
+        "new key",
+    );
+    assert_eq!(room.all_negative_stock().await, 0, "no request");
     assert_not_dispatched(&room, &id, "new key").await;
     room.finish().await;
 }
 
-// ------------------------------------------------------------ APPROVED ⇒ the retry dispatches below zero
+// ------------------------------------------------------------ after a top-up the same key dispatches
 
 #[actix_web::test]
-async fn gapsa3_once_approved_the_retry_dispatches_and_the_safe_goes_below_zero() {
+async fn gapsa3_after_a_top_up_of_the_safe_the_same_key_dispatches_and_the_safe_ends_at_zero() {
     let room = Room::start().await;
     let c = cast(&room).await;
     let id = branch_move(&room, &c, 12).await;
+    let key = unique("key");
 
-    assert_approval_required(&dispatch(&room, &c, &id, &unique("key")).await, "first");
-    let rows = room.requests(&id).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&room, &c, &rows[0].0, "APPROVED").await;
+    assert_refused(&dispatch(&room, &c, &id, &key).await, SAFE_SHORT, "first");
+    fund(&room.pool, CashPlace::Safe(BranchId::new(B01)), "100.00").await;
 
-    let retry = dispatch(&room, &c, &id, &unique("key")).await;
-    assert_dispatched(&retry, "§5.1: the retry posts with allow_negative");
+    let retry = dispatch(&room, &c, &id, &key).await;
+    assert_dispatched(&retry, "§5.1.2: the refusal released the key");
     let (status, postings) = room.stored(&id).await;
     assert_eq!(status, "DISPATCHED");
     assert!(postings > 0, "the dispatch posting names the transfer");
     assert_eq!(
         room.usd(B01).await,
-        "-100.00",
-        "N-1: B01's safe goes below zero by the shortfall (500.00 − 600.00)"
+        "0.00",
+        "600.00 − 600.00, never below zero"
     );
-    assert_eq!(
-        room.requests(&id).await.len(),
-        1,
-        "the retry opened no other request"
-    );
+    assert_eq!(room.all_negative_stock().await, 0, "no request");
     room.finish().await;
 }
 
-/// The path may spell the id in capitals (the repository parses it as a UUID); the request is still keyed on the id
-/// as stored, which is the posting's `source_id`, so its approval is the one the port accepts.
+/// The path may spell the id in capitals: still refused the same, and no request under any spelling.
 #[actix_web::test]
-async fn gapsa3_the_request_is_keyed_on_the_stored_id_whatever_the_path_spells() {
+async fn gapsa3_a_capitalised_path_is_refused_the_same_and_opens_no_request() {
     let room = Room::start().await;
     let c = cast(&room).await;
     let id = branch_move(&room, &c, 12).await;
     let shouted = id.to_uppercase();
     assert_ne!(shouted, id, "the stored id is lower-case text");
 
-    assert_approval_required(
+    assert_refused(
         &dispatch(&room, &c, &shouted, &unique("key")).await,
-        "first",
-    );
-    let rows = room.requests(&id).await;
-    assert_eq!(
-        rows.len(),
-        1,
-        "§5.1: object_id is cash_transfers.id as text (the posting's source_id): {rows:?}"
+        SAFE_SHORT,
+        "capitalised path",
     );
     assert_eq!(
         room.all_negative_stock().await,
-        1,
-        "no request under another spelling"
+        0,
+        "no request under any spelling"
     );
-    decide(&room, &c, &rows[0].0, "APPROVED").await;
-
-    let retry = dispatch(&room, &c, &shouted, &unique("key")).await;
-    assert_dispatched(&retry, "the approval keyed on the stored id is found");
-    assert_eq!(room.usd(B01).await, "-100.00");
-    room.finish().await;
-}
-
-// ------------------------------------------------------------ after a rejection
-
-#[actix_web::test]
-async fn gapsa3_after_a_rejection_the_retry_answers_stock_insufficient_and_no_request() {
-    let room = Room::start().await;
-    let c = cast(&room).await;
-    let id = branch_move(&room, &c, 12).await;
-    let key = unique("key");
-
-    assert_approval_required(&dispatch(&room, &c, &id, &key).await, "first");
-    let rows = room.requests(&id).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&room, &c, &rows[0].0, "REJECTED").await;
-
-    let after = dispatch(&room, &c, &id, &key).await;
-    assert_eq!(
-        (after.status, after.code()),
-        (StatusCode::CONFLICT, "stockInsufficient"),
-        "plain stockInsufficient after a rejection: {}",
-        after.text
+    fund(&room.pool, CashPlace::Safe(BranchId::new(B01)), "100.00").await;
+    assert_dispatched(
+        &dispatch(&room, &c, &shouted, &unique("key")).await,
+        "after the top-up",
     );
-    assert!(
-        after.message().to_lowercase().contains("reject"),
-        "the answer notes the rejection: {:?}",
-        after.message()
-    );
-    let rows = room.requests(&id).await;
-    assert_eq!(rows.len(), 1, "no new request: {rows:?}");
-    assert_eq!(
-        rows[0].1, "REJECTED",
-        "the rejected request is never reopened"
-    );
-    assert_not_dispatched(&room, &id, "rejected").await;
+    assert_eq!(room.usd(B01).await, "0.00");
     room.finish().await;
 }
 

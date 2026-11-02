@@ -240,9 +240,11 @@ async fn retrying_a_stock_reserved_refusal_opens_no_request_either() {
     c.finish().await;
 }
 
-/// Control: with no hold anywhere, a sale beyond the drawer keeps #3405's path (`approvalRequired`, one request).
+/// Control: with no hold anywhere, a sale beyond the drawer is refused `stockInsufficient` and opens no request.
+/// Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (no approval lets cash go below zero);
+/// it used to keep #3405's path (`approvalRequired`, one request).
 #[actix_web::test]
-async fn with_no_hold_a_shortfall_still_asks_for_approval() {
+async fn with_no_hold_a_shortfall_is_refused_and_opens_no_request() {
     let c = Counter::start().await;
     usd_position_1000(&c).await;
     let now = whole_second_now();
@@ -253,10 +255,10 @@ async fn with_no_hold_a_shortfall_still_asks_for_approval() {
 
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
+        (StatusCode::CONFLICT, "stockInsufficient"),
         "{}",
         a.text
     );
-    assert_eq!(negative_stock_requests(&c).await, 1);
+    assert_eq!(negative_stock_requests(&c).await, 0, "§5.1.2: no request");
     c.finish().await;
 }
