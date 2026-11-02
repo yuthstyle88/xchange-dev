@@ -1,7 +1,7 @@
-// G5-FE #5932: the receipt step while complete waits for a negative-stock approval (design xchange-v3-wave3-desk.md §5.4a,
-// PR #5931). Written before the implementation by claude/01TxaRJG (FE sub-controller). Do not edit, delete or weaken;
-// add tests in a file of your own. The store is a stub, as in step.print.test.tsx. One test per row; the id is in the name.
-// S4 is the owner's option A (2026-11-02, "A ตามเสนอ"): a rejection has already cancelled the sale.
+// FE-W #5978: the receipt step while complete waits for a drawer top-up (design xchange-v3-wave3-desk.md §5.4a, as
+// amended by PR #5977 after the owner's "ต้องเติมเงินก่อน ห้ามติดลบ"). Restated by claude/01TxaRJG (FE sub-controller) from
+// #5932's tests: no request id and no rejection any more, so the old R3 (rejected) is removed. Do not edit, delete or
+// weaken; add tests in a file of your own. The store is a stub, as in step.print.test.tsx. One test per row; the id is in the name.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -10,21 +10,20 @@ import type { DeskStore, SaveOutcome } from '../../desk-store';
 import * as texts from './i18n';
 import { step } from './step';
 
-const REQ = '167d8c93-7648-405c-b015-8fc53f176e4a';
+const SHORT = 'ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: THB ลิ้นชัก ขาด 1711.46';
 
 // §5.4a's words, verbatim.
 const WORDS = {
   th: {
-    stockWaitTitle: 'ยอดเงินในลิ้นชักไม่พอสำหรับรายการนี้ ต้องให้ผู้จัดการสาขาอนุมัติก่อน',
-    stockWaitNext: 'ให้ผู้จัดการสาขาอนุมัติคำขอ {ref} ที่หน้าอนุมัติ เมื่ออนุมัติแล้วหน้านี้จะบันทึกรายการต่อเอง',
-    stockRejectedCancelled: 'ผู้จัดการสาขาไม่อนุมัติ รายการนี้ถูกยกเลิกแล้ว เริ่มรายการใหม่ได้',
+    stockWaitTitle: 'เงินในลิ้นชักไม่พอจ่ายรายการนี้',
+    stockWaitNext:
+      'ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักนี้ แล้วกดรับเงินที่หน้ากะ เมื่อเงินเข้าลิ้นชักแล้วหน้านี้จะบันทึกรายการต่อเอง',
     cancelSale: 'ยกเลิกรายการนี้',
   },
   en: {
-    stockWaitTitle: 'The drawer does not hold enough for this transaction. The branch manager must approve it first',
+    stockWaitTitle: 'The drawer does not hold enough to pay this transaction',
     stockWaitNext:
-      'Ask the branch manager to approve request {ref} on the Approvals page. This page completes the transaction by itself once it is approved',
-    stockRejectedCancelled: 'The branch manager rejected it. This transaction has been cancelled; you can start a new one',
+      'Ask the branch manager to move cash from the safe into this drawer, then receive it on the shift page. This page completes the transaction by itself once the cash is in the drawer',
     cancelSale: 'Cancel this transaction',
   },
 } as const;
@@ -32,11 +31,7 @@ const WORDS = {
 let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
 
-function makeStore(
-  wait: { requestId: string; rejected: boolean } | undefined,
-  outcome: SaveOutcome,
-  state: 'CONFIRMED' | 'CANCELLED' = 'CONFIRMED',
-) {
+function makeStore(wait: { message: string } | undefined, outcome: SaveOutcome, state: 'CONFIRMED' | 'CANCELLED' = 'CONFIRMED') {
   const [w, setW] = createSignal(wait);
   const [o, setO] = createSignal<SaveOutcome>(outcome);
   return {
@@ -46,7 +41,7 @@ function makeStore(
     config: () => ({ shiftOpen: true, adminUrl: '/?branch=MAIN', paymentMethods: [] }),
     outcome: o,
     transactionState: () => state,
-    saveError: () => (state === 'CANCELLED' ? 'เงินในลิ้นชักไม่พอ ไม่อนุมัติ' : undefined),
+    saveError: () => undefined,
     saved: () => undefined,
     stockWait: w,
     cancelStockWait: vi.fn(async () => {
@@ -84,27 +79,32 @@ afterEach(() => {
   setLang('th');
 });
 
-describe('§5.4a the receipt step while complete waits for a NEGATIVE_STOCK approval', () => {
-  it('R0: the four keys exist in th and en with the design wording', () => {
+describe('§5.4a the receipt step while complete waits for a drawer top-up', () => {
+  it('R0: the keys exist in th and en with the design wording; stockRejectedCancelled is gone', () => {
     for (const lang of ['th', 'en'] as const) {
       for (const [k, v] of Object.entries(WORDS[lang])) {
         expect((texts[lang] as Record<string, string>)[k], `desk.steps.receipt ${lang}.${k}`).toBe(v);
       }
+      expect((texts[lang] as Record<string, string>).stockRejectedCancelled, `${lang}.stockRejectedCancelled removed`).toBeUndefined();
     }
   });
 
-  it('R1 (S1): waiting shows who decides and what to do, the request as #<8> with the full id in title; no raw code', () => {
-    show(makeStore({ requestId: REQ, rejected: false }, 'saving'));
+  it('R1 (S1): waiting shows the title, the server message as sent, then what to do, in that order; no code, no request id', () => {
+    show(makeStore({ message: SHORT }, 'saving'));
     const t = text();
-    expect(t).toContain(WORDS.th.stockWaitTitle);
-    expect(t).toContain(WORDS.th.stockWaitNext.replace('{ref}', '#167d8c93'));
-    expect(host.querySelector(`[title="${REQ}"]`)?.textContent?.trim()).toBe('#167d8c93');
-    expect(t).not.toContain('approvalRequired');
-    expect(t).not.toContain(REQ);
+    const i = t.indexOf(WORDS.th.stockWaitTitle);
+    const j = t.indexOf(SHORT);
+    const k = t.indexOf(WORDS.th.stockWaitNext);
+    expect(i, 'title').toBeGreaterThanOrEqual(0);
+    expect(j, 'the server message after the title').toBeGreaterThan(i);
+    expect(k, 'what to do after the message').toBeGreaterThan(j);
+    expect(t).not.toContain('stockInsufficient');
+    expect(t).not.toContain('{ref}');
+    expect(host.querySelector('[title]')?.textContent?.startsWith('#') ?? false, 'no request-id element').toBe(false);
   });
 
   it('R2 (S1/S5): while waiting, print is disabled and cancelSale calls cancelStockWait once', async () => {
-    const store = makeStore({ requestId: REQ, rejected: false }, 'saving');
+    const store = makeStore({ message: SHORT }, 'saving');
     show(store);
     expect(button('พิมพ์ใบเสร็จ NEOCAL 80 มม.')?.disabled).toBe(true);
     const cancel = button(WORDS.th.cancelSale);
@@ -113,23 +113,20 @@ describe('§5.4a the receipt step while complete waits for a NEGATIVE_STOCK appr
     await vi.waitFor(() => expect(store.cancelStockWait).toHaveBeenCalledTimes(1));
   });
 
-  it('R3 (S4, option A): rejected and cancelled shows stockRejectedCancelled and the manager\'s reason, offers a new exchange, no cancel button', () => {
-    show(makeStore({ requestId: REQ, rejected: true }, 'refused', 'CANCELLED'));
+  it('R3: no wait, no wait words and no cancelSale button', () => {
+    show(makeStore(undefined, 'saving'));
     const t = text();
-    expect(t).toContain(WORDS.th.stockRejectedCancelled);
-    expect(button(WORDS.th.cancelSale), 'nothing left to cancel').toBeUndefined();
-    expect(button(texts.th.newExchange)?.disabled, 'a new exchange is offered').toBe(false);
-    expect(t, "the manager's reason, as sent").toContain('เงินในลิ้นชักไม่พอ ไม่อนุมัติ');
-    expect(t).not.toContain('staleVersion');
-    expect(t).not.toContain(REQ);
+    expect(t).not.toContain(WORDS.th.stockWaitTitle);
+    expect(button(WORDS.th.cancelSale)).toBeUndefined();
   });
 
-  it('R4: the words follow setLang (en)', () => {
+  it('R4: the words follow setLang (en); the server message stays as sent', () => {
     setLang('en');
-    show(makeStore({ requestId: REQ, rejected: false }, 'saving'));
+    show(makeStore({ message: SHORT }, 'saving'));
     const t = text();
     expect(t).toContain(WORDS.en.stockWaitTitle);
-    expect(t).toContain(WORDS.en.stockWaitNext.replace('{ref}', '#167d8c93'));
+    expect(t).toContain(SHORT);
+    expect(t).toContain(WORDS.en.stockWaitNext);
     expect(button(WORDS.en.cancelSale)).toBeDefined();
   });
 });
