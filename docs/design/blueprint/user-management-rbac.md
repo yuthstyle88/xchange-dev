@@ -1057,19 +1057,19 @@ The controller's ruling B2 (a), on #564 issuecomment-6580563236: `CashTransferPo
 | `CashLimitsManage`, `CashTransferPolicySet`, `CashTargetSet` | setting | **no module; seeded to EXECUTIVE only**, like `PricingFormulaSave` (#5733) |
 | `RateAlertSettingsSave` | setting | no module; seeded to EXECUTIVE only; RATE_MANAGER loses it at seed version 10 |
 | `OrgStartingPricesManage` | setting | no module; seeded to EXECUTIVE only (`rates.md` §12.6 and the bound-vs-work-product rule: the organisation's starting cost basis is an Owner bound, whereas rate drafts and publications are RATE_MANAGER's work product) |
-| `RatePolicySave` (`ratePolicySave` and its inheritors `ratesAutoPause`, `ratesAutoResume`, `ratesMaxSpreadSave`, `ratesAutoConfigSave`, `ratesUpdatePolicySave`; `marginGuardSet`) | operation (controller ruling A, #564 issuecomment-6585258665) | stays in RatesStock/Full with `RATE_MANAGER` and `EXECUTIVE`; `PricingFormulaSave` (#5733) already gates the formula itself |
+| `RatePolicySave` (`ratePolicySave`; the commands that inherit it: `pricingConfigure`, `pricingBranchPolicySave`, `pricingSuggestionSettingsSave`, `rateDisplaySave`, `pricingFormulaPreview`, `pricingApprove`; the rows `pricingModeSave` and `marginGuardSet`) | operation (controller ruling A, #564 issuecomment-6587097622) | stays in RatesStock/Full with `RATE_MANAGER` and `EXECUTIVE`; `PricingFormulaSave` (#5733) already gates the formula itself |
 | `SystemSettings` | setting | no module; seeded to EXECUTIVE only: ADMIN loses it (`exchangeSettingsSave`, `appSettingsSave`, and the payment-methods `save` on `POST /api/payment-methods` stay on `SystemSettings` as settings), while `DeviceSetup`, `setPrinter` and `setDrawer` move to `BranchesManage` so ADMIN keeps branch device setup |
 | `AlertSettingsSave` | setting | already EXECUTIVE-only by seed; made no-module so Dashboard/Full never implies it |
 | `BranchSettingsSave` (**new**, no module, EXECUTIVE only) | setting | takes `bookingPolicySet`, `slotRuleSet`, `slotCapacitySet` and `branchExchangeLimitSave` from `BranchesManage`, which keeps the daily operations (`closureAdd`/`Remove`, `slotOpen`/`Close`, `admin_booking_slots`) |
 | `FinanceReconcile` | operation | unchanged (Finance/Full) |
 | `LoyaltyRulesManage`, `MarketingCampaigns` | operation with an Owner approval | unchanged: the maker drafts, and the Owner approves through `ApproveLoyaltyRuleVersion`/`ApproveCampaignVersion` (§11.9), which already is maker-checker |
-| `ConsentPolicyManage` | setting | no module; seeded to EXECUTIVE only per the controller's ruling (#564 issuecomment-6585258665): PDPA consent versions and retention rules are legal policy set by the Owner, so `RATE_MANAGER` and `BRANCH_MANAGER` lose it at seed version 10 |
+| `ConsentPolicyManage` | setting | no module; seeded to EXECUTIVE only per the controller's ruling (#5999 issuecomment-6581702496): PDPA consent versions and retention rules are legal policy set by the Owner, so `RATE_MANAGER` and `BRANCH_MANAGER` lose it at seed version 10 |
 | `UsersManage` | operation (user administration) | unchanged |
 
 **One read for every setting (♻️).** A new no-module `SettingsRead` is seeded to **every staff role** (the owner: finance, branch managers and tellers read the settings and work within them). Every settings read row uses `RowScope::Request`:
-- Existing read rows moved to `SettingsRead` (scope `Request`): `cashLimitsRead`, `rateAlertSettings`, `orgStartingPrices` and `branch_alert_settings`.
+- Existing read rows moved to `SettingsRead` (scope `Request`): `cashLimitsRead`, `rateAlertSettings`, `orgStartingPrices` and `branchAlertSettings`.
 - Four new read rows added on `SettingsRead` (scope `Request`) so views stop inheriting their save permission: `transferPolicyRead` (for `cash_transfer_policy`), `exchangeSettingsRead` (for `exchange_settings`), `marginGuardRead` (for `margin_guard`), and `consentTexts` (for `consent_texts`).
-- `staff_floor/reader.rs:97` reads with `SettingsRead`.
+- `staff_floor/reader.rs` is unchanged: its money gate keeps `CashTargetSet`, and FINANCE still opens it through `CashManage`. `SettingsRead` never gates it, because every staff role holds it.
 - The FE shows the screens read-only, with "ตั้งค่าโดยเจ้าของ" (set by the owner), when the caller lacks the save permission (claude/01TxaRJG's FE half, §11.10).
 
 **Not in this section** (the user-settings design follows):
