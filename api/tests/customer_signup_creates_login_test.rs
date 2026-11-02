@@ -1,5 +1,6 @@
 //! `POST /api/app/register` creates the Identity login for an unknown phone, then binds it (design
-//! `docs/design/blueprint/customer-identity-consent.md` §4.6, rows S1–S8 of §4.6.2).
+//! `docs/design/blueprint/customer-identity-consent.md` §4.6, rows S1–S8 of §4.6.2), throttled per phone and per
+//! address (§4.6 "Throttle", rows S9–S10).
 //!
 //! Root cause pinned here: a real visitor could not sign up. `register_customer` signed in an *existing* Identity
 //! user (`customer_signup.rs:93-96`) and nothing created one for a visitor, so `/app/sign-up` answered
@@ -467,5 +468,76 @@ async fn s8_a_thai_formatted_phone_is_registered_in_e164() {
     let registered = v.identity.received("/auth/register");
     assert_eq!(registered.len(), 1);
     assert_eq!(registered[0]["phone"], json!(PHONE));
+    v.finish().await;
+}
+
+/// S9 (§4.6 "Throttle"): the same phone gets 3 create-login attempts per 15 minutes; the 4th answers
+/// `429 tooManyAttempts`, writes nothing, and never asks Identity to register.
+#[actix_web::test]
+async fn s9_a_fourth_create_login_for_one_phone_is_too_many_attempts() {
+    let v = Visit::start().await;
+    v.identity.always("/auth/login", 401, INVALID);
+    v.identity
+        .always("/auth/register", 409, r#"{"error":"phone_taken"}"#);
+    let before = v.written().await;
+
+    for n in 1..=3 {
+        let reply = v.sign_up(PHONE, "th").await;
+        assert_eq!(
+            (reply.status, reply.refusal().0.as_str()),
+            (409, "alreadyRegistered"),
+            "attempt {n}: {}",
+            reply.text
+        );
+    }
+    let fourth = v.sign_up(PHONE, "th").await;
+    assert_eq!(
+        (fourth.status, fourth.refusal().0.as_str()),
+        (429, "tooManyAttempts"),
+        "{}",
+        fourth.text
+    );
+    assert_eq!(
+        v.identity.received("/auth/register").len(),
+        3,
+        "the 4th attempt never reached Identity's register"
+    );
+    assert_eq!(v.written().await, before, "nothing written");
+    v.finish().await;
+}
+
+/// S10 (§4.6 "Throttle"): one address gets 10 create-login attempts per 15 minutes, whatever the phones; the
+/// 11th answers `429 tooManyAttempts`, writes nothing, and never asks Identity to register.
+#[actix_web::test]
+async fn s10_an_eleventh_create_login_from_one_address_is_too_many_attempts() {
+    let v = Visit::start().await;
+    v.identity.always("/auth/login", 401, INVALID);
+    v.identity
+        .always("/auth/register", 409, r#"{"error":"phone_taken"}"#);
+    let before = v.written().await;
+
+    for n in 1..=10 {
+        let phone = format!("+668123456{n:02}");
+        let reply = v.sign_up(&phone, "th").await;
+        assert_eq!(
+            (reply.status, reply.refusal().0.as_str()),
+            (409, "alreadyRegistered"),
+            "attempt {n}: {}",
+            reply.text
+        );
+    }
+    let eleventh = v.sign_up("+66812345699", "th").await;
+    assert_eq!(
+        (eleventh.status, eleventh.refusal().0.as_str()),
+        (429, "tooManyAttempts"),
+        "{}",
+        eleventh.text
+    );
+    assert_eq!(
+        v.identity.received("/auth/register").len(),
+        10,
+        "the 11th attempt never reached Identity's register"
+    );
+    assert_eq!(v.written().await, before, "nothing written");
     v.finish().await;
 }
