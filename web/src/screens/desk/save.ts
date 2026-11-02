@@ -4,7 +4,9 @@
 // No arithmetic and no figure the quote did not give (W7).
 import { ApiClient, ApiError } from '../../shared/api/client';
 import { keyedWrite } from '../../shared/api/keyed-write';
+import type { TransactionViewData } from '../../shared/api/generated/transaction';
 import type {
+  TransactionCancelInput,
   TransactionConfirmInput,
   TransactionCreateInput,
 } from '../../shared/api/generated/transactions';
@@ -21,11 +23,17 @@ export interface SaveAnswer {
   documentRef: string | null;
 }
 
+export interface StockWait {
+  requestId: string;
+  rejected: boolean;
+}
+
 export interface SaveSink {
   setOutcome(o: SaveOutcome): void;
   setTransactionState(s: TransactionState | undefined): void;
   setSaveError(e: string | undefined): void;
   setSaved(a: SaveAnswer | undefined): void;
+  setStockWait(w: StockWait | undefined): void;
 }
 
 /** How often a transaction waiting for approval is re-read. */
@@ -58,6 +66,7 @@ interface Session {
   quoteId?: string;
   paidAt: string;
   tx?: { id: string; status: TransactionState; dto: Record<string, unknown> };
+  completeKey?: string;
 }
 
 /** A 2xx whose body names no transaction state: the outcome is unknown. */
@@ -94,6 +103,12 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
   let session: Session | undefined;
   let running: Promise<SaveOutcome> | undefined;
   let watch: ReturnType<typeof setInterval> | undefined;
+  let stockWait: StockWait | undefined;
+
+  function setStockWait(w: StockWait | undefined): void {
+    stockWait = w;
+    sink.setStockWait(w);
+  }
 
   const txCommandApi = {
     command: async <B,>(method: string, path: string, body: B, key: string) => {
@@ -113,9 +128,17 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     (b) => `${routes.transactions}/${b.id}/confirm`,
   );
   const completeWrite = keyedWrite<{ id: string }, NonNullable<Session['tx']>>(
-    txCommandApi,
+    {
+      command: (method, path, body, key) =>
+        txCommandApi.command(method, path, body, (session!.completeKey ??= key)),
+    } as ApiClient,
     'POST',
     (b) => `${routes.transactions}/${b.id}/complete`,
+  );
+  const cancelWrite = keyedWrite<TransactionCancelInput, NonNullable<Session['tx']>>(
+    txCommandApi,
+    'POST',
+    (b) => `${routes.transactions}/${b.id}/cancel`,
   );
 
   function makeUploadWrite(slot: 'passport' | 'slip') {
@@ -156,6 +179,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
   function stopWatch(): void {
     if (watch !== undefined) {
       clearInterval(watch);
+      clearTimeout(watch);
       watch = undefined;
     }
   }
@@ -168,6 +192,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     createWrite.reset();
     confirmWrite.reset();
     completeWrite.reset();
+    cancelWrite.reset();
   }
 
   function createBody(quoteId: string, s: Session): TransactionCreateInput {
@@ -196,23 +221,102 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     };
   }
 
+  async function readTransaction(id: string): Promise<NonNullable<Session['tx']>> {
+    const answer = await store.api.view<TransactionViewData>(routes.transactionView, { filter: { id } });
+    return transactionOf(answer.data?.transaction);
+  }
+
   /** Re-reads the transaction while it waits for approval; goes on once it is CONFIRMED (§5.4 item 4). */
   function watchApproval(id: string): void {
     stopWatch();
     watch = setInterval(() => {
-      void store.api
-        .view<{ id?: string; status?: string }>(routes.transactionView, { filter: { id } })
-        .then((answer) => {
-          const status = answer.data?.status;
-          if (!session?.tx || session.tx.id !== id || typeof status !== 'string') return;
-          if (status === 'PENDING_APPROVAL' || !(STATES as readonly string[]).includes(status)) return;
+      void readTransaction(id)
+        .then((tx) => {
+          if (!session?.tx || session.tx.id !== id || tx.status === 'PENDING_APPROVAL') return;
           stopWatch();
-          session.tx = { ...session.tx, status: status as TransactionState };
-          sink.setTransactionState(session.tx.status);
+          session.tx = tx;
+          sink.setTransactionState(tx.status);
           void submit();
         })
         .catch(() => undefined);
     }, APPROVAL_POLL_MS);
+  }
+
+  function watchStock(): void {
+    stopWatch();
+    watch = setTimeout(() => {
+      watch = undefined;
+      void submit();
+    }, APPROVAL_POLL_MS);
+  }
+
+  async function advance(s: Session): Promise<SaveOutcome> {
+    for (;;) {
+      const tx: NonNullable<Session['tx']> = s.tx!;
+      sink.setTransactionState(tx.status);
+      switch (tx.status) {
+        case 'DRAFT': {
+          const body: TransactionConfirmInput = { id: tx.id };
+          s.tx = await confirmWrite.send(body);
+          break;
+        }
+        case 'CONFIRMED': {
+          try {
+            s.tx = await completeWrite.send({ id: tx.id });
+          } catch (e) {
+            if (e instanceof ApiError && e.status === 409) {
+              if (e.code === 'approvalRequired') {
+                const prefix = 'approvalRequired: ';
+                const requestId = e.message.startsWith(prefix) ? e.message.slice(prefix.length).trim() : '';
+                setStockWait({ requestId, rejected: false });
+                watchStock();
+                return 'saving';
+              }
+              if (stockWait && e.code === 'staleVersion') {
+                stopWatch();
+                setStockWait({ requestId: stockWait.requestId, rejected: true });
+                s.tx = await readTransaction(tx.id);
+                break;
+              }
+            }
+            throw e;
+          }
+          break;
+        }
+        case 'COMPLETED': {
+          stopWatch();
+          setStockWait(undefined);
+          s.tx = undefined;
+          s.completeKey = undefined;
+          const ref = tx.dto.documentRef;
+          const answer: SaveAnswer = {
+            id: tx.id,
+            status: 'COMPLETED',
+            documentRef: typeof ref === 'string' ? ref : null,
+          };
+          sink.setSaved(answer);
+          sink.setOutcome('saved');
+          try {
+            await store.entry()?.afterSave?.(store, answer);
+          } catch {
+            // the exchange is saved; the entry's own follow-up does not change that
+          }
+          return 'saved';
+        }
+        case 'PENDING_APPROVAL': {
+          // waiting for the branch manager: neither saved nor refused; no new submit, no new key
+          watchApproval(tx.id);
+          return 'saving';
+        }
+        case 'CANCELLED': {
+          const reason = tx.dto.cancelReason;
+          reset();
+          sink.setSaveError(typeof reason === 'string' && reason !== '' ? reason : t('cancelled'));
+          sink.setOutcome('refused');
+          return 'refused';
+        }
+      }
+    }
   }
 
   async function run(): Promise<SaveOutcome> {
@@ -237,6 +341,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
 
       // 2. a quote that has not expired and matches the settlement kind (D-5, CR12), then the create
       if (!s.tx) {
+        setStockWait(undefined);
         let q = store.quote();
         const unusable = (x: typeof q) =>
           !x || expired(x.expiresAt) || x.cashSettlement !== (store.method() === 'Cash');
@@ -249,51 +354,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
       }
 
       // 3. the server's state decides the next call
-      for (;;) {
-        const tx: NonNullable<Session['tx']> = s.tx;
-        sink.setTransactionState(tx.status);
-        switch (tx.status) {
-          case 'DRAFT': {
-            const body: TransactionConfirmInput = { id: tx.id };
-            s.tx = await confirmWrite.send(body);
-            break;
-          }
-          case 'CONFIRMED': {
-            s.tx = await completeWrite.send({ id: tx.id });
-            break;
-          }
-          case 'COMPLETED': {
-            stopWatch();
-            s.tx = undefined;
-            const ref = tx.dto.documentRef;
-            const answer: SaveAnswer = {
-              id: tx.id,
-              status: 'COMPLETED',
-              documentRef: typeof ref === 'string' ? ref : null,
-            };
-            sink.setSaved(answer);
-            sink.setOutcome('saved');
-            try {
-              await store.entry()?.afterSave?.(store, answer);
-            } catch {
-              // the exchange is saved; the entry's own follow-up does not change that
-            }
-            return 'saved';
-          }
-          case 'PENDING_APPROVAL': {
-            // waiting for the branch manager: neither saved nor refused; no new submit, no new key
-            watchApproval(tx.id);
-            return 'saving';
-          }
-          case 'CANCELLED': {
-            const reason = tx.dto.cancelReason;
-            reset();
-            sink.setSaveError(typeof reason === 'string' && reason !== '' ? reason : t('cancelled'));
-            sink.setOutcome('refused');
-            return 'refused';
-          }
-        }
-      }
+      return await advance(s);
     } catch (e) {
       const stillRunning = e instanceof ApiError && e.status === 409 && e.code === 'idempotencyConflict';
       if (
@@ -302,7 +363,9 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
       ) {
         // a refusal: the next submit is a new exchange
         stopWatch();
+        setStockWait(undefined);
         s.tx = undefined;
+        s.completeKey = undefined;
         s.quoteId = undefined;
         sink.setSaveError(e instanceof Refused ? e.message : wordedError(e));
         sink.setOutcome('refused');
@@ -318,6 +381,20 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     }
   }
 
+  async function cancelStockWait(): Promise<void> {
+    const s = session;
+    if (!s?.tx) return;
+    stopWatch();
+    try {
+      s.tx = await cancelWrite.send({ id: s.tx.id, reason: t('stockCancelReason') });
+      setStockWait(undefined);
+      await advance(s);
+    } catch (e) {
+      if (stockWait && !stockWait.rejected) watchStock();
+      sink.setSaveError(wordedError(e));
+    }
+  }
+
   function submit(): Promise<SaveOutcome> {
     running ??= run().finally(() => {
       running = undefined;
@@ -325,5 +402,5 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
     return running;
   }
 
-  return { submit, reset, dispose: stopWatch };
+  return { submit, cancelStockWait, reset, dispose: stopWatch };
 }
