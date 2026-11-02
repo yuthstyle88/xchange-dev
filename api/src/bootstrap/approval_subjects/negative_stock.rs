@@ -7,14 +7,15 @@ use xc_approval::application::registry::ApprovalRegistry;
 use xc_cash::application::ledger_approval::negative_stock::{
     NEGATIVE_STOCK, NegativeStockPolicy, NegativeStockSubject,
 };
-use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
+
+use crate::application::workflows::exchange::negative_stock_source::NegativeStockExchangeSource;
 
 pub const TYPE: &str = NEGATIVE_STOCK;
 
-pub fn register(registry: &mut ApprovalRegistry, _pool: PgPool) {
+pub fn register(registry: &mut ApprovalRegistry, pool: PgPool) {
     registry.register(
         Arc::new(NegativeStockSubject::new(Arc::new(
-            LedgerCashPostings::new(),
+            NegativeStockExchangeSource::new(pool),
         ))),
         Arc::new(NegativeStockPolicy),
     );
