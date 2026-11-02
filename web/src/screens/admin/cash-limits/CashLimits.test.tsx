@@ -48,6 +48,7 @@ const ROW_500 = makeCashLimitsData({
   branch: 'MAIN',
   countDifferenceLimitThb: '500.00',
   updatedBy: 'u-admin',
+  updatedByName: 'Admin',
   updatedAt: '2026-10-12T01:00:00Z',
 });
 
@@ -55,6 +56,7 @@ const ROW_250 = makeCashLimitsData({
   branch: 'MAIN',
   countDifferenceLimitThb: '250.50',
   updatedBy: 'u-fin',
+  updatedByName: 'Finance',
   updatedAt: '2026-10-12T02:00:00Z',
 });
 
@@ -236,7 +238,8 @@ describe('CashLimits (#3324)', () => {
     const el = await mount({ readsByBranch: { MAIN: ROW_500 } });
     const s = screen(el)!;
     expect(text(s)).toContain('500.00');
-    expect(text(s)).toContain('u-admin');
+    expect(text(s)).toContain('Admin');
+    expect(text(s)).not.toContain('u-admin');
     expect(limitInput(s)?.value).toBe('500.00');
     expect(noLimitBox(s)?.checked).toBe(false);
   });
@@ -259,7 +262,8 @@ describe('CashLimits (#3324)', () => {
     });
     expect(text(document.body)).toContain(texts.th.saved);
     expect(text(s)).toContain('250.50');
-    expect(text(s)).toContain('u-fin');
+    expect(text(s)).toContain('Finance');
+    expect(text(s)).not.toContain('u-fin');
   });
 
   it('4: choose "no limit", save -> body countDifferenceLimitThb: null', async () => {
@@ -320,6 +324,7 @@ describe('CashLimits (#3324)', () => {
       branch: 'B1',
       countDifferenceLimitThb: '800.00',
       updatedBy: 'u-b1',
+      updatedByName: 'Branch 1 Lead',
       updatedAt: '2026-10-12T03:00:00Z',
     });
 
@@ -334,7 +339,8 @@ describe('CashLimits (#3324)', () => {
     await settle();
     const s = screen(el)!;
     expect(text(s)).toContain('800.00');
-    expect(text(s)).toContain('u-b1');
+    expect(text(s)).toContain('Branch 1 Lead');
+    expect(text(s)).not.toContain('u-b1');
 
     resolveMain(
       makeCashLimitsData({
@@ -385,5 +391,39 @@ describe('CashLimits (#3324)', () => {
     await settle();
     expect(server.writes()).toHaveLength(1);
     expect(text(s)).toContain('250.50');
+  });
+
+  it('9 (N2): a branch with updatedByName: null shows — and no user id', async () => {
+    const el = await mount({
+      readsByBranch: {
+        MAIN: makeCashLimitsData({
+          branch: 'MAIN',
+          countDifferenceLimitThb: '500.00',
+          updatedBy: 'u-admin',
+          updatedByName: null,
+          updatedAt: '2026-10-12T01:00:00Z',
+        }),
+      },
+    });
+    const s = screen(el)!;
+    expect(text(s)).toContain('ตั้งโดย —');
+    expect(text(s)).not.toContain('u-admin');
+  });
+
+  it('10 (N2 edge): empty-string updatedByName is treated like null (shows —)', async () => {
+    const el = await mount({
+      readsByBranch: {
+        MAIN: makeCashLimitsData({
+          branch: 'MAIN',
+          countDifferenceLimitThb: '500.00',
+          updatedBy: 'u-admin',
+          updatedByName: '',
+          updatedAt: '2026-10-12T01:00:00Z',
+        }),
+      },
+    });
+    const s = screen(el)!;
+    expect(text(s)).toContain('ตั้งโดย —');
+    expect(text(s)).not.toContain('u-admin');
   });
 });

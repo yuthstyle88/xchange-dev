@@ -6,4 +6,4 @@
  * non-zero difference goes to FINANCE). A branch with no row answers `null` everywhere but
  * `branch`.
  */
-export type CashLimitsData = { branch: string, countDifferenceLimitThb: string | null, updatedBy: string | null, updatedAt: string | null, };
+export type CashLimitsData = { branch: string, countDifferenceLimitThb: string | null, updatedBy: string | null, updatedByName: string | null, updatedAt: string | null, };

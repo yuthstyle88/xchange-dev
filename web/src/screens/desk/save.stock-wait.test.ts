@@ -1,13 +1,12 @@
-// G5-FE #5932: complete waits for a negative-stock approval (design xchange-v3-wave3-desk.md §5.4a, PR #5931).
-// Written before the implementation by claude/01TxaRJG (FE sub-controller). Do not edit, delete or weaken;
-// add tests in a file of your own. The fake server and `ready()` are save.test.ts's, copied unchanged.
+// FE-W #5978: complete waits for a drawer top-up (design xchange-v3-wave3-desk.md §5.4a, as amended by PR #5977 after the
+// owner's "ต้องเติมเงินก่อน ห้ามติดลบ"; server ledger-inventory.md §5.1.2). Restated by claude/01TxaRJG (FE sub-controller)
+// from #5932's tests: there is no NEGATIVE_STOCK approval any more, so the old S4/S4b (rejection) rows are removed and
+// approvalRequired from complete is a refusal (S7). Do not edit, delete or weaken; add tests in a file of your own. The fake
+// server and `ready()` are save.test.ts's, copied unchanged.
 //
-// §5.4a: `POST …/complete` answering `409 approvalRequired` ("approvalRequired: <request id>") is a wait, not a refusal:
-// the transaction and its complete key are kept, complete is resent every APPROVAL_POLL_MS with the same key, and
-// `stockWait` = {requestId, rejected}. `cancelStockWait()` cancels the
-// transaction. S4 is the owner's option A (2026-11-02, "A ตามเสนอ"): a rejection cancels the sale on the server,
-// so the waiting desk's next complete answers `409 staleVersion`, and the exchange's cancelReason is the manager's reason.
-// S7 (added 2026-11-02): the PENDING_APPROVAL wait (save.ts watchApproval) must read the view's real shape. One test per row S1–S7; the row id is in the test name.
+// §5.4a: `POST …/complete` answering `409 stockInsufficient` is a wait, not a refusal: the transaction and its complete
+// key are kept, complete is resent every APPROVAL_POLL_MS with the same key, and `stockWait` = {message}, the server's
+// message as sent. One test per row; the row id is in the test name. P1 is the unchanged PENDING_APPROVAL wait.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "solid-js";
 import { ApiClient } from "../../shared/api/client";
@@ -237,47 +236,47 @@ async function ready(s: ReturnType<typeof fakeServer>, which: "OWNER_DESK" | "ST
 }
 
 
-const REQ = "167d8c93-7648-405c-b015-8fc53f176e4a";
-const waitAnswer = refusal(409, "approvalRequired", `approvalRequired: ${REQ}`);
-const staleAnswer = refusal(409, "staleVersion", "staleVersion: a CANCELLED exchange is not completed");
-/** The manager's reject reason, verbatim: the server writes it as the exchange's cancelReason (claude/b091f5e0, 2026-11-02). */
-const REASON = "เงินในลิ้นชักไม่พอ ไม่อนุมัติ";
+const SHORT = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: THB ลิ้นชัก ขาด 1711.46";
+const SHORT_LESS = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: THB ลิ้นชัก ขาด 211.46";
+/** §5.1.2 "What the desk sees": the port's refusal, with no field. */
+const shortAnswer = (message = SHORT) => refusal(409, "stockInsufficient", message);
 /** `GET /api/v3/views/transaction?id=` in its real shape (generated `TransactionViewData = { transaction }`). */
 const txView = (status: string, cancelReason: string | null = null) =>
   view(makeTransactionViewData({ transaction: makeTransactionDetailDto({ id: "tx-1", status, cancelReason }) }));
 
-describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
+describe("§5.4a complete waits for a drawer top-up", () => {
   beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: true }));
 
-  it("S1 complete → 409 approvalRequired: a wait, not a refusal; the transaction is kept", async () => {
-    const s = serverFor({ complete: [waitAnswer] });
+  it("S1 complete → 409 stockInsufficient: a wait, not a refusal; the transaction is kept and the message is kept as sent", async () => {
+    const s = serverFor({ complete: [shortAnswer()] });
     const { store } = await ready(s, "STAFF_DESK");
     const out = await store.submit();
     expect(out).toBe("saving");
     expect(store.outcome()).toBe("saving");
     expect(store.transactionState()).toBe("CONFIRMED");
-    expect(store.stockWait()).toEqual({ requestId: REQ, rejected: false });
-    expect(store.saveError() ?? "", "the raw message is not shown").not.toContain("approvalRequired");
+    expect(store.stockWait()).toEqual({ message: SHORT });
+    expect(store.saveError() ?? "", "the code is not shown").not.toContain("stockInsufficient");
   });
 
-  it("S2 while waiting, complete is resent every APPROVAL_POLL_MS with the same key; no new create", async () => {
-    const s = serverFor({ complete: [waitAnswer, waitAnswer, waitAnswer] });
+  it("S2 while short, complete is resent every APPROVAL_POLL_MS with the same key; no new create; the message follows the latest answer", async () => {
+    const s = serverFor({ complete: [shortAnswer(), shortAnswer(SHORT_LESS), shortAnswer(SHORT_LESS)] });
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
     expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(15_000);
     await vi.waitFor(() => expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(2));
+    await vi.waitFor(() => expect(store.stockWait()).toEqual({ message: SHORT_LESS }));
     await vi.advanceTimersByTimeAsync(15_000);
     await vi.waitFor(() => expect(s.callsTo("POST", "/api/transactions/tx-1/complete")).toHaveLength(3));
     const keys = new Set(s.callsTo("POST", "/api/transactions/tx-1/complete").map((c) => c.key));
     expect(keys.size, "one key for every resend").toBe(1);
     expect(s.callsTo("POST", "/api/transactions"), "no new create").toHaveLength(1);
     expect(s.callsTo("POST", "/api/transactions/tx-1/confirm"), "no new confirm").toHaveLength(1);
-    expect(store.stockWait()).toEqual({ requestId: REQ, rejected: false });
+    expect(s.callsTo("GET", "/api/v3/views/transaction"), "no transaction read").toHaveLength(0);
   });
 
-  it("S3 approved: the next complete answers COMPLETED → saved, stockWait cleared, polling stops", async () => {
-    const s = serverFor({ complete: [waitAnswer, txAnswer("tx-1", "COMPLETED", { documentRef: "XC-20261102-000009" })] });
+  it("S3 topped up: the next complete answers COMPLETED → saved, stockWait cleared, the resend stops", async () => {
+    const s = serverFor({ complete: [shortAnswer(), txAnswer("tx-1", "COMPLETED", { documentRef: "XC-20261102-000009" })] });
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
     await vi.advanceTimersByTimeAsync(15_000);
@@ -289,36 +288,8 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
     expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after COMPLETED").toHaveLength(n);
   });
 
-  it("S4 rejected (owner's option A): complete → 409 staleVersion while waiting → one transaction read → CANCELLED; rejected kept for the words; polling stops", async () => {
-    const s = serverFor({ complete: [waitAnswer, staleAnswer] });
-    s.on("GET", "/api/v3/views/transaction", () => txView("CANCELLED", REASON));
-    const { store } = await ready(s, "STAFF_DESK");
-    await store.submit();
-    await vi.advanceTimersByTimeAsync(15_000);
-    await vi.waitFor(() => expect(store.transactionState()).toBe("CANCELLED"));
-    expect(store.stockWait()).toEqual({ requestId: REQ, rejected: true });
-    expect(store.outcome()).toBe("refused");
-    expect(store.saveError(), "the manager's reason, as sent").toBe(REASON);
-    expect(s.callsTo("GET", "/api/v3/views/transaction"), "one transaction read").toHaveLength(1);
-    const n = s.callsTo("POST", "/api/transactions/tx-1/complete").length;
-    await vi.advanceTimersByTimeAsync(60_000);
-    expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the cancel").toHaveLength(n);
-    expect(s.callsTo("POST", "/api/transactions/tx-1/cancel"), "the desk sends no cancel of its own").toHaveLength(0);
-  });
-
-  it("S4b after a rejection, a new exchange clears the wait", async () => {
-    const s = serverFor({ complete: [waitAnswer, staleAnswer] });
-    s.on("GET", "/api/v3/views/transaction", () => txView("CANCELLED", REASON));
-    const { store } = await ready(s, "STAFF_DESK");
-    await store.submit();
-    await vi.advanceTimersByTimeAsync(15_000);
-    await vi.waitFor(() => expect(store.stockWait()?.rejected).toBe(true));
-    store.startNew();
-    expect(store.stockWait()).toBeUndefined();
-  });
-
   it("S5 cancelStockWait while waiting: POST …/cancel {id, reason} with a key; CANCELLED → the next submit is a new exchange", async () => {
-    const s = serverFor({ complete: [waitAnswer, waitAnswer, waitAnswer] });
+    const s = serverFor({ complete: [shortAnswer(), shortAnswer(), shortAnswer()] });
     s.on("POST", "/api/transactions/tx-1/cancel", () => txAnswer("tx-1", "CANCELLED", { cancelReason: "x" }));
     const { store } = await ready(s, "STAFF_DESK");
     await store.submit();
@@ -336,9 +307,9 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
     expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no complete after the cancel").toHaveLength(n);
   });
 
-  it("S6 approvalRequired or stockInsufficient from confirm stays a refusal (only complete waits)", async () => {
-    for (const answer of [waitAnswer, refusal(409, "stockInsufficient", "stockInsufficient: DRAWER THB 10")]) {
-      const s = serverFor({ confirm: [answer] });
+  it("S6 stockInsufficient from create or confirm stays a refusal (create wrote nothing; only complete waits)", async () => {
+    for (const flow of [{ create: [shortAnswer()] }, { confirm: [shortAnswer()] }] as Flow[]) {
+      const s = serverFor(flow);
       const { store } = await ready(s, "STAFF_DESK");
       await expect(store.submit()).resolves.toBe("refused");
       expect(store.stockWait()).toBeUndefined();
@@ -346,7 +317,22 @@ describe("§5.4a complete waits for a NEGATIVE_STOCK approval", () => {
     }
   });
 
-  it("S7 the PENDING_APPROVAL wait reads the real view shape ({ transaction }) and goes on to complete once CONFIRMED", async () => {
+  it("S7 approvalRequired or staleVersion from complete is a refusal: no wait, no resend, no transaction read", async () => {
+    for (const answer of [
+      refusal(409, "approvalRequired", "approvalRequired: 167d8c93-7648-405c-b015-8fc53f176e4a"),
+      refusal(409, "staleVersion", "staleVersion: a CANCELLED exchange is not completed"),
+    ]) {
+      const s = serverFor({ complete: [answer, txAnswer("tx-1", "COMPLETED")] });
+      const { store } = await ready(s, "STAFF_DESK");
+      await expect(store.submit()).resolves.toBe("refused");
+      expect(store.stockWait()).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(s.callsTo("POST", "/api/transactions/tx-1/complete"), "no resend").toHaveLength(1);
+      expect(s.callsTo("GET", "/api/v3/views/transaction"), "no transaction read").toHaveLength(0);
+    }
+  });
+
+  it("P1 the PENDING_APPROVAL wait reads the real view shape ({ transaction }) and goes on to complete once CONFIRMED (unchanged)", async () => {
     const s = serverFor({ confirm: [txAnswer("tx-1", "PENDING_APPROVAL", { approvalRequestId: "ar-1" })] });
     let reads = 0;
     s.on("GET", "/api/v3/views/transaction", () => (++reads === 1 ? txView("PENDING_APPROVAL") : txView("CONFIRMED")));

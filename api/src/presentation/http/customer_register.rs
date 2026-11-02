@@ -9,9 +9,10 @@
 //! - `400 validationFailed` naming `lang`, `displayName` or `marketing` (Identity is not asked);
 //! - `400 nameTooLong` (`field: displayName`): `displayName` over 100 characters after trim (#4397; Identity is not
 //!   asked);
-//! - Identity's own refusals (`401 invalidCredentials`, `503 identityUnavailable`, also for a token the verifier
-//!   refuses);
-//! - `409 alreadyRegistered`, `409 consentTextMissing` (`field: lang`), `409 phoneInUse`.
+//! - Identity's own refusals (`401 invalidCredentials`, `422 weakPassword`, `422 invalidPhone`, `429 tooManyAttempts`,
+//!   `503 identityUnavailable`, also for a token the verifier refuses);
+//! - `409 alreadyRegistered` (also when the phone already has a login), `409 consentTextMissing` (`field: lang`),
+//!   `409 phoneInUse`.
 //!
 //! The answer never echoes the identifier, the password, a token or the phone (K8, K10).
 

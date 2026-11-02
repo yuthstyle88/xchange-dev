@@ -10,6 +10,7 @@ export function makeCashLimitsData(o: Partial<CashLimitsData> = {}): CashLimitsD
     branch: 'branch',
     countDifferenceLimitThb: null,
     updatedBy: null,
+    updatedByName: null,
     updatedAt: null,
     ...o,
   };
