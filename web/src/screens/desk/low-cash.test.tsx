@@ -56,7 +56,8 @@ async function load<T>(mods: Record<string, () => Promise<T>>, key: string): Pro
 }
 
 // The exact words of §5.4c.
-const TITLE_TH = 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ';
+// #6013: restated to the OD wording the owner approved ("ok ข้อความ OD ใช้ได้", #564).
+const TITLE_TH = 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการเบิก OD จากตู้เซฟ';
 const TITLE_EN = 'The drawer is running low. Ask the manager to move cash from the safe';
 const CURRENCIES_TH = (c: string) => `สกุลที่เหลือน้อย: ${c}`;
 const CURRENCIES_EN = (c: string) => `Low on: ${c}`;
