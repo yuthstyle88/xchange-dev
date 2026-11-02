@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/api/generated/cash';
 import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
+import type { MyShift } from '../../../shared/api/generated/my_shift';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
@@ -109,6 +110,19 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   };
 
   const hasOpenShift = () => Boolean(props.ctx.floor?.myShift?.id);
+  const teller = () => !can(props.ctx.me, 'CashManage');
+
+  const loadIncoming = async () => {
+    try {
+      const api = new ApiClient();
+      const res = await api.view<MyShift | null>('my_shift');
+      const shiftId = res.data?.id;
+      const incoming = res.data?.incomingTransfers ?? [];
+      setTransfers(shiftId ? incoming.filter((r) => r.toShiftId === shiftId) : []);
+    } catch (e: unknown) {
+      setError(wordedError(e));
+    }
+  };
 
   const loadTransfers = async () => {
     try {
@@ -152,9 +166,13 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   };
 
   onMount(() => {
-    void loadTransfers();
     void loadDenominations();
-    void loadTransferBranches();
+    if (teller()) {
+      void loadIncoming();
+    } else {
+      void loadTransfers();
+      void loadTransferBranches();
+    }
   });
 
   const isCreateSaveDisabled = () => {
@@ -389,7 +407,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setError(null);
       setNotice(t('saved'));
       await props.ctx.refresh();
-      await loadTransfers();
+      if (teller()) {
+        await loadIncoming();
+      } else {
+        await loadTransfers();
+      }
     } catch (err: unknown) {
       setNotice(null);
       const fe = fieldError(err, labels);
@@ -444,14 +466,16 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   return (
     <div class="xc-transfers-card">
       <div class="xc-transfers-header">
-        <h2 class="xc-transfers-title">{t('title')}</h2>
-        <button
-          type="button"
-          data-testid="transfer-new"
-          onClick={handleOpenCreate}
-        >
-          {t('newTransfer')}
-        </button>
+        <h2 class="xc-transfers-title">{t(teller() ? 'tellerTitle' : 'title')}</h2>
+        <Show when={!teller()}>
+          <button
+            type="button"
+            data-testid="transfer-new"
+            onClick={handleOpenCreate}
+          >
+            {t('newTransfer')}
+          </button>
+        </Show>
       </div>
 
       <Show when={notice()}>
@@ -649,7 +673,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       <div class="xc-transfers-list">
         <Show
           when={transfers().length > 0}
-          fallback={<p class="xc-transfers-empty">{t('empty')}</p>}
+          fallback={<p class="xc-transfers-empty">{t(teller() ? 'tellerEmpty' : 'empty')}</p>}
         >
           <table class="xc-transfers-table">
             <thead>
@@ -665,10 +689,13 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               <For each={transfers()}>
                 {(row) => {
                   const canDispatch = () =>
-                    row.status === 'APPROVED' && can(props.ctx.me, 'CashManage');
+                    !teller() &&
+                    row.status === 'APPROVED' &&
+                    can(props.ctx.me, 'CashManage');
 
                   const canReceive = () => {
                     if (row.status !== 'DISPATCHED') return false;
+                    if (teller()) return true;
                     if (!can(props.ctx.me, 'CashManage')) return false;
                     return (
                       row.toBranchId === props.ctx.me.branchId ||
@@ -677,6 +704,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                   };
 
                   const canReconcile = () =>
+                    !teller() &&
                     row.status === 'RECEIVED' &&
                     can(props.ctx.me, 'FinanceReconcile');
 
