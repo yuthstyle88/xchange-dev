@@ -17,6 +17,8 @@
 //   - `button[data-action="save"]`; pressing it again after an unknown outcome is the retry (same key, same body);
 //   - the currency rows come from the register the cash screen reads (`admin_cash.currencies`, #1372 §7 [proposed]),
 //     plus any currency the current version names.
+//   Restated by claude/01TxaRJG for #6010 (ruling on #564 issuecomment-6580564909): the rows now come from the
+//   branch's `admin_cash.stock[].code`; the fixtures send stock rows matching `currencies`, so every case here keeps its meaning.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -25,6 +27,7 @@ import {
   makeCashTransferPolicyData,
   makeMe,
   type CashTransferPolicyData,
+  makeAdminCashStockRow,
 } from '../../../shared/testing/fixtures';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { setLang } from '../../../shared/i18n';
@@ -132,7 +135,7 @@ class Server {
         case '/api/v3/views/admin_cash':
           return view({
             openShifts: [],
-            stock: [],
+            stock: ['THB', 'USD', 'EUR'].map((code) => makeAdminCashStockRow({ code })), // #6010: rows come from the branch's stock
             stats: null,
             reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
             currencies: ['THB', 'USD', 'EUR'],

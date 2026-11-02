@@ -7,6 +7,7 @@ import { th } from '../../../shared/i18n/th';
 import {
   makeAdminCashData,
   makeCashTransferPolicyData,
+  makeAdminCashStockRow,
 } from '../../../shared/testing/fixtures';
 
 const SAMPLE_POLICY = makeCashTransferPolicyData({
@@ -20,7 +21,7 @@ const SAMPLE_POLICY = makeCashTransferPolicyData({
 
 const SAMPLE_CASH = makeAdminCashData({
   openShifts: [],
-  stock: [],
+  stock: ['THB', 'USD', 'EUR'].map((code) => makeAdminCashStockRow({ code })), // #6010: rows come from the branch's stock
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
   currencies: ['THB', 'USD', 'EUR'],
@@ -113,7 +114,7 @@ describe('CashPolicy branch register read and error (#2669)', () => {
           if (b === 'MAIN') {
             return json(500, { error: { code: 'serverError', message: 'Failed MAIN' } });
           }
-          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['B02_CUR'] } });
+          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['B02_CUR'], stock: [makeAdminCashStockRow({ code: 'B02_CUR' })] } });
         },
       },
     });
@@ -141,7 +142,7 @@ describe('CashPolicy branch register read and error (#2669)', () => {
           if (b === 'MAIN') {
             return mainPromise;
           }
-          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZB'] } });
+          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZB'], stock: [makeAdminCashStockRow({ code: 'ZZB' })] } });
         },
       },
     });
@@ -153,7 +154,7 @@ describe('CashPolicy branch register read and error (#2669)', () => {
     await vi.waitFor(() => expect(host.querySelector('input[data-currency="ZZB"]')).not.toBeNull());
 
     // Now MAIN resolves late with ZZA
-    resolveMain(json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZA'] } }));
+    resolveMain(json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZA'], stock: [makeAdminCashStockRow({ code: 'ZZA' })] } }));
     await new Promise((r) => setTimeout(r, 20));
 
     expect(host.querySelector('input[data-currency="ZZB"]'), 'ZZB stays shown').not.toBeNull();
@@ -174,7 +175,7 @@ describe('CashPolicy branch register read and error (#2669)', () => {
           if (b === 'MAIN') {
             return mainPromise;
           }
-          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZB'] } });
+          return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['ZZB'], stock: [makeAdminCashStockRow({ code: 'ZZB' })] } });
         },
       },
     });
@@ -199,7 +200,7 @@ describe('CashPolicy branch register read and error (#2669)', () => {
         admin_cash: async (params) => {
           const b = params?.get('branch');
           if (b === 'MAIN') {
-            return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['THB'] } });
+            return json(200, { version: 1, changed: true, data: { ...SAMPLE_CASH, currencies: ['THB'], stock: [makeAdminCashStockRow({ code: 'THB' })] } });
           }
           return json(500, { error: { code: 'serverError', message: 'B02 failed' } });
         },
