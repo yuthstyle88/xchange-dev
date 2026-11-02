@@ -92,17 +92,17 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
 
   return (
     <Show when={props.data()}>
-      <div class="drawer-low-levels" data-section="drawer-low-levels">
+      <div data-section="drawer-low-levels">
         <Card>
           <CardHead title={t('levelsTitle')} />
           <CardBody>
-            <p class="levels-help">{t('levelsHelp')}</p>
+            <p>{t('levelsHelp')}</p>
             <form onSubmit={save}>
               <Show
                 when={rows().length > 0}
-                fallback={<p class="levels-empty">{t('levelsEmpty')}</p>}
+                fallback={<p>{t('levelsEmpty')}</p>}
               >
-                <table class="levels-table">
+                <table>
                   <thead>
                     <tr>
                       <th>{t('levelCurrency')}</th>
@@ -178,7 +178,7 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                 </table>
               </Show>
 
-              <div class="cash-limits-actions drawer-low-levels-actions">
+              <div class="cash-limits-actions">
                 <button
                   type="button"
                   data-action="add-level"

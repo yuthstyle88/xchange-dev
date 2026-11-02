@@ -8,6 +8,7 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { Toast } from '../parts/toast';
+import { CashLimits } from './CashLimits';
 import { DrawerLowLevels } from './DrawerLowLevels';
 import * as texts from './i18n';
 
@@ -71,7 +72,7 @@ function json(status: number, body: unknown): Response {
 let server: Server;
 let dispose: (() => void) | undefined;
 let root: HTMLElement;
-let onSavedCalls: CashLimitsData[] = [];
+let onSavedCalls: Array<CashLimitsData> = [];
 
 const realSetTimeout = globalThis.setTimeout;
 async function settle(): Promise<void> {
@@ -391,5 +392,18 @@ describe('DrawerLowLevels (§5.4d, #5980)', () => {
   it('edge case 2: data is null: no levels form', async () => {
     const { root } = await mount({ data: null });
     expect(screen(root)).toBeNull();
+  });
+
+  it('wiring: the #cash-limits screen renders the levels form from its own cash_limits read', async () => {
+    const data = makeCashLimitsData({ branch: 'MAIN', drawerLowLevels: [makeDrawerLowLevel({ currency: 'USD', lowLevel: '100.00' })] });
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).includes('/api/v3/views/cash_limits')
+      ? json(200, { version: 1, changed: true, data }) : json(404, { error: { code: 'notFound', message: 'nf' } })));
+    const host = document.body.appendChild(document.createElement('div'));
+    const [branch] = createSignal('MAIN');
+    const [period] = createSignal({ from: '2026-11-03', to: '2026-11-03' });
+    const stop = render(() => <CashLimits branch={branch} period={period} shown={() => true} />, host);
+    await vi.waitFor(() => expect(host.querySelector('[data-section="drawer-low-levels"] [data-field="currency"]')?.textContent).toBe('USD'));
+    stop();
+    host.remove();
   });
 });
