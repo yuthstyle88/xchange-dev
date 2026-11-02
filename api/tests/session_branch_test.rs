@@ -133,10 +133,13 @@ async fn a_sign_in_with_several_branches_starts_on_the_first_by_code() {
         session_branch(&desk.pool, &token).await.as_deref(),
         Some("B3")
     );
+    // Restated 2026-11-02 by claude/b091f5e0, citing `org-roles-branches.md` §14.2 "Sign-in stores its pick" (lane
+    // controller claude/608dff's ruling B): with no last choice, the sign-in stores the branch it picked. It used to
+    // assert `None` ("sign-in is not a choice").
     assert_eq!(
-        last_branch(&desk.pool, &user).await,
-        None,
-        "sign-in is not a choice"
+        last_branch(&desk.pool, &user).await.as_deref(),
+        Some("B3"),
+        "§14.2: a sign-in with no last choice stores its pick"
     );
     let data = me(&reader, &token).await;
     assert_eq!(data["branch"], json!("B3"));
@@ -218,7 +221,9 @@ async fn login_takes_no_branch() {
         session_branch(&desk.pool, &token).await.as_deref(),
         Some("B3")
     );
-    assert_eq!(last_branch(&desk.pool, &user).await, None);
+    // Restated 2026-11-02 by claude/b091f5e0 (§14.2 "Sign-in stores its pick"): the sign-in stored B3, and nothing here
+    // changes it.
+    assert_eq!(last_branch(&desk.pool, &user).await.as_deref(), Some("B3"));
     drop(reader);
     desk.drop_schema().await;
 }
@@ -306,7 +311,12 @@ async fn switching_outside_the_grants_is_refused_and_writes_nothing() {
             Some("B3"),
             "{branch}"
         );
-        assert_eq!(last_branch(&desk.pool, &user).await, None, "{branch}");
+        // Restated 2026-11-02 by claude/b091f5e0 (§14.2): the sign-in stored B3; the refused switch writes nothing.
+        assert_eq!(
+            last_branch(&desk.pool, &user).await.as_deref(),
+            Some("B3"),
+            "{branch}"
+        );
     }
     assert_eq!(me(&reader, &token).await["branch"], json!("B3"));
     drop(reader);
@@ -340,7 +350,9 @@ async fn an_organisation_wide_user_cannot_switch_into_another_organisation() {
         session_branch(&desk.pool, &token).await.as_deref(),
         Some("B3")
     );
-    assert_eq!(last_branch(&desk.pool, &user).await, None);
+    // Restated 2026-11-02 by claude/b091f5e0 (§14.2 "Sign-in stores its pick"): the sign-in stored B3, and nothing here
+    // changes it.
+    assert_eq!(last_branch(&desk.pool, &user).await.as_deref(), Some("B3"));
     assert_eq!(
         me(&reader, &token).await["branches"],
         all_three(),
@@ -394,7 +406,9 @@ async fn a_malformed_or_cross_site_switch_is_refused_and_writes_nothing() {
         session_branch(&desk.pool, &token).await.as_deref(),
         Some("B3")
     );
-    assert_eq!(last_branch(&desk.pool, &user).await, None);
+    // Restated 2026-11-02 by claude/b091f5e0 (§14.2 "Sign-in stores its pick"): the sign-in stored B3, and nothing here
+    // changes it.
+    assert_eq!(last_branch(&desk.pool, &user).await.as_deref(), Some("B3"));
     drop(reader);
     desk.drop_schema().await;
 }
