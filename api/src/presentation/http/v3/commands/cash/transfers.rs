@@ -3,13 +3,10 @@
 //! source, receive at the destination, which `receive_in` checks and refuses with `Forbidden` (`outOfScope`) otherwise
 //! (G9 ruling).
 
-use std::sync::Arc;
-
 use actix_web::http::Method;
 use chrono::Utc;
 use sqlx::PgPool;
 use uuid::Uuid;
-use xc_approval::application::approval_service::ApprovalService;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_cash::application::transfer::TransferFlow;
@@ -21,16 +18,12 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, IntBound};
 
 use super::{caller_in, from_cash_error, validation_failed, validation_failed_path, whole_number};
-use crate::application::workflows::exchange::negative_stock_gate::{
-    NegativeStockGate, NegativeStockObject,
-};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::cash::{
     CashRecordInput, CashRecordOutput, TransferCreateInput, TransferReceiveInput,
     TransferReconcileInput,
 };
-use crate::presentation::http::v3::command::{CommandAction, server_error};
-use crate::presentation::http::v3::commands::make_approval_service;
+use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
@@ -176,17 +169,12 @@ impl CommandAction for TransferSubmit {
 }
 
 pub struct TransferDispatch {
-    pool: PgPool,
-    approvals: Arc<ApprovalService>,
     flow: TransferFlow,
 }
 
 impl TransferDispatch {
     pub fn new(pool: PgPool) -> Self {
-        let approvals = make_approval_service(pool.clone());
         Self {
-            pool: pool.clone(),
-            approvals,
             flow: TransferFlow::pg(pool),
         }
     }
@@ -206,37 +194,25 @@ impl CommandAction for TransferDispatch {
         branch: &BranchId,
         who: &Actor,
         input: Self::Input,
-        key: IdempotencyKey,
+        _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let now = Utc::now();
         let user = caller_in(tx, who, now).await?;
         let id = Uuid::parse_str(&input.id)
             .map(|u| u.to_string())
             .unwrap_or(input.id);
-        let object = NegativeStockObject::Transfer(id.clone());
-        let approved = NegativeStockGate::approved_for_in(tx, &object)
-            .await
-            .map_err(|_| server_error())?;
         let t = match self
             .flow
-            .dispatch_approved_in(tx, branch, &user, &id, now, approved)
+            .dispatch_approved_in(tx, branch, &user, &id, now, None)
             .await
         {
             Ok(t) => t,
-            Err(e) if stock_insufficient(&e).is_some() => {
-                let refusal = stock_insufficient(&e).unwrap_or_default();
-                return Err(stock_refusal_answer(
-                    &self.pool,
-                    &self.approvals,
-                    &object,
-                    branch,
-                    refusal,
-                    &user,
-                    key.as_str(),
-                )
-                .await);
+            Err(e) => {
+                if let Some(refusal) = stock_insufficient(&e) {
+                    return Err(stock_refusal_answer(refusal));
+                }
+                return Err(from_cash_error(e));
             }
-            Err(e) => return Err(from_cash_error(e)),
         };
         Ok(answer(t))
     }

@@ -11,6 +11,7 @@ export function makeMyShift(o: Partial<MyShift> = {}): MyShift {
     status: 'status',
     openedAt: '2026-01-01T00:00:00Z',
     balances: [],
+    incomingTransfers: [],
     ...o,
   };
 }

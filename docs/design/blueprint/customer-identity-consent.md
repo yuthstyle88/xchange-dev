@@ -246,6 +246,15 @@ The route doc (`customer_register.rs:1-15`) lists the new refusals. The doc of `
 | S6 | unknown e-mail | `401 invalidCredentials` (as today) | nothing | login only |
 | S7 | register answers `201`, the login after it `503` | `503 identityUnavailable`; the retry `200` | nothing, then as S1 | register once in total |
 | S8 | phone typed `081-234-5678` | as S1 | as S1 | register sends `+66812345678` |
+| S9 | the same phone, a 4th create-login attempt within 15 minutes | `429 tooManyAttempts` | nothing | login only; **no** register |
+| S10 | one address, an 11th create-login attempt within 15 minutes (any phones) | `429 tooManyAttempts` | nothing | login only; **no** register |
+
+**Throttle (added 2026-11-02, the lane controller claude/608dff's requirement on #5953's review).** The create-login step (§4.6 step 4) is a public route that creates Identity accounts, so it is limited per phone and per address:
+- **When it counts.** Right before `IdentityClient::register`, after steps 1–3. A known login that signs in (step 1), an e-mail (step 2) or a missing text (step 3) never reaches it and never counts.
+- **The counter.** The existing `PgAttemptCounter` on `auth_attempts` (`api/crates/xc-auth/src/infrastructure/attempts.rs`), with the same 15-minute windows (`bootstrap/mod.rs:371`) and the same purge, so there is no new table. Two keys are counted on each attempt, both stored as SHA-256 hex so no phone or address is stored in clear: `signup-login:phone:<sha256(E.164)>` and `signup-login:addr:<sha256(client address)>`. The client address is `client_address(&req)`, as the route already takes it.
+- **The limits.** `[proposed]` **3 per phone** and **10 per address** per window, as constants beside the route. The phone limit stops one number being hammered; the address limit stops one machine creating many logins. Past either: `429 tooManyAttempts` (`IdentityError::TooManyAttempts`'s refusal, `identity_client.rs:89`), nothing written, and Identity not asked to register.
+- **Data migration.** None (`auth_attempts` exists).
+
 
 #### 4.6.3 Data migration
 

@@ -1,18 +1,10 @@
-//! What a command answers when its posting refuses `stockInsufficient` (design `ledger-inventory.md` §5.1):
-//! the `NEGATIVE_STOCK` request is opened (or re-read) and the caller is told to wait for it. One place for
-//! the exchange completion (#3405), the reversal post and the transfer dispatch (XC-BE-GAPS-A rows 2, 3).
+//! What a command answers when its posting refuses `stockInsufficient` (design `ledger-inventory.md` §5.1.2):
+//! `409 stockInsufficient` naming each short place; no approval request is opened.
 
 use actix_web::http::StatusCode;
 use pos_error::AppError;
-use sqlx::PgPool;
-use xc_approval::application::approval_service::ApprovalService;
-use xc_auth::domain::access::Actor;
-use xc_kernel::ids::BranchId;
+use xc_cash::domain::shortfall::{ShortPlace, StockShortfall};
 
-use crate::application::workflows::exchange::negative_stock_gate::{
-    NegativeStockGate, NegativeStockObject, NegativeStockOutcome,
-};
-use crate::presentation::http::v3::command::server_error;
 use crate::presentation::http::v3::error::V3Error;
 
 /// The refusal's message when `e` is the posting port's `stockInsufficient`.
@@ -23,37 +15,28 @@ pub fn stock_insufficient(e: &AppError) -> Option<&str> {
     }
 }
 
-/// Opens or re-reads the `NEGATIVE_STOCK` request for `object` and answers `409 approvalRequired: <id>`,
-/// or `409 stockInsufficient` when the request was rejected.
-pub async fn stock_refusal_answer(
-    pool: &PgPool,
-    approvals: &ApprovalService,
-    object: &NegativeStockObject,
-    branch: &BranchId,
-    refusal: &str,
-    who: &Actor,
-    key: &str,
-) -> V3Error {
-    let outcome = match NegativeStockGate::open_after_refusal(
-        pool, approvals, object, branch, refusal, who, key,
+/// Answers `409 stockInsufficient` naming each short place (`ledger-inventory.md` §5.1.2).
+pub fn stock_refusal_answer(refusal: &str) -> V3Error {
+    let items: Vec<String> = StockShortfall::from_refusal(refusal)
+        .lines
+        .into_iter()
+        .map(|l| {
+            let place = match l.place {
+                ShortPlace::Drawer => "ลิ้นชัก",
+                ShortPlace::Safe => "ตู้เซฟ",
+                ShortPlace::Position => "สต็อก",
+            };
+            format!(
+                "{} {place} ขาด {}",
+                l.currency.as_str(),
+                l.short_by.normalize()
+            )
+        })
+        .collect();
+    V3Error::new(
+        "stockInsufficient",
+        None,
+        format!("ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: {}", items.join(", ")),
+        StatusCode::CONFLICT,
     )
-    .await
-    {
-        Ok(outcome) => outcome,
-        Err(_) => return server_error(),
-    };
-    match outcome {
-        NegativeStockOutcome::ApprovalRequired(req_id) => V3Error::new(
-            "approvalRequired",
-            None,
-            format!("approvalRequired: {req_id}"),
-            StatusCode::CONFLICT,
-        ),
-        NegativeStockOutcome::Rejected(req_id) => V3Error::new(
-            "stockInsufficient",
-            None,
-            format!("stockInsufficient: negative stock approval request {req_id} was rejected"),
-            StatusCode::CONFLICT,
-        ),
-    }
 }

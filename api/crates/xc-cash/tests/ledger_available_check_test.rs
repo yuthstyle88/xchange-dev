@@ -523,17 +523,23 @@ async fn an_approved_negative_stock_never_reaches_into_another_quotes_hold() {
     assert_eq!(lot.usd_position().await, d("100"));
 }
 
+/// Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// an APPROVED `NEGATIVE_STOCK` request no longer lets a sale go below zero. It used to (N-1).
 #[tokio::test]
-async fn with_no_hold_an_approved_negative_stock_still_goes_below_zero() {
+async fn with_no_hold_an_approved_negative_stock_no_longer_goes_below_zero() {
     let lot = Lot::start().await;
     let (line, tx_id) = lot.sell_line("110").await;
     let approved = lot.approved_negative_stock(&tx_id).await;
 
-    lot.post(&lot.sell_legs(line, &tx_id, "110"), Some(approved))
-        .await
-        .unwrap_or_else(|e| panic!("N-1 unchanged when nothing is held: {e}"));
+    let got = lot
+        .post(&lot.sell_legs(line, &tx_id, "110"), Some(approved))
+        .await;
 
-    assert_eq!(lot.usd_position().await, d("-10"));
+    assert!(
+        is_stock_insufficient(&got),
+        "§5.1.2: no approval allows it — {got:?}"
+    );
+    assert_eq!(lot.usd_position().await, d("100"), "nothing moved");
 }
 
 #[tokio::test]

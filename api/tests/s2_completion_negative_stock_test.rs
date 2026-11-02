@@ -29,6 +29,13 @@
 //! The exchange is a CONFIRMED LIVE cash SELL of USD 2,000 on MAIN's open shift, whose drawer opens with USD 1,000.00
 //! (`tx5_common::Counter`). Everything after the setup goes over the wire, through the real `LedgerCashPostings`.
 //!
+//! **Restated 2026-11-02 by claude/b091f5e0** (ticket author of the no-negative ticket), citing
+//! `ledger-inventory.md` §5.1.2 (owner: *"ต้องเติมเงินก่อน ห้ามติดลบ"*): no approval lets cash go below zero. A short
+//! completion answers `409 stockInsufficient` naming the shortfall and opens **no** request; after a top-up the same
+//! key completes, and the drawer never goes below zero. §5.1.1 (a REJECTED request cancels a CONFIRMED exchange) is kept
+//! for old rows only, so its two tests seed the request through `ApprovalService::request`. The approve-to-negative
+//! decisions listed above are superseded by the tests as they now read.
+//!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here skips.
 
 mod common;
@@ -51,6 +58,7 @@ use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, Transac
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xchange::bootstrap::{self, AppState};
+use xchange::presentation::http::v3::commands::make_approval_service;
 use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::test_callers;
 
@@ -248,95 +256,96 @@ async fn assert_not_completed(c: &Counter, t: &ExchangeTransaction) {
 
 // ------------------------------------------------------------ B1: a shortfall opens one PENDING request
 
+/// §5.1.2: the answer a short completion gets.
+const SHORT: &str = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: USD ลิ้นชัก ขาด 1000, USD สต็อก ขาด 1000";
+
 #[actix_web::test]
-async fn s2_a_sell_beyond_the_drawer_opens_one_pending_request_and_answers_approval_required() {
+async fn s2_a_sell_beyond_the_drawer_is_refused_naming_the_shortfall_and_opens_no_request() {
     let c = Counter::start().await;
     let t = short_sell(&c).await;
 
     let a = complete(&c, &t, &unique("key")).await;
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "§5.1: the desk is told to wait for approval: {}",
+        (StatusCode::CONFLICT, "stockInsufficient"),
+        "§5.1.2: no approval, top up first: {}",
         a.text
     );
-    let rows = requests(&c, &t).await;
     assert_eq!(
-        rows.len(),
-        1,
-        "one NEGATIVE_STOCK request names the exchange: {rows:?}"
+        a.message(),
+        SHORT,
+        "§5.1.2: the message names the shortfall"
     );
-    assert_eq!(rows[0].1, "PENDING");
     assert_eq!(
-        rows[0].2.as_deref(),
-        Some("MAIN"),
-        "the request is the teller's branch's, so MAIN's manager may decide it"
+        all_negative_stock(&c).await,
+        0,
+        "§5.1.2: no request is opened"
     );
     assert_not_completed(&c, &t).await;
     c.finish().await;
 }
 
-// ------------------------------------------------------------ B2: no second request while one is pending
+// ------------------------------------------------------------ B2: the same refusal, whatever the key
 
 #[actix_web::test]
-async fn s2_the_same_key_again_opens_no_second_request() {
+async fn s2_the_same_key_again_is_refused_the_same_and_opens_no_request() {
+    let c = Counter::start().await;
+    let t = short_sell(&c).await;
+    let key = unique("key");
+
+    for _ in 0..2 {
+        let a = complete(&c, &t, &key).await;
+        assert_eq!(
+            (a.status, a.code()),
+            (StatusCode::CONFLICT, "stockInsufficient"),
+            "{}",
+            a.text
+        );
+        assert_eq!(a.message(), SHORT);
+    }
+    assert_eq!(all_negative_stock(&c).await, 0, "no request");
+    assert_not_completed(&c, &t).await;
+    c.finish().await;
+}
+
+#[actix_web::test]
+async fn s2_a_new_key_is_refused_the_same_and_opens_no_request() {
+    let c = Counter::start().await;
+    let t = short_sell(&c).await;
+
+    for _ in 0..2 {
+        let a = complete(&c, &t, &unique("key")).await;
+        assert_eq!(a.code(), "stockInsufficient", "{}", a.text);
+    }
+    assert_eq!(all_negative_stock(&c).await, 0, "no request");
+    assert_not_completed(&c, &t).await;
+    c.finish().await;
+}
+
+// ------------------------------------------------------------ B3: after a top-up the same key completes
+
+#[actix_web::test]
+async fn s2_after_a_top_up_the_same_key_completes_and_the_drawer_never_goes_below_zero() {
     let c = Counter::start().await;
     let t = short_sell(&c).await;
     let key = unique("key");
 
     let first = complete(&c, &t, &key).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let again = complete(&c, &t, &key).await;
-    assert_eq!(
-        (again.status, again.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "{}",
-        again.text
-    );
-    assert_eq!(requests(&c, &t).await.len(), 1, "still one request");
-    assert_not_completed(&c, &t).await;
-    c.finish().await;
-}
+    assert_eq!(first.code(), "stockInsufficient", "{}", first.text);
+    lg4_fund(
+        &c.desk.db.pool,
+        xc_cash::domain::posting::CashPlace::Bank,
+        xc_cash::domain::posting::CashPlace::Drawer(c.shift.clone()),
+        "USD",
+        "1000.00",
+    )
+    .await;
 
-#[actix_web::test]
-async fn s2_a_new_key_while_a_request_is_pending_opens_no_second_request() {
-    let c = Counter::start().await;
-    let t = short_sell(&c).await;
-
-    let first = complete(&c, &t, &unique("key")).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let other = complete(&c, &t, &unique("key")).await;
-    assert_eq!(
-        (other.status, other.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "#3405 §7: AlreadyPending answers the same as the first: {}",
-        other.text
-    );
-    let rows = requests(&c, &t).await;
-    assert_eq!(rows.len(), 1, "still one request: {rows:?}");
-    assert_eq!(rows[0].1, "PENDING");
-    assert_not_completed(&c, &t).await;
-    c.finish().await;
-}
-
-// ------------------------------------------------------------ B3: APPROVED ⇒ the retry completes below zero
-
-#[actix_web::test]
-async fn s2_once_the_branch_manager_approves_the_retry_completes_and_the_drawer_goes_below_zero() {
-    let c = Counter::start().await;
-    let t = short_sell(&c).await;
-
-    let first = complete(&c, &t, &unique("key")).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let rows = requests(&c, &t).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&c, &rows[0].0, "APPROVED").await;
-
-    let retry = complete(&c, &t, &unique("key")).await;
+    let retry = complete(&c, &t, &key).await;
     assert_eq!(
         retry.status,
         StatusCode::OK,
-        "§5.1: the retry posts with allow_negative: {}",
+        "§5.1.2: the refusal released the key; after the top-up the same key completes: {}",
         retry.text
     );
     assert_eq!(retry.body["status"], "COMPLETED", "{}", retry.text);
@@ -345,15 +354,36 @@ async fn s2_once_the_branch_manager_approves_the_retry_completes_and_the_drawer_
     assert!(stored.document_ref.is_some(), "a number was issued");
     assert_eq!(
         expected(&c, "USD").await,
-        "-1000.00",
-        "§4.5: the drawer may go negative once approved (1,000.00 − 2,000.00)"
+        "0.00",
+        "§5.1.2: 1,000.00 + 1,000.00 − 2,000.00, never below zero"
     );
-    assert_eq!(
-        requests(&c, &t).await.len(),
-        1,
-        "the retry opened no other request"
-    );
+    assert_eq!(all_negative_stock(&c).await, 0, "no request");
     c.finish().await;
+}
+
+/// Seeds a PENDING `NEGATIVE_STOCK` request naming `t`, as an old row from before §5.1.2 (nothing opens one any more).
+async fn seed_old_request(c: &Counter, t: &ExchangeTransaction) -> String {
+    let approvals = make_approval_service(c.desk.db.pool.clone());
+    let teller = test_callers::staff(
+        TELLER,
+        test_callers::v2_staff_roles("FRONT").unwrap(),
+        BranchId::new("MAIN"),
+    );
+    let mut tx = c.desk.db.pool.begin().await.unwrap();
+    let req = approvals
+        .request(
+            &mut tx,
+            "NEGATIVE_STOCK",
+            &t.id.0.to_string(),
+            Some(&BranchId::new("MAIN")),
+            &json!({ "shortfall": [] }),
+            &teller,
+            &unique("old-request"),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("seed an old NEGATIVE_STOCK request: {}", e.code()));
+    tx.commit().await.unwrap();
+    req.id.as_str().to_owned()
 }
 
 // ------------------------------------------------------------ the owner's answer: after a rejection (§5.1.1)
@@ -374,11 +404,8 @@ async fn s2_after_a_rejection_the_exchange_is_cancelled_with_the_reason_and_the_
     let t = short_sell(&c).await;
     let key = unique("key");
 
-    let first = complete(&c, &t, &key).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let rows = requests(&c, &t).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&c, &rows[0].0, "REJECTED").await;
+    let old = seed_old_request(&c, &t).await;
+    decide(&c, &old, "REJECTED").await;
 
     let stored = c.desk.stored(t.id).await;
     assert_eq!(
@@ -432,8 +459,7 @@ async fn s2_the_cancel_after_a_rejection_leaves_one_audit_row_by_the_approver() 
     let c = Counter::start().await;
     let t = short_sell(&c).await;
 
-    let first = complete(&c, &t, &unique("key")).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
+    seed_old_request(&c, &t).await;
     let rows = requests(&c, &t).await;
     decide(&c, &rows[0].0, "REJECTED").await;
 

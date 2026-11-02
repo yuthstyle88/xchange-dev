@@ -780,40 +780,28 @@ async fn a_negative_ledger_expected_is_an_error_naming_the_currency_never_zero()
     env.fund_safe(&[(usd(), "4")]).await;
     let o = env.open(&[(usd(), "4")]).await;
 
-    let (line, sale) = seed_sell_line(&env.pool, &env.branch, &o.shift.id, "10", "330.00").await;
-    let approval = approved_negative_stock(&env.pool, &env.ledger, &env.branch, &sale).await;
-    let s = SourceRef {
-        source_type: SourceType::Exchange,
-        source_id: sale.clone(),
-        source_key: "complete".to_string(),
-    };
-    let mut tx = env.pool.begin().await.expect("begin");
-    env.ledger
-        .post_in(
-            &mut tx,
-            &[
-                req(
-                    drawer(&o.shift.id),
-                    CashPlace::Customer,
-                    usd(),
-                    "10",
-                    &s,
-                    Some(line),
-                ),
-                req(
-                    CashPlace::Customer,
-                    drawer(&o.shift.id),
-                    thb(),
-                    "330.00",
-                    &s,
-                    None,
-                ),
-            ],
-            Some(approval),
-        )
-        .await
-        .expect("post the approved short sale");
-    tx.commit().await.expect("commit");
+    // Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2: no posting through the port can take
+    // a drawer below zero any more, approved or not, so the negative balance this guard is for can only come from a
+    // defect. It is written here as one: a balanced raw posting of USD 10 from the drawer to the safe, bypassing
+    // `LedgerCashPostings`. The guard itself is unchanged and must still name USD.
+    sqlx::query(
+        "WITH d AS (SELECT id, organization_id, branch_id FROM cash_accounts \
+                    WHERE kind = 'DRAWER' AND shift_id = $1 AND currency = 'USD'), \
+              sf AS (SELECT a.id FROM cash_accounts a, d \
+                     WHERE a.kind = 'SAFE' AND a.currency = 'USD' AND a.branch_id = d.branch_id), \
+              p AS (INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, \
+                        source_key, status, posted_at, posted_by) \
+                    SELECT gen_random_uuid(), organization_id, branch_id, 'ADJUSTMENT', \
+                        'defect-' || gen_random_uuid()::text, 'defect', 'POSTED', now(), 'test' FROM d \
+                    RETURNING id) \
+         INSERT INTO ledger_entries (posting_id, account_id, currency, quantity_signed, valuation_thb) \
+         SELECT p.id, d.id, 'USD', -10, 0 FROM p, d \
+         UNION ALL SELECT p.id, sf.id, 'USD', 10, 0 FROM p, sf",
+    )
+    .bind(&o.shift.id)
+    .execute(&env.pool)
+    .await
+    .expect("write the defect: USD −6.00 in the drawer");
 
     assert_names_usd(
         "open_of_teller()",

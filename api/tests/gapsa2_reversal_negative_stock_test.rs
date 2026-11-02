@@ -27,6 +27,12 @@
 //! The reversal is requested and FINANCE-approved through RV-2's workflow, as `reversal_post_route_test.rs` does. The
 //! poster is MAIN's open shift's own teller (#2964), signed in as `own-teller`; the decider is MAIN's `MANAGER`.
 //!
+//! **Restated 2026-11-02 by claude/b091f5e0** (ticket author of the no-negative ticket), citing
+//! `ledger-inventory.md` §5.1.2 (owner: *"ต้องเติมเงินก่อน ห้ามติดลบ"*): no approval lets cash go below zero. A short
+//! post answers `409 stockInsufficient` naming the shortfall and opens **no** request; after a top-up the same key posts;
+//! an APPROVED request (an old row, seeded here through `ApprovalService::request`) no longer lets anything post. The
+//! approve-to-negative assertions above this note are superseded by the tests as they now read.
+//!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here skips.
 
 mod common;
@@ -62,9 +68,6 @@ use xc_exchange::domain::transaction::transaction::{ExchangeTransaction, Transac
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 use xchange::application::workflows::exchange::complete::{CompleteExchange, ExchangeEffects};
-use xchange::application::workflows::exchange::negative_stock_gate::{
-    NegativeStockGate, NegativeStockObject, NegativeStockOutcome,
-};
 use xchange::application::workflows::exchange::reversal_approval;
 use xchange::application::workflows::exchange::reversal_post::PostReversal;
 use xchange::application::workflows::exchange::reversal_request::{
@@ -345,6 +348,29 @@ impl Shop {
         tx.commit().await.unwrap();
     }
 
+    /// `q` USD from the bank into MAIN's open drawer (a TRANSFER posting): the top-up §5.1.2 asks for.
+    async fn top_up(&self, q: &str) {
+        let reqs = vec![PostingRequest {
+            from: CashPlace::Bank,
+            to: CashPlace::Drawer(self.c.shift.clone()),
+            currency: CurrencyCode::parse("USD").unwrap(),
+            quantity: ForeignAmount::from_decimal(d(q)),
+            source: SourceRef {
+                source_type: SourceType::Transfer,
+                source_id: next("gapsa2-in"),
+                source_key: "receive".to_owned(),
+            },
+            line: None,
+            reverses: None,
+        }];
+        let mut tx = self.pool().begin().await.unwrap();
+        LedgerCashPostings::new()
+            .post_in(&mut tx, &reqs, None)
+            .await
+            .unwrap_or_else(|e| panic!("top up the drawer: {e:?}"));
+        tx.commit().await.unwrap();
+    }
+
     /// MAIN's open drawer's balance of `currency`, read from the signed ledger sum (it may be below zero).
     async fn drawer(&self, currency: &str) -> Decimal {
         sqlx::query_scalar(
@@ -449,37 +475,40 @@ impl Shop {
         }
     }
 
-    /// Opens a `NEGATIVE_STOCK` request for `object` through the gate and has MAIN's branch manager approve it.
-    async fn approve_negative_stock(&self, object: &NegativeStockObject) -> String {
+    /// Seeds a `NEGATIVE_STOCK` request naming `object_id`, as an old row from before §5.1.2 (nothing opens one any
+    /// more), through `ApprovalService::request`; then, with `outcome`, MAIN's branch manager decides it.
+    async fn seed_negative_stock(&self, object_id: &str, outcome: Option<Outcome>) -> String {
         let approvals = make_approval_service(self.pool().clone());
-        let opened = NegativeStockGate::open_after_refusal(
-            self.pool(),
-            &approvals,
-            object,
-            &BranchId::new("MAIN"),
-            "stockInsufficient: the posting takes a drawer, a safe or a position below zero",
-            &poster_actor(),
-            &next("gapsa2-ns"),
-        )
-        .await
-        .unwrap_or_else(|e| panic!("open the NEGATIVE_STOCK request: {e:?}"));
-        let NegativeStockOutcome::ApprovalRequired(req) = opened else {
-            panic!("a fresh request is PENDING: {opened:?}");
-        };
         let mut tx = self.pool().begin().await.unwrap();
-        approvals
-            .decide(
+        let req = approvals
+            .request(
                 &mut tx,
-                &RequestId::new(req.as_str().to_owned()),
-                &branch_manager(),
-                Outcome::Approved,
-                "XC-BE-GAPS-A row 2 up-front test",
-                &next("gapsa2-ns-decide"),
+                "NEGATIVE_STOCK",
+                object_id,
+                Some(&BranchId::new("MAIN")),
+                &json!({ "shortfall": [] }),
+                &poster_actor(),
+                &next("gapsa2-ns"),
             )
             .await
-            .unwrap_or_else(|e| panic!("MAIN's branch manager approves: {}", e.code()));
+            .unwrap_or_else(|e| panic!("seed the NEGATIVE_STOCK request: {}", e.code()));
         tx.commit().await.unwrap();
-        req.as_str().to_owned()
+        if let Some(outcome) = outcome {
+            let mut tx = self.pool().begin().await.unwrap();
+            approvals
+                .decide(
+                    &mut tx,
+                    &req.id,
+                    &branch_manager(),
+                    outcome,
+                    "XC-BE-GAPS-A row 2 up-front test",
+                    &next("gapsa2-ns-decide"),
+                )
+                .await
+                .unwrap_or_else(|e| panic!("MAIN's branch manager decides: {}", e.code()));
+            tx.commit().await.unwrap();
+        }
+        req.id.as_str().to_owned()
     }
 }
 
@@ -547,106 +576,73 @@ async fn decide(s: &Shop, request_id: &str, outcome: &str) {
     );
 }
 
-// ------------------------------------------------------------ a shortfall opens one PENDING request
+// ------------------------------------------------------------ §5.1.2: a shortfall is refused, no request
+
+const SHORT: &str = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: USD ลิ้นชัก ขาด 100, USD สต็อก ขาด 100";
 
 #[actix_web::test]
-async fn gapsa2_a_post_beyond_the_drawer_opens_one_pending_request_naming_the_reversal() {
+async fn gapsa2_a_post_beyond_the_drawer_is_refused_naming_the_shortfall_and_opens_no_request() {
     let s = Shop::start().await;
     let (t, id) = s.short_reversal().await;
 
     let a = post_reversal(&s, id, &unique("key")).await;
     assert_eq!(
         (a.status, a.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "reversal.md:151 / §5.1: the desk is told to wait for approval: {}",
+        (StatusCode::CONFLICT, "stockInsufficient"),
+        "§5.1.2: no approval, top up first: {}",
         a.text
     );
-    let rows = s.requests_for(&id.0.to_string()).await;
     assert_eq!(
-        rows.len(),
-        1,
-        "one NEGATIVE_STOCK request names the reversal (the posting's source_id): {rows:?}"
-    );
-    assert_eq!(rows[0].1, "PENDING");
-    assert_eq!(
-        rows[0].2.as_deref(),
-        Some("MAIN"),
-        "the request is the poster's branch's, so MAIN's manager may decide it"
+        a.message(),
+        SHORT,
+        "§5.1.2: the message names the shortfall"
     );
     assert_eq!(
-        s.requests_for(&t.id.0.to_string()).await.len(),
+        s.all_negative_stock().await,
         0,
-        "no request names the original exchange: allows_negative would never match it"
+        "§5.1.2: no request is opened"
     );
-    assert_eq!(s.all_negative_stock().await, 1, "one request in all");
     s.assert_not_posted(&t, id).await;
     s.finish().await;
 }
 
-// ------------------------------------------------------------ no second request while one is pending
+#[actix_web::test]
+async fn gapsa2_the_same_key_again_is_refused_the_same_and_opens_no_request() {
+    let s = Shop::start().await;
+    let (t, id) = s.short_reversal().await;
+    let key = unique("key");
+
+    for _ in 0..2 {
+        let a = post_reversal(&s, id, &key).await;
+        assert_eq!(
+            (a.status, a.code()),
+            (StatusCode::CONFLICT, "stockInsufficient"),
+            "{}",
+            a.text
+        );
+    }
+    let other = post_reversal(&s, id, &unique("key")).await;
+    assert_eq!(other.code(), "stockInsufficient", "{}", other.text);
+    assert_eq!(s.all_negative_stock().await, 0, "no request in all");
+    s.assert_not_posted(&t, id).await;
+    s.finish().await;
+}
 
 #[actix_web::test]
-async fn gapsa2_the_same_key_again_opens_no_second_request() {
+async fn gapsa2_after_a_top_up_the_same_key_posts_and_the_drawer_stays_at_or_above_zero() {
     let s = Shop::start().await;
     let (t, id) = s.short_reversal().await;
     let key = unique("key");
 
     let first = post_reversal(&s, id, &key).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let again = post_reversal(&s, id, &key).await;
-    assert_eq!(
-        (again.status, again.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "{}",
-        again.text
-    );
-    let rows = s.requests_for(&id.0.to_string()).await;
-    assert_eq!(rows.len(), 1, "still one request: {rows:?}");
-    assert_eq!(rows[0].1, "PENDING");
-    s.assert_not_posted(&t, id).await;
-    s.finish().await;
-}
+    assert_eq!(first.code(), "stockInsufficient", "{}", first.text);
+    s.top_up("100").await;
 
-#[actix_web::test]
-async fn gapsa2_a_new_key_while_a_request_is_pending_opens_no_second_request() {
-    let s = Shop::start().await;
-    let (t, id) = s.short_reversal().await;
-
-    let first = post_reversal(&s, id, &unique("key")).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let other = post_reversal(&s, id, &unique("key")).await;
-    assert_eq!(
-        (other.status, other.code()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "AlreadyPending answers the same as the first: {}",
-        other.text
-    );
-    let rows = s.requests_for(&id.0.to_string()).await;
-    assert_eq!(rows.len(), 1, "still one request: {rows:?}");
-    assert_eq!(rows[0].1, "PENDING");
-    assert_eq!(s.all_negative_stock().await, 1, "one request in all");
-    s.assert_not_posted(&t, id).await;
-    s.finish().await;
-}
-
-// ------------------------------------------------------------ APPROVED ⇒ the retry posts below zero
-
-#[actix_web::test]
-async fn gapsa2_once_the_branch_manager_approves_the_retry_posts_and_the_drawer_goes_below_zero() {
-    let s = Shop::start().await;
-    let (t, id) = s.short_reversal().await;
-
-    let first = post_reversal(&s, id, &unique("key")).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let rows = s.requests_for(&id.0.to_string()).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&s, &rows[0].0, "APPROVED").await;
-
-    let retry = post_reversal(&s, id, &unique("key")).await;
+    let retry = post_reversal(&s, id, &key).await;
     assert_eq!(
         retry.status,
         StatusCode::OK,
-        "§5.1: the retry posts with allow_negative: {}",
+        "§5.1.2: the refusal released the key; after the top-up the same key posts: {}",
         retry.text
     );
     assert_eq!(retry.body["reversal"]["status"], "POSTED", "{}", retry.text);
@@ -655,49 +651,32 @@ async fn gapsa2_once_the_branch_manager_approves_the_retry_posts_and_the_drawer_
     assert_eq!(s.reversal_receipts(t.id).await, 1, "the reversal document");
     assert_eq!(
         s.drawer("USD").await,
-        d("-100"),
-        "the drawer goes below zero by the shortfall (0 − 100)"
+        d("0"),
+        "the drawer ends at zero, never below"
     );
-    assert_eq!(
-        s.requests_for(&id.0.to_string()).await.len(),
-        1,
-        "the retry opened no other request"
-    );
+    assert_eq!(s.all_negative_stock().await, 0, "no request in all");
     s.finish().await;
 }
 
-// ------------------------------------------------------------ after a rejection
-
+/// An old REJECTED request changes nothing for a reversal: the post still answers the §5.1.2 refusal.
 #[actix_web::test]
-async fn gapsa2_after_a_rejection_the_retry_is_stock_insufficient_noting_it_and_no_new_request() {
+async fn gapsa2_an_old_rejected_request_leaves_the_post_refused_and_opens_no_new_request() {
     let s = Shop::start().await;
     let (t, id) = s.short_reversal().await;
-    let key = unique("key");
+    s.seed_negative_stock(&id.0.to_string(), Some(Outcome::Rejected))
+        .await;
 
-    let first = post_reversal(&s, id, &key).await;
-    assert_eq!(first.code(), "approvalRequired", "{}", first.text);
-    let rows = s.requests_for(&id.0.to_string()).await;
-    assert_eq!(rows.len(), 1, "one request to decide: {rows:?}");
-    decide(&s, &rows[0].0, "REJECTED").await;
-
-    let after = post_reversal(&s, id, &key).await;
+    let after = post_reversal(&s, id, &unique("key")).await;
     assert_eq!(
         (after.status, after.code()),
         (StatusCode::CONFLICT, "stockInsufficient"),
-        "the owner (#564): plain stockInsufficient after a rejection: {}",
+        "{}",
         after.text
     );
-    assert!(
-        after.message().to_lowercase().contains("reject"),
-        "the answer notes the rejection: {:?}",
-        after.message()
-    );
+    assert_eq!(after.message(), SHORT);
     let rows = s.requests_for(&id.0.to_string()).await;
     assert_eq!(rows.len(), 1, "no new request: {rows:?}");
-    assert_eq!(
-        rows[0].1, "REJECTED",
-        "the rejected request is never reopened"
-    );
+    assert_eq!(rows[0].1, "REJECTED");
     s.assert_not_posted(&t, id).await;
     s.finish().await;
 }
@@ -725,38 +704,34 @@ async fn gapsa2_a_post_within_the_drawers_stock_opens_no_request() {
 
 // ------------------------------------------------------------ workflow level
 
-/// `PostReversal::run_in` looks up the APPROVED `NEGATIVE_STOCK` request for the reversal and passes it to the port.
+/// §5.1.2: even an APPROVED `NEGATIVE_STOCK` request for the reversal (an old row) no longer lets it post.
 #[actix_web::test]
-async fn gapsa2_run_in_posts_below_zero_with_an_approved_request_for_the_reversal() {
+async fn gapsa2_run_in_refuses_even_with_an_approved_request_for_the_reversal() {
     let s = Shop::start().await;
     let (t, id) = s.short_reversal().await;
-
-    let refused = s.run_in(id).await.expect_err("no approval yet");
-    assert!(
-        matches!(&refused, AppError::Domain(m) if m.starts_with("stockInsufficient")),
-        "with no approval the workflow still refuses stockInsufficient: {refused:?}"
-    );
-    s.approve_negative_stock(&NegativeStockObject::Reversal(id))
+    s.seed_negative_stock(&id.0.to_string(), Some(Outcome::Approved))
         .await;
 
-    s.run_in(id).await.unwrap_or_else(|e| {
-        panic!("an approved NEGATIVE_STOCK for the reversal lets it post: {e:?}")
-    });
-    assert_eq!(s.status(id).await, "POSTED");
-    assert_eq!(s.reversal_postings(id).await, 1);
-    assert_eq!(s.reversal_receipts(t.id).await, 1);
-    assert_eq!(s.drawer("USD").await, d("-100"));
+    let refused = s
+        .run_in(id)
+        .await
+        .expect_err("§5.1.2: no approval allows it");
+    assert!(
+        matches!(&refused, AppError::Domain(m) if m.starts_with("stockInsufficient")),
+        "{refused:?}"
+    );
+    s.assert_not_posted(&t, id).await;
+    assert_eq!(s.drawer("USD").await, d("0"), "the drawer did not move");
     s.finish().await;
 }
 
-/// Guard: an approval naming the original exchange is not the reversal's (`allows_negative` compares `object_id`
-/// with the posting's `source_id`, the reversal id).
+/// Guard: an approval naming the original exchange does not let the reversal post either.
 #[actix_web::test]
 async fn gapsa2_run_in_ignores_an_approval_naming_the_original_exchange() {
     let s = Shop::start().await;
     let (t, id) = s.short_reversal().await;
 
-    s.approve_negative_stock(&NegativeStockObject::Transaction(t.id))
+    s.seed_negative_stock(&t.id.0.to_string(), Some(Outcome::Approved))
         .await;
     let refused = s
         .run_in(id)
