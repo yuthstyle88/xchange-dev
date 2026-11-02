@@ -255,8 +255,18 @@ impl Visit {
     }
 }
 
-fn plus(a: (i64, i64, i64, i64, i64, i64), b: (i64, i64, i64, i64, i64, i64)) -> (i64, i64, i64, i64, i64, i64) {
-    (a.0 + b.0, a.1 + b.1, a.2 + b.2, a.3 + b.3, a.4 + b.4, a.5 + b.5)
+fn plus(
+    a: (i64, i64, i64, i64, i64, i64),
+    b: (i64, i64, i64, i64, i64, i64),
+) -> (i64, i64, i64, i64, i64, i64) {
+    (
+        a.0 + b.0,
+        a.1 + b.1,
+        a.2 + b.2,
+        a.3 + b.3,
+        a.4 + b.4,
+        a.5 + b.5,
+    )
 }
 
 // ---------------------------------------------------------------- S1–S8
@@ -271,7 +281,11 @@ async fn s1_an_unknown_phone_signs_up_with_one_login_and_one_customer() {
 
     let reply = v.sign_up(PHONE, "th").await;
     assert_eq!(reply.status, 200, "{}", reply.text);
-    assert!(reply.json()["customerId"].as_str().is_some(), "{}", reply.text);
+    assert!(
+        reply.json()["customerId"].as_str().is_some(),
+        "{}",
+        reply.text
+    );
     reply.session();
 
     assert_eq!(v.written().await, plus(before, (1, 1, 1, 1, 1, 0)));
@@ -281,7 +295,11 @@ async fn s1_an_unknown_phone_signs_up_with_one_login_and_one_customer() {
     assert_eq!(registered[0]["password"], json!(PASSWORD));
     assert_eq!(registered[0]["mustChangePassword"], json!(false));
     assert!(registered[0].get("username").is_none() && registered[0].get("email").is_none());
-    assert_eq!(v.identity.received("/auth/login").len(), 2, "login, register, login");
+    assert_eq!(
+        v.identity.received("/auth/login").len(),
+        2,
+        "login, register, login"
+    );
     v.finish().await;
 }
 
@@ -333,7 +351,11 @@ async fn s3_a_known_phone_answers_already_registered() {
     assert!(reply.sets_no_session());
     assert_eq!(v.written().await, before);
     assert_eq!(v.identity.received("/auth/register").len(), 1);
-    assert_eq!(v.identity.received("/auth/login").len(), 1, "no login after a refused register");
+    assert_eq!(
+        v.identity.received("/auth/login").len(),
+        1,
+        "no login after a refused register"
+    );
     v.finish().await;
 }
 
@@ -408,8 +430,7 @@ async fn s6_an_unknown_email_is_invalid_credentials_and_creates_no_login() {
 async fn s7_a_failed_login_after_register_is_finished_by_the_retry() {
     let v = Visit::start().await;
     v.identity.then("/auth/login", 401, INVALID);
-    v.identity
-        .always("/auth/register", 201, &registered_body());
+    v.identity.always("/auth/register", 201, &registered_body());
     v.identity
         .always("/auth/login", 503, r#"{"error":"unavailable"}"#);
     let before = v.written().await;
