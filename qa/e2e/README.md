@@ -6,7 +6,7 @@ Runs against a **running** v3 host. The host is prepared with `deploy/server/see
 
 ```bash
 cd qa/e2e
-bash scripts/reseed.sh             # writes users.json (gitignored) with fresh seeded accounts
+bash scripts/reseed.sh             # reads users.json (made once through the admin UI) and fills any gaps on the host
 npm install
 npx playwright install chromium    # once per machine
 npx playwright test

@@ -335,7 +335,7 @@ Commands with no screen (the API-level rows) get (a)–(c) through `page.request
 
 ### 9.2 Data
 
-- Writes go to the seeded host, and a re-seed (`scripts/reseed.sh`) resets them.
+- Writes go to the seeded host, and a re-seed (`scripts/reseed.sh`) fills any gaps from `users.json` (the roster is made once through the admin UI; `reseed.sh` never overwrites `users.json`).
 - Each spec creates its own rows with a unique run marker (`qa-r9-<area>-<Date.now()>`), so specs pass in any order and on re-runs.
 - A spec reads back only rows it made. It never edits a seeded row it did not create, except where the row *is* the setting (a branch's cash limit, a policy). Then it records the old value and restores it in `finally` (E-4).
 - **Permanent or armed writes are validation-only:** (b) and (c), never (a).
