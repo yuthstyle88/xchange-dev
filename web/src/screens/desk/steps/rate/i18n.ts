@@ -16,6 +16,9 @@ export const th = {
   quoting: 'กำลังคำนวณใหม่…',
   noPublishedRate: 'สาขานี้ยังไม่มีเรทประกาศสำหรับรายการ{side}',
   rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
+  drawerShortTitle: 'เงินในลิ้นชักไม่พอจ่ายรายการนี้',
+  drawerShortNext: 'ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ',
+  drawerLowAfter: 'หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย: {currencies}',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -35,4 +38,7 @@ export const en: Record<keyof typeof th, string> = {
   quoting: 'Recalculating…',
   noPublishedRate: 'No rate is published at this branch for {side}.',
   rateNotPublished: '{code} has no published rate at this branch for {side}.',
+  drawerShortTitle: 'The drawer does not hold enough to pay this',
+  drawerShortNext: 'Ask the branch manager to move cash from the safe into the drawer before saving',
+  drawerLowAfter: 'After this transaction the drawer will be low on: {currencies}',
 };
