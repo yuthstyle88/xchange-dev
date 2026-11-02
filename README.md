@@ -1,6 +1,10 @@
 # xchange
 XCHANGE money-changer counter system — Rust + PostgreSQL API, Flutter clients
 
+## Development principle: users set the values
+
+Every business value (limits, thresholds, levels, amounts) is stored data that the Owner sets on a screen; none is fixed in code, config or a seed. See [docs/design/blueprint/user-set-settings.md](docs/design/blueprint/user-set-settings.md).
+
 ## Running the API tests
 
 Run them with nextest, the way CI does:
