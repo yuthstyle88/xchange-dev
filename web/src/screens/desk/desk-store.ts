@@ -16,10 +16,10 @@ import { checkDecimal, MONEY } from '../../shared/ui/bounded';
 import * as screenI18n from './i18n';
 import type { HeldBooking } from './held-ticket';
 import { publishedCodes } from './published-rates';
-import { createSaver, newKey, type SaveAnswer } from './save';
+import { createSaver, newKey, type SaveAnswer, type StockWait } from './save';
 
 export type { HeldBooking } from './held-ticket';
-export type { SaveAnswer } from './save';
+export type { SaveAnswer, StockWait } from './save';
 
 export type DeskType = 'BUY' | 'SELL';
 export type SaveOutcome = 'idle' | 'saving' | 'saved' | 'refused' | 'unknown';
@@ -131,6 +131,8 @@ export interface DeskStore {
   transactionState: Accessor<TransactionState | undefined>;
   saveError: Accessor<string | undefined>;
   saved: Accessor<SaveAnswer | undefined>;
+  stockWait: Accessor<StockWait | undefined>;
+  cancelStockWait(): Promise<void>;
   submit(): Promise<SaveOutcome>;
   backToEdit(): void;
   startNew(): boolean;
@@ -237,6 +239,7 @@ export function createDeskStore(
   const [transactionState, setTransactionState] = createSignal<TransactionState | undefined>();
   const [saveError, setSaveError] = createSignal<string | undefined>();
   const [saved, setSaved] = createSignal<SaveAnswer | undefined>();
+  const [stockWait, setStockWait] = createSignal<StockWait | undefined>();
 
   // ── the config view: read once, on create (§3.1 L3, no polling) ──
   const b = branch();
@@ -458,6 +461,8 @@ export function createDeskStore(
     transactionState,
     saveError,
     saved,
+    stockWait,
+    cancelStockWait: () => saver.cancelStockWait(),
     submit: () => saver.submit(),
     backToEdit,
     startNew,
@@ -468,6 +473,7 @@ export function createDeskStore(
     setTransactionState,
     setSaveError,
     setSaved,
+    setStockWait,
   });
   onCleanup(() => saver.dispose());
 
@@ -481,6 +487,7 @@ export function createDeskStore(
     setTransactionState(undefined);
     setSaveError(undefined);
     setSaved(undefined);
+    setStockWait(undefined);
     setStep(0);
     void requote();
   }
@@ -489,6 +496,7 @@ export function createDeskStore(
   function startNew(): boolean {
     const unsaved =
       outcome() !== 'saved' &&
+      transactionState() !== 'CANCELLED' &&
       (amount() !== '' || customerId() !== '' || passport() !== undefined || transactionState() !== undefined);
     if (unsaved && !window.confirm(t('newUnsaved'))) {
       return false;
@@ -528,6 +536,7 @@ export function createDeskStore(
     setTransactionState(undefined);
     setSaveError(undefined);
     setSaved(undefined);
+    setStockWait(undefined);
     setStep(0);
     return true;
   }
