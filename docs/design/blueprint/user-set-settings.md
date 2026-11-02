@@ -8,13 +8,15 @@
 - *"ทำเหมือน ระบบ ธนาคาร ทั่วไป"* (do it the way an ordinary banking system does);
 - *"ตั้งค่าต้องมี otp หรือ ถ้า ฝ่ายตั้งได้ ต้องได้ การอนุมัติ"* (a settings change needs an OTP; if a department may set it, it needs approval);
 - *"มันเป็นคำร้อง ให้ เจ้าของ อนยุมัติ"* (it is a request for the owner to approve);
-- *"ให้ OTP ทาง อีเมล์"* (send the OTP by email).
+- *"ให้ OTP ทาง อีเมล์"* (send the OTP by email);
+- *"มี คอนฟิก ปรับเปลี่ยนได้"* (with a setting that can change it).
 
 ## The rule
 
 1. **Every business value is stored data, saved from a screen.** This covers limits, thresholds, levels, amounts, counts, durations a shop decides, and switches between business behaviours. Examples are the transfer approval limit, the count-difference limit, the drawer low-cash level and the alert floors. None of them is a constant in Rust or TypeScript, a config file, an environment variable or a migration's seed value.
 2. **The Owner sets them; the other roles follow them.** Saving a business setting needs an EXECUTIVE-only permission, which the Owner account (ADMIN + EXECUTIVE) holds. Finance, branch managers and tellers may read a setting and must work within it, but never save it. In particular, finance does not set the limits that govern its own transfers and counts.
    - **The Owner confirms every save with an OTP** (step-up), sent **by email** to the Owner's registered email address. A save without a valid OTP changes nothing.
+   - **The OTP channel is itself a setting.** Email is the default. The Owner can change it on a screen, for example to SMS once SMS delivery works. Changing the channel needs an OTP through the *current* channel, so a stolen session cannot redirect the codes. A channel that cannot deliver can't be chosen.
    - **A department may be delegated to request a setting change**, for example finance asking for a new count-difference limit. The change is filed as a **request for the Owner to approve**. It is an approval request in the existing approvals system (`approval_requests`, a new settings-change kind; ♻️ no second approval flow), carrying the old value, the new value and the reason. It appears on the Owner's approvals screen. It takes effect only when the Owner approves it, with the Owner's OTP. Until then, the current value stays in force. A rejected request changes nothing and keeps the Owner's reason. The requester can never approve their own request.
 3. **"Not set" behaves safely, and is visible.** A missing value means the safe default the design names: no auto-approval, no warning, or an executive decision. It is never a hidden number. The screen shows that the value is not set.
 4. **Changes take effect without a deploy.** They are versioned or stamped with who saved them and when, as the existing settings are (`updatedBy` / `setBy`).
