@@ -375,9 +375,11 @@ fn refused_still_serving(a: &Answer, what: &str) {
         "{what}: {}",
         a.text
     );
+    // Restated 2026-11-02 by claude/b091f5e0 (queue-tickets.md §4.7 amended): the message is today's sentence, then
+    // `: ` and the blocking ticket numbers (here `W035`).
     assert_eq!(
         a.body["error"]["message"].as_str(),
-        Some(STILL_SERVING_TH),
+        Some(format!("{STILL_SERVING_TH}: W035").as_str()),
         "{what}: {}",
         a.text
     );
