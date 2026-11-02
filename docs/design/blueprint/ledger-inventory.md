@@ -467,6 +467,83 @@ dispatch follows N-1).** Measured on `main` `1998f955`: the gate sent `{"shortfa
 - **`version_hash`** of a reversal: `source_hash` gains a `reversal:` arm (the reversal's status and original
   transaction), beside the exchange's and the transfer's.
 
+#### 5.1.1 A rejected `NEGATIVE_STOCK` request on an exchange cancels the exchange (amendment, 2026-11-02, G5 option A)
+
+**Owner's decision** (relayed by the lane controller claude/608dff, 06:1x ICT 2026-11-02): *"A ตามเสนอ"*. A rejected
+NEGATIVE_STOCK request cancels the sale.
+
+*Today (main `43b78b72`).* `NegativeStockSubject::on_decided` does nothing for either outcome
+(`xc-cash/src/application/ledger_approval/negative_stock.rs:53-61`). After a REJECTED decision the exchange stays
+CONFIRMED. The desk's next `complete` answers `409 stockInsufficient … rejected`
+(`api/src/application/workflows/exchange/negative_stock_gate.rs:98`), and the sale hangs: claude-4's d1d1a02c on xc-v3
+(#564 issuecomment-6565188185). The EXCHANGE_TRANSACTION type already cancels on REJECTED with the decision's reason
+(`quote-transaction.md:629`, `api/src/application/workflows/exchange/approval.rs:110-162`). NEGATIVE_STOCK now does the
+same for an exchange.
+
+*The rule.*
+- **REJECTED, on an exchange that is CONFIRMED:** in the decision's own transaction, the exchange moves to CANCELLED
+  through the existing cancel path, `CancelTransaction::run_in` (`exchange/cancel.rs:44-121`):
+  - `cancel_reason` = the decision's reason, verbatim. It is required at decide, 1–500 characters
+    (`commands/approval_decide.rs:77-89`), so it satisfies `transactions_cancelled_check`.
+  - `cancelled_at` = the decision's time.
+  - the audit row `transaction.cancelled` is written, with `after.reason` = that reason. Its actor is the deciding
+    BRANCH_MANAGER, so the audit trail shows the decision's `approval.rejected` and then the cancel, both by the same
+    person.
+  - the quote is cancelled and its reservations released, as a teller's cancel does today.
+  - nothing is posted or reversed. An exchange posts nothing before COMPLETED (`cancel.rs:1-3`).
+- **APPROVED is unchanged:** no write. The desk's next `complete` passes `allow_negative`.
+- **A reversal's or a transfer's request** (same type, `NegativeStockObject::{Reversal, Transfer}`,
+  `negative_stock_gate.rs:30-45`): REJECTED stays a no-op, as today. The rejected reversal or transfer keeps its own
+  state, and its retry answers `stockInsufficient`. The rule above applies only when `object_id` names a `transactions`
+  row.
+- **The exchange is no longer CONFIRMED at decision time** (for example the teller cancelled it while it waited, S5):
+  `decide` is refused before any hook runs. The request's version hash covers `transactions.status`
+  (`xc-cash/src/infrastructure/ledger_postings.rs:1243-1260`), and `ApprovalService::decide` checks it first
+  (`xc-approval/src/application/approval_service.rs:257-263`): `409 staleVersion`, nothing written. If the hook does
+  see a status other than CONFIRMED, it writes nothing and returns `Ok` (no error, no second cancel).
+- **The desk after a rejection.** The waiting desk's next `POST /api/transactions/:id/complete` answers
+  `409 staleVersion`, message `staleVersion: a CANCELLED exchange is not completed` (`exchange/complete.rs:215-220`). The
+  same Idempotency-Key does not replay a refusal (`presentation/http/v3/command.rs:646-648`).
+  `GET /api/v3/views/transaction?id=` shows `status: "CANCELLED"` and `cancelReason` = the reason
+  (`views/transaction.rs:181`, `:193`).
+
+*Where it lives (classes and files).* `xc-cash` must not depend on the exchange crates
+(`xc-cash/Cargo.toml:16-19`), so the exchange side is reached through the port the subject already takes.
+- `NegativeStockSource` (`negative_stock.rs:20-27`) gains one method with a no-op default, so the two test fakes and
+  `LedgerCashPostings` compile unchanged:
+  `fn on_rejected<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, object_id: &'a str, reason: &'a str, approver_id: &'a str) -> BoxFuture<'a, AppResult<()>>`.
+- `NegativeStockSubject` overrides `on_decided_or_unavailable`, which receives the request (`xc-approval/src/domain/subject.rs:50-61`):
+  - on REJECTED it reads the decision's `reason` and `approver_id` from `approval_decisions` by `request.id`. They were
+    inserted before the hook runs (`approval_service.rs:273`, `:277`).
+  - it then calls `source.on_rejected`.
+  - on APPROVED it does nothing.
+- A new `NegativeStockExchangeSource` in `api/src/application/workflows/exchange/negative_stock_source.rs` wraps
+  `LedgerCashPostings`: it delegates `version_hash`, and `on_rejected` does the rule above with `CancelTransaction`.
+  `api/src/bootstrap/approval_subjects/negative_stock.rs:14-21` registers it in place of the bare
+  `LedgerCashPostings`. This is the only registration on the live path (`bootstrap/approval_subjects/mod.rs:41`).
+
+*Provided tests that pin today's no-op, to be restated with this section cited.*
+- `api/tests/s2_completion_negative_stock_test.rs::s2_after_a_rejection_the_teller_gets_stock_insufficient_noting_it_and_no_new_request`
+  (`:358-391`) expects `409 stockInsufficient` and a CONFIRMED exchange (`:371-388`, `assert_not_completed` `:226-232`).
+  It becomes: `409 staleVersion`, the exchange CANCELLED with the decision's reason, still no new request, and the
+  drawer unchanged.
+- Unchanged, and kept as the guard that the reversal and transfer sources stay no-ops:
+  `gapsa2_reversal_negative_stock_test.rs::gapsa2_after_a_rejection_…` (`:672-700`) and
+  `gapsa3_transfer_dispatch_negative_stock_test.rs::gapsa3_after_a_rejection_…` (`:703-732`).
+
+| Case | Required result |
+|---|---|
+| exchange CONFIRMED, request REJECTED with reason R | exchange CANCELLED, `cancel_reason` = R, one `transaction.cancelled` audit row by the approver, quote cancelled; no posting |
+| the desk's next `complete` (same or new key) | `409 staleVersion`, `staleVersion: a CANCELLED exchange is not completed`; no new NEGATIVE_STOCK request |
+| exchange CONFIRMED, request APPROVED | no write; the next `complete` completes with `allow_negative` (as today) |
+| teller cancelled while PENDING, then the manager decides either way | `409 staleVersion`, nothing written (as today) |
+| reversal or transfer request REJECTED | no write to the reversal or transfer (as today) |
+| the cancel fails inside the hook | the decision rolls back with it; the request stays PENDING (one transaction) |
+
+*Data migration.* No schema change. Existing rows: read-only on xc-v3 at 06:3x ICT 2026-11-02, exactly one exchange is
+CONFIRMED with a REJECTED NEGATIVE_STOCK request: `d1d1a02c`. **No backfill.** The owner has ordered xc-v3 wiped at the
+next deploy (claude/608dff 06:3x ICT), so no such row survives. Deploy order does not matter. `down` loses nothing.
+
 ### 5.2 `COUNT_DIFFERENCE` (V-1)
 
 `CountDifferenceSubject` + `CountDifferencePolicy` (`xc-cash/src/application/ledger_approval/count_difference.rs`):
