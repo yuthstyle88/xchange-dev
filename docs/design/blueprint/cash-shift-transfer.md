@@ -437,6 +437,25 @@ filter `status`, `kind`), `handovers_pending` (branch), `my_shift` (the caller's
 balances), plus `denominations` (the rows of the existing `denominations` table that have a face value, `{ id, currency, faceValue, groupCode }` ordered by currency, face value, id; the catch-all row with no face value is excluded because a count line multiplies `qty × face_value`; read under `cash_counts`'s permission, so that whoever counts can build count and transfer lines by `denominationId`) and `handover_receivers` (the session branch's active users who hold `ShiftOperate` there, excluding the caller, `{ userId, name }` by name: exactly the people who could later accept the hand-over; authorised like `handoverStart`). Both added to CA-8 on 2026-10-11, #624 issuecomment-6107796305 and issuecomment-6107853376. The staff page's `staff_floor` (`docs/design/xchange-v3-wave3-staff.md` §3.4) loses `mine`/custodian and
 gains `myShift`; its `staff_requests` view is replaced by these two lists (§10).
 
+**`my_shift.incomingTransfers` (added 2026-11-02, ordered by the lane controller claude/608dff, P0; from claude/01TxaRJG's #564 issuecomment-6572949093).**
+- **Why.** A short drawer is topped up with a `SAFE_TO_DRAWER` transfer (`ledger-inventory.md` §5.1.2), which lands only when the drawer's own teller receives it (§4.4; `transfer_flow.rs:737-750`). The teller may run `transferReceive` (`CashManage` **or** `ShiftOperate`, `xc-auth/src/domain/policy/areas/cash.rs:13`, `:79`). But the only list of transfers, `cash_transfers`, needs `CashManage` (`cash.rs:108-112`), so the teller cannot see the transfer waiting for them.
+- **The field.** `MyShift` gains `incomingTransfers: CashTransferRow[]`, `[required]`: the transfers with `status = 'DISPATCHED'` and `to_shift_id` = this shift's id.
+  - Ordered `created_at, id` (oldest first, the order they should be received in), with their lines, exactly as a `cash_transfers` row reads.
+  - Empty when none; absent only with the shift itself (`my_shift` answers `null` with no open shift).
+  - It lists only the caller's own drawer, never another shift's, so `myShift`'s existing row (`ShiftOperate`, `cash.rs:91-95`) is enough: **no new policy row**.
+  - `cash_transfers` keeps `CashManage`; widening it would show a teller every transfer of the branch.
+- **One row builder (♻️).** The SQL row, the lines query and the mapping to `CashTransferRow` move out of `views/cash_transfers.rs:28-128` into `views/cash_transfer_rows.rs` (new): `pub(crate) async fn with_lines(pool: &PgPool, rows: Vec<TransferSqlRow>) -> AppResult<Vec<CashTransferRow>>`, plus the `TRANSFER_COLUMNS` select list. Both `cash_transfers` and `my_shift` call it; neither keeps its own copy.
+- **Data migration.** None: a read of `cash_transfers.to_shift_id` and `status`, both already stored (`20261012100000_cash.sql`).
+- **Generated files.** `web/src/shared/api/generated/my_shift.ts` (ts-rs) and `web/src/shared/testing/fixtures/my_shift.ts` (`npm run gen:fixtures`) are regenerated in the same PR; `makeMyShift` gains `incomingTransfers: []`.
+
+| Case | `incomingTransfers` |
+|---|---|
+| the caller's shift has a DISPATCHED `SAFE_TO_DRAWER` transfer whose `to_shift_id` is it (the only kind with a `to_shift_id`, `20261111160000_cash_transfer_ends.sql`) | that transfer, with its lines |
+| the transfer is DRAFT, APPROVED (not yet dispatched), RECEIVED or RECONCILED | not listed |
+| another teller's shift in the same branch has a DISPATCHED transfer | not listed |
+| a transfer leaving this shift (`from_shift_id` = it, `DRAWER_TO_SAFE`) | not listed |
+| the caller has no open shift | `my_shift` is `null`, as today |
+
 **The transfer-limit policy read (CA-8c, added 2026-10-11).** The policy screen (CA-9b) needs the current limits
 before it can offer a new version, and the list above has no view for them. `cash_transfer_policy` (organisation,
 not paged) answers the newest row of `cash_transfer_policy_versions` (`20261012100000_cash.sql:218`):

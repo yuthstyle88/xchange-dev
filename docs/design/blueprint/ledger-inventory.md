@@ -31,7 +31,7 @@ Recorded on #553 (issuecomment-6074305056, issuecomment-6074772982).
 |---|---|---|---|
 | B-1 | Where the books live | *"แยกสองชั้น"* | v3 holds the operational sub-ledger (quantities, lots, cost, margin) in the same DB transaction as the business change; AccountZing receives a THB GL summary through the outbox (§7) |
 | Q10 | Cost method | *"Weighted average"* | a running weighted average per (branch, currency), frozen on each transaction line (§4) |
-| N-1 | Negative stock | *"ผู้จัดการอนุมัติให้ติดลบได้"* | a move that would take a balance below zero is refused `stockInsufficient` unless BRANCH_MANAGER approves it through AP-1 (§5.1) |
+| N-1 | Negative stock | *"ผู้จัดการอนุมัติให้ติดลบได้"* | a move that would take a balance below zero is refused `stockInsufficient`. **Since 2026-11-02 no approval allows it** (owner: *"ต้องเติมเงินก่อน ห้ามติดลบ"*, §5.1.2); the drawer is topped up first |
 | V-1 | Who signs off a count difference | *"FINANCE เมื่อเกินวงเงิน"* | a difference above a THB limit needs FINANCE through AP-1; at or below, #582's verifier is enough (§5.2) |
 
 **Still the owner's** (§11): the AccountZing event and account mapping (AccountZing `docs/DO_NOT_TOUCH.md`: *"Chart
@@ -381,6 +381,8 @@ One posting, `source_type EXCHANGE`, `source_key complete`, per currency balance
 
 ### 4.5 Negative stock (N-1)
 
+> **Superseded 2026-11-02 by §5.1.2:** nothing goes below zero, approved or not.
+
 - Any posting that would take `DRAWER` or `SAFE` below zero for a currency, or a foreign position below zero, is
   refused `stockInsufficient` unless `allow_negative` names an APPROVED request of type `NEGATIVE_STOCK` for this
   source (§5.1).
@@ -543,6 +545,70 @@ same for an exchange.
 *Data migration.* No schema change. Existing rows: read-only on xc-v3 at 06:3x ICT 2026-11-02, exactly one exchange is
 CONFIRMED with a REJECTED NEGATIVE_STOCK request: `d1d1a02c`. **No backfill.** The owner has ordered xc-v3 wiped at the
 next deploy (claude/608dff 06:3x ICT), so no such row survives. Deploy order does not matter. `down` loses nothing.
+
+#### 5.1.2 Cash never goes below zero; no approval allows it (amendment, 2026-11-02; supersedes N-1's approval, §4.5's exception and §5.1.1)
+
+**Owner's decision** (relayed by the lane controller claude/608dff, 15:5x ICT 2026-11-02): *"ต้องเติมเงินก่อน ห้ามติดลบ"* (top up first; it must never go negative). No approval lets cash go below zero. A short drawer is topped up through the app with a recorded cash transfer, and only then does the payout post. The ledger always matches real cash.
+
+**Why.** An approved `NEGATIVE_STOCK` request let `complete` post the drawer below zero (§5.1, `NegativeStockGate::approved_for_in`). Every later command that loads the shift then answered 500: the shift loader refuses a negative expected balance (`xc-shift/src/infrastructure/shift/shift_repository.rs:153-158`). claude-4 hit this on xc-v3, shift `SH-0b765d57` at −1,711.50 THB (#564 issuecomment-6572802282). The loader was right; the approval was the defect.
+
+**The invariant.** No `DRAWER` or `SAFE` balance, and no position, is ever below zero. The ledger port refuses every posting that would take one there, with no exception (`ledger_postings.rs:891-916`: `allows_negative` is never satisfied). `fold_ledger` **keeps** refusing a negative expected value as `Internal`: after this section, such a value can only come from a defect, never from a decision.
+
+**Each source that used the gate.** None of them has a business reason to go negative; the remedy is always a top-up:
+
+| Source | Where it passed `allow_negative` | After this section |
+|---|---|---|
+| exchange `complete` | `api/src/application/workflows/exchange/complete.rs:279-286` | posts with `None`. On the port's refusal it answers the refusal below and opens no request |
+| reversal post | `exchange/reversal_post.rs:306-313` | same. A reversal that would take the drawer below zero waits for a top-up |
+| transfer dispatch | `presentation/http/v3/commands/cash/transfers.rs:217` → `transfer_flow.rs:698` | same: a dispatch beyond its drawer or safe is refused. This reverses the R1 ruling of 2026-10-27, which applied N-1 to dispatches |
+| every other `post_in` caller (counts, hand-over, receive, adjustment, AD-7) | already `None` | unchanged |
+
+**Removed.**
+- `NegativeStockGate::approved_for_in` and `open_after_refusal`, and `stock_refusal_answer`'s opening of a request (`presentation/http/v3/negative_stock.rs:28-60`). `stock_insufficient()`, which recognises the port's refusal, stays.
+- The `allow_negative` parameter of `CashPostings::post_in` / `LedgerCashPostings::allows_negative`, `[proposed]`. The parameter may stay with every caller passing `None`, if removing it touches too many files; the port then ignores it.
+
+**Existing `NEGATIVE_STOCK` requests.**
+- The type stays registered (`bootstrap/approval_subjects/negative_stock.rs`), so old rows still read and list.
+- Deciding a PENDING one still works. APPROVED no longer lets anything post; REJECTED still cancels a CONFIRMED exchange (§5.1.1, kept only for such old rows).
+- No new request of this type is ever opened. On xc-v3 at 15:41 ICT there were 0 PENDING (claude-4).
+
+**What the desk sees** (for claude/01TxaRJG's FE), `[required]`. Every source answers the port's refusal with the same body:
+- `409`, `{"error": {"code": "stockInsufficient", "message": "<message>"}}`, with no `field`;
+- `<message>` = `ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: ` followed by one item per short place, joined by `, `;
+- each item = `<CURRENCY> <ลิ้นชัก|ตู้เซฟ|สต็อก> ขาด <shortBy>`, in `StockShortfall`'s order (currency code, then DRAWER, SAFE, POSITION), with `shortBy` the normalized decimal;
+- example: `ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: THB ลิ้นชัก ขาด 1711.46`.
+
+The exchange stays CONFIRMED and the reversal or transfer keeps its state. After the top-up, the **same** `complete` (same Idempotency-Key) posts: a refused command releases its Idempotency-Key and is never replayed (`presentation/http/v3/command.rs:647-649`, `store.release`).
+
+**Unchanged for the FE.**
+- The `NEGATIVE_STOCK` approval type and `Permission::ApproveNegativeStock` (`xc-auth/src/domain/access/permission.rs:80`) stay, so the generated types do not change. They only serve old rows.
+- The top-up's own steps are never refused by this rule:
+  - a `SAFE_TO_DRAWER` **receive** posts `IN_TRANSIT → DRAWER`: the drawer only goes up, and `IN_TRANSIT` is not a place the port checks (`ledger_postings.rs:893-896` checks `Drawer | Safe` only);
+  - the **dispatch** posts `SAFE → IN_TRANSIT`, so it is refused only when the safe itself is short, with the same `stockInsufficient` body naming `ตู้เซฟ`.
+- The top-up lands when the drawer's teller receives it (`cash-shift-transfer.md:93-95`), as today.
+
+**The create-time pre-check.** `ShiftService::apply_delta_for_teller_in` → `ShiftLedger::ensure_non_negative` (`xc-shift/src/application/shift/service.rs:105-140`, called from `save_transaction.rs:495,508`) stays. It is the same rule, applied earlier.
+
+**Data.** The one negative shift on xc-v3, `SH-0b765d57` (THB −1,711.50):
+- **The owner's 10,000 THB top-up can run today; it never loads the shift through `fold_ledger`.** Read on main `db9077f0`, not run:
+  - **create** checks the shift is OPEN with plain SQL (`xc-cash/src/application/transfer/transfer_flow.rs:458-472`);
+  - **dispatch** posts `SAFE → IN_TRANSIT` (`xc-cash/src/domain/transfer/kinds/safe.rs:98-130`), which touches the safe only;
+  - **receive** (`TransferReceive::run`, `presentation/http/v3/commands/cash/transfers.rs:265-284` → `receive_on`, `transfer_flow.rs:709-760`):
+    - reads the transfer and checks its status and the receiver;
+    - checks the shift's teller with plain SQL (`:737-750`);
+    - posts `IN_TRANSIT → DRAWER(SH-0b765d57)` (`safe.rs:133-160`). That raises the drawer, and the port only checks places whose change is negative (`ledger_postings.rs:899`);
+    - writes any cash exception with plain inserts (`xc-shift/src/infrastructure/custody/custody_repository.rs:182-202`).
+  - None of these calls `PgShiftRepository`, `ShiftService` or `fold_ledger`. There is no read of the shift before the posting.
+  - After the receive, the drawer's expected THB = −1,711.50 + 10,000.00 = **8,288.50**, so the shift loads again and the close count works.
+  - **Not covered by this reading:** the transfer limits and approvals that apply to any 10,000 THB `SAFE_TO_DRAWER`, and whether the safe holds 10,000 (claude-4 measured ≈ 35,400). Those are ordinary refusals, not this 500.
+- No schema change and no backfill. Existing APPROVED requests stay as history.
+
+**Provided tests restated, citing this section.** Each approve-to-negative case becomes "refused `stockInsufficient`, no request; after a top-up the same call posts":
+- `api/tests/s2_completion_negative_stock_test.rs`;
+- `gapsa1_negative_stock_shortfall_test.rs`, `gapsa2_reversal_negative_stock_test.rs`, `gapsa3_transfer_dispatch_negative_stock_test.rs`;
+- the §5.1.1 tests of #5938.
+
+The ticket lists each test by name.
 
 ### 5.2 `COUNT_DIFFERENCE` (V-1)
 

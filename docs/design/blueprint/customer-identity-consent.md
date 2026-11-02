@@ -154,7 +154,7 @@ All writes are `CommandAction`s (PR 570 §6) with an `Idempotency-Key`. Routes f
 |---|---|---|
 | `reserveCustomer` (compat, kept name) | `POST /api/rpc` action | `ExchangeTransact` |
 | `identityReveal` (body: `reason`, required) | `POST /api/customers/{id}/identities/{identityId}/reveal` | `IdentityDocumentRead` |
-| `customerRegister` (C14: Identity user → CUSTOMER user + customer + `TERMS` consent) | `POST /api/app/register` | a verified Identity token with no customer yet |
+| `customerRegister` (C14: Identity user → CUSTOMER user + customer + `TERMS` consent) | `POST /api/app/register` | a verified Identity token with no customer yet; since 2026-11-02 an unknown phone first gets its Identity login (§4.6) |
 | `consentRecord` (C07: grant or withdraw) | `POST /api/app/consents` | `CustomerSelf` |
 | `profileUpdate` (C07: display name, language) | `PUT /api/app/profile` | `CustomerSelf` |
 | `consentTextPublish` | `POST /api/consent-texts` | `ConsentPolicyManage` |
@@ -178,6 +178,82 @@ pub enum TokenError { Malformed, BadSignature, WrongIssuer, WrongAudience, Expir
 (configured, not hard-coded: `APP_IDENTITY__JWKS_URL`, `APP_IDENTITY__ISSUER`, `APP_IDENTITY__AUDIENCE`), caches the
 keys, refetches once on an unknown `kid`, and accepts EdDSA only. `KeysUnavailable` maps to 503, the rest to 401.
 It is not under `xc-auth/src/{domain,infrastructure}/identity/**`, which #550's OR-3 owns.
+
+### 4.6 Sign-up creates the Identity login (amended 2026-11-02)
+
+Ordered by the BE lane controller claude/608dff, 15:2x ICT 2026-11-02, from #564 issuecomment-6571785796.
+
+**Root cause.** A real visitor cannot sign up. `/app/sign-up` posts `POST /api/app/register`, which answers `401 invalidCredentials`. The chain:
+- `register_customer` signs in an **existing** Identity user first (`api/src/application/customer_signup.rs:93-96`), as §4.4 required ("a verified Identity token with no customer yet");
+- nothing creates that Identity user for a visitor. `IdentityClient::register` is called only by the staff create and `create-owner` (`identity_client.rs:164-165`: "no public route reaches it"). Identity listens on `127.0.0.1` only. The only other caller is the test seed (`deploy/server/seed-test-booking.sh:107-118`);
+- the OTP door's first-sight sign-up (`kiosk-shared-phone.md` D11) is a separate path. `/app/sign-up` does not use it.
+
+**Decision.** `customerRegister` creates the Identity login, server-side through the xchange `IdentityClient`, when the identifier is an unknown **phone**. Then it binds as today, all in one request. No OTP is added and D11 does not change.
+
+`register_customer(session, pool, input, client_ip, now)` runs in this order:
+1. `verified_login(identifier, password)`. Any answer other than `InvalidCredentials` goes on exactly as today: success binds, and every other refusal is returned as it is.
+2. On `InvalidCredentials`, the identifier may be unknown. Only a phone can create a login: Identity's `POST /auth/register` needs one (`IdentityRegisterRequest.phone`). The identifier is a phone when `normalize(IdentityType::Phone, identifier, None)` succeeds.
+   - Not a phone (an e-mail or a user name): return `InvalidCredentials`, as today. Identity is not asked to register.
+3. Check that the request's language has a published `TERMS` text, and a `MARKETING` text when channels are chosen (`ConsentService::current_version_in`). If not: `consentTextMissing`, and Identity is not asked to register. This way no login is created for a sign-up that cannot finish.
+4. `IdentityClient::register` with `{username: None, phone: <E.164>, email: None, password, mustChangePassword: false}`.
+   - `PhoneTaken`, `UsernameTaken`, `EmailTaken` or `AlreadyRegistered` mean the phone already has a login, so the password was wrong: `409 alreadyRegistered` ("บัญชีนี้ลงทะเบียนแล้ว"). Nothing is written.
+   - `WeakPassword` (`422 weakPassword`), `InvalidPhone` (`422 invalidPhone`) and `Unavailable` (`503`) are returned as Identity's refusals. Nothing is written.
+5. `verified_login(identifier, password)` again, then bind and sign in exactly as step 1's success does.
+
+**What the new login is.** Identity has not verified the phone: no OTP was sent, and its login answers `phoneVerified: false`. So the binder writes **no** PHONE identity, under today's rule (`customer_signup.rs` `verified_phone`, CI-7's 07:42Z rule). The desk cannot find this customer by phone until a verified sign-in proves it. A person who types someone else's phone number gets a login with no proven contact. If the phone's real owner later signs in through the OTP door, the OTP proves the phone, and that door takes over the login.
+
+**A login with no customer.** Steps 3 and 4 refuse before anything is created, so a sign-up that stops after step 4 has only a transient cause: step 5's login fails (`503`) or the bind fails (`serverError`). The visitor's retry with the same phone and password then succeeds at step 1, and binds. One login, one customer.
+
+**Unchanged:**
+- the route and its body;
+- every refusal for an e-mail identifier (`customer_account_test.rs` R1–R13, `kwq_c26_app_register_binder_test.rs`, `app_session_claim_test.rs` all use e-mail identifiers and stay green unedited);
+- the binder;
+- the OTP door;
+- `/api/auth/login`.
+
+#### 4.6.1 Class diagram (the changed part)
+
+```mermaid
+classDiagram
+  class CustomerSignup {
+    <<api/src/application/customer_signup.rs>>
+    +register_customer(session, pool, input, client_ip, now) Result~(SignInTail, String), SignupError~
+    -create_login(identity, pool, org, input, e164) Result~(), SignupError~
+  }
+  class SessionService { <<xc-auth application/session/session_service.rs  unchanged>> +verified_login() +sign_in_with_login() +identity_client() }
+  class IdentityClient { <<trait xc-auth domain/identity/identity_client.rs  unchanged signature>> +login() +register() }
+  class ConsentService { <<xc-customer application/consent_service.rs  unchanged>> +current_version_in() }
+  class CustomerBinder { <<api/src/application/customer_binder.rs  unchanged>> +bind_in() }
+  CustomerSignup --> SessionService : verified_login twice
+  CustomerSignup --> IdentityClient : register (unknown phone only)
+  CustomerSignup --> ConsentService : text check before register
+  CustomerSignup --> CustomerBinder : bind_in
+```
+
+`[proposed]` `create_login` is private and covers steps 3 and 4. `SignupError` keeps its variants: Identity's refusals travel as `SignupError::Session(SessionError::from(IdentityError))`, and the "phone has a login" group maps to `SignupError::AlreadyRegistered`.
+
+The route doc (`customer_register.rs:1-15`) lists the new refusals. The doc of `IdentityClient::register` names the third caller.
+
+#### 4.6.2 Behaviour
+
+| # | Case | Answer | Written | Identity |
+|---|---|---|---|---|
+| S1 | unknown phone, TERMS in `lang` | `200 {user, customerId}` + session | one CUSTOMER user, one customer, one TERMS consent, **no** PHONE identity | login, register (phone E.164, `mustChangePassword:false`), login |
+| S2 | S1, then `POST /api/auth/login` with the same phone and password | `200`, a session of that CUSTOMER user | a session | login |
+| S3 | known phone, wrong password | `409 alreadyRegistered` | nothing | login, register (`phone_taken`); no second login |
+| S4 | unknown phone, password the policy refuses | `422 weakPassword` | nothing | login, register |
+| S5 | unknown phone, no TERMS text in `lang` | `409 consentTextMissing` (`field: lang`) | nothing | login only |
+| S6 | unknown e-mail | `401 invalidCredentials` (as today) | nothing | login only |
+| S7 | register answers `201`, the login after it `503` | `503 identityUnavailable`; the retry `200` | nothing, then as S1 | register once in total |
+| S8 | phone typed `081-234-5678` | as S1 | as S1 | register sends `+66812345678` |
+
+#### 4.6.3 Data migration
+
+None. No table, column, constraint or status changes. Existing rows are untouched.
+
+#### 4.6.4 Ticket
+
+One BE ticket, `class:logic`. File scope: `customer_signup.rs`, `customer_register.rs` (doc only), `identity_client.rs` (doc only). Up-front tests: a new `api/tests/customer_signup_creates_login_test.rs`, plus an additive one-shot answer on the test fake (`identity_signin_common/mod.rs`).
 
 ## 5. Class diagram
 
@@ -466,6 +542,7 @@ api/tests/v3_devices_view_test.rs
 | O-2 | Rotating the lookup-hash key | needs a re-hash of every identity; not needed while one key is in use |
 | O-3 | The retention periods themselves (U2) | legal; EXECUTIVE sets them as data. Until then nothing is purged |
 | O-5 | Copies of customer data outside this design's tables | `transactions.customer_name`/`nationality` belong to #551 and the per-exchange PASSPORT scan to #557 (§6); the `CLOSED_CUSTOMER` retention type here purges only this design's tables, and those designs name their own retention |
+| O-6 | A password sign-in from `/app` after a password sign-up (§4.6) | `POST /api/auth/login` accepts the phone and password (§4.6.2 S2), but the `/app` sign-in screen offers only the OTP door (`web/src/screens/customer/sign-in/SignIn.tsx:1-3`). So a customer who signed up with a password signs in again through OTP, which needs Identity's SMS or e-mail sender, or through an FE change this design does not make |
 | O-4 | The consent texts themselves (U1) | legal; EXECUTIVE publishes them. Until a `TERMS` text exists customers cannot register |
 
 ## 11. Blueprint conformance (owner's rule: logic is fixed, only the look may change)
