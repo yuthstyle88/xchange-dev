@@ -301,16 +301,10 @@ impl PostReversal {
             );
         };
 
-        // 2. The opposite posting at the original's frozen cost (V-6), allowing negative stock when an APPROVED
-        //    NEGATIVE_STOCK request names this reversal (§4.3, #5246).
-        let allow_negative = super::negative_stock_gate::NegativeStockGate::approved_for_in(
-            tx,
-            &super::negative_stock_gate::NegativeStockObject::Reversal(id),
-        )
-        .await?;
+        // 2. The opposite posting at the original's frozen cost (V-6; §5.1.2: never below zero).
         let posted = self
             .postings
-            .post_in(tx, &reversed_legs(&t, id, &shift_id), allow_negative)
+            .post_in(tx, &reversed_legs(&t, id, &shift_id), None)
             .await?;
         // Safe: MoneyDelta::minor() returns an i128, cannot wrap (ratchet floor, #2063 / #2862).
         let cost_difference_minor: i128 = posted

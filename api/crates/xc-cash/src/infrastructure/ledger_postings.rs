@@ -21,7 +21,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, MoneyDelta, QuantityDelta};
 use xc_shift::domain::shift::value_objects::balances::Balances;
 
-use crate::application::ledger_approval::negative_stock::{NEGATIVE_STOCK, NegativeStockSource};
+use crate::application::ledger_approval::negative_stock::NegativeStockSource;
 use crate::domain::inventory::repository::MovementType;
 use crate::domain::inventory::weighted_average::WeightedAverage;
 use crate::domain::ledger::account::AccountKind;
@@ -609,7 +609,6 @@ impl LedgerCashPostings {
         &self,
         tx: &mut Transaction<'_, Postgres>,
         req: &[PostingRequest],
-        allow_negative: Option<ApprovalRequestId>,
     ) -> AppResult<PostingResult> {
         if req.is_empty() {
             return Ok(PostingResult {
@@ -912,7 +911,7 @@ impl LedgerCashPostings {
                 }
             }
         }
-        if plan.goes_negative && !self.allows_negative(tx, source, allow_negative).await? {
+        if plan.goes_negative {
             for ((_, currency), pos) in &plan.positions {
                 if pos.now.quantity < Decimal::ZERO {
                     *shortfall
@@ -938,38 +937,6 @@ impl LedgerCashPostings {
         }
 
         write(tx, &plan, source).await
-    }
-
-    /// `allow_negative` names an APPROVED `NEGATIVE_STOCK` request for this source, decided at the
-    /// source's current state (§5.1; lane controller's rulings issuecomment-6097791219 choice 4 and
-    /// issuecomment-6097817311).
-    async fn allows_negative(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        source: &SourceRef,
-        allow_negative: Option<ApprovalRequestId>,
-    ) -> AppResult<bool> {
-        let Some(request) = allow_negative else {
-            return Ok(false);
-        };
-        let row = sqlx::query(
-            "SELECT type, status, object_id, object_version_hash FROM approval_requests \
-             WHERE id::text = $1",
-        )
-        .bind(request.as_str())
-        .fetch_optional(&mut **tx)
-        .await?;
-        let Some(row) = row else {
-            return Ok(false);
-        };
-        let type_name: String = row.try_get("type")?;
-        let status: String = row.try_get("status")?;
-        let object_id: String = row.try_get("object_id")?;
-        let hash: String = row.try_get("object_version_hash")?;
-        if type_name != NEGATIVE_STOCK || status != "APPROVED" || object_id != source.source_id {
-            return Ok(false);
-        }
-        Ok(source_hash(tx, &object_id).await? == hash)
     }
 }
 
@@ -1274,9 +1241,9 @@ impl CashPostings for LedgerCashPostings {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         req: &'a [PostingRequest],
-        allow_negative: Option<ApprovalRequestId>,
+        _allow_negative: Option<ApprovalRequestId>,
     ) -> BoxFuture<'a, AppResult<PostingResult>> {
-        Box::pin(async move { self.post(tx, req, allow_negative).await })
+        Box::pin(async move { self.post(tx, req).await })
     }
 
     /// A COST adjustment (design `ledger-inventory.md` §13.6, LA-8): every request's source must be
