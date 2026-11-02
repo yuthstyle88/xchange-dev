@@ -5,6 +5,7 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { Toast } from '../parts/toast';
 import { CashPolicy } from './CashPolicy';
+import { makeAdminCashStockRow } from '../../../shared/testing/fixtures';
 
 const SAVE = '/api/cash-transfer-policy';
 
@@ -51,7 +52,7 @@ describe('KW-3: CashPolicy idempotency key lifecycle (#2021 §9)', () => {
               changed: true,
               data: {
                 openShifts: [],
-                stock: [],
+                stock: ['THB', 'USD', 'EUR'].map((code) => makeAdminCashStockRow({ code })), // #6010: rows come from the branch's stock
                 stats: null,
                 reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
                 currencies: ['THB', 'USD', 'EUR'],
