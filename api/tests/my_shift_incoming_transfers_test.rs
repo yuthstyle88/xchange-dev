@@ -306,7 +306,14 @@ fn ids_of(incoming: &Value) -> Vec<String> {
 async fn a_teller_sees_the_dispatched_transfer_into_their_own_shift() {
     let room = Room::start().await;
     let t = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 5, 0)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            5,
+            0,
+        )
         .await;
 
     let data = room.my_shift(&room.teller_a).await;
@@ -332,10 +339,24 @@ async fn a_teller_sees_the_dispatched_transfer_into_their_own_shift() {
 async fn another_shifts_transfer_never_shows() {
     let room = Room::start().await;
     let to_a = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 5, 0)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            5,
+            0,
+        )
         .await;
     let to_b = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_b), 7, 0)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_b),
+            7,
+            0,
+        )
         .await;
 
     assert_eq!(
@@ -358,7 +379,14 @@ async fn only_a_dispatched_transfer_is_listed() {
             .await;
     }
     let dispatched = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 2, 0)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            2,
+            0,
+        )
         .await;
 
     assert_eq!(
@@ -372,8 +400,15 @@ async fn only_a_dispatched_transfer_is_listed() {
 #[actix_web::test]
 async fn a_transfer_leaving_the_shift_is_not_listed() {
     let room = Room::start().await;
-    room.transfer("DRAWER_TO_SAFE", "DISPATCHED", Some(&room.shift_a), None, 1, 0)
-        .await;
+    room.transfer(
+        "DRAWER_TO_SAFE",
+        "DISPATCHED",
+        Some(&room.shift_a),
+        None,
+        1,
+        0,
+    )
+    .await;
 
     let data = room.my_shift(&room.teller_a).await;
     assert_eq!(data["incomingTransfers"], json!([]), "{data}");
@@ -394,10 +429,24 @@ async fn with_nothing_incoming_the_list_is_empty() {
 async fn several_incoming_transfers_are_listed_oldest_first() {
     let room = Room::start().await;
     let later = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 1, 60)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            1,
+            60,
+        )
         .await;
     let earlier = room
-        .transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 2, 0)
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            2,
+            0,
+        )
         .await;
 
     assert_eq!(
@@ -411,8 +460,15 @@ async fn several_incoming_transfers_are_listed_oldest_first() {
 #[actix_web::test]
 async fn a_caller_with_no_open_shift_gets_null() {
     let room = Room::start().await;
-    room.transfer("SAFE_TO_DRAWER", "DISPATCHED", None, Some(&room.shift_a), 5, 0)
-        .await;
+    room.transfer(
+        "SAFE_TO_DRAWER",
+        "DISPATCHED",
+        None,
+        Some(&room.shift_a),
+        5,
+        0,
+    )
+    .await;
     assert_eq!(room.my_shift(&room.manager).await, Value::Null);
     room.finish().await;
 }
