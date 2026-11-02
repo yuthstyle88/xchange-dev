@@ -6,6 +6,9 @@
 //
 // The handle on the screen ([required] by these tests): the cancel button carries `data-action="cancel-transaction"`;
 // it opens S-3's `ReasonDialog` (its <input>, its first button = back out, its last button = confirm).
+// Amended 2026-11-02 by the author (claude/01TxaRJG), on gemini/studio-9's blocked report: C6 asserted the same key
+// after a 409 refusal, but S-3's command.ts → keyedWrite drops the key on a 4xx refusal by design. C6 now asserts a new
+// key after a refusal, and C6b the same key after a network failure.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { errorText, setLang } from '../../shared/i18n';
@@ -100,7 +103,7 @@ const AUDIT: TransactionAuditData = makeTransactionAuditViewData({
 });
 
 type Call = { method: string; path: string; body: string | null; key: string | null };
-type Reply = { status: number; json?: unknown };
+type Reply = { status: number; json?: unknown; network?: true };
 
 interface World {
   me: MeView | Reply;
@@ -146,6 +149,7 @@ function installFetch() {
       if (method === 'POST' && u.pathname === CANCEL_PATH) {
         const r = world.posts[Math.min(postCount, world.posts.length - 1)]!;
         postCount++;
+        if (r.network) throw new TypeError('Failed to fetch');
         if (r.status < 300 && world.afterPost) world.transaction = world.afterPost;
         return json(r.status, r.json ?? {});
       }
@@ -267,7 +271,7 @@ describe('D12: cancel a CONFIRMED exchange with no document number', () => {
     expect(cancelBtn()).toHaveLength(0);
   });
 
-  it('C6: a refusal is shown as sent (worded); a retry resends with the same key', async () => {
+  it('C6: a refusal is shown as sent (worded); a new confirm after a 4xx refusal is a new request with a new key', async () => {
     await mount({
       posts: [
         { status: 409, json: { error: { code: 'staleVersion', message: 'staleVersion: a COMPLETED exchange is not cancelled' } } },
@@ -276,6 +280,15 @@ describe('D12: cancel a CONFIRMED exchange with no document number', () => {
     });
     await cancelWith('x');
     expect(text()).toContain(errorText('staleVersion', 'staleVersion: a COMPLETED exchange is not cancelled'));
+    await cancelWith('x');
+    expect(posts()).toHaveLength(2);
+    // keyedWrite (shared/api/keyed-write.ts:25-33, keyed-write.test.ts:92-107) drops the key after a 4xx refusal.
+    expect(posts()[1]!.key).not.toBe(posts()[0]!.key);
+  });
+
+  it('C6b: after a network failure, the retry resends with the same key', async () => {
+    await mount({ posts: [{ status: 0, network: true }, { status: 200, json: { id: TX_ID, status: 'CANCELLED' } }] });
+    await cancelWith('x');
     await cancelWith('x');
     expect(posts()).toHaveLength(2);
     expect(posts()[1]!.key).toBe(posts()[0]!.key);
