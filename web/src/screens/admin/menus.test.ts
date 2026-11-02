@@ -266,6 +266,8 @@ const KNOWN_PERMISSIONS = new Set([
   'LoyaltyRulesManage',
   // #5733 (owner ruling A on #5683): the organisation formula's permission, EXECUTIVE only by seed.
   'PricingFormulaSave',
+  // #6004 (B2, RBAC §11.11): read any business setting; its serde name is camelCase (permission.rs, `#[serde(rename)]`).
+  'settingsRead',
 ]);
 
 describe('V2-shell: every merged menu follows the served nav (#460 §7; design §12.3)', () => {

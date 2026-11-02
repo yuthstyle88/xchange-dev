@@ -10,8 +10,9 @@ import { render } from 'solid-js/web';
 import { CashPolicy } from './CashPolicy';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import { makeAdminCashData, makeAdminCashStockRow, makeCashTransferPolicyData, type CashTransferPolicyData } from '../../../shared/testing/fixtures';
+import { makeAdminCashData, makeAdminCashStockRow, makeCashTransferPolicyData, type CashTransferPolicyData, makeMe } from '../../../shared/testing/fixtures';
 import * as texts from './i18n';
+import { sharedSession } from '../../../shared/session/session';
 
 const POLICY = makeCashTransferPolicyData({
   version: 'v-0001',
@@ -81,6 +82,8 @@ async function mount(): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
   server = new Server();
   vi.stubGlobal('fetch', vi.fn(server.fetch));
   host = document.createElement('div');

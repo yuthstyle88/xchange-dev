@@ -19,6 +19,7 @@ import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
 import { menu } from './menu';
 import * as texts from './i18n';
+import { sharedSession } from '../../../shared/session/session';
 
 const MANAGE = 'CashLimitsManage';
 
@@ -180,6 +181,8 @@ async function mountShell(permissions: string[]): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashLimitsManage (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashLimitsManage'] }));
   server = new Server();
   vi.stubGlobal('fetch', vi.fn(server.fetch));
   vi.stubGlobal('matchMedia', (query: string) => ({
@@ -358,15 +361,16 @@ describe('CashLimits (#3324)', () => {
     expect(server.reads().map((r) => r.query.get('branch'))).toEqual(['MAIN', 'B1']);
   });
 
-  it('7: a user without CashLimitsManage does not see the menu listed, while a user with it sees it', async () => {
-    const withoutEl = await mountShell(['CashManage', 'SystemSettings']);
+  // #6016 restated: the menu follows the read permission, not the save permission.
+  it('7: a user without settingsRead does not see the menu listed, while a user with it sees it', async () => {
+    const withoutEl = await mountShell(['CashManage', 'SystemSettings', MANAGE]);
     expect(withoutEl.querySelector('a[href="#cash-limits"]')).toBeNull();
     expect(screen(withoutEl)).toBeNull();
 
     dispose?.();
     root?.remove();
 
-    const withEl = await mountShell([MANAGE]);
+    const withEl = await mountShell(['settingsRead']);
     expect(withEl.querySelector('a[href="#cash-limits"]')).not.toBeNull();
     expect(screen(withEl)).not.toBeNull();
   });

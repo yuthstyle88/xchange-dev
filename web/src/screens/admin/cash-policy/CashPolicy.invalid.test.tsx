@@ -12,7 +12,9 @@ import {
   makeInvalidTransferLimitEntry,
   type CashTransferPolicyData,
   makeAdminCashStockRow,
+  makeMe,
 } from '../../../shared/testing/fixtures';
+import { sharedSession } from '../../../shared/session/session';
 
 const VALID_POLICY = makeCashTransferPolicyData({
   version: 'v-0001',
@@ -96,6 +98,8 @@ function mount() {
 
 describe('CA-9c (#2131): CashPolicy invalid entries and field-specific save refusals', () => {
   beforeEach(() => {
+    // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+    sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
     host = document.createElement('div');
     document.body.appendChild(host);
     setLang('th');
