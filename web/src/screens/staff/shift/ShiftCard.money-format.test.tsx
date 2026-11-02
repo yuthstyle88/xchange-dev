@@ -34,8 +34,8 @@ const MY_SHIFT = makeMyShift({
   status: 'OPEN',
   openedAt: '2026-10-11T01:05:00Z',
   balances: [
-    { code: 'THB', opening: '10000.0000', expected: '9839.5000' },
-    { code: 'USD', opening: '0.0000', expected: '5.0000' },
+    { code: 'THB', opening: '10000.0000', expected: '9839.5000', lowCashLevel: null, low: false },
+    { code: 'USD', opening: '0.0000', expected: '5.0000', lowCashLevel: null, low: false },
   ],
 });
 
