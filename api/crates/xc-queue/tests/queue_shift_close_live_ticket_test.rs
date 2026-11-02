@@ -87,8 +87,10 @@ async fn shift_status(db: &TestDb, teller_id: &str) -> String {
     .expect("the teller has a shift")
 }
 
+// Restated 2026-11-02 by claude/b091f5e0 (queue-tickets.md §4.7 "The refusal names the blocking tickets"): the
+// refusal's message now carries the tickets after a marker, so it starts with the code instead of equalling it.
 fn still_serving() -> String {
-    QueueError::TicketStillServing.code().to_owned()
+    QueueError::TicketStillServing(Vec::new()).code().to_owned()
 }
 
 /// R-1: the teller's CALLED ticket refuses the close; the shift stays OPEN, the counter stays, the ticket stays CALLED.
@@ -103,9 +105,9 @@ async fn a_called_ticket_refuses_the_close_and_nothing_moves() {
         .expect("call");
     let before = branch_version(&db, "MAIN").await;
 
-    assert_eq!(
-        refused(try_close(&db, &q, &a, at(3, 0)).await),
-        still_serving()
+    assert!(
+        refused(try_close(&db, &q, &a, at(3, 0)).await).starts_with(&still_serving()),
+        "the refusal is ticketStillServing"
     );
 
     assert_eq!(shift_status(&db, &a).await, "OPEN", "the close rolls back");
@@ -139,9 +141,9 @@ async fn a_serving_ticket_refuses_the_close_and_nothing_moves() {
         .await
         .expect("start");
 
-    assert_eq!(
-        refused(try_close(&db, &q, &a, at(3, 0)).await),
-        still_serving()
+    assert!(
+        refused(try_close(&db, &q, &a, at(3, 0)).await).starts_with(&still_serving()),
+        "the refusal is ticketStillServing"
     );
 
     assert_eq!(shift_status(&db, &a).await, "OPEN");
@@ -173,9 +175,9 @@ async fn a_paused_counter_with_a_serving_ticket_is_refused() {
         .await
         .expect("pause");
 
-    assert_eq!(
-        refused(try_close(&db, &q, &a, at(3, 0)).await),
-        still_serving()
+    assert!(
+        refused(try_close(&db, &q, &a, at(3, 0)).await).starts_with(&still_serving()),
+        "the refusal is ticketStillServing"
     );
     assert_eq!(counter_of(&db, &a).await, "PAUSED");
     db.finish().await;
@@ -199,9 +201,8 @@ async fn after_finish_release_or_skip_the_close_goes_through() {
                 .await
                 .expect("start");
         }
-        assert_eq!(
-            refused(try_close(&db, &q, &a, at(2, 4)).await),
-            still_serving(),
+        assert!(
+            refused(try_close(&db, &q, &a, at(2, 4)).await).starts_with(&still_serving()),
             "{end}: refused while the ticket is live"
         );
         match end {
@@ -263,9 +264,14 @@ async fn waiting_tickets_and_another_tellers_live_ticket_do_not_block() {
 /// R-6: the refusal is a `QueueError` through `AppError`, `Validation("ticketStillServing")`, which the cash routes map.
 #[test]
 fn the_refusal_is_validation_ticket_still_serving() {
-    assert_eq!(QueueError::TicketStillServing.code(), "ticketStillServing");
+    // Restated 2026-11-02 by claude/b091f5e0 (§4.7 amended): the variant carries the live tickets; the code is unchanged
+    // and the `Validation` message still starts with it, so the cash routes' prefix match still routes it.
+    assert_eq!(
+        QueueError::TicketStillServing(Vec::new()).code(),
+        "ticketStillServing"
+    );
     assert!(matches!(
-        AppError::from(QueueError::TicketStillServing),
-        AppError::Validation(c) if c == "ticketStillServing"
+        AppError::from(QueueError::TicketStillServing(Vec::new())),
+        AppError::Validation(c) if c.starts_with("ticketStillServing")
     ));
 }

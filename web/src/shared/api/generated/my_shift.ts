@@ -9,4 +9,4 @@ export type MyShift = { id: string, status: string, openedAt: string, balances: 
 /**
  * One currency of the caller's shift: opening and expected, as strings.
  */
-export type MyShiftBalance = { code: string, opening: string, expected: string, };
+export type MyShiftBalance = { code: string, opening: string, expected: string, lowCashLevel: string | null, low: boolean, };

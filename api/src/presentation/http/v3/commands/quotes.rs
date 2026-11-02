@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_cash::domain::posting::{CashPlace, CashPostings};
+use xc_cash::infrastructure::drawer_low_levels::DrawerLowLevels;
+use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::quote::quote::QuoteChannel;
 use xc_kernel::ids::BranchId;
@@ -395,6 +398,48 @@ impl CommandAction for QuotesCommand {
                             short_by: l.short_by.normalize().to_string(),
                         })
                         .collect();
+                } else if !quote_needs.is_empty() {
+                    let levels = DrawerLowLevels::for_branch_in(tx, branch)
+                        .await
+                        .map_err(|e| {
+                            V3Error::new(
+                                "serverError",
+                                None,
+                                e.to_string(),
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                            )
+                        })?;
+                    if !levels.is_empty() {
+                        let balances = LedgerCashPostings::new()
+                            .expected_in(tx, &CashPlace::Drawer(shift_id))
+                            .await
+                            .map_err(|e| {
+                                V3Error::new(
+                                    "serverError",
+                                    None,
+                                    e.to_string(),
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                )
+                            })?;
+                        let mut totals: std::collections::BTreeMap<&str, (CurrencyCode, Decimal)> =
+                            std::collections::BTreeMap::new();
+                        for &(currency, amount) in &quote_needs {
+                            if amount > Decimal::ZERO {
+                                totals
+                                    .entry(currency.as_str())
+                                    .and_modify(|(_, sum)| *sum += amount)
+                                    .or_insert((currency, amount));
+                            }
+                        }
+                        for (_, (currency, need)) in totals {
+                            if let Some((_, level)) = levels.iter().find(|(c, _)| *c == currency) {
+                                let have = balances.get(currency).value();
+                                if have >= need && have - need <= *level {
+                                    dto.below_low_cash_level.push(currency.as_str().to_owned());
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

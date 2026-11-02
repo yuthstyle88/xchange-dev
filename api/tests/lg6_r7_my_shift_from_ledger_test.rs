@@ -264,7 +264,9 @@ async fn row1_open_shift_drawer_funded_opening_reads_balances_from_ledger() {
     assert_eq!(data["id"], json!(shift));
     assert_eq!(
         data["balances"],
-        json!([{ "code": "THB", "opening": "1000.00", "expected": "1000.00" }])
+        // Restated 2026-11-02 by claude/b091f5e0 (ledger-inventory.md §5.1.3): no level is set, so `lowCashLevel` is null and
+        // `low` false.
+        json!([{ "code": "THB", "opening": "1000.00", "expected": "1000.00", "lowCashLevel": null, "low": false }])
     );
 
     room.finish().await;
@@ -295,7 +297,9 @@ async fn row2_posting_out_of_drawer_keeps_opening_and_reduces_expected() {
     let data = room.my_shift(&teller).await;
     assert_eq!(
         data["balances"],
-        json!([{ "code": "THB", "opening": "1000.00", "expected": "700.00" }])
+        // Restated 2026-11-02 by claude/b091f5e0 (ledger-inventory.md §5.1.3): no level is set, so `lowCashLevel` is null and
+        // `low` false.
+        json!([{ "code": "THB", "opening": "1000.00", "expected": "700.00", "lowCashLevel": null, "low": false }])
     );
 
     room.finish().await;

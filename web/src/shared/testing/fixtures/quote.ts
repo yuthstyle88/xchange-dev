@@ -46,6 +46,7 @@ export function makeQuoteDto(o: Partial<QuoteDto> = {}): QuoteDto {
     cashSettlement: false,
     drawerShortfall: [],
     drawerShortfallMessage: null,
+    belowLowCashLevel: [],
     ...o,
   };
 }
