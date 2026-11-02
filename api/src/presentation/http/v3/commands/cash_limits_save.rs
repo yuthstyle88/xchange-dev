@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use actix_web::http::Method;
 use actix_web::web;
-use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
@@ -18,7 +17,9 @@ use xc_kernel::money::{Bound, Sign};
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::cash_limits::{CashLimitsData, CashLimitsSaveInput};
+use crate::presentation::dto::v3::cash_limits::{
+    CashLimitsData, CashLimitsRow, CashLimitsSaveInput,
+};
 use crate::presentation::http::v3;
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
@@ -57,16 +58,21 @@ impl CommandAction for CashLimitsSaveCommand {
             .map(parse_limit)
             .transpose()?;
 
-        let row: (Option<String>, String, DateTime<Utc>) = sqlx::query_as(
-            "INSERT INTO cash_limits \
-                 (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
-             SELECT b.organization_id, b.id, $2::numeric, $3, now() \
-               FROM branches b WHERE b.id = $1 \
-             ON CONFLICT (organization_id, branch_id) DO UPDATE \
-                SET count_difference_limit_thb = EXCLUDED.count_difference_limit_thb, \
-                    updated_by = EXCLUDED.updated_by, \
-                    updated_at = EXCLUDED.updated_at \
-             RETURNING count_difference_limit_thb::text, updated_by, updated_at",
+        let row: CashLimitsRow = sqlx::query_as(
+            "WITH s AS ( \
+                 INSERT INTO cash_limits \
+                     (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+                 SELECT b.organization_id, b.id, $2::numeric, $3, now() \
+                   FROM branches b WHERE b.id = $1 \
+                 ON CONFLICT (organization_id, branch_id) DO UPDATE \
+                    SET count_difference_limit_thb = EXCLUDED.count_difference_limit_thb, \
+                        updated_by = EXCLUDED.updated_by, \
+                        updated_at = EXCLUDED.updated_at \
+                 RETURNING count_difference_limit_thb::text, updated_by, updated_at \
+             ) \
+             SELECT s.count_difference_limit_thb, s.updated_by, NULLIF(btrim(u.name), ''), s.updated_at \
+               FROM s \
+               LEFT JOIN users u ON u.id::text = s.updated_by",
         )
         .bind(branch.as_str())
         .bind(limit.map(|l| l.to_string()))
