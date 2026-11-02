@@ -334,6 +334,33 @@ Both reach the same hook, so the rule holds on both without another change.
 - The code is camelCase like the queue's other codes. The message names the three desk actions by the labels the desk shows ("เสร็จสิ้น", "ไม่มีการขาย" from §4.6 FE-1, "ข้ามคิว").
 - `countSubmit` and `handoverStart` are not refused. A CLOSE count can be submitted while a ticket is live; only the step that closes the shift is refused. Refusing at submit too would need xc-cash to read queue state through a new port, and the verify-time refusal already rolls back everything.
 
+**The refusal names the blocking tickets (amended 2026-11-02; lane controller claude/608dff's order, from claude-4's day-3 close, #564 issuecomment-6577794083 row 2, and claude/01TxaRJG's trace, issuecomment-6577831490).**
+- **Gap.** `on_shift_closed` only asks `EXISTS` (`api/crates/xc-queue/src/application/counter/counter_service.rs:207-219`), and `from_cash_error` answers a fixed text (`api/src/presentation/http/v3/commands/cash.rs:209-215`). So the staff card cannot say which ticket blocks the close; on xc-v3 it was W015, left SERVING by a failed sale.
+- **Paths** (measured on `a0957959`). The guard is raised only through `ShiftService::close_on_verified` → `ShiftLifecycleHook::on_closed` → `CounterService::on_shift_closed`, whose two callers are, as above:
+  - the CLOSE `countVerify` (`xc-cash/src/application/count/count_service.rs:1391`);
+  - `handoverAccept` (`handover_service.rs:735`).
+
+  Both answer through `from_cash_error`, so one change covers both.
+- `[required]` **The data.** `on_shift_closed` reads the live tickets instead of `EXISTS`: `display_number`, `status` and `counter_teller_id`, with `NULLIF(btrim(users.name), '')` of that teller, ordered by `called_at`, then `display_number`.
+  - It answers `QueueError::TicketStillServing(Vec<LiveTicket>)`, `LiveTicket { number, status, teller_id, teller_name }`. A counter has no name of its own (`queue_counters` is keyed by `(branch_id, teller_id)`), so "who holds it" is the teller.
+- **Carrying it through `AppError`.** `AppError::Validation` holds only a string. The tickets ride in the message after a marker, exactly as `StockShortfall` carries its lines (`xc-cash/src/domain/shortfall.rs`, ♻️ the existing pattern): `ticketStillServing; tickets=<compact JSON array>`.
+  - One reader, `LiveTicket::from_refusal(message)`, lives beside the type. Matching on the code stays a prefix match, so nothing else changes.
+- `[required]` **On the wire** (`countVerify`, `handoverAccept`): `409`,
+  ```json
+  {"error": {"code": "ticketStillServing",
+             "message": "ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว): W015",
+             "details": {"tickets": [{"number": "W015", "status": "SERVING", "tellerId": "<uuid>", "tellerName": "Teller 1"}]}}}
+  ```
+  - The message is today's sentence, then `: ` and the numbers joined by `, `. An FE that only shows the message still tells staff which ticket.
+  - `details` is the generic envelope field of `xchange-v3-web.md` §4.3 (amended the same day). The FE reads `details.tickets` and never parses the message.
+- **Who may end the ticket** (the fact the FE links to; measured, not changed).
+  - `finish` and `release` (SERVING), and `skip`/`cancel` (CALLED), need `QueueOperate` and the **caller's own counter**: `check_on_duty`, a `queue_counters` row, which exists only while the caller's shift is OPEN (`api/crates/xc-queue/src/application/desk/queue_desk.rs:63-85`).
+  - The ticket must be the caller's own, or the caller must be a BRANCH_MANAGER of the branch (`check_ticket_owner`, `queue_desk.rs:111-122`).
+  - So the **closing teller** ends it on `/desk/queue`, while their shift is still open; the refused close keeps it open. A verifying manager can end it only if they hold an open shift of their own.
+  - No permission is added and who may finish does not change.
+- **Unchanged:** no live ticket ⇒ the close proceeds exactly as before; `countSubmit` and `handoverStart` are still not refused.
+- **Data migration:** none.
+
 **Class diagram (the delta).**
 
 ```mermaid
