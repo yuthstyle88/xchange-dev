@@ -86,6 +86,8 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
 
   const [policy, setPolicy] = createSignal<CashTransferPolicyData | null>(null);
   const [known, setKnown] = createSignal(false);
+  const [traded, setTraded] = createSignal<string[]>([]);
+  const [added, setAdded] = createSignal<string[]>([]);
   const [register, setRegister] = createSignal<string[]>([]);
   const [typed, setTyped] = createSignal<Record<string, string>>({});
   const [busy, setBusy] = createSignal(false);
@@ -93,11 +95,16 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
   const [registerError, setRegisterError] = createSignal<string | null>(null);
 
-  /** The register the cash screen reads, plus any currency the current version names. */
+  /** The branch's traded currencies, plus currencies added on the form, plus any currency the current version names. */
   const currencies = () => {
-    const out = [...register()];
+    const out = [...traded()];
+    for (const cur of added()) if (!out.includes(cur)) out.push(cur);
     for (const cur of Object.keys(policy()?.limits ?? {})) if (!out.includes(cur)) out.push(cur);
     return out;
+  };
+  const addable = () => {
+    const shown = currencies();
+    return register().filter((cur) => !shown.includes(cur));
   };
 
   let readPending: Promise<void> | undefined;
@@ -121,13 +128,18 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   let registerSeq = 0;
   async function readRegister(branch: string) {
     const mine = ++registerSeq;
+    setAdded([]);
     try {
       const answer = await api.view<AdminCashData>('admin_cash', { branch });
       if (mine !== registerSeq) return;
-      if (answer.data) setRegister(answer.data.currencies);
+      if (answer.data) {
+        setTraded(answer.data.stock.map((s) => s.code));
+        setRegister(answer.data.currencies);
+      }
       setRegisterError(null);
     } catch (err: unknown) {
       if (mine !== registerSeq) return;
+      setTraded([]);
       setRegister([]);
       setRegisterError(policyError(err));
     }
@@ -272,6 +284,23 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                 </tbody>
               </table>
             </div>
+            <Show when={addable().length > 0}>
+              <label>
+                {t('addCurrency')}
+                <select
+                  name="addCurrency"
+                  onChange={(e) => {
+                    const cur = e.currentTarget.value;
+                    if (!cur) return;
+                    setAdded((prev) => (prev.includes(cur) ? prev : [...prev, cur]));
+                    e.currentTarget.value = '';
+                  }}
+                >
+                  <option value="">{t('addCurrencyPick')}</option>
+                  <For each={addable()}>{(cur) => <option value={cur}>{cur}</option>}</For>
+                </select>
+              </label>
+            </Show>
             <div class="cash-policy-actions">
               <button
                 type="submit"
