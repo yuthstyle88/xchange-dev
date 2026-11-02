@@ -3,11 +3,11 @@
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
-use xc_approval::domain::subject::ApprovalSubject;
+use xc_approval::domain::subject::{ApprovalSubject, SubjectError};
 use xc_auth::domain::access::{Actor, ApprovalDecider, Permission};
 
 /// The type name callers send.
@@ -24,6 +24,17 @@ pub trait NegativeStockSource: Send + Sync {
         tx: &'a mut Transaction<'_, Postgres>,
         object_id: &'a str,
     ) -> BoxFuture<'a, AppResult<String>>;
+
+    /// Hook called inside the decision's transaction when a `NEGATIVE_STOCK` request is rejected (§5.1.1).
+    fn on_rejected<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _object_id: &'a str,
+        _reason: &'a str,
+        _approver_id: &'a str,
+    ) -> BoxFuture<'a, AppResult<()>> {
+        Box::pin(async move { Ok(()) })
+    }
 }
 
 pub struct NegativeStockSubject {
@@ -58,6 +69,31 @@ impl ApprovalSubject for NegativeStockSubject {
         _outcome: Outcome,
     ) -> BoxFuture<'a, AppResult<()>> {
         Box::pin(async move { Ok(()) })
+    }
+
+    /// REJECTED notifies the source with the decision's reason and approver (§5.1.1); APPROVED writes nothing.
+    fn on_decided_or_unavailable<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        request: &'a ApprovalRequest,
+        outcome: Outcome,
+    ) -> BoxFuture<'a, Result<(), SubjectError>> {
+        Box::pin(async move {
+            if matches!(outcome, Outcome::Rejected) {
+                let (reason, approver_id): (String, String) = sqlx::query_as(
+                    "SELECT reason, approver_id FROM approval_decisions WHERE request_id = $1::uuid",
+                )
+                .bind(request.id.as_str())
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| SubjectError::Failed(AppError::Database(e)))?;
+                self.source
+                    .on_rejected(tx, &request.object_id, &reason, &approver_id)
+                    .await
+                    .map_err(SubjectError::Failed)?;
+            }
+            Ok(())
+        })
     }
 }
 
