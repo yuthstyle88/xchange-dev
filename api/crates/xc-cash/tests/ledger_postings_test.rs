@@ -2404,110 +2404,21 @@ async fn negative_stock_provisional_and_q4_adjust() {
         "APPROVED",
     )
     .await;
-    let res_short = postings
+    // Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+    // even an APPROVED NEGATIVE_STOCK for this source no longer lets a posting go below zero.
+    let refused = postings
         .post_in(
             &mut tx,
             &sell_legs(&shift_id, short_line, "10", "330.00", source(&short_tx)),
             Some(approved),
         )
         .await
-        .expect("approved short sale");
-    assert_eq!(
-        res_short.costs,
-        vec![LineCost {
-            line: short_line,
-            cost_basis_thb: money("320.00"),
-            realized_margin_thb: Some(delta("10.00")),
-        }],
-        "the 10 beyond zero are costed at the last average_after 32: provisional cost 320.00"
+        .expect_err("§5.1.2: no approval allows a short sale");
+    assert!(
+        format!("{refused:?}").contains("stockInsufficient"),
+        "{refused:?}"
     );
-    let pos_neg = inventory
-        .position_for_update_in(&mut tx, ORG, &branch, usd())
-        .await
-        .expect("position after the short sale");
-    assert_eq!(
-        (pos_neg.quantity, pos_neg.cost_thb),
-        (d("-10"), d("-320.00")),
-        "position −10 / −320.00"
-    );
-    assert_posting_entries(
-        &mut tx,
-        res_short.posting_id,
-        &[
-            ("CUSTOMER", usd(), d("10"), d("320.00")),
-            ("DRAWER", usd(), d("-10"), d("-320.00")),
-            ("CUSTOMER", thb(), d("-330.00"), d("-330.00")),
-            ("DRAWER", thb(), d("330.00"), d("330.00")),
-        ],
-    )
-    .await;
-    let short_line_before = line_figures(&mut tx, short_line).await;
-
-    // 4. Buy 100 at 34.00.
-    let res_buy = postings
-        .post_in(
-            &mut tx,
-            &buy_legs(
-                &shift_id,
-                Uuid::new_v4(),
-                "100",
-                "3400.00",
-                source("q4-buy-34"),
-            ),
-            None,
-        )
-        .await
-        .expect("buy 100 at 34.00");
-    // The ADJUST is a cost-only movement: it adds no ledger entry to the buy's posting.
-    assert_posting_entries(
-        &mut tx,
-        res_buy.posting_id,
-        &[
-            ("CUSTOMER", usd(), d("-100"), d("-3400.00")),
-            ("DRAWER", usd(), d("100"), d("3400.00")),
-            ("CUSTOMER", thb(), d("3400.00"), d("3400.00")),
-            ("DRAWER", thb(), d("-3400.00"), d("-3400.00")),
-        ],
-    )
-    .await;
-
-    let adjusts: Vec<(Decimal, Decimal, Option<Uuid>, Option<Decimal>)> = sqlx::query_as(
-        "SELECT quantity_signed, cost_thb_signed, transaction_line_id, average_after \
-         FROM inventory_movements \
-         WHERE organization_id = $1::uuid AND branch_id = $2 AND currency = 'USD' AND movement_type = 'ADJUST'",
-    )
-    .bind(ORG)
-    .bind(branch.as_str())
-    .fetch_all(&mut *tx)
-    .await
-    .expect("fetch ADJUST movements");
-    assert_eq!(
-        adjusts,
-        vec![(
-            d("0"),
-            d("-20.00"),
-            Some(short_line),
-            Some(d("34.00000000"))
-        )],
-        "ruling A: exactly one cost-only ADJUST (quantity 0, −20.00, the short sale's line, average 34)"
-    );
-
-    let pos_after = inventory
-        .position_for_update_in(&mut tx, ORG, &branch, usd())
-        .await
-        .expect("position after the buy");
-    assert_eq!(
-        (pos_after.quantity, pos_after.cost_thb),
-        (d("90"), d("3060.00")),
-        "position 90 / 3,060.00: the average restarts from the real cost 34.00"
-    );
-    assert_eq!(
-        line_figures(&mut tx, short_line).await,
-        short_line_before,
-        "§4.3: the short sale's transaction_lines row is not rewritten by the buy"
-    );
-
-    tx.commit().await.expect("commit");
+    tx.rollback().await.expect("rollback");
     pool.close().await;
 }
 
@@ -2749,20 +2660,16 @@ async fn allow_negative_needs_an_approved_negative_stock_for_this_source() {
         .await
         .expect("current publication");
 
-    postings
+    // Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+    // even an APPROVED NEGATIVE_STOCK for this source no longer lets a posting go below zero.
+    let refused = postings
         .post_in(&mut tx, &legs, Some(approved))
         .await
-        .expect("the APPROVED NEGATIVE_STOCK for this source allows the posting");
-    let pos = PgInventoryRepository::new(pool.clone())
-        .position_for_update_in(&mut tx, ORG, &branch, usd())
-        .await
-        .expect("position");
-    assert_eq!(
-        pos.quantity,
-        d("-10"),
-        "the approved posting takes the position below zero"
+        .expect_err("§5.1.2: the APPROVED request for this source no longer allows it");
+    assert!(
+        format!("{refused:?}").contains("stockInsufficient"),
+        "{refused:?}"
     );
-
     tx.rollback().await.expect("rollback");
     pool.close().await;
 }
@@ -2868,11 +2775,17 @@ async fn approval_for_changed_source_lines_refused() {
         .execute(&pool)
         .await
         .expect("current publication");
+    // Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+    // even an APPROVED NEGATIVE_STOCK for this source no longer lets a posting go below zero.
     let mut tx = pool.begin().await.expect("begin");
-    postings
+    let refused = postings
         .post_in(&mut tx, &legs, Some(fresh))
         .await
-        .expect("an approval at the changed lines allows the posting");
+        .expect_err("§5.1.2: an approval at the changed lines no longer allows it either");
+    assert!(
+        format!("{refused:?}").contains("stockInsufficient"),
+        "{refused:?}"
+    );
     tx.rollback().await.expect("rollback");
     pool.close().await;
 }

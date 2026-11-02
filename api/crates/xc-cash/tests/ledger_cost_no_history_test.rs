@@ -35,7 +35,7 @@ use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_cash::application::ledger_approval::negative_stock::NegativeStockSource;
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{
-    ApprovalRequestId, CashPlace, CashPostings, LineCost, PostingRequest, TransactionLineId,
+    ApprovalRequestId, CashPlace, CashPostings, PostingRequest, TransactionLineId,
 };
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_kernel::ids::BranchId;
@@ -601,10 +601,11 @@ async fn r1_overage_with_no_history_is_costed_at_the_current_buy_rate() {
     pool.close().await;
 }
 
-/// R2: an approved NEGATIVE_STOCK SELL of 10 USD from a position that was never held, BUY 32.50. The
-/// provisional cost is 325.00, and a later BUY of 100 at 34.00 still makes Q-4's correction.
+/// R2, Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// an approved short SELL of 10 USD from a never-held position is refused, so no provisional cost is taken. It used
+/// to post at the BUY rate (325.00) and correct later (Q-4).
 #[tokio::test]
-async fn r2_short_sale_with_no_history_is_costed_at_the_current_buy_rate() {
+async fn r2_short_sale_with_no_history_is_refused_even_when_approved() {
     let (pool, branch) = db().await;
     let shift_id = seed_shift(&pool, &branch).await;
     publish(
@@ -618,9 +619,9 @@ async fn r2_short_sale_with_no_history_is_costed_at_the_current_buy_rate() {
     let postings = LedgerCashPostings::new();
     let short_line = seed_sell_line(&pool, &branch, &shift_id, "10", "330.00").await;
     let (approved, short_tx) = approved_negative_stock(&pool, &postings, &branch, short_line).await;
-
     let mut tx = pool.begin().await.expect("begin");
-    let res = postings
+    let before = written(&mut tx).await;
+    let err = postings
         .post_in(
             &mut tx,
             &sell_legs(
@@ -633,54 +634,12 @@ async fn r2_short_sale_with_no_history_is_costed_at_the_current_buy_rate() {
             Some(approved),
         )
         .await
-        .expect("an approved short sale posts");
-    // cost = round2(10 × round8(32.50 / 1)) = 325.00; margin = 330.00 − 325.00 = 5.00.
-    assert_eq!(
-        res.costs,
-        vec![LineCost {
-            line: short_line,
-            cost_basis_thb: money("325.00"),
-            realized_margin_thb: Some(delta("5.00")),
-        }],
-        "R2: provisional cost 325.00 at the BUY rate (main books 0.00, margin 330.00)"
+        .expect_err("§5.1.2: no approval lets a position go below zero");
+    assert!(
+        format!("{err:?}").contains("stockInsufficient"),
+        "refused stockInsufficient: {err:?}"
     );
-    assert_eq!(
-        position(&mut tx, &branch, "USD").await,
-        (d("-10"), d("-325.00")),
-        "R2: position −10 / −325.00"
-    );
-
-    fund_drawer_thb(&mut tx, &postings, &branch, &shift_id, "3400.00").await;
-    postings
-        .post_in(
-            &mut tx,
-            &buy_legs(&shift_id, "100", "3400.00", exchange_source(&unique("buy"))),
-            None,
-        )
-        .await
-        .expect("buy 100 at 34.00");
-    // Q-4: provisional 325.00, real = round2(10 × 3400.00 / 100) = 340.00, correction = 325.00 − 340.00
-    // = −15.00. Position: −325.00 + 3400.00 − 15.00 = 3060.00 over 90; average_after = 34.00000000.
-    let adjusts: Vec<_> = movements(&mut tx, &branch, "USD")
-        .await
-        .into_iter()
-        .filter(|m| m.0 == "ADJUST")
-        .collect();
-    assert_eq!(
-        adjusts,
-        vec![(
-            "ADJUST".to_owned(),
-            d("0"),
-            d("-15.00"),
-            Some(d("34.00000000"))
-        )],
-        "R2: Q-4's cost-only ADJUST corrects 325.00 to the real 340.00 (main: −340.00 from 0.00)"
-    );
-    assert_eq!(
-        position(&mut tx, &branch, "USD").await,
-        (d("90"), d("3060.00")),
-        "R2: position 90 / 3,060.00 after the buy"
-    );
+    assert_eq!(written(&mut tx).await, before, "nothing written");
     tx.rollback().await.expect("rollback");
     pool.close().await;
 }
@@ -741,31 +700,36 @@ async fn r3_overage_refused_when_the_buy_rate_is_null() {
     pool.close().await;
 }
 
-/// R3c (edge case §9, the `dispose` side): an approved short sale from a never-held position at a
-/// branch with no published USD BUY rate is refused too, and writes nothing.
+/// R3c, Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// an approved short sale with no published USD BUY rate is refused `stockInsufficient` and writes nothing.
 #[tokio::test]
-async fn r3_short_sale_refused_when_there_is_no_published_buy_rate() {
+async fn r3_short_sale_with_no_published_buy_rate_is_refused_even_when_approved() {
     let (pool, branch) = db().await;
     let shift_id = seed_shift(&pool, &branch).await;
     let postings = LedgerCashPostings::new();
     let short_line = seed_sell_line(&pool, &branch, &shift_id, "10", "330.00").await;
     let (approved, short_tx) = approved_negative_stock(&pool, &postings, &branch, short_line).await;
     let mut tx = pool.begin().await.expect("begin");
-    assert_refused_naming(
-        &mut tx,
-        &postings,
-        &sell_legs(
-            &shift_id,
-            short_line,
-            "10",
-            "330.00",
-            exchange_source(&short_tx),
-        ),
-        Some(approved),
-        "USD",
-        "R3c: approved short sale with no published BUY rate",
-    )
-    .await;
+    let before = written(&mut tx).await;
+    let err = postings
+        .post_in(
+            &mut tx,
+            &sell_legs(
+                &shift_id,
+                short_line,
+                "10",
+                "330.00",
+                exchange_source(&short_tx),
+            ),
+            Some(approved),
+        )
+        .await
+        .expect_err("§5.1.2: no approval lets a position go below zero");
+    assert!(
+        format!("{err:?}").contains("stockInsufficient"),
+        "refused stockInsufficient: {err:?}"
+    );
+    assert_eq!(written(&mut tx).await, before, "nothing written");
     tx.rollback().await.expect("rollback");
     pool.close().await;
 }
@@ -1000,10 +964,11 @@ async fn buy_then_sell_all(
     );
 }
 
-/// K1 (kept, `dispose`): a short sale from an exactly-zero position **with** history is costed at the
-/// last `average_after` (32), not at the published BUY rate (40.00).
+/// K1, Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2 (owner: "ต้องเติมเงินก่อน ห้ามติดลบ"):
+/// an approved short sale from an exactly-zero position with history is refused, so the last average is never
+/// used for a sale below zero.
 #[tokio::test]
-async fn k1_short_sale_with_history_keeps_the_last_average() {
+async fn k1_short_sale_with_history_is_refused_even_when_approved() {
     let (pool, branch) = db().await;
     let shift_id = seed_shift(&pool, &branch).await;
     let postings = LedgerCashPostings::new();
@@ -1021,9 +986,9 @@ async fn k1_short_sale_with_history_keeps_the_last_average() {
     )
     .await;
     let (approved, short_tx) = approved_negative_stock(&pool, &postings, &branch, short_line).await;
-
     let mut tx = pool.begin().await.expect("begin");
-    let res = postings
+    let before = written(&mut tx).await;
+    let err = postings
         .post_in(
             &mut tx,
             &sell_legs(
@@ -1036,17 +1001,12 @@ async fn k1_short_sale_with_history_keeps_the_last_average() {
             Some(approved),
         )
         .await
-        .expect("an approved short sale posts");
-    // cost = round2(10 × 32) = 320.00; margin = 330.00 − 320.00 = 10.00 (BUY 40.00 would give 400.00).
-    assert_eq!(
-        res.costs,
-        vec![LineCost {
-            line: short_line,
-            cost_basis_thb: money("320.00"),
-            realized_margin_thb: Some(delta("10.00")),
-        }],
-        "K1: cost at the last average_after 32, as today"
+        .expect_err("§5.1.2: no approval lets a position go below zero");
+    assert!(
+        format!("{err:?}").contains("stockInsufficient"),
+        "refused stockInsufficient: {err:?}"
     );
+    assert_eq!(written(&mut tx).await, before, "nothing written");
     tx.rollback().await.expect("rollback");
     pool.close().await;
 }

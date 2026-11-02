@@ -13,6 +13,10 @@
 //! `DRAWER` < `SAFE` < `POSITION`), `shortBy` the normalized decimal as a string. A second completion while the
 //! request is pending opens nothing and leaves the payload as it was.
 //!
+//! **Restated 2026-11-02 by claude/b091f5e0** (ticket author of the no-negative ticket), citing
+//! `ledger-inventory.md` §5.1.2: no request is opened any more, so the shortfall the port computes (same places, same
+//! order, same normalized amounts as the payload above) reaches the desk in the `409 stockInsufficient` message instead.
+//!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here skips.
 
 mod common;
@@ -118,48 +122,42 @@ async fn requests(c: &Counter, t: &ExchangeTransaction) -> Vec<(String, Value)> 
     .expect("read approval_requests")
 }
 
-fn expected_payload() -> Value {
-    json!({
-        "shortfall": [
-            {"currency": "USD", "place": "DRAWER", "shortBy": "1000"},
-            {"currency": "USD", "place": "POSITION", "shortBy": "1000"},
-        ]
-    })
+/// §5.1.2: the drawer short by 1,000 and the branch's USD position short by 1,000, in the port's order.
+const SHORT: &str = "ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: USD ลิ้นชัก ขาด 1000, USD สต็อก ขาด 1000";
+
+fn message_of(text: &str) -> String {
+    serde_json::from_str::<Value>(text).expect("a JSON body")["error"]["message"]
+        .as_str()
+        .unwrap_or("")
+        .to_owned()
 }
 
 #[actix_web::test]
-async fn gapsa1_a_short_completion_opens_a_request_carrying_the_shortfall() {
+async fn gapsa1_a_short_completion_is_refused_with_the_shortfall_in_the_message_and_no_request() {
     let c = Counter::start().await;
     let t = short_sell(&c).await;
 
     let (status, code, text) = complete(&c, &t, &unique("key")).await;
     assert_eq!(
         (status, code.as_str()),
-        (StatusCode::CONFLICT, "approvalRequired"),
-        "§5.1: the desk is told to wait for approval: {text}"
+        (StatusCode::CONFLICT, "stockInsufficient"),
+        "§5.1.2: no approval, top up first: {text}"
     );
-    let rows = requests(&c, &t).await;
-    assert_eq!(rows.len(), 1, "one NEGATIVE_STOCK request: {rows:?}");
-    assert_eq!(rows[0].0, "PENDING");
-    assert_eq!(
-        rows[0].1,
-        expected_payload(),
-        "§5.1: the drawer ends at 1,000 − 2,000 and the branch's USD position at 1,000 − 2,000"
-    );
+    assert_eq!(message_of(&text), SHORT);
+    assert_eq!(requests(&c, &t).await.len(), 0, "§5.1.2: no request");
     c.finish().await;
 }
 
 #[actix_web::test]
-async fn gapsa1_a_second_completion_while_pending_leaves_the_payload_as_it_was() {
+async fn gapsa1_a_second_completion_answers_the_same_shortfall_and_opens_no_request() {
     let c = Counter::start().await;
     let t = short_sell(&c).await;
 
-    let (_, first, text) = complete(&c, &t, &unique("key")).await;
-    assert_eq!(first, "approvalRequired", "{text}");
-    let (_, again, text) = complete(&c, &t, &unique("key")).await;
-    assert_eq!(again, "approvalRequired", "{text}");
-    let rows = requests(&c, &t).await;
-    assert_eq!(rows.len(), 1, "still one request: {rows:?}");
-    assert_eq!(rows[0].1, expected_payload());
+    for _ in 0..2 {
+        let (_, code, text) = complete(&c, &t, &unique("key")).await;
+        assert_eq!(code, "stockInsufficient", "{text}");
+        assert_eq!(message_of(&text), SHORT);
+    }
+    assert_eq!(requests(&c, &t).await.len(), 0, "no request");
     c.finish().await;
 }

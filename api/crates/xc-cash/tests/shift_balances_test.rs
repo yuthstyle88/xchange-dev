@@ -972,7 +972,8 @@ async fn approved_negative_stock(
 /// (the 2026-10-10 ruling on #924 keeps `Balances` non-negative). Opening 4 USD, then SELL 10 USD for
 /// 330.00 THB: USD −6.00, THB 330.00.
 #[tokio::test]
-async fn after_an_approved_negative_stock_sale_expected_is_negative_while_expected_in_reads_zero() {
+async fn after_a_defect_takes_the_drawer_negative_expected_is_negative_while_expected_in_reads_zero()
+ {
     let (pool, branch) = db().await;
     let ledger = LedgerCashPostings::new();
     let sb = PgLedgerShiftBalances::new(pool.clone());
@@ -987,44 +988,37 @@ async fn after_an_approved_negative_stock_sale_expected_is_negative_while_expect
     )
     .await;
 
-    let (line, sale) = seed_sell_line(&pool, &branch, &shift, "10", "330.00").await;
-    let approval = approved_negative_stock(&pool, &ledger, &branch, &sale).await;
-    let s = src(SourceType::Exchange, &sale, "complete");
-    post(
-        &pool,
-        &ledger,
-        &[
-            req(
-                drawer(&shift),
-                CashPlace::Customer,
-                usd(),
-                "10",
-                &s,
-                Some(line),
-            ),
-            req(
-                CashPlace::Customer,
-                drawer(&shift),
-                thb(),
-                "330.00",
-                &s,
-                None,
-            ),
-        ],
-        Some(approval),
-        "the approved short sale",
+    // Restated 2026-11-02 by claude/b091f5e0, citing `ledger-inventory.md` §5.1.2: no posting through the port can
+    // take a drawer below zero any more, approved or not, so the negative drawer this row reads can only come from a
+    // defect. It is written as one: a balanced raw posting of USD 10 from the drawer to the safe, bypassing
+    // `LedgerCashPostings`. The readers' behaviour under it is unchanged.
+    sqlx::query(
+        "WITH d AS (SELECT id, organization_id, branch_id FROM cash_accounts \
+                    WHERE kind = 'DRAWER' AND shift_id = $1 AND currency = 'USD'), \
+              sf AS (SELECT a.id FROM cash_accounts a, d \
+                     WHERE a.kind = 'SAFE' AND a.currency = 'USD' AND a.branch_id = d.branch_id), \
+              p AS (INSERT INTO ledger_postings (id, organization_id, branch_id, source_type, source_id, \
+                        source_key, status, posted_at, posted_by) \
+                    SELECT gen_random_uuid(), organization_id, branch_id, 'ADJUSTMENT', \
+                        'defect-' || gen_random_uuid()::text, 'defect', 'POSTED', now(), 'test' FROM d \
+                    RETURNING id) \
+         INSERT INTO ledger_entries (posting_id, account_id, currency, quantity_signed, valuation_thb) \
+         SELECT p.id, d.id, 'USD', -10, 0 FROM p, d \
+         UNION ALL SELECT p.id, sf.id, 'USD', 10, 0 FROM p, sf",
     )
-    .await;
+    .bind(&shift)
+    .execute(&pool)
+    .await
+    .expect("write the defect: USD −6.00 in the drawer");
 
     let rows = balances_of(&sb, &shift).await;
-    assert_eq!(currencies(&rows), ["THB", "USD"]);
+    assert_eq!(currencies(&rows), ["USD"]);
     assert_eq!(
         row(&rows, usd()).expected,
         delta("-6"),
         "a negative drawer reads its signed value from ShiftBalances"
     );
     assert_eq!(row(&rows, usd()).opening, money("4"));
-    assert_eq!(row(&rows, thb()).expected, delta("330"));
 
     let place = expected_in(&pool, &ledger, &shift).await;
     assert_eq!(
@@ -1032,7 +1026,6 @@ async fn after_an_approved_negative_stock_sale_expected_is_negative_while_expect
         ForeignAmount::ZERO,
         "expected_in still reads 0 for the negative drawer (#924 ruling)"
     );
-    assert_eq!(place.get(thb()), money("330"));
     pool.close().await;
 }
 
