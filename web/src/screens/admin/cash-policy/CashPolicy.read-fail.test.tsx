@@ -10,7 +10,7 @@ import { render } from 'solid-js/web';
 import { CashPolicy } from './CashPolicy';
 import { setLang } from '../../../shared/i18n';
 import { th as sharedTh } from '../../../shared/i18n/th';
-import { makeAdminCashData, makeCashTransferPolicyData, type CashTransferPolicyData } from '../../../shared/testing/fixtures';
+import { makeAdminCashData, makeAdminCashStockRow, makeCashTransferPolicyData, type CashTransferPolicyData } from '../../../shared/testing/fixtures';
 import * as texts from './i18n';
 
 const POLICY = makeCashTransferPolicyData({
@@ -24,7 +24,7 @@ const POLICY = makeCashTransferPolicyData({
 
 const CASH = makeAdminCashData({
   openShifts: [],
-  stock: [],
+  stock: ['THB', 'USD', 'EUR'].map((code) => makeAdminCashStockRow({ code })), // #6010: rows come from the branch's stock
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
   currencies: ['THB', 'USD', 'EUR'],
