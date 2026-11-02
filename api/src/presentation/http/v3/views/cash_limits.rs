@@ -6,7 +6,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, Utc};
 use pos_error::AppResult;
 use sqlx::PgPool;
 use ts_rs::TS;
@@ -15,7 +14,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
-use crate::presentation::dto::v3::cash_limits::CashLimitsData;
+use crate::presentation::dto::v3::cash_limits::{CashLimitsData, CashLimitsRow};
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
@@ -45,10 +44,11 @@ impl BranchView for CashLimitsBranchView {
         let pool = self.pool.clone();
         let branch = branch.as_str().to_owned();
         async move {
-            let row: Option<(Option<String>, String, DateTime<Utc>)> = sqlx::query_as(
-                "SELECT l.count_difference_limit_thb::text, l.updated_by, l.updated_at \
+            let row: Option<CashLimitsRow> = sqlx::query_as(
+                "SELECT l.count_difference_limit_thb::text, l.updated_by, NULLIF(btrim(u.name), ''), l.updated_at \
                    FROM cash_limits l \
                    JOIN branches b ON b.organization_id = l.organization_id AND b.id = l.branch_id \
+                   LEFT JOIN users u ON u.id::text = l.updated_by \
                   WHERE b.id = $1",
             )
             .bind(&branch)

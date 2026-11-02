@@ -14,28 +14,35 @@ pub struct CashLimitsData {
     pub branch: String,
     pub count_difference_limit_thb: Option<String>,
     pub updated_by: Option<String>,
+    pub updated_by_name: Option<String>,
     pub updated_at: Option<String>,
 }
 
+pub type CashLimitsRow = (
+    Option<String>,
+    String,
+    Option<String>,
+    chrono::DateTime<chrono::Utc>,
+);
+
 impl CashLimitsData {
     /// The answer for `branch` from its `cash_limits` row, read as
-    /// `(count_difference_limit_thb::text, updated_by, updated_at)`; `None` is a branch with no
+    /// `(count_difference_limit_thb::text, updated_by, updated_by_name, updated_at)`; `None` is a branch with no
     /// row. The save and the view both answer through this, so they answer the same object.
-    pub fn of(
-        branch: &str,
-        row: Option<(Option<String>, String, chrono::DateTime<chrono::Utc>)>,
-    ) -> Self {
+    pub fn of(branch: &str, row: Option<CashLimitsRow>) -> Self {
         match row {
-            Some((limit, by, at)) => Self {
+            Some((limit, by, name, at)) => Self {
                 branch: branch.to_owned(),
                 count_difference_limit_thb: limit,
                 updated_by: Some(by),
+                updated_by_name: name,
                 updated_at: Some(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
             },
             None => Self {
                 branch: branch.to_owned(),
                 count_difference_limit_thb: None,
                 updated_by: None,
+                updated_by_name: None,
                 updated_at: None,
             },
         }
