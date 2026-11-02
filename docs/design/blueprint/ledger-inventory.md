@@ -610,6 +610,65 @@ The exchange stays CONFIRMED and the reversal or transfer keeps its state. After
 
 The ticket lists each test by name.
 
+#### 5.1.3 The teller learns of a short drawer at key-in, and is warned when cash runs low (amendment, 2026-11-02)
+
+**Owner's requirement** (relayed by the lane controller claude/608dff, 16:0x ICT 2026-11-02, on #5956's review): *"พนักงานเค้าต้องทราบ ตอน คีย์ แล้ว ต้องเตือนให้ เติม เงิน หากพบเงินเหลือน้อย"* (staff must know at key-in, and be warned to top up when cash runs low).
+
+**Measured on main (2026-11-02, `ed9b6929` and later).**
+- **Why claude-4's short BUY passed create.** The v3 `POST /api/transactions` (`TransactionCreateCommand` → `CreateExchange::run_with_ticket_in`, `api/src/application/workflows/exchange/create.rs:348-397`) only looks up the saver's open shift; it checks no stock. The pre-check `ShiftService::apply_delta_for_teller_in` → `ShiftLedger::ensure_non_negative` runs only on the compat `saveTransaction` path (`api/src/application/workflows/save_transaction.rs:495`, `:508`), which the desk does not use.
+  - Re-run in a throwaway test: a cash BUY of USD 5 (THB 160.50) against a drawer of THB 40.00 answered quote `200`, create `200` and confirm `200`; only complete refused.
+- **The EX-5 alert floors.**
+  - `branch_stock_floors(branch, currency, min_quantity)` (`api/migrations/20261031130000_executive_finance.sql:17-26`), written by `branchAlertSettingsSave` (`floors[].minQuantity`), behind `Permission::AlertSettingsSave` (`executive-finance.md:310`: EXECUTIVE, ADMIN; module Dashboard/Full, `permission_module.rs:101`).
+  - It is compared with the **branch total**, not a drawer: THB = all the branch's `DRAWER` + `SAFE` balances; foreign = the inventory position (drawer, safe and in transit), less active reservations (`api/src/infrastructure/executive/alert_facts.rs:147-209`, `ledger_cash_facts.rs:194-215`).
+  - **Who sees it:** only the executive overview's `lowStock` alert (`views/executive_overview.rs`). No desk or teller view reads it.
+
+**1. Key-in check: the quote warns, and create refuses.**
+- `[required]` A DESK quote whose caller has an open shift answers `drawerShortfall: [{currency, place: "DRAWER", shortBy}]`. It lists each currency the quote would take out of the caller's drawer beyond its expected balance, computed the way §5.1.2's refusal does: the THB `settleThb` for a cash BUY, the foreign quantity for a SELL. The list is empty when the drawer can pay. It is advisory: the quote is still issued, because the teller may tell the customer the price, then top up.
+- `[required]` `drawerShortfallMessage: string | null` is the same text the refusal carries (§5.1.2), or `null`, so the FE shows exactly one wording and computes nothing.
+- `[required]` Create (`POST /api/transactions`) refuses a cash exchange the drawer cannot pay, with §5.1.2's body (`409 stockInsufficient`, the same message), and writes nothing. It is the first write. `ShiftLedger::ensure_non_negative` is reused, in the corrected form below, through `ShiftService::apply_delta_for_teller_in` as `saveTransaction` already does, so the desk's and the compat paths share one check (♻️).
+  - **Correction:** today `ensure_non_negative` judges only the end balance. It must refuse only a currency whose change is negative and whose end is below zero, as the port does (`ledger_postings.rs:899-903`), so a SELL that adds THB is never refused.
+- `complete`'s refusal stays, for a drawer that changed between create and complete.
+
+**2. Low-cash warning: a separate drawer level (owner's rulings, 17:3x ICT 2026-11-02, on #5971).**
+- **(a) A level of its own.** The EX-5 floor (`branch_stock_floors`) stays as it is: the branch total, for the executive alert. The desk warning compares a **separate per-branch, per-currency drawer level** with **one drawer's** expected balance.
+- **(b) Finance sets it on `#cash-limits`**, beside the count-difference limit, under the cash-limits permission (`Permission::CashLimitsManage`, `xc-auth/src/domain/policy/areas/cash_limits.rs:15-22`). `AlertSettingsSave` is not granted to FINANCE.
+- `[required]` **Storage.** A new table `cash_drawer_low_levels (organization_id uuid, branch_id text, currency char(3) REFERENCES currencies, low_level numeric(20,4) NOT NULL CHECK (low_level > 0), updated_by uuid NOT NULL, updated_at timestamptz NOT NULL, PRIMARY KEY (organization_id, branch_id, currency), FOREIGN KEY (organization_id, branch_id) REFERENCES branches (organization_id, id))`. A missing row means "no warning" for that currency. There is no NULL row; clearing a level deletes its row.
+- `[required]` **Read.** The `cash_limits` view's `CashLimitsData` gains `drawerLowLevels: [{currency, lowLevel}]`, ordered by currency, with `lowLevel` a decimal string. It is `[]` when none. No new view and no new policy row: `cashLimitsRead` covers it.
+- `[required]` **Write.** A new command `drawerLowLevelsSave`, `PUT /api/cash-limits/drawer-low-levels`, body `{branch, levels: [{currency, lowLevel}]}`. It replaces the branch's whole set in one transaction (rows not listed are deleted) and answers `CashLimitsData` like `cashLimitsSave`. It inherits `(EntryPath::Rpc, "cashLimitsSave")`, so it needs no new policy row: the same permission and the same people as the count-difference limit.
+  - `400 validationFailed`, naming the field: a currency not in `currencies`, a duplicate currency, `lowLevel` ≤ 0, not a decimal, or beyond `numeric(20,4)`.
+- `[required]` **The desk.** `MyShiftBalance` (the `my_shift` view) gains `lowCashLevel: string | null` (this drawer's level for the currency, `null` when none) and `low: boolean` (`expected <= lowCashLevel`).
+  - The desk shows a standing warning, "เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ", while any currency is `low`.
+  - The DESK quote answers `belowLowCashLevel: string[]`: the currencies the quote would leave at or below the level while the drawer can still pay.
+  - The desk re-reads `my_shift` after each completed exchange and on its 60-second poll (claude/01TxaRJG, L2); no new polling.
+
+**Classes and files (the changed part).**
+
+```mermaid
+classDiagram
+  class DrawerLowLevels { <<xc-cash infrastructure/drawer_low_levels.rs  new>> +for_branch(tx, org, branch) Vec~(CurrencyCode, Decimal)~ +replace_in(tx, org, branch, levels, by, at) }
+  class DrawerLowLevelsSaveCommand { <<api/src/presentation/http/v3/commands/drawer_low_levels_save.rs  new>> NAME drawerLowLevelsSave; INHERITS (Rpc, cashLimitsSave) }
+  class CashLimitsData { <<dto/v3/cash_limits.rs>> +drawer_low_levels: Vec~DrawerLowLevel~ }
+  class MyShiftBalance { <<dto/v3/cash.rs>> +low_cash_level: Option~String~ +low: bool }
+  class QuoteAnswer { <<the DESK quote answer>> +drawer_shortfall +drawer_shortfall_message +below_low_cash_level }
+  class ShiftLedger { <<xc-shift entities/shift_ledger.rs>> +ensure_non_negative(balance, delta) corrected: decreases only }
+  class CreateExchange { <<api application/workflows/exchange/create.rs>> calls ShiftService::apply_delta_for_teller_in }
+  DrawerLowLevelsSaveCommand --> DrawerLowLevels : replace_in
+  CashLimitsData <.. DrawerLowLevels : for_branch (cash_limits view)
+  MyShiftBalance <.. DrawerLowLevels : for_branch (my_shift view)
+  QuoteAnswer <.. DrawerLowLevels : below_low_cash_level
+  CreateExchange --> ShiftLedger : the key-in refusal
+```
+
+`DrawerLowLevels` is the table's one reader and writer, used by the `cash_limits` view, the `my_shift` view, the quote and the save (♻️: one owner, no copies of the SQL).
+
+**Order with other work.** The `cash_limits` DTO, view and save are being changed by #5968 (`updatedByName`). The level ticket's scope overlaps them, so it is released after #5968 merges.
+
+**Data migration** (`<slot>_cash_drawer_low_levels.sql`; slot from `scripts/migration-slot.sh next` at `pr_open`).
+1. **Existing rows.** None are touched. The migration only creates `cash_drawer_low_levels`, so every branch starts with no level, `drawerLowLevels: []` and `low: false` everywhere. `branch_stock_floors` and `cash_limits` are unchanged.
+2. **Backfill.** None: there is no earlier drawer level to copy, and the owner's ruling keeps the EX-5 floor separate, so floors are not copied in.
+3. **Deploy order.** Migration first, then the new binary. The old binary never reads the table, so it keeps working against the new schema.
+4. **What `down` loses.** The levels finance entered. Nothing else reads them.
+
 ### 5.2 `COUNT_DIFFERENCE` (V-1)
 
 `CountDifferenceSubject` + `CountDifferencePolicy` (`xc-cash/src/application/ledger_approval/count_difference.rs`):

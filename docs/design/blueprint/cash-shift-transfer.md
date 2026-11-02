@@ -444,7 +444,7 @@ gains `myShift`; its `staff_requests` view is replaced by these two lists (§10)
   - Empty when none; absent only with the shift itself (`my_shift` answers `null` with no open shift).
   - It lists only the caller's own drawer, never another shift's, so `myShift`'s existing row (`ShiftOperate`, `cash.rs:91-95`) is enough: **no new policy row**.
   - `cash_transfers` keeps `CashManage`; widening it would show a teller every transfer of the branch.
-- **One row builder (♻️).** The SQL row, the lines query and the mapping to `CashTransferRow` move out of `views/cash_transfers.rs:28-128` into `views/cash_transfer_rows.rs` (new): `pub(crate) async fn with_lines(pool: &PgPool, rows: Vec<TransferSqlRow>) -> AppResult<Vec<CashTransferRow>>`, plus the `TRANSFER_COLUMNS` select list. Both `cash_transfers` and `my_shift` call it; neither keeps its own copy.
+- **One row builder (♻️).** The SQL row, the lines query and the mapping to `CashTransferRow` move out of `views/cash_transfers.rs:28-128` into `http/v3/cash_transfer_rows.rs` (new; not under `views/`, because `api/build.rs:167-194` registers every file there as a view — corrected 2026-11-02 after #5961): `pub(crate) async fn with_lines(pool: &PgPool, rows: Vec<TransferSqlRow>) -> AppResult<Vec<CashTransferRow>>`, plus the `TRANSFER_COLUMNS` select list. Both `cash_transfers` and `my_shift` call it; neither keeps its own copy.
 - **Data migration.** None: a read of `cash_transfers.to_shift_id` and `status`, both already stored (`20261012100000_cash.sql`).
 - **Generated files.** `web/src/shared/api/generated/my_shift.ts` (ts-rs) and `web/src/shared/testing/fixtures/my_shift.ts` (`npm run gen:fixtures`) are regenerated in the same PR; `makeMyShift` gains `incomingTransfers: []`.
 
