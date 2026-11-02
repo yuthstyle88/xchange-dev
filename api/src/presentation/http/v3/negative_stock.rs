@@ -15,11 +15,11 @@ pub fn stock_insufficient(e: &AppError) -> Option<&str> {
     }
 }
 
-/// Answers `409 stockInsufficient` naming each short place (`ledger-inventory.md` §5.1.2).
-pub fn stock_refusal_answer(refusal: &str) -> V3Error {
-    let items: Vec<String> = StockShortfall::from_refusal(refusal)
+/// Formats §5.1.2's `stockInsufficient` message for `s`.
+pub fn shortfall_message(s: &StockShortfall) -> String {
+    let items: Vec<String> = s
         .lines
-        .into_iter()
+        .iter()
         .map(|l| {
             let place = match l.place {
                 ShortPlace::Drawer => "ลิ้นชัก",
@@ -33,10 +33,16 @@ pub fn stock_refusal_answer(refusal: &str) -> V3Error {
             )
         })
         .collect();
+    format!("ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: {}", items.join(", "))
+}
+
+/// Answers `409 stockInsufficient` naming each short place (`ledger-inventory.md` §5.1.2).
+pub fn stock_refusal_answer(refusal: &str) -> V3Error {
+    let s = StockShortfall::from_refusal(refusal);
     V3Error::new(
         "stockInsufficient",
         None,
-        format!("ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: {}", items.join(", ")),
+        shortfall_message(&s),
         StatusCode::CONFLICT,
     )
 }

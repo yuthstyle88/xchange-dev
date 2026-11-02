@@ -48,6 +48,7 @@ use crate::application::workflows::exchange::confirm::ConfirmTransaction;
 use crate::application::workflows::exchange::create::{
     CreatePayment, CreateRequest, CreateTransaction,
 };
+use crate::application::workflows::exchange::drawer_check;
 use crate::application::workflows::kiosk_save_step::KioskSaveStep;
 use crate::application::workflows::payment_save_step::PaymentSaveStep;
 use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
@@ -68,6 +69,7 @@ use crate::presentation::http::v3::command::{
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
+use crate::presentation::http::v3::negative_stock::shortfall_message;
 
 // ------------------------------------------------------------ inputs
 
@@ -399,6 +401,29 @@ impl CommandAction for TransactionCreateCommand {
             )
             .await
             .map_err(refusal)?;
+        if let Some(ref shift_id) = made.shift_id {
+            let cash = made.payment.method.is_cash();
+            let needs: Vec<_> = made
+                .lines
+                .iter()
+                .flat_map(|l| {
+                    let settle =
+                        rust_decimal::Decimal::from_i128_with_scale(l.settle_thb.minor_i128(), 2);
+                    drawer_check::needs(l.shop_side, l.currency, l.quantity.value(), settle, cash)
+                })
+                .collect();
+            let shortfall = drawer_check::drawer_shortfall_in(tx, shift_id, &needs)
+                .await
+                .map_err(|_| server_error())?;
+            if !shortfall.lines.is_empty() {
+                return Err(V3Error::new(
+                    "stockInsufficient",
+                    None,
+                    shortfall_message(&shortfall),
+                    StatusCode::CONFLICT,
+                ));
+            }
+        }
         answer(&self.store, tx, made.id).await
     }
 }
