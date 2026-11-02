@@ -49,6 +49,8 @@ export const th = {
   sideBuy: 'ร้านรับซื้อ (BUY)',
   sideSell: 'ร้านขาย (SELL)',
   stockCancelReason: 'ยกเลิกระหว่างรอเติมเงินเข้าลิ้นชัก',
+  lowCashTitle: 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ',
+  lowCashCurrencies: 'สกุลที่เหลือน้อย: {currencies}',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -99,4 +101,6 @@ export const en: Record<keyof typeof th, string> = {
   sideBuy: 'Shop buys (BUY)',
   sideSell: 'Shop sells (SELL)',
   stockCancelReason: 'Cancelled while waiting for the drawer to be topped up',
+  lowCashTitle: 'The drawer is running low. Ask the manager to move cash from the safe',
+  lowCashCurrencies: 'Low on: {currencies}',
 };
