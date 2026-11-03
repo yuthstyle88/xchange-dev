@@ -44,6 +44,7 @@ export function makeQuoteDto(o: Partial<QuoteDto> = {}): QuoteDto {
     benefitBasis: 'INDICATIVE',
     stale: false,
     cashSettlement: false,
+    drawerCheckIfCash: false,
     drawerShortfall: [],
     drawerShortfallMessage: null,
     belowLowCashLevel: [],
