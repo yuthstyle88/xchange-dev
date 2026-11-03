@@ -210,7 +210,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
         >
           <Show when={policy()} fallback={<strong>{t('noLimit')}</strong>}>
             {(p) => (
-              <strong>{t('current', { version: p().version, setBy: p().setBy, when: when(p().createdAt) })}</strong>
+              <strong>{t('current', { version: p().version, setBy: p().setByName || '—', when: when(p().createdAt) })}</strong>
             )}
           </Show>
         </Show>

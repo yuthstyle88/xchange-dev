@@ -14,7 +14,7 @@ import { screenT } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import { toast } from '../parts/toast';
-import { limitsError } from './CashLimits';
+import { limitsError, when } from './CashLimits';
 import * as table from './i18n';
 
 const t = screenT('admin.cash-limits', table);
@@ -100,6 +100,16 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
           <CardHead title={t('levelsTitle')} />
           <CardBody>
             <p>{t('levelsHelp')}</p>
+            <Show when={props.data()?.drawerLowLevelsUpdatedAt}>
+              {(at) => (
+                <p data-testid="levels-set-by">
+                  {t('levelsSetBy', {
+                    by: props.data()?.drawerLowLevelsUpdatedByName || '—',
+                    at: when(at()),
+                  })}
+                </p>
+              )}
+            </Show>
             <form onSubmit={save}>
               <Show
                 when={rows().length > 0}
