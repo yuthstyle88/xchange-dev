@@ -24,7 +24,14 @@ export type { LowCash } from './low-cash';
 export type { SaveAnswer, StockWait } from './save';
 
 export type DeskType = 'BUY' | 'SELL';
-export type SaveOutcome = 'idle' | 'saving' | 'saved' | 'refused' | 'unknown';
+export type SaveOutcome = 'idle' | 'saving' | 'saved' | 'refused' | 'unknown' | 'reconfirm';
+
+export interface Reconfirm {
+  fromNet: string;
+  toNet: string;
+  fromRate: string;
+  toRate: string;
+}
 /** Blueprint §06, verbatim. */
 export type TransactionState = 'DRAFT' | 'PENDING_APPROVAL' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
 export type StepIndex = 0 | 1 | 2 | 3 | 4;
@@ -130,6 +137,7 @@ export interface DeskStore {
   setEntry(e: DeskEntryState | undefined): void;
   // save (§5.4)
   outcome: Accessor<SaveOutcome>;
+  reconfirm: Accessor<Reconfirm | undefined>;
   transactionState: Accessor<TransactionState | undefined>;
   saveError: Accessor<string | undefined>;
   saved: Accessor<SaveAnswer | undefined>;
@@ -239,6 +247,7 @@ export function createDeskStore(
   const [entry, setEntry] = createSignal<DeskEntryState | undefined>();
 
   const [outcome, setOutcome] = createSignal<SaveOutcome>('idle');
+  const [reconfirm, setReconfirm] = createSignal<Reconfirm | undefined>();
   const [transactionState, setTransactionState] = createSignal<TransactionState | undefined>();
   const [saveError, setSaveError] = createSignal<string | undefined>();
   const [saved, setSaved] = createSignal<SaveAnswer | undefined>();
@@ -379,7 +388,10 @@ export function createDeskStore(
   function setMethod(v: string): void {
     const wasCash = method() === 'Cash';
     setMethodS(v);
-    if ((v === 'Cash') !== wasCash) scheduleQuote();
+    if ((v === 'Cash') !== wasCash) {
+      setPaymentChecked(false);
+      scheduleQuote();
+    }
   }
   function setFee(v: string): void {
     setFeeS(v);
@@ -462,6 +474,7 @@ export function createDeskStore(
     entry,
     setEntry: (e) => setEntry(e),
     outcome,
+    reconfirm,
     transactionState,
     saveError,
     saved,
@@ -475,6 +488,7 @@ export function createDeskStore(
 
   const saver = createSaver(store, {
     setOutcome,
+    setReconfirm,
     setTransactionState,
     setSaveError,
     setSaved,
@@ -489,6 +503,7 @@ export function createDeskStore(
     setQuote(undefined);
     setStaffDraftId('');
     setOutcome('idle');
+    setReconfirm(undefined);
     setTransactionState(undefined);
     setSaveError(undefined);
     setSaved(undefined);
@@ -538,6 +553,7 @@ export function createDeskStore(
     setEntry(undefined);
     followType();
     setOutcome('idle');
+    setReconfirm(undefined);
     setTransactionState(undefined);
     setSaveError(undefined);
     setSaved(undefined);

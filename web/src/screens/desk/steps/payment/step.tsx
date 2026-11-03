@@ -41,6 +41,14 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
   const channelOff = () => !noRules() && store.method() !== '' && !open(store.method());
   const net = () => store.quote()?.lines[0]?.settleThb ?? '';
   const rounding = () => store.quote()?.lines[0]?.roundingThb ?? '0.00';
+  const reconfirmNotice = () => {
+    if (store.outcome() !== 'reconfirm') return undefined;
+    const r = store.reconfirm();
+    if (!r) return undefined;
+    return r.fromRate === r.toRate
+      ? t('reconfirmNet', { fromNet: r.fromNet, toNet: r.toNet })
+      : t('reconfirmRate', { fromNet: r.fromNet, toNet: r.toNet, fromRate: r.fromRate, toRate: r.toRate });
+  };
   const instruction = () => ruleFor(rules(), store.method())?.instruction ?? '';
   const entry = () => store.entry();
   const feeError = () => {
@@ -271,6 +279,13 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
         <span>{t('checked', { net: net() })}</span>
       </label>
 
+      <Show when={reconfirmNotice()}>
+        {(msg) => (
+          <p class="desk-notice" role="alert">
+            {msg()}
+          </p>
+        )}
+      </Show>
       <Show when={error()}>
         <p class="desk-error" role="alert">
           {error()}
