@@ -59,6 +59,13 @@ const STATUS_TEXT: Record<string, Parameters<typeof t>[0]> = {
 
 const kindText = (kind: string) => (KIND_TEXT[kind] ? t(KIND_TEXT[kind]!) : kind);
 const statusText = (status: string) => (STATUS_TEXT[status] ? t(STATUS_TEXT[status]!) : status);
+const rowStatusText = (row: CashTransferRow) => {
+  if (row.status === 'DRAFT') {
+    if (row.approvalStatus === 'PENDING') return t('transferPending');
+    if (row.approvalStatus === 'REJECTED') return t('transferRejected');
+  }
+  return statusText(row.status);
+};
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
@@ -678,7 +685,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           <td>{kindText(row.kind)}</td>
                           <td>
                             <span class={row.status === 'RECONCILED' ? 'pill neutral' : 'pill'}>
-                              {statusText(row.status)}
+                              {rowStatusText(row)}
                             </span>
                           </td>
                           <td>
@@ -693,7 +700,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           </td>
                           <td>{row.note ?? ''}</td>
                           <td>
-                            <Show when={row.status === 'DRAFT'}>
+                            <Show when={row.status === 'DRAFT' && row.approvalStatus !== 'PENDING'}>
                               <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => step(row, 'submit')}>
                                 {t('btnSubmit')}
                               </button>
