@@ -230,6 +230,7 @@ async fn row1_no_margin_guards_row_returns_all_null() {
         json!({
             "maxSpreadShare": null,
             "setBy": null,
+            "setByName": null,
             "setAt": null,
         })
     );
@@ -387,6 +388,7 @@ async fn row4_another_organisation_row_never_shown() {
         json!({
             "maxSpreadShare": null,
             "setBy": null,
+            "setByName": null,
             "setAt": null,
         })
     );
