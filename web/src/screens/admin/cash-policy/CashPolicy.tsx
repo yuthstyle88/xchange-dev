@@ -11,6 +11,7 @@ import type {
 } from '../../../shared/api/generated/cash_transfer_policy';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -95,6 +96,8 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
   const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
   const [registerError, setRegisterError] = createSignal<string | null>(null);
 
+  const canSave = () => (sharedSession().me()?.permissions ?? []).includes('CashTransferPolicySet');
+
   /** The branch's traded currencies, plus currencies added on the form, plus any currency the current version names. */
   const currencies = () => {
     const out = [...traded()];
@@ -162,6 +165,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
 
   async function save(e: Event) {
     e.preventDefault();
+    if (!canSave()) return;
     if (!known() && !refusal()) await readPending;
     if (!known() || busy()) return;
     const limits: Record<string, string> = {};
@@ -271,6 +275,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                             type="text"
                             inputMode="decimal"
                             data-currency={cur}
+                            disabled={!canSave()}
                             value={typed()[cur] ?? ''}
                             onInput={(e) => {
                               const value = e.currentTarget.value;
@@ -284,7 +289,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                 </tbody>
               </table>
             </div>
-            <Show when={addable().length > 0}>
+            <Show when={canSave() && addable().length > 0}>
               <label>
                 {t('addCurrency')}
                 <select
@@ -301,17 +306,19 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                 </select>
               </label>
             </Show>
-            <div class="cash-policy-actions">
-              <button
-                type="submit"
-                class="primary"
-                data-action="save"
-                disabled={(!known() && Boolean(refusal())) || busy()}
-                title={!known() && refusal() ? t('unreadable') : undefined}
-              >
-                {t('save')}
-              </button>
-            </div>
+            <Show when={canSave()} fallback={<p data-testid="owner-set">{t('ownerSet')}</p>}>
+              <div class="cash-policy-actions">
+                <button
+                  type="submit"
+                  class="primary"
+                  data-action="save"
+                  disabled={(!known() && Boolean(refusal())) || busy()}
+                  title={!known() && refusal() ? t('unreadable') : undefined}
+                >
+                  {t('save')}
+                </button>
+              </div>
+            </Show>
           </form>
         </CardBody>
       </Card>
