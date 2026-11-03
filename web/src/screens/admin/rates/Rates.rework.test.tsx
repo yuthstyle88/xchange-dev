@@ -153,12 +153,13 @@ function refusal(status: number, code: string, message: string): Reply {
 async function answer(s: Sent): Promise<Reply> {
   const { path, method } = s;
   if (path === '/api/v3/views/me') {
+    // #564 F-3: the page draws the new-draft button only for a caller with RatesDraft (Rates.draft-permission.test.tsx).
     return {
       status: 200,
       body: {
         version: 1,
         changed: true,
-        data: { kind: 'owner', id: 'owner-1', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' },
+        data: { kind: 'owner', id: 'owner-1', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner', permissions: ['RatesDraft'] },
       },
     };
   }
