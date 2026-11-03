@@ -36,6 +36,7 @@ import type { AdminMenu, AdminMenuProps } from '../menus';
 import { menus } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
+import { sharedSession } from '../../../shared/session/session';
 
 interface MenuModule {
   menu: AdminMenu & { Component: (props: AdminMenuProps) => JSX.Element };
@@ -222,6 +223,8 @@ async function mountShell(permissions: string[]): Promise<HTMLElement> {
 }
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
   server = new Server();
   vi.stubGlobal('fetch', vi.fn(server.fetch));
   vi.stubGlobal('matchMedia', (query: string) => ({
@@ -275,22 +278,23 @@ const bodyOf = (s: Sent) => JSON.parse(s.body ?? 'null') as Record<string, unkno
 // ── the real admin entry and the menu's permission ──────────────────────────────────────────────────────────────
 
 describe('the real admin entry (AdminShell with the menus glob)', () => {
-  it('with CashTransferPolicySet the cash-policy menu is in the nav and #cash-policy draws the screen', async () => {
-    const el = await mountShell([SET]);
+  // #6016 restated: the menu follows the read permission (owner: "เจ้าของเป็น คนตั้งค่า ไว้ ให้ ฝ่ายการเงินปฏิบัติ ตาม").
+  it('with settingsRead the cash-policy menu is in the nav and #cash-policy draws the screen', async () => {
+    const el = await mountShell(['settingsRead']);
     expect(el.querySelector('a[href="#cash-policy"]'), 'the nav item').not.toBeNull();
     expect(screen(el), 'the screen through the shell').not.toBeNull();
   });
 
-  it('without CashTransferPolicySet the menu is hidden and the screen is not drawn', async () => {
-    const el = await mountShell(['SystemSettings', 'CashManage']);
+  it('without settingsRead (even with CashTransferPolicySet alone) the menu is hidden and the screen is not drawn', async () => {
+    const el = await mountShell(['SystemSettings', 'CashManage', SET]);
     expect(el.querySelector('a[href="#cash-policy"]')).toBeNull();
     expect(screen(el)).toBeNull();
   });
 
-  it("the menu record: id 'cash-policy', needs 'CashTransferPolicySet', grouped beside cash", () => {
+  it("the menu record: id 'cash-policy', needs 'settingsRead', grouped beside cash", () => {
     const m = theMenu();
     expect(m.id).toBe('cash-policy');
-    expect(m.needs).toBe(SET);
+    expect(m.needs).toBe('settingsRead');
     const cash = menus.find((x) => x.id === 'cash');
     expect(cash, 'the cash menu').toBeDefined();
     expect(m.group).toBe(cash!.group);

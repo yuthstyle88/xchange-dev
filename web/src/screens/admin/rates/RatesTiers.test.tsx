@@ -621,11 +621,9 @@ describe('VT-5 value tiers and sharp-move threshold (#1650)', () => {
     const thresh = sharpMoveInput(el);
     expect(thresh.disabled || thresh.readOnly, 'sharp-move threshold is read-only').toBe(true);
 
-    const saveBtn = savePolicyButton(el);
-    expect(saveBtn.disabled, 'save button is disabled for non-owner').toBe(true);
-    if (!saveBtn.disabled) {
-      await click(saveBtn);
-    }
+    // #6016 pattern (F3): no save control for a non-owner; the owner note stands in its place.
+    expect(el.querySelector('[data-action="save-policy"]'), 'no save control for non-owner').toBeNull();
+    expect(el.querySelectorAll('[data-testid="owner-set"]').length, 'one owner note').toBe(1);
     expect(policySaves().length, 'no policy save sent by non-owner').toBe(0);
   });
 

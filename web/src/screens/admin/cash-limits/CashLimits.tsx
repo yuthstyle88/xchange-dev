@@ -7,6 +7,7 @@ import type { CashLimitsSaveInput } from '../../../shared/api/generated/cash_lim
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -72,6 +73,8 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [fieldRefusal, setFieldRefusal] = createSignal<string | null>(null);
 
+  const canSave = () => (sharedSession().me()?.permissions ?? []).includes('CashLimitsManage');
+
   function applyData(data: CashLimitsData | null) {
     setCurrent(data);
     const limit = data?.countDifferenceLimitThb ?? null;
@@ -120,7 +123,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
 
   async function save(e: Event) {
     e.preventDefault();
-    if (!known() || busy()) return;
+    if (!canSave() || !known() || busy()) return;
     const useNoLimit = noLimit();
     const raw = typed();
     if (!useNoLimit && raw.trim() === '') {
@@ -201,6 +204,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
                 inputMode="decimal"
                 name="countDifferenceLimitThb"
                 data-field="countDifferenceLimitThb"
+                disabled={!canSave()}
                 value={typed()}
                 onInput={(e) => {
                   setTyped(e.currentTarget.value);
@@ -220,6 +224,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
                   type="checkbox"
                   name="noLimit"
                   data-action="no-limit"
+                  disabled={!canSave()}
                   checked={noLimit()}
                   onChange={(e) => {
                     setNoLimit(e.currentTarget.checked);
@@ -229,17 +234,19 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
               </label>
             </div>
 
-            <div class="cash-limits-actions">
-              <button
-                type="submit"
-                class="primary"
-                data-action="save"
-                disabled={!known() || busy()}
-                title={!known() && refusal() ? t('unreadable') : undefined}
-              >
-                {t('save')}
-              </button>
-            </div>
+            <Show when={canSave()} fallback={<p data-testid="owner-set">{t('ownerSet')}</p>}>
+              <div class="cash-limits-actions">
+                <button
+                  type="submit"
+                  class="primary"
+                  data-action="save"
+                  disabled={!known() || busy()}
+                  title={!known() && refusal() ? t('unreadable') : undefined}
+                >
+                  {t('save')}
+                </button>
+              </div>
+            </Show>
           </form>
         </CardBody>
       </Card>

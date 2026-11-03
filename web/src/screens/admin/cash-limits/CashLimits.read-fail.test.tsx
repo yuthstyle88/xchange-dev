@@ -15,6 +15,7 @@ import { Dialog, closeDialog } from '../parts/Dialog';
 import { Toast } from '../parts/toast';
 import { menu } from './menu';
 import * as texts from './i18n';
+import { sharedSession } from '../../../shared/session/session';
 
 const NO_ROW = makeCashLimitsData({ branch: 'MAIN', countDifferenceLimitThb: null, updatedBy: null, updatedAt: null });
 
@@ -128,6 +129,8 @@ async function mount(readsByBranch: Record<string, Read>): Promise<HTMLElement> 
 }
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashLimitsManage (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashLimitsManage'] }));
   server = new Server();
   vi.stubGlobal('fetch', vi.fn(server.fetch));
   location.hash = '#cash-limits';

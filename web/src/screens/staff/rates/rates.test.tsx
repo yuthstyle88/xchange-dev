@@ -255,7 +255,7 @@ describe('freshness: the shared RateFreshness (rates.md §4.10)', () => {
     expect(p, 'RateFreshness is embedded').not.toBeNull();
     expect(el.querySelector('.xc-rate-stale')).toBeNull();
     const at = new Date(PUBLISHED_AT).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-    expect(p!.textContent).toContain('อ้างอิงวันที่ 2026-10-09');
+    expect(p!.textContent).toContain('อัตราอ้างอิง ธปท. วันที่ 2026-10-09'); // F7: owner-approved wording, #564
     expect(p!.textContent).toContain(fill('ประกาศเมื่อ {at}', { at }));
   });
 
@@ -292,7 +292,7 @@ describe('TH and EN (SD:S8)', () => {
     // the actor's own name and branch are data, not texts; the card is not asked to show them
     const enText = (el.textContent ?? '').replace('คุณทดสอบ', '').replace('สาขาทดสอบ', '');
     expect(enText).not.toMatch(/[฀-๿]/);
-    expect(enText).toContain('Reference date 2026-10-09'); // rate.sourceDate in en
+    expect(enText).toContain('BoT reference rate of 2026-10-09'); // rate.sourceDate in en (F7)
 
     dispose?.();
     dispose = undefined;

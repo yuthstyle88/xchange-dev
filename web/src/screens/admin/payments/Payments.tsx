@@ -461,8 +461,10 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           <div class="xc-branch-notice">{branchNotice()}</div>
         </Show>
 
-        <Show when={!canEdit()}>
-          <p class="stock-banner">{t('readOnly')}</p>
+        <Show when={data() && !canEdit()}>
+          <p class="stock-banner" data-testid="owner-set">
+            {t('ownerSet')}
+          </p>
         </Show>
 
         <form
@@ -591,23 +593,25 @@ export function Payments(props: AdminMenuProps): JSX.Element {
               <span class="xc-payment-save-note">{t('saveNote')}</span>
             </div>
 
-            <div class="xc-payment-save-actions">
-              <button
-                type="button"
-                disabled={!isDirty() || saving()}
-                onClick={handleDiscard}
-                class="secondary"
-              >
-                {t('discard')}
-              </button>
-              <button
-                type="submit"
-                disabled={!canEdit() || saving()}
-                class="primary"
-              >
-                {t('save')}
-              </button>
-            </div>
+            <Show when={canEdit()}>
+              <div class="xc-payment-save-actions">
+                <button
+                  type="button"
+                  disabled={!isDirty() || saving()}
+                  onClick={handleDiscard}
+                  class="secondary"
+                >
+                  {t('discard')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canEdit() || saving()}
+                  class="primary"
+                >
+                  {t('save')}
+                </button>
+              </div>
+            </Show>
           </div>
 
           <p role="status" id="payment-feedback" class="error xc-payment-feedback">
