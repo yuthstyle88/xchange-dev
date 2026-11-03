@@ -130,13 +130,24 @@ pub struct CountVerifyOutput {
     pub approval_request_id: Option<String>,
 }
 
-/// The answer of a hand-over or transfer command: the record's id and status.
+/// The answer of a hand-over command: the record's id and status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "cash.ts")]
+pub struct HandoverRecordOutput {
+    pub id: String,
+    pub status: String,
+}
+
+/// The answer of a transfer command: the record's id, status and approval request state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "cash.ts")]
 pub struct CashRecordOutput {
     pub id: String,
     pub status: String,
+    pub approval_request_id: Option<String>,
+    pub approval_status: Option<String>,
 }
 
 /// The `cash_counts` filter (§4.7): the count's shift, and `WAITING` (`verified_by IS NULL`) or `VERIFIED` (Q-A).
@@ -230,6 +241,8 @@ pub struct CashTransferRow {
     pub id: String,
     pub kind: String,
     pub status: String,
+    pub approval_request_id: Option<String>,
+    pub approval_status: Option<String>,
     pub from_branch_id: String,
     pub to_branch_id: Option<String>,
     pub from_shift_id: Option<String>,

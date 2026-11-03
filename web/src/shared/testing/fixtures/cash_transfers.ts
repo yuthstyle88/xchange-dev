@@ -20,6 +20,8 @@ export function makeCashTransferRow(o: Partial<CashTransferRow> = {}): CashTrans
     id: 'cash_transfer_row-1',
     kind: 'kind',
     status: 'status',
+    approvalRequestId: null,
+    approvalStatus: null,
     fromBranchId: 'cash_transfer_row-1',
     toBranchId: null,
     fromShiftId: null,
