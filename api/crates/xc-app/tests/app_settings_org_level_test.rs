@@ -20,7 +20,8 @@ fn branch_admin() -> Actor {
         "branch-admin",
         ORG,
         vec![ScopedRole::new(
-            Role::Admin,
+            // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+            Role::Executive,
             Some(BranchId::new(MAIN)),
             at(-86_400),
             None,
@@ -56,8 +57,9 @@ async fn an_organisation_wide_admin_in_a_session_saves_app_settings() {
     let service = AppSettingsService::new(db.pool.clone());
 
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     let saved = service
-        .save_in(&mut tx, &actor("org-admin", Role::Admin), 60, at(0))
+        .save_in(&mut tx, &actor("org-admin", Role::Executive), 60, at(0))
         .await
         .expect("an organisation-wide ADMIN saves");
     tx.commit().await.expect("commit");

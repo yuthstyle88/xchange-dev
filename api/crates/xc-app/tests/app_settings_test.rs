@@ -74,8 +74,9 @@ async fn admin_save_on_an_organisation_with_no_row_inserts_one() {
     let service = AppSettingsService::new(db.pool.clone());
 
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     let saved = service
-        .save_in(&mut tx, &actor("admin-1", Role::Admin), 86_400, at(0))
+        .save_in(&mut tx, &actor("admin-1", Role::Executive), 86_400, at(0))
         .await
         .expect("ADMIN saves the lifetime");
     tx.commit().await.expect("commit");
@@ -95,15 +96,17 @@ async fn a_second_admin_save_updates_the_same_row() {
     db.delete_settings().await;
     let service = AppSettingsService::new(db.pool.clone());
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     service
-        .save_in(&mut tx, &actor("admin-1", Role::Admin), 86_400, at(0))
+        .save_in(&mut tx, &actor("admin-1", Role::Executive), 86_400, at(0))
         .await
         .expect("first save");
     tx.commit().await.expect("commit");
 
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     service
-        .save_in(&mut tx, &actor("admin-2", Role::Admin), 3_600, at(10))
+        .save_in(&mut tx, &actor("admin-2", Role::Executive), 3_600, at(10))
         .await
         .expect("second save");
     tx.commit().await.expect("commit");
@@ -126,8 +129,14 @@ async fn admin_save_replaces_the_seeded_seven_days() {
     let service = AppSettingsService::new(db.pool.clone());
 
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     service
-        .save_in(&mut tx, &actor("admin-1", Role::Admin), 1_209_600, at(0))
+        .save_in(
+            &mut tx,
+            &actor("admin-1", Role::Executive),
+            1_209_600,
+            at(0),
+        )
         .await
         .expect("saved");
     tx.commit().await.expect("commit");
@@ -145,8 +154,9 @@ async fn a_saved_lifetime_is_the_one_the_next_draft_gets() {
     let settings = AppSettingsService::new(db.pool.clone());
     let planner = PlannerService::new(db.pool.clone());
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     settings
-        .save_in(&mut tx, &actor("admin-1", Role::Admin), 120, at(0))
+        .save_in(&mut tx, &actor("admin-1", Role::Executive), 120, at(0))
         .await
         .expect("saved");
     tx.commit().await.expect("commit");
@@ -177,7 +187,9 @@ async fn a_non_admin_save_is_out_of_scope_and_writes_nothing() {
     let db = TestDb::start().await;
     let service = AppSettingsService::new(db.pool.clone());
 
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     for role in [
+        Role::Admin,
         Role::BranchManager,
         Role::Teller,
         Role::Finance,
@@ -204,8 +216,9 @@ async fn a_zero_lifetime_is_validation_failed_and_writes_nothing() {
     let service = AppSettingsService::new(db.pool.clone());
 
     let mut tx = db.begin().await;
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
     let refused = service
-        .save_in(&mut tx, &actor("admin-1", Role::Admin), 0, at(0))
+        .save_in(&mut tx, &actor("admin-1", Role::Executive), 0, at(0))
         .await
         .expect_err("0 s is not a lifetime");
     tx.commit().await.expect("commit after the refusal");
