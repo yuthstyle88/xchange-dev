@@ -22,7 +22,7 @@ const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   idempotencyConflict: 'error.idempotencyConflict',
 };
 
-function when(iso: string): string {
+export function when(iso: string): string {
   return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 

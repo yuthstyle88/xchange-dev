@@ -25,6 +25,7 @@ export const th = {
   levelRemove: 'ลบ',
   levelsSave: 'บันทึกระดับ',
   levelsSaved: 'บันทึกระดับแล้ว',
+  levelsSetBy: 'ตั้งโดย {by} · {at}',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -53,4 +54,5 @@ export const en: Record<keyof typeof th, string> = {
   levelRemove: 'Remove',
   levelsSave: 'Save levels',
   levelsSaved: 'Levels saved',
+  levelsSetBy: 'Set by {by} · {at}',
 };
