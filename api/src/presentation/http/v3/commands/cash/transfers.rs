@@ -28,11 +28,27 @@ use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
 
-fn answer(t: CashTransfer) -> CashRecordOutput {
-    CashRecordOutput {
+async fn answer(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    t: CashTransfer,
+) -> Result<CashRecordOutput, V3Error> {
+    let (approval_request_id, approval_status): (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT t.approval_request_id::text, a.status \
+         FROM cash_transfers t \
+         LEFT JOIN approval_requests a ON a.id = t.approval_request_id \
+         WHERE t.id = $1::uuid",
+    )
+    .bind(&t.id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| from_cash_error(pos_error::AppError::Database(e)))?
+    .unwrap_or((None, None));
+    Ok(CashRecordOutput {
         id: t.id,
         status: t.status.as_str().to_owned(),
-    }
+        approval_request_id,
+        approval_status,
+    })
 }
 
 fn line(
@@ -125,7 +141,7 @@ impl CommandAction for TransferCreate {
                 }
                 other => from_cash_error(other),
             })?;
-        Ok(answer(t))
+        answer(tx, t).await
     }
 }
 
@@ -164,7 +180,7 @@ impl CommandAction for TransferSubmit {
             .submit_in(tx, &user, &input.id, now)
             .await
             .map_err(from_cash_error)?;
-        Ok(answer(t))
+        answer(tx, t).await
     }
 }
 
@@ -214,7 +230,7 @@ impl CommandAction for TransferDispatch {
                 return Err(from_cash_error(e));
             }
         };
-        Ok(answer(t))
+        answer(tx, t).await
     }
 }
 
@@ -259,7 +275,7 @@ impl CommandAction for TransferReceive {
             .receive_in(tx, branch, &user, &input.id, counted, now)
             .await
             .map_err(from_cash_error)?;
-        Ok(answer(t))
+        answer(tx, t).await
     }
 }
 
@@ -299,6 +315,6 @@ impl CommandAction for TransferReconcile {
             .reconcile_in(tx, &user, &input.id, &input.note, now)
             .await
             .map_err(from_cash_error)?;
-        Ok(answer(t))
+        answer(tx, t).await
     }
 }

@@ -9,13 +9,15 @@ use sqlx::PgPool;
 
 use crate::presentation::dto::v3::cash::{CashTransferLineRow, CashTransferRow};
 
-pub(crate) const TRANSFER_COLUMNS: &str = "t.id::text AS id, t.kind, t.status, t.from_branch_id, t.to_branch_id, t.from_shift_id, t.to_shift_id, t.created_by::text AS created_by, t.created_at, t.note";
+pub(crate) const TRANSFER_COLUMNS: &str = "t.id::text AS id, t.kind, t.status, t.approval_request_id::text AS approval_request_id, (SELECT a.status FROM approval_requests a WHERE a.id = t.approval_request_id) AS approval_status, t.from_branch_id, t.to_branch_id, t.from_shift_id, t.to_shift_id, t.created_by::text AS created_by, t.created_at, t.note";
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct TransferSqlRow {
     id: String,
     kind: String,
     status: String,
+    approval_request_id: Option<String>,
+    approval_status: Option<String>,
     from_branch_id: String,
     to_branch_id: Option<String>,
     from_shift_id: Option<String>,
@@ -68,6 +70,8 @@ pub(crate) async fn with_lines(
             id: r.id,
             kind: r.kind,
             status: r.status,
+            approval_request_id: r.approval_request_id,
+            approval_status: r.approval_status,
             from_branch_id: r.from_branch_id,
             to_branch_id: r.to_branch_id,
             from_shift_id: r.from_shift_id,

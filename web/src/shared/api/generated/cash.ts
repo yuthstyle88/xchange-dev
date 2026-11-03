@@ -17,9 +17,9 @@ export type CashReceivedLineInput = { currency: string, denominationId: number, 
 export type CashRecordInput = { branch: string | null, id: string, };
 
 /**
- * The answer of a hand-over or transfer command: the record's id and status.
+ * The answer of a transfer command: the record's id, status and approval request state.
  */
-export type CashRecordOutput = { id: string, status: string, };
+export type CashRecordOutput = { id: string, status: string, approvalRequestId: string | null, approvalStatus: string | null, };
 
 /**
  * `countSubmit` `POST /api/cash-counts`. `shiftId` is required for a CLOSE count.

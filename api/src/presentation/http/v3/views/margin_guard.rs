@@ -17,6 +17,7 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::margin_guard::MarginGuardData;
+use crate::presentation::http::v3::setter_names::SetterNames;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct MarginGuardView {
@@ -49,24 +50,36 @@ impl BranchView for MarginGuardView {
             let org_id = Uuid::parse_str(&org_id_str)
                 .map_err(|e| AppError::Validation(format!("invalid org_id: {e}")))?;
 
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
             let row: Option<MarginGuardRow> = sqlx::query_as(
                 "SELECT max_spread_share::text, set_by::text, set_at \
                    FROM margin_guards \
                   WHERE organization_id = $1",
             )
             .bind(org_id)
-            .fetch_optional(&pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(AppError::Database)?;
 
-            Ok(match row {
-                Some((max_spread_share, set_by, set_at)) => MarginGuardData {
-                    max_spread_share,
-                    set_by,
-                    set_at: set_at.map(|t| t.to_rfc3339()),
-                },
+            let data = match row {
+                Some((max_spread_share, set_by, set_at)) => {
+                    let set_by_name = match &set_by {
+                        Some(id) => SetterNames::of_in(&mut tx, std::slice::from_ref(id))
+                            .await?
+                            .remove(id),
+                        None => None,
+                    };
+                    MarginGuardData {
+                        max_spread_share,
+                        set_by,
+                        set_by_name,
+                        set_at: set_at.map(|t| t.to_rfc3339()),
+                    }
+                }
                 None => MarginGuardData::default(),
-            })
+            };
+            tx.commit().await.map_err(AppError::Database)?;
+            Ok(data)
         }
     }
 }

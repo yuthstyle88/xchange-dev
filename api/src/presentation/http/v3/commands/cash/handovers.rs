@@ -16,12 +16,14 @@ use xc_kernel::ids::BranchId;
 
 use super::{caller_in, count_lines, from_cash_error, shift_lifecycle_hook, validation_failed};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
-use crate::presentation::dto::v3::cash::{CashRecordInput, CashRecordOutput, HandoverStartInput};
+use crate::presentation::dto::v3::cash::{
+    CashRecordInput, HandoverRecordOutput, HandoverStartInput,
+};
 use crate::presentation::http::v3::command::CommandAction;
 use crate::presentation::http::v3::error::V3Error;
 
-fn answer(h: Handover) -> CashRecordOutput {
-    CashRecordOutput {
+fn answer(h: Handover) -> HandoverRecordOutput {
+    HandoverRecordOutput {
         id: h.id,
         status: h.status.as_str().to_owned(),
     }
@@ -44,7 +46,7 @@ impl CommandAction for HandoverStart {
     const NAME: &'static str = "handoverStart";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverStart");
     type Input = HandoverStartInput;
-    type Output = CashRecordOutput;
+    type Output = HandoverRecordOutput;
     const ROUTE: &'static str = "/api/handovers";
     const METHOD: Method = Method::POST;
 
@@ -105,7 +107,7 @@ impl CommandAction for HandoverAccept {
     const NAME: &'static str = "handoverAccept";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverAccept");
     type Input = CashRecordInput;
-    type Output = CashRecordOutput;
+    type Output = HandoverRecordOutput;
     const ROUTE: &'static str = "/api/handovers/{id}/accept";
     const METHOD: Method = Method::POST;
 
@@ -127,7 +129,7 @@ impl CommandAction for HandoverAccept {
             .map_err(from_cash_error)?
         {
             HandoverAccepted::Accepted(h) => Ok(answer(*h)),
-            HandoverAccepted::AwaitingFinance(_) => Ok(CashRecordOutput {
+            HandoverAccepted::AwaitingFinance(_) => Ok(HandoverRecordOutput {
                 id: input.id,
                 status: "AWAITING_FINANCE".to_owned(),
             }),
@@ -152,7 +154,7 @@ impl CommandAction for HandoverReject {
     const NAME: &'static str = "handoverReject";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverReject");
     type Input = CashRecordInput;
-    type Output = CashRecordOutput;
+    type Output = HandoverRecordOutput;
     const ROUTE: &'static str = "/api/handovers/{id}/reject";
     const METHOD: Method = Method::POST;
 
@@ -192,7 +194,7 @@ impl CommandAction for HandoverCancel {
     const NAME: &'static str = "handoverCancel";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverReject");
     type Input = CashRecordInput;
-    type Output = CashRecordOutput;
+    type Output = HandoverRecordOutput;
     const ROUTE: &'static str = "/api/handovers/{id}/cancel";
     const METHOD: Method = Method::POST;
 

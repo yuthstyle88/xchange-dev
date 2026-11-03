@@ -369,7 +369,17 @@ async fn a_branch_without_a_row_reads_as_no_limit() {
     assert_eq!(
         r.body["data"],
         // Restated again 2026-11-02 by claude/b091f5e0 (ledger-inventory.md §5.1.3): `drawerLowLevels` is added.
-        json!({ "branch": B01, "countDifferenceLimitThb": null, "updatedBy": null, "updatedByName": null, "updatedAt": null, "drawerLowLevels": [] })
+        json!({
+            "branch": B01,
+            "countDifferenceLimitThb": null,
+            "updatedBy": null,
+            "updatedByName": null,
+            "updatedAt": null,
+            "drawerLowLevels": [],
+            "drawerLowLevelsUpdatedBy": null,
+            "drawerLowLevelsUpdatedByName": null,
+            "drawerLowLevelsUpdatedAt": null,
+        })
     );
     db.finish().await;
 }

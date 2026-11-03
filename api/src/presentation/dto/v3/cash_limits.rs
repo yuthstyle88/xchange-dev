@@ -1,5 +1,7 @@
 //! LG-3b (#926, ledger design §3.3): a branch's count-difference limit (`cash_limits`).
 
+use std::collections::HashMap;
+
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -28,23 +30,23 @@ pub struct CashLimitsData {
     pub updated_by_name: Option<String>,
     pub updated_at: Option<String>,
     pub drawer_low_levels: Vec<DrawerLowLevel>,
+    pub drawer_low_levels_updated_by: Option<String>,
+    pub drawer_low_levels_updated_by_name: Option<String>,
+    pub drawer_low_levels_updated_at: Option<String>,
 }
 
-pub type CashLimitsRow = (
-    Option<String>,
-    String,
-    Option<String>,
-    chrono::DateTime<chrono::Utc>,
-);
+pub type CashLimitsRow = (Option<String>, String, chrono::DateTime<chrono::Utc>);
 
 impl CashLimitsData {
     /// The answer for `branch` from its `cash_limits` row, read as
-    /// `(count_difference_limit_thb::text, updated_by, updated_by_name, updated_at)`; `None` is a branch with no
+    /// `(count_difference_limit_thb::text, updated_by, updated_at)`; `None` is a branch with no
     /// row. The save and the view both answer through this, so they answer the same object.
     pub fn of(
         branch: &str,
         row: Option<CashLimitsRow>,
         levels: Vec<(CurrencyCode, Decimal)>,
+        levels_meta: Option<(String, chrono::DateTime<chrono::Utc>)>,
+        names: &HashMap<String, String>,
     ) -> Self {
         let drawer_low_levels = levels
             .into_iter()
@@ -53,15 +55,36 @@ impl CashLimitsData {
                 low_level: low_level.normalize().to_string(),
             })
             .collect();
+        let (
+            drawer_low_levels_updated_by,
+            drawer_low_levels_updated_by_name,
+            drawer_low_levels_updated_at,
+        ) = match levels_meta {
+            Some((by, at)) => {
+                let name = names.get(&by).cloned();
+                (
+                    Some(by),
+                    name,
+                    Some(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                )
+            }
+            None => (None, None, None),
+        };
         match row {
-            Some((limit, by, name, at)) => Self {
-                branch: branch.to_owned(),
-                count_difference_limit_thb: limit,
-                updated_by: Some(by),
-                updated_by_name: name,
-                updated_at: Some(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
-                drawer_low_levels,
-            },
+            Some((limit, by, at)) => {
+                let updated_by_name = names.get(&by).cloned();
+                Self {
+                    branch: branch.to_owned(),
+                    count_difference_limit_thb: limit,
+                    updated_by: Some(by),
+                    updated_by_name,
+                    updated_at: Some(at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                    drawer_low_levels,
+                    drawer_low_levels_updated_by,
+                    drawer_low_levels_updated_by_name,
+                    drawer_low_levels_updated_at,
+                }
+            }
             None => Self {
                 branch: branch.to_owned(),
                 count_difference_limit_thb: None,
@@ -69,6 +92,9 @@ impl CashLimitsData {
                 updated_by_name: None,
                 updated_at: None,
                 drawer_low_levels,
+                drawer_low_levels_updated_by,
+                drawer_low_levels_updated_by_name,
+                drawer_low_levels_updated_at,
             },
         }
     }
