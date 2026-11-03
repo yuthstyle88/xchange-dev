@@ -18,7 +18,7 @@ import type {
 } from '../../../shared/api/generated/cash';
 import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generated/cash_counts';
 import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { Me } from '../../../shared/api/generated/common';
+import type { Me, OpenShiftDto } from '../../../shared/api/generated/common';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
 import { screenT } from '../../../shared/i18n';
@@ -76,12 +76,14 @@ export interface CashFlowsProps {
   shown: () => boolean;
   /** The page's `admin_shifts` rows: the drawer of a move is one of its OPEN shifts. */
   shifts: () => AdminShiftRow[];
+  openShifts?: () => OpenShiftDto[];
 }
 
 export function CashFlows(props: CashFlowsProps): JSX.Element {
   const api = new ApiClient();
 
   const [permissions, setPermissions] = createSignal<readonly string[] | null>(null);
+  const [meId, setMeId] = createSignal<string | null>(null);
   const can = (permission: string) => (permissions() ?? []).includes(permission);
   const [meError, setMeError] = createSignal<unknown>(null);
   const [meBusy, setMeBusy] = createSignal(false);
@@ -94,6 +96,9 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [awaiting, setAwaiting] = createSignal<string | null>(null);
+
+  const canReceive = (row: CashTransferRow) =>
+    !row.toShiftId || (props.openShifts?.() ?? []).find((s) => s.shiftId === row.toShiftId)?.tellerId === meId();
 
   // ── reads ───────────────────────────────────────────────────────────────────
 
@@ -108,10 +113,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       batch(() => {
         setMeError(null);
         setPermissions(res.data?.permissions ?? []);
+        setMeId(res.data?.id ?? null);
       });
     } catch (err: unknown) {
       setMeError(err);
       setPermissions([]);
+      setMeId(null);
     } finally {
       setMeBusy(false);
     }
@@ -710,7 +717,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                                 {t('btnDispatch')}
                               </button>
                             </Show>
-                            <Show when={row.status === 'DISPATCHED'}>
+                            <Show when={row.status === 'DISPATCHED' && canReceive(row)}>
                               <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => receive(row)}>
                                 {t('btnReceive')}
                               </button>
