@@ -41,8 +41,12 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
 
   const shortId = (id: string): string => `#${id.slice(0, 8)}`;
 
-  const statusLabel = (status: string): string => {
-    switch (status) {
+  const statusLabel = (row: CashTransferRow): string => {
+    if (row.status === 'DRAFT') {
+      if (row.approvalStatus === 'PENDING') return t('status_PENDING');
+      if (row.approvalStatus === 'REJECTED') return t('status_REJECTED');
+    }
+    switch (row.status) {
       case 'DRAFT':
         return t('status_DRAFT');
       case 'APPROVED':
@@ -54,7 +58,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       case 'RECONCILED':
         return t('status_RECONCILED');
       default:
-        return status;
+        return row.status;
     }
   };
 
@@ -696,6 +700,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                   const canReceive = () => {
                     if (row.status !== 'DISPATCHED') return false;
                     if (teller()) return true;
+                    if (row.toShiftId) return row.toShiftId === props.ctx.floor?.myShift?.id;
                     if (!can(props.ctx.me, 'CashManage')) return false;
                     return (
                       row.toBranchId === props.ctx.me.branchId ||
@@ -712,7 +717,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                     <tr data-transfer-id={row.id} data-status={row.status}>
                       <td title={row.id}>{shortId(row.id)}</td>
                       <td>{t(('kind_' + row.kind) as any) || row.kind}</td>
-                      <td>{statusLabel(row.status)}</td>
+                      <td>{statusLabel(row)}</td>
                       <td>{row.note ?? ''}</td>
                       <td>
                         <Show when={canDispatch()}>

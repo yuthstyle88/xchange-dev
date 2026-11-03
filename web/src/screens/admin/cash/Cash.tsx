@@ -413,7 +413,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
       <p class="footnote">{t('footnote')}</p>
 
       {/* CA-9 #625: counts waiting and transfers on CA-8, each by its permission */}
-      <CashFlows branch={props.branch} shown={props.shown} shifts={shifts} />
+      <CashFlows branch={props.branch} shown={props.shown} shifts={shifts} openShifts={() => cash()?.openShifts ?? []} />
 
       {/* History Details */}
       <details class="workspace-history">

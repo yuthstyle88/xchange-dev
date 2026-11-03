@@ -18,7 +18,7 @@ import type {
 } from '../../../shared/api/generated/cash';
 import type { CashCountRow, CashCountsFilter } from '../../../shared/api/generated/cash_counts';
 import type { CashTransferRow } from '../../../shared/api/generated/cash_transfers';
-import type { Me } from '../../../shared/api/generated/common';
+import type { Me, OpenShiftDto } from '../../../shared/api/generated/common';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
 import { screenT } from '../../../shared/i18n';
@@ -59,6 +59,13 @@ const STATUS_TEXT: Record<string, Parameters<typeof t>[0]> = {
 
 const kindText = (kind: string) => (KIND_TEXT[kind] ? t(KIND_TEXT[kind]!) : kind);
 const statusText = (status: string) => (STATUS_TEXT[status] ? t(STATUS_TEXT[status]!) : status);
+const rowStatusText = (row: CashTransferRow) => {
+  if (row.status === 'DRAFT') {
+    if (row.approvalStatus === 'PENDING') return t('transferPending');
+    if (row.approvalStatus === 'REJECTED') return t('transferRejected');
+  }
+  return statusText(row.status);
+};
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
@@ -69,12 +76,14 @@ export interface CashFlowsProps {
   shown: () => boolean;
   /** The page's `admin_shifts` rows: the drawer of a move is one of its OPEN shifts. */
   shifts: () => AdminShiftRow[];
+  openShifts?: () => OpenShiftDto[];
 }
 
 export function CashFlows(props: CashFlowsProps): JSX.Element {
   const api = new ApiClient();
 
   const [permissions, setPermissions] = createSignal<readonly string[] | null>(null);
+  const [meId, setMeId] = createSignal<string | null>(null);
   const can = (permission: string) => (permissions() ?? []).includes(permission);
   const [meError, setMeError] = createSignal<unknown>(null);
   const [meBusy, setMeBusy] = createSignal(false);
@@ -87,6 +96,9 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
   const [awaiting, setAwaiting] = createSignal<string | null>(null);
+
+  const canReceive = (row: CashTransferRow) =>
+    !row.toShiftId || (props.openShifts?.() ?? []).find((s) => s.shiftId === row.toShiftId)?.tellerId === meId();
 
   // ── reads ───────────────────────────────────────────────────────────────────
 
@@ -101,10 +113,12 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
       batch(() => {
         setMeError(null);
         setPermissions(res.data?.permissions ?? []);
+        setMeId(res.data?.id ?? null);
       });
     } catch (err: unknown) {
       setMeError(err);
       setPermissions([]);
+      setMeId(null);
     } finally {
       setMeBusy(false);
     }
@@ -678,7 +692,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           <td>{kindText(row.kind)}</td>
                           <td>
                             <span class={row.status === 'RECONCILED' ? 'pill neutral' : 'pill'}>
-                              {statusText(row.status)}
+                              {rowStatusText(row)}
                             </span>
                           </td>
                           <td>
@@ -693,7 +707,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                           </td>
                           <td>{row.note ?? ''}</td>
                           <td>
-                            <Show when={row.status === 'DRAFT'}>
+                            <Show when={row.status === 'DRAFT' && row.approvalStatus !== 'PENDING'}>
                               <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => step(row, 'submit')}>
                                 {t('btnSubmit')}
                               </button>
@@ -703,7 +717,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                                 {t('btnDispatch')}
                               </button>
                             </Show>
-                            <Show when={row.status === 'DISPATCHED'}>
+                            <Show when={row.status === 'DISPATCHED' && canReceive(row)}>
                               <button type="button" class="secondary" data-action="receive" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => receive(row)}>
                                 {t('btnReceive')}
                               </button>

@@ -23,6 +23,8 @@ export const th = {
   countConfirm: 'ยืนยันว่าได้ตรวจสกุล ชนิดราคา และจำนวนธนบัตรก่อนส่งมอบแล้ว?',
   countNotConfirmed: 'ยังไม่ยืนยันการนับเงิน',
   cancelConfirm: 'ยกเลิกการจองนี้และกลับไปแก้ไขเรท?',
+  reconfirmNet: 'ยอดเปลี่ยนจาก {fromNet} เป็น {toNet} THB กรุณาตรวจแล้วติ๊กยืนยันอีกครั้ง',
+  reconfirmRate: 'ยอดเปลี่ยนจาก {fromNet} เป็น {toNet} THB (เรท {fromRate} → {toRate}) กรุณาตรวจแล้วติ๊กยืนยันอีกครั้ง',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -48,4 +50,6 @@ export const en: Record<keyof typeof th, string> = {
   countConfirm: 'Confirm that you checked the currency, denominations and number of notes before handing over?',
   countNotConfirmed: 'The cash count has not been confirmed',
   cancelConfirm: 'Cancel this booking and go back to edit the rate?',
+  reconfirmNet: 'The net changed from {fromNet} to {toNet} THB. Check it and confirm again.',
+  reconfirmRate: 'The net changed from {fromNet} to {toNet} THB (rate {fromRate} → {toRate}). Check it and confirm again.',
 };
