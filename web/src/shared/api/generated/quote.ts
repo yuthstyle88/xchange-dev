@@ -6,7 +6,7 @@ export type QuoteBenefitBasis = "INDICATIVE" | "RESERVED";
 
 export type QuoteBenefitDto = { ruleId: string, versionId: string, benefitType: string, benefitClass: "PRICE" | "REWARD", couponId: string | null, reservationId: string | null, amountThb: string, rateBefore: string, rateAfter: string, feeBefore: string, feeAfter: string, floorCapped: boolean, };
 
-export type QuoteDto = { id: string, type: string, channel: string, expiresAt: string, publication: QuotePublicationDto, lines: Array<QuoteLineDto>, benefits: Array<QuoteBenefitDto>, benefitBasis: QuoteBenefitBasis, stale: boolean, cashSettlement: boolean, drawerShortfall: Array<DrawerShortfallDto>, drawerShortfallMessage: string | null, belowLowCashLevel: Array<string>, };
+export type QuoteDto = { id: string, type: string, channel: string, expiresAt: string, publication: QuotePublicationDto, lines: Array<QuoteLineDto>, benefits: Array<QuoteBenefitDto>, benefitBasis: QuoteBenefitBasis, stale: boolean, cashSettlement: boolean, drawerCheckIfCash: boolean, drawerShortfall: Array<DrawerShortfallDto>, drawerShortfallMessage: string | null, belowLowCashLevel: Array<string>, };
 
 export type QuoteLineDto = { currency: string, shopSide: string, quantity: string, unitSize: string, baseRate: string, finalRate: string, thbAmount: string, feeThb: string, roundingThb: string, settleThb: string, publishedRateLineId: string, 
 /**
