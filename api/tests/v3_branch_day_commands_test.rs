@@ -243,6 +243,7 @@ fn user_of(spec: &str) -> Option<User> {
         "FINANCE" => Role::Finance,
         "VERIFICATION_REVIEWER" => Role::VerificationReviewer,
         "CUSTOMER" => Role::Customer,
+        "EXECUTIVE" => Role::Executive,
         other => panic!("unknown role {other}"),
     };
     Some(User::new(
@@ -401,12 +402,13 @@ async fn every_route_refuses_signed_out_a_role_without_its_permission_and_anothe
             MANAGER,
             TELLER,
         ),
+        // Restated for #6004 (user-management-rbac.md §11.11): CashTargetSet is held by EXECUTIVE only; FINANCE and BRANCH_MANAGER lack it.
         (
             "target",
             "/api/branch-day/target".into(),
             |b| json!({ "branch": b, "amounts": { "USD": "1000.00" } }),
+            "EXECUTIVE@XC-B01",
             FINANCE,
-            MANAGER,
         ),
         (
             "clock",
@@ -552,19 +554,20 @@ async fn start_service_then_cut_off_move_the_day_and_refuse_out_of_order() {
 /// refused.
 #[actix_web::test]
 async fn target_and_clock_write_their_rows() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashTargetSet is held by EXECUTIVE only.
     let db = TestDb::start().await;
     db.phase_is(B01, "OPEN").await;
 
     let a = fresh(
         &db,
-        FINANCE,
+        "EXECUTIVE@XC-B01",
         "/api/branch-day/target",
         json!({ "branch": B01, "amounts": { "USD": "1000.00", "EUR": "250.50" } }),
     )
     .await;
     ok(&a, "target");
     let target = db.state(B01).await.target.expect("the target is stored");
-    assert_eq!(target.by, user_id(FINANCE));
+    assert_eq!(target.by, user_id("EXECUTIVE@XC-B01"));
     let amounts: Vec<(String, String)> = target
         .amounts
         .non_zero()
@@ -825,9 +828,10 @@ async fn a_command_waits_for_the_branch_lock() {
             TELLER,
             json!({ "branch": B01, "customerId": CUSTOMER, "reason": "lock check" }),
         ),
+        // Restated for #6004 (user-management-rbac.md §11.11): CashTargetSet is held by EXECUTIVE only.
         (
             "/api/branch-day/target",
-            FINANCE,
+            "EXECUTIVE@XC-B01",
             json!({ "branch": B01, "amounts": { "USD": "10.00" } }),
         ),
     ] {

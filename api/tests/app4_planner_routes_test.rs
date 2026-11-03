@@ -834,6 +834,7 @@ async fn planner_preview_with_no_session_writes_no_rows() {
 
 #[actix_web::test]
 async fn app_settings_save_role_permissions_and_upsert() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is held by EXECUTIVE only; ADMIN is refused with roleNotAllowedHere.
     let room = Room::start().await;
 
     let settings_payload = json!({
@@ -866,21 +867,34 @@ async fn app_settings_save_role_permissions_and_upsert() {
     assert_eq!(res_cust.status, StatusCode::BAD_REQUEST);
     assert_eq!(res_cust.code(), "roleNotAllowedHere");
 
-    // 3. ADMIN passes and updates settings
+    // 3. ADMIN is also refused with roleNotAllowedHere (#6004)
     let res_admin = call(
         &room,
         Some("ADMIN"),
         None,
         Method::PUT,
         "/api/app-settings",
-        Some((settings_payload, "settings-key-3")),
+        Some((settings_payload.clone(), "settings-key-3")),
+    )
+    .await;
+    assert_eq!(res_admin.status, StatusCode::BAD_REQUEST);
+    assert_eq!(res_admin.code(), "roleNotAllowedHere");
+
+    // 4. EXECUTIVE holds SystemSettings and passes (insert then update)
+    let res_exec1 = call(
+        &room,
+        Some("EXECUTIVE"),
+        None,
+        Method::PUT,
+        "/api/app-settings",
+        Some((settings_payload, "settings-key-3b")),
     )
     .await;
     assert_eq!(
-        res_admin.status,
+        res_exec1.status,
         StatusCode::OK,
-        "admin save succeeded: {}",
-        res_admin.text
+        "executive first save succeeded: {}",
+        res_exec1.text
     );
 
     let ttl: i32 = sqlx::query_scalar(
@@ -892,7 +906,6 @@ async fn app_settings_save_role_permissions_and_upsert() {
     .expect("read settings ttl");
     assert_eq!(ttl, 86400);
 
-    // 4. EXECUTIVE also holds SystemSettings and passes
     let exec_payload = json!({
         "plannerDraftTtlSeconds": 172800,
     });

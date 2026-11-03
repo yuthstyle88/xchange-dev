@@ -76,13 +76,14 @@ fn out_of_scope(a: &Answer, what: &str) {
 
 #[actix_web::test]
 async fn a_branch_scoped_admin_naming_its_branch_cannot_set_the_org_policy() {
+    // Restated for #6004 (user-management-rbac.md §11.11): bookingPolicySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let before = policy_of(&db.pool).await;
     assert_ne!(before, Some((45, 20, 30)), "seeded policy must differ");
 
-    let a = set_policy(&db, B01_ADMIN, new_policy(Some(B01))).await;
+    let a = set_policy(&db, "EXECUTIVE@XC-B01", new_policy(Some(B01))).await;
 
-    out_of_scope(&a, "bookingPolicySet by an XC-B01 ADMIN naming XC-B01");
+    out_of_scope(&a, "bookingPolicySet by an XC-B01 EXECUTIVE naming XC-B01");
     assert_eq!(
         policy_of(&db.pool).await,
         before,
@@ -93,12 +94,16 @@ async fn a_branch_scoped_admin_naming_its_branch_cannot_set_the_org_policy() {
 
 #[actix_web::test]
 async fn a_branch_scoped_admin_naming_no_branch_cannot_set_the_org_policy() {
+    // Restated for #6004 (user-management-rbac.md §11.11): bookingPolicySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let before = policy_of(&db.pool).await;
 
-    let a = set_policy(&db, B01_ADMIN, new_policy(None)).await;
+    let a = set_policy(&db, "EXECUTIVE@XC-B01", new_policy(None)).await;
 
-    out_of_scope(&a, "bookingPolicySet by an XC-B01 ADMIN naming no branch");
+    out_of_scope(
+        &a,
+        "bookingPolicySet by an XC-B01 EXECUTIVE naming no branch",
+    );
     assert_eq!(
         policy_of(&db.pool).await,
         before,
@@ -111,14 +116,21 @@ async fn a_branch_scoped_admin_naming_no_branch_cannot_set_the_org_policy() {
 
 #[actix_web::test]
 async fn an_org_wide_admin_still_sets_the_org_policy() {
+    // Restated for #6004 (user-management-rbac.md §11.11): bookingPolicySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
+    sqlx::query(
+        "ALTER TABLE booking_policies DROP CONSTRAINT IF EXISTS booking_policies_updated_by_fkey",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("drop fk");
 
-    let a = set_policy(&db, ORG_ADMIN, new_policy(Some(B01))).await;
+    let a = set_policy(&db, "EXECUTIVE@*", new_policy(Some(B01))).await;
 
     assert_eq!(
         a.status,
         StatusCode::OK,
-        "bookingPolicySet by an organisation-wide ADMIN: got {} {}",
+        "bookingPolicySet by an organisation-wide EXECUTIVE: got {} {}",
         a.status,
         a.text
     );

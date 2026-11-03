@@ -56,7 +56,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "slotRuleSet",
-        need: Need::Permission(Permission::BranchesManage),
+        need: Need::Permission(Permission::BranchSettingsSave),
         scope: RowScope::Request,
     },
     AreaRow {
@@ -74,7 +74,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "slotCapacitySet",
-        need: Need::Permission(Permission::BranchesManage),
+        need: Need::Permission(Permission::BranchSettingsSave),
         scope: RowScope::Request,
     },
     AreaRow {
@@ -92,7 +92,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "bookingPolicySet",
-        need: Need::Permission(Permission::BranchesManage),
+        need: Need::Permission(Permission::BranchSettingsSave),
         scope: RowScope::Organisation,
     },
     // Views

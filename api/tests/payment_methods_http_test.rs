@@ -440,6 +440,7 @@ async fn an_employee_reads_only_their_own_branch() {
 /// edit.
 #[actix_web::test]
 async fn only_the_owner_sees_the_history() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is held by EXECUTIVE (OWNER) only; every non-owner role (including SYSTEM / ADMIN) gets canEdit = false and empty history.
     let room = Room::everyone().await;
     let rows = with(&defaults(), "Alipay", json!({ "enabled": false }));
     assert_eq!(room.save("OWNER", "MAIN", 0, &rows).await.status, 200);
@@ -450,36 +451,22 @@ async fn only_the_owner_sees_the_history() {
     assert_eq!(owner["history"][0]["after_methods"], rows);
     assert_eq!(owner["history"][0]["before_methods"], defaults());
 
-    // OR-7.3 (#1022): `canEdit` and the history follow `SystemSettings`, the permission `save` checks. B1 makes
-    // SYSTEM an ADMIN, which holds it (and already saves, C5 below), so SYSTEM now edits and sees the history
-    for person in one_of_each_role()
-        .iter()
-        .filter(|p| !p.is_owner() && p.key != "SYSTEM")
-    {
+    for person in one_of_each_role().iter().filter(|p| !p.is_owner()) {
         let read = room.list(&person.key, None).await;
         assert_eq!(read["canEdit"], json!(false), "{}", person.key);
         assert_eq!(read["history"], json!([]), "{}", person.key);
         assert_eq!(read["methods"], rows, "{}", person.key);
         assert_eq!(read["version"], json!(1), "{}", person.key);
     }
-    let system = room.list("SYSTEM", None).await;
-    assert_eq!(system["canEdit"], json!(true), "SYSTEM (ADMIN) edits");
-    assert_eq!(system["history"].as_array().map(Vec::len), Some(1));
-    assert_eq!(system["methods"], rows, "SYSTEM");
-    assert_eq!(system["version"], json!(1), "SYSTEM");
     room.finish().await;
 }
 
 #[actix_web::test]
 async fn only_the_owner_saves_and_a_refused_save_changes_nothing() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is held by EXECUTIVE (OWNER) only; every non-owner role (including SYSTEM / ADMIN) is refused on save.
     let room = Room::everyone().await;
     let rows = with(&defaults(), "Cash", json!({ "sell": false }));
-    // OR-4b (#767, design §4.2 C5): SystemSettings is ADMIN's too, and B1 makes SYSTEM an ADMIN;
-    // SYSTEM saves below
-    for person in one_of_each_role()
-        .iter()
-        .filter(|p| !p.is_owner() && p.key != "SYSTEM")
-    {
+    for person in one_of_each_role().iter().filter(|p| !p.is_owner()) {
         room.save(&person.key, "MAIN", 0, &rows)
             .await
             .assert_refused(403, OWNER_ONLY, &person.key);
@@ -488,8 +475,8 @@ async fn only_the_owner_saves_and_a_refused_save_changes_nothing() {
     assert_eq!(after["version"], json!(0));
     assert_eq!(after["methods"], defaults());
     assert_eq!(after["history"], json!([]));
-    let saved = room.save("SYSTEM", "MAIN", 0, &rows).await;
-    assert_eq!(saved.status, 200, "SYSTEM saves (C5): {:.300}", saved.text);
+    let saved = room.save("OWNER", "MAIN", 0, &rows).await;
+    assert_eq!(saved.status, 200, "OWNER saves: {:.300}", saved.text);
     room.finish().await;
 }
 

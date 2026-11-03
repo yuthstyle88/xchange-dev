@@ -155,6 +155,7 @@ fn user_of(spec: &str) -> Option<User> {
         "FINANCE" => Role::Finance,
         "VERIFICATION_REVIEWER" => Role::VerificationReviewer,
         "CUSTOMER" => Role::Customer,
+        "EXECUTIVE" => Role::Executive,
         other => panic!("unknown role {other}"),
     };
     Some(User::new(
@@ -477,7 +478,8 @@ async fn branch_day_out_of_scope_answers_403() {
     let ports = Arc::new(PgCustodyPorts);
     let service = Arc::new(BranchDayService::new(repo, shifts, ports));
     let branch = BranchId::new(B01);
-    let other_finance = user_of("FINANCE@XC-B09").expect("finance@XC-B09");
+    // Restated for #6004 (user-management-rbac.md §11.11): CashTargetSet is held by EXECUTIVE only; EXECUTIVE@XC-B09 gets outOfScope at XC-B01.
+    let other_exec = user_of("EXECUTIVE@XC-B09").expect("executive@XC-B09");
     let mut tx = db.pool.begin().await.expect("tx");
     let mut amounts = BTreeMap::new();
     amounts.insert("USD".to_string(), "100.00".to_string());
@@ -485,7 +487,7 @@ async fn branch_day_out_of_scope_answers_403() {
         .run(
             &mut tx,
             &branch,
-            &other_finance,
+            &other_exec,
             DayTargetInput {
                 branch: B01.into(),
                 amounts,
@@ -493,7 +495,7 @@ async fn branch_day_out_of_scope_answers_403() {
             IdempotencyKey::new(unique("k")),
         )
         .await
-        .expect_err("dayTarget as finance@XC-B09");
+        .expect_err("dayTarget as executive@XC-B09");
     assert_eq!(
         (err.status, err.code),
         (StatusCode::FORBIDDEN, "outOfScope")

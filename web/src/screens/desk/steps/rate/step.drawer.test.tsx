@@ -24,8 +24,9 @@ const ME = () => ({ id: 'u-1', name: 'Ploy', role: 'TELLER', branch: 'MAIN', per
 
 // The exact words of §5.4b.
 const SHORT_TITLE_TH = 'เงินในลิ้นชักไม่พอจ่ายรายการนี้';
-const SHORT_NEXT_TH = 'ให้ผู้จัดการสาขาโอนเงินจากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ';
-const LOW_AFTER_TH = (c: string) => `หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย: ${c}`;
+// #6013: SHORT_NEXT_TH and LOW_AFTER_TH restated to the OD wording the owner approved ("ok ข้อความ OD ใช้ได้", #564).
+const SHORT_NEXT_TH = 'ให้ผู้จัดการสาขาเบิก OD จากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ';
+const LOW_AFTER_TH = (c: string) => `หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย ควรเบิก OD: ${c}`;
 const SHORT_TITLE_EN = 'The drawer does not hold enough to pay this';
 const SHORT_NEXT_EN = 'Ask the branch manager to move cash from the safe into the drawer before saving';
 const LOW_AFTER_EN = (c: string) => `After this transaction the drawer will be low on: ${c}`;

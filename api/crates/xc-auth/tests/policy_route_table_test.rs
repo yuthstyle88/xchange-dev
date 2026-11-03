@@ -62,9 +62,10 @@ fn every_route_and_action_names_its_permission() {
         (E::Kiosk, "manage", p(P::RatesDraft)),
         (E::Kiosk, "configure", p(P::RatesDraft)),
         (E::Rpc, "adminCreateBranch", p(P::BranchesManage)),
-        (E::DeviceSetup, "", p(P::SystemSettings)),
-        (E::Devices, "setPrinter", p(P::SystemSettings)),
-        (E::Devices, "setDrawer", p(P::SystemSettings)),
+        // Restated for #6004 (user-management-rbac.md §11.11): DeviceSetup, setPrinter, and setDrawer map to BranchesManage; PaymentMethods save stays SystemSettings.
+        (E::DeviceSetup, "", p(P::BranchesManage)),
+        (E::Devices, "setPrinter", p(P::BranchesManage)),
+        (E::Devices, "setDrawer", p(P::BranchesManage)),
         (E::PaymentMethods, "save", p(P::SystemSettings)),
         (E::Rpc, "adminAbandonRequest", p(P::RequestAbandon)),
         (E::StaffRpc, "documents", p(P::IdentityDocumentRead)),

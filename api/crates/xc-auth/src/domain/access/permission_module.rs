@@ -98,16 +98,10 @@ impl PermissionModule {
         use Permission as P;
         match p {
             P::OverviewRead => Some((Dashboard, View)),
-            P::AlertSettingsSave => Some((Dashboard, Full)),
             P::RatesHistoryRead | P::ReferenceRatesRead => Some((RatesStock, View)),
             P::RatesDraft | P::MarketRatesRefresh => Some((RatesStock, Create)),
-            P::RatePolicySave | P::RateAlertSettingsSave | P::OrgStartingPricesManage => {
-                Some((RatesStock, Full))
-            }
-            P::CashTargetSet
-            | P::CashLimitsManage
-            | P::CashTransferPolicySet
-            | P::FinanceReconcile => Some((Finance, Full)),
+            P::RatePolicySave => Some((RatesStock, Full)),
+            P::FinanceReconcile => Some((Finance, Full)),
             P::ExchangeTransact
             | P::BookingsDesk
             | P::QueueOperate
@@ -118,7 +112,6 @@ impl PermissionModule {
                 Some((Customers, View))
             }
             P::ReferralSupersede
-            | P::ConsentPolicyManage
             | P::MarketingCampaigns
             | P::MarketingMembers
             | P::LoyaltyRulesManage => Some((Customers, Full)),
@@ -127,7 +120,6 @@ impl PermissionModule {
             P::MarketingPerformance => Some((Reports, View)),
             P::ReportsExport => Some((Reports, Full)),
             P::UsersManage | P::BranchesManage => Some((UserManagement, Full)),
-            P::SystemSettings => Some((SystemSettings, Full)),
             P::AuditLogsRead => Some((AuditLogs, View)),
             P::SignedIn
             | P::AttendanceClock
@@ -161,7 +153,18 @@ impl PermissionModule {
             // ledger-inventory.md §13.3: an approval kind, so no module.
             | P::ApproveLedgerAdjustment
             // #5733: EXECUTIVE-only by seed, so no module (RatesStock at Full must not imply it).
-            | P::PricingFormulaSave => None,
+            | P::PricingFormulaSave
+            // RBAC §11.11 (#6004): business settings saves (EXECUTIVE-only) and SettingsRead (every staff role).
+            | P::CashTargetSet
+            | P::CashLimitsManage
+            | P::CashTransferPolicySet
+            | P::RateAlertSettingsSave
+            | P::OrgStartingPricesManage
+            | P::ConsentPolicyManage
+            | P::SystemSettings
+            | P::AlertSettingsSave
+            | P::BranchSettingsSave
+            | P::SettingsRead => None,
         }
     }
 }

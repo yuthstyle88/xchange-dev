@@ -48,8 +48,8 @@ export const th = {
   rateNotPublished: 'สาขานี้ไม่มีเรทประกาศของ {code} สำหรับรายการ{side}',
   sideBuy: 'ร้านรับซื้อ (BUY)',
   sideSell: 'ร้านขาย (SELL)',
-  stockCancelReason: 'ยกเลิกระหว่างรอเติมเงินเข้าลิ้นชัก',
-  lowCashTitle: 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการโอนเงินจากตู้เซฟ',
+  stockCancelReason: 'ยกเลิกระหว่างรอเบิก OD เข้าลิ้นชัก',
+  lowCashTitle: 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการเบิก OD จากตู้เซฟ',
   lowCashCurrencies: 'สกุลที่เหลือน้อย: {currencies}',
 } as const;
 

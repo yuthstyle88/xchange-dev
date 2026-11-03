@@ -151,7 +151,7 @@ export const th = {
   chooseKind: 'เลือกประเภท',
   kindBranch: 'โอนไปสาขาอื่น',
   kindDrawerToSafe: 'ลิ้นชักเข้าตู้เซฟ',
-  kindSafeToDrawer: 'ตู้เซฟเข้าลิ้นชัก',
+  kindSafeToDrawer: 'เบิก OD',
   kindExternalIn: 'รับเงินจากภายนอก',
   kindExternalOut: 'ส่งเงินออกภายนอก',
   toBranchLabel: 'สาขาปลายทาง',

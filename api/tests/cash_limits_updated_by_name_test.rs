@@ -227,10 +227,12 @@ const CALLER_1: &str = "FINANCE:00000000-0000-0000-0000-000000000011@XC-B01";
 // Row 1: FINANCE "Finance One" saves a limit -> "Finance One"
 #[tokio::test]
 async fn row_1_finance_saves_limit_answers_setter_name() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
     insert_user(&db, USER_1, "Finance One").await;
+    let caller = "EXECUTIVE:00000000-0000-0000-0000-000000000011@*";
 
-    let r = save(&db, CALLER_1, B01, json!("5000.00")).await;
+    let r = save(&db, caller, B01, json!("5000.00")).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
     assert_eq!(r.body["updatedByName"], "Finance One", "{}", r.text);
     assert_eq!(r.body["updatedBy"], USER_1, "{}", r.text);
@@ -242,10 +244,12 @@ async fn row_1_finance_saves_limit_answers_setter_name() {
 // Row 2: then the view reads it -> "Finance One" and the view answers the restated shape
 #[tokio::test]
 async fn row_2_then_the_view_reads_it() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only; FINANCE reads via SettingsRead.
     let db = TestDb::start().await;
     insert_user(&db, USER_1, "Finance One").await;
+    let exec_caller = "EXECUTIVE:00000000-0000-0000-0000-000000000011@*";
 
-    let s = save(&db, CALLER_1, B01, json!("5000.00")).await;
+    let s = save(&db, exec_caller, B01, json!("5000.00")).await;
     assert_eq!(s.status, StatusCode::OK, "{}", s.text);
 
     let r = read(&db, CALLER_1, B01).await;
@@ -293,9 +297,10 @@ async fn row_3_a_branch_with_no_row() {
 // Row 4: the setter's users.name is blank/empty/whitespace -> null
 #[tokio::test]
 async fn row_4_setter_name_is_blank_answers_null() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
     const USER_BLANK: &str = "00000000-0000-0000-0000-000000000014";
-    const CALLER_BLANK: &str = "FINANCE:00000000-0000-0000-0000-000000000014@XC-B01";
+    const CALLER_BLANK: &str = "EXECUTIVE:00000000-0000-0000-0000-000000000014@*";
     insert_user(&db, USER_BLANK, "   ").await;
 
     let s = save(&db, CALLER_BLANK, B01, json!("2000.00")).await;
@@ -314,8 +319,9 @@ async fn row_4_setter_name_is_blank_answers_null() {
 // Row 5: updated_by names no users row -> null ; updatedBy still the setter's id
 #[tokio::test]
 async fn row_5_updated_by_names_no_users_row_answers_null() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    const CALLER_UNKNOWN: &str = "FINANCE:00000000-0000-0000-0000-000000000099@XC-B01";
+    const CALLER_UNKNOWN: &str = "EXECUTIVE:00000000-0000-0000-0000-000000000099@*";
     const USER_UNKNOWN: &str = "00000000-0000-0000-0000-000000000099";
 
     let s = save(&db, CALLER_UNKNOWN, B01, json!("1000.00")).await;

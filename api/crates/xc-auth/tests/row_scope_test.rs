@@ -20,17 +20,18 @@ use xc_kernel::ids::BranchId;
 const ORG: &str = "00000000-0000-0000-0000-000000000001";
 
 /// Test-only rows; neither action has a row in the table.
+// Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; use BranchesManage to test ADMIN org-level and request-scoped rows.
 const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "zzRequestSettings",
-        need: Need::Permission(Permission::SystemSettings),
+        need: Need::Permission(Permission::BranchesManage),
         scope: RowScope::Request,
     },
     AreaRow {
         path: EntryPath::Rpc,
         action: "zzOrganisationSettings",
-        need: Need::Permission(Permission::SystemSettings),
+        need: Need::Permission(Permission::BranchesManage),
         scope: RowScope::Organisation,
     },
 ];

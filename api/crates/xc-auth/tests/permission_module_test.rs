@@ -19,24 +19,25 @@ use Level::{Create, Full, View};
 use Module::*;
 
 /// The ruled table, one row per permission (all 52). `None` = the no-module permissions (§11.2, §11.3 rule 5).
+// Restated for #6004 (user-management-rbac.md §11.11): the settings saves move to None.
 fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
     use Permission as P;
     vec![
         (P::OverviewRead, Some((Dashboard, View))),
-        (P::AlertSettingsSave, Some((Dashboard, Full))),
+        (P::AlertSettingsSave, None),
         (P::RatesHistoryRead, Some((RatesStock, View))),
         (P::ReferenceRatesRead, Some((RatesStock, View))),
         (P::RatesDraft, Some((RatesStock, Create))),
         (P::RatePolicySave, Some((RatesStock, Full))),
-        (P::RateAlertSettingsSave, Some((RatesStock, Full))),
-        (P::OrgStartingPricesManage, Some((RatesStock, Full))),
+        (P::RateAlertSettingsSave, None),
+        (P::OrgStartingPricesManage, None),
         // PT-14 (#3968): the market-rates refresh is RATES_STOCK CREATE.
         (P::MarketRatesRefresh, Some((RatesStock, Create))),
         // §11.2 "Branch cash basics": CashManage and ApprovalsDecide move from FINANCE FULL to no module (`None`).
         (P::CashManage, None),
-        (P::CashTargetSet, Some((Finance, Full))),
-        (P::CashLimitsManage, Some((Finance, Full))),
-        (P::CashTransferPolicySet, Some((Finance, Full))),
+        (P::CashTargetSet, None),
+        (P::CashLimitsManage, None),
+        (P::CashTransferPolicySet, None),
         (P::FinanceReconcile, Some((Finance, Full))),
         (P::ApprovalsDecide, None),
         // §11.2: the desk basics move from FINANCE CREATE to no module (`None`).
@@ -54,7 +55,7 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::ReferralRead, Some((Customers, View))),
         (P::IdentityDocumentRead, Some((Customers, View))),
         (P::ReferralSupersede, Some((Customers, Full))),
-        (P::ConsentPolicyManage, Some((Customers, Full))),
+        (P::ConsentPolicyManage, None),
         (P::MarketingCampaigns, Some((Customers, Full))),
         (P::MarketingMembers, Some((Customers, Full))),
         (P::LoyaltyRulesManage, Some((Customers, Full))),
@@ -67,7 +68,7 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
         (P::ReportsExport, Some((Reports, Full))),
         (P::UsersManage, Some((UserManagement, Full))),
         (P::BranchesManage, Some((UserManagement, Full))),
-        (P::SystemSettings, Some((SystemSettings, Full))),
+        (P::SystemSettings, None),
         // §11.2: the desk device permissions move from SYSTEM_SETTINGS VIEW to no module (`None`).
         (P::DeviceQueue, None),
         (P::DeviceProcess, None),
@@ -83,27 +84,22 @@ fn table() -> Vec<(Permission, Option<(Module, Level)>)> {
 }
 
 /// The eight rows, derived from §11.2's seed (`RoleGrants::seed`) and the table above.
+// Restated for #6004 (user-management-rbac.md §11.11): AlertSettingsSave and SystemSettings have no module, so EXECUTIVE's Dashboard falls to View and SystemSettings is absent.
 fn expected(role: Role) -> BTreeMap<Module, Level> {
     // §11.2: `PermissionMatrix::of` now reads `RoleGrants::of(role.as_str())`, seeded from the owner's V.9 matrix.
     let row: &[(Module, Level)] = match role {
         Role::Executive => &[
-            (Dashboard, Full),
+            (Dashboard, View),
             (Customers, Full),
             (Documents, Full),
             (RatesStock, Full),
             (Finance, Full),
             (Reports, Full),
             (UserManagement, Full),
-            (SystemSettings, Full),
             (AuditLogs, View),
         ],
         // #4155 W/A1: no built-in group but EXECUTIVE holds a DASHBOARD cell.
-        Role::Admin => &[
-            (Reports, View),
-            (UserManagement, Full),
-            (SystemSettings, Full),
-            (AuditLogs, View),
-        ],
+        Role::Admin => &[(Reports, View), (UserManagement, Full), (AuditLogs, View)],
         Role::RateManager => &[
             (Customers, Full),
             (Documents, View),
@@ -162,16 +158,25 @@ fn c2_exactly_the_cross_cutting_six_map_to_no_module() {
         .filter(|p| PermissionModule::module(*p).is_none())
         .collect();
     // §11.2 ("Branch cash basics"): CashManage and ApprovalsDecide join the desk basics, desk device/document permissions, and cross-cutting six in `None`.
+    // Restated for #6004 (user-management-rbac.md §11.11): the eight settings saves in table() also map to None.
     assert_eq!(
         none,
         vec![
+            Permission::AlertSettingsSave,
+            Permission::RateAlertSettingsSave,
+            Permission::OrgStartingPricesManage,
             Permission::CashManage,
+            Permission::CashTargetSet,
+            Permission::CashLimitsManage,
+            Permission::CashTransferPolicySet,
             Permission::ApprovalsDecide,
             Permission::ShiftOperate,
             Permission::BranchDayOperate,
             Permission::ShiftCloseCertify,
+            Permission::ConsentPolicyManage,
             Permission::ProofUpload,
             Permission::DrawerPassport,
+            Permission::SystemSettings,
             Permission::DeviceQueue,
             Permission::DeviceProcess,
             Permission::DevicePrinterOnline,
@@ -250,6 +255,8 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     // #5095 (owner, 2026-10-25): EXECUTIVE and ADMIN gain ShiftCloseCertify (52 -> 53, 9 -> 10).
     // Staff corrections SC-D2: EXECUTIVE, ADMIN and BRANCH_MANAGER gain AttendanceCloseFor (53 -> 54, 10 -> 11, 34 -> 35).
     // #5733 (owner ruling A): EXECUTIVE gains PricingFormulaSave (54 -> 55).
+    // Restated for #6004 (user-management-rbac.md §11.11): EXECUTIVE gains SettingsRead and BranchSettingsSave (+2);
+    // other staff groups lose their settings saves and gain SettingsRead.
     let counts: Vec<(&str, usize)> = PermissionMatrix::ROLES
         .into_iter()
         .chain([Role::Customer])
@@ -258,14 +265,14 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 55), // #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor; #5733: +PricingFormulaSave
-            ("ADMIN", 11), // #4155 W/A1: -OverviewRead; #5095: +ShiftCloseCertify; SC-D2: +AttendanceCloseFor
-            ("RATE_MANAGER", 29), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
-            ("BRANCH_MANAGER", 36), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; BQ-7: +BindingQuoteIssue; SC-D2: +AttendanceCloseFor
-            ("TELLER", 21),         // #4155 W/A1: -OverviewRead; BQ-7: +BindingQuoteIssue
-            ("FINANCE", 23), // #4155 W/A1: -OverviewRead, -AlertSettingsSave; LA-1: +ApproveLedgerAdjustment
-            ("MARKETING", 5),
-            ("VERIFICATION_REVIEWER", 15), // #4155 W/A1: -OverviewRead, -AlertSettingsSave
+            ("EXECUTIVE", 57),             // #6004: +SettingsRead, +BranchSettingsSave
+            ("ADMIN", 11),                 // #6004: -SystemSettings, +SettingsRead
+            ("RATE_MANAGER", 27), // #6004: -ConsentPolicyManage, -RateAlertSettingsSave, -OrgStartingPricesManage, +SettingsRead
+            ("BRANCH_MANAGER", 36), // #6004: -ConsentPolicyManage, +SettingsRead
+            ("TELLER", 22),       // #6004: +SettingsRead
+            ("FINANCE", 21), // #6004: -CashTargetSet, -CashLimitsManage, -CashTransferPolicySet, +SettingsRead
+            ("MARKETING", 6), // #6004: +SettingsRead
+            ("VERIFICATION_REVIEWER", 16), // #6004: +SettingsRead
             ("CUSTOMER", 2),
         ]
     );

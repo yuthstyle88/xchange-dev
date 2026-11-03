@@ -33,7 +33,7 @@ impl ExchangeSettingsView {
 
 impl BranchView for ExchangeSettingsView {
     const NAME: &'static str = "exchange_settings";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "exchangeSettingsSave");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "exchangeSettingsRead");
     type Data = ExchangeSettingsViewData;
     type Filter = NoFilter;
 

@@ -353,13 +353,31 @@ async fn r3_exchange_settings_by_the_owner_say_executive() {
     db.finish().await;
 }
 
-/// R-4 (W-2): an organisation-wide ADMIN sets a branch's approval limit: `ADMIN`. Today V.9's `SYSTEM`.
+/// R-4 (W-2): an organisation-wide ADMIN is refused on a branch's approval limit (#6004: BranchSettingsSave is
+/// EXECUTIVE only), while `ADMIN@*,EXECUTIVE@*` writes `EXECUTIVE` (the granting row).
 #[actix_web::test]
 async fn r4_a_branch_limit_by_an_admin_says_admin() {
+    // Restated for #6004 (user-management-rbac.md §11.11): branchExchangeLimitSave requires BranchSettingsSave (EXECUTIVE only).
     let db = TestDb::start().await;
-    let a = post(
+    let refused = post(
         &db,
         "ADMIN@*",
+        Method::PUT,
+        LIMIT,
+        json!({ "approvalLimitThb": "50000.00" }),
+        Key::Fresh,
+    )
+    .await;
+    assert_eq!(
+        (refused.status, code(&refused).as_str()),
+        (StatusCode::BAD_REQUEST, "roleNotAllowedHere"),
+        "R-4 ADMIN@* refused: {}",
+        refused.text
+    );
+    let who = "ADMIN@*,EXECUTIVE@*";
+    let a = post(
+        &db,
+        who,
         Method::PUT,
         LIMIT,
         json!({ "approvalLimitThb": "50000.00" }),
@@ -369,7 +387,7 @@ async fn r4_a_branch_limit_by_an_admin_says_admin() {
     assert_eq!(a.status, StatusCode::OK, "R-4: {}", a.text);
     assert_eq!(
         db.audited("branchExchangeLimitSave").await,
-        vec![(user_id("ADMIN@*"), "ADMIN".to_owned())],
+        vec![(user_id(who), "EXECUTIVE".to_owned())],
         "R-4"
     );
     db.finish().await;

@@ -45,7 +45,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "rateAlertSettings",
-        need: Need::Permission(Permission::RateAlertSettingsSave),
-        scope: RowScope::Organisation,
+        need: Need::Permission(Permission::SettingsRead),
+        scope: RowScope::Request,
     },
 ];
