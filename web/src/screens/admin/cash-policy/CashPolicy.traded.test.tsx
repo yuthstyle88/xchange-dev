@@ -16,9 +16,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
-import { makeAdminCashData, makeAdminCashStockRow, makeCashTransferPolicyData } from '../../../shared/testing/fixtures';
+import { makeAdminCashData, makeAdminCashStockRow, makeCashTransferPolicyData, makeMe } from '../../../shared/testing/fixtures';
 import { Toast } from '../parts/toast';
 import { CashPolicy } from './CashPolicy';
+import { sharedSession } from '../../../shared/session/session';
 
 const NOTE_TH = 'ช่องที่เว้นว่าง: ทุกการโอนสกุลนี้ต้องให้ผู้บริหารอนุมัติ';
 const NOTE_EN = 'A blank row: every transfer in that currency needs the executive';
@@ -72,6 +73,8 @@ let host: HTMLDivElement;
 let dispose: (() => void) | undefined;
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
   setLang('th');
   server = new Server();
   vi.stubGlobal('fetch', vi.fn(server.fetch));

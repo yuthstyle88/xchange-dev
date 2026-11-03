@@ -10,7 +10,9 @@ import {
   makeAdminCashData,
   makeCashTransferPolicyData,
   makeAdminCashStockRow,
+  makeMe,
 } from '../../../shared/testing/fixtures';
+import { sharedSession } from '../../../shared/session/session';
 
 const SAMPLE_POLICY = makeCashTransferPolicyData({
   version: 'v-0001',
@@ -94,6 +96,8 @@ function getAlertText(): string | null {
 
 describe('WE-9 cash-policy wordedError (#1758)', () => {
   beforeEach(() => {
+    // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+    sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
     host = document.createElement('div');
     document.body.appendChild(host);
     setLang('th');

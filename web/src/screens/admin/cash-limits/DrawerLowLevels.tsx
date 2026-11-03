@@ -11,6 +11,7 @@ import type { CashLimitsData } from '../../../shared/api/generated/cash_limits';
 import type { DrawerLowLevelsSaveInput } from '../../../shared/api/generated/drawer_low_levels_save';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
+import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import { toast } from '../parts/toast';
 import { limitsError } from './CashLimits';
@@ -41,6 +42,8 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
   const [busy, setBusy] = createSignal(false);
   const [refusal, setRefusal] = createSignal<string | null>(null);
 
+  const canSave = () => (sharedSession().me()?.permissions ?? []).includes('CashLimitsManage');
+
   createEffect(() => {
     props.branch();
     const d = props.data();
@@ -61,7 +64,7 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
 
   async function save(e: Event) {
     e.preventDefault();
-    if (busy()) return;
+    if (!canSave() || busy()) return;
     const body: DrawerLowLevelsSaveInput & { branch: string } = {
       branch: props.branch(),
       levels: rows().map((r) => ({
@@ -151,6 +154,7 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                               inputMode="decimal"
                               name="lowLevel"
                               data-field="lowLevel"
+                              disabled={!canSave()}
                               value={row().lowLevel}
                               onInput={(e) => {
                                 const val = e.currentTarget.value;
@@ -163,13 +167,15 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                             />
                           </td>
                           <td>
-                            <button
-                              type="button"
-                              data-action="remove-level"
-                              onClick={() => removeRow(index)}
-                            >
-                              {t('levelRemove')}
-                            </button>
+                            <Show when={canSave()}>
+                              <button
+                                type="button"
+                                data-action="remove-level"
+                                onClick={() => removeRow(index)}
+                              >
+                                {t('levelRemove')}
+                              </button>
+                            </Show>
                           </td>
                         </tr>
                       )}
@@ -178,23 +184,25 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                 </table>
               </Show>
 
-              <div class="cash-limits-actions">
-                <button
-                  type="button"
-                  data-action="add-level"
-                  onClick={addRow}
-                >
-                  {t('levelAdd')}
-                </button>
-                <button
-                  type="submit"
-                  class="primary"
-                  data-action="save-levels"
-                  disabled={busy()}
-                >
-                  {t('levelsSave')}
-                </button>
-              </div>
+              <Show when={canSave()}>
+                <div class="cash-limits-actions">
+                  <button
+                    type="button"
+                    data-action="add-level"
+                    onClick={addRow}
+                  >
+                    {t('levelAdd')}
+                  </button>
+                  <button
+                    type="submit"
+                    class="primary"
+                    data-action="save-levels"
+                    disabled={busy()}
+                  >
+                    {t('levelsSave')}
+                  </button>
+                </div>
+              </Show>
             </form>
 
             <Show when={refusal()}>
