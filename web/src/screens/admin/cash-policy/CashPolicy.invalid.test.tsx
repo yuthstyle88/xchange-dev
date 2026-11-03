@@ -11,6 +11,7 @@ import {
   makeCashTransferPolicyData,
   makeInvalidTransferLimitEntry,
   type CashTransferPolicyData,
+  makeAdminCashStockRow,
 } from '../../../shared/testing/fixtures';
 
 const VALID_POLICY = makeCashTransferPolicyData({
@@ -35,7 +36,7 @@ const INVALID_POLICY = makeCashTransferPolicyData({
 
 const SAMPLE_CASH = makeAdminCashData({
   openShifts: [],
-  stock: [],
+  stock: ['THB', 'USD', 'EUR'].map((code) => makeAdminCashStockRow({ code })), // #6010: rows come from the branch's stock
   stats: null,
   reference: { withReference: 0, withoutReference: 0, spread: '0.00', percent: '0.00' },
   currencies: ['THB', 'USD', 'EUR'],
