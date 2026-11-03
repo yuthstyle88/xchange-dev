@@ -120,7 +120,7 @@ export const en: Record<Key, string> = {
   'queue.sound.errPlayback': 'Cannot play sound. Check speakers and browser.',
   'queue.store.error': 'Cannot connect to queue · Retrying',
   'rate.stale': 'Reference out of date',
-  'rate.sourceDate': 'Reference date {date}',
+  'rate.sourceDate': 'BoT reference rate of {date}',
   'rate.noSourceDate': 'No reference',
   'rate.publishedAt': 'Published {at}',
   'kioskCancel.action': 'Cancel',
