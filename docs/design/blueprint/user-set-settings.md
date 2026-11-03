@@ -51,3 +51,5 @@ The owner asked for settings to work the way an ordinary banking system does. Th
 | Count-difference limit | `cash_limits` | `cashLimitsSave` (`CashLimitsManage`; today module Finance/Full, which must move to EXECUTIVE-only) | `#cash-limits` |
 | Drawer low-cash level ([ledger-inventory](ledger-inventory.md) §5.1.3, being built) | `cash_drawer_low_levels` | `drawerLowLevelsSave` (inherits `cashLimitsSave`) | `#cash-limits` |
 | Branch alert floors (EX-5) | `branch_stock_floors` | `branchAlertSettingsSave` (`AlertSettingsSave`: EXECUTIVE, ADMIN) | executive alert settings |
+
+A branch manager asks the Owner to raise a branch's OD (`SAFE_TO_DRAWER`) limit, temporarily or permanently, through the first settings-change approval kind: [od-limit-extension](od-limit-extension.md).
