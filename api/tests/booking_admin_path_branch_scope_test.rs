@@ -137,20 +137,22 @@ async fn as_b01_admin(db: &TestDb, method: Method, uri: &str, body: Value, key: 
 
 #[actix_web::test]
 async fn slot_rule_set_on_a_path_branch_outside_the_grant_is_refused_and_writes_nothing() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     seed_b02(&db.pool).await;
     let slots_before = slot_count(&db.pool, B02).await;
 
-    let a = as_b01_admin(
+    let a = call(
         &db,
+        Some("EXECUTIVE@XC-B01"),
         Method::PUT,
         &format!("/api/branches/{B02}/booking-slot-rule"),
-        json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 }),
-        "k-x-rule",
+        Some(json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 })),
+        Some("k-x-rule"),
     )
     .await;
 
-    out_of_scope(&a, "slotRuleSet on XC-B02 by an XC-B01 ADMIN");
+    out_of_scope(&a, "slotRuleSet on XC-B02 by an XC-B01 EXECUTIVE");
     assert_eq!(
         rule_of(&db.pool, B02).await,
         (30, 10, 14),
@@ -218,6 +220,7 @@ async fn closure_remove_on_a_path_branch_outside_the_grant_is_refused_and_delete
 
 #[actix_web::test]
 async fn slot_commands_on_another_branchs_slot_are_refused_and_change_nothing() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotCapacitySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     seed_b02(&db.pool).await;
     let open_slot = seed_open_slot(&db.pool, B02).await;
@@ -228,15 +231,19 @@ async fn slot_commands_on_another_branchs_slot_are_refused_and_change_nothing() 
         .await
         .expect("close the seeded slot");
 
-    let cap = as_b01_admin(
+    let cap = call(
         &db,
+        Some("EXECUTIVE@XC-B01"),
         Method::PUT,
         &format!("/api/booking-slots/{open_slot}/capacity"),
-        json!({ "branch": B01, "capacity": 9 }),
-        "k-x-cap",
+        Some(json!({ "branch": B01, "capacity": 9 })),
+        Some("k-x-cap"),
     )
     .await;
-    out_of_scope(&cap, "slotCapacitySet on an XC-B02 slot by an XC-B01 ADMIN");
+    out_of_scope(
+        &cap,
+        "slotCapacitySet on an XC-B02 slot by an XC-B01 EXECUTIVE",
+    );
 
     let close = as_b01_admin(
         &db,
@@ -275,15 +282,17 @@ async fn slot_commands_on_another_branchs_slot_are_refused_and_change_nothing() 
 
 #[actix_web::test]
 async fn naming_the_other_branch_in_the_body_is_refused_by_the_gate() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     seed_b02(&db.pool).await;
 
-    let a = as_b01_admin(
+    let a = call(
         &db,
+        Some("EXECUTIVE@XC-B01"),
         Method::PUT,
         &format!("/api/branches/{B02}/booking-slot-rule"),
-        json!({ "branch": B02, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 }),
-        "k-ctl-rule",
+        Some(json!({ "branch": B02, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 })),
+        Some("k-ctl-rule"),
     )
     .await;
     out_of_scope(&a, "slotRuleSet naming XC-B02 in the body");
@@ -307,17 +316,23 @@ async fn naming_the_other_branch_in_the_body_is_refused_by_the_gate() {
 
 #[actix_web::test]
 async fn the_branch_admin_still_manages_its_own_branch() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet and slotCapacitySet require BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
+    sqlx::query("ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey")
+        .execute(&db.pool)
+        .await
+        .expect("drop fk");
     seed_b02(&db.pool).await;
     seed_closure(&db.pool, B01).await;
     let open_slot = seed_open_slot(&db.pool, B01).await;
 
-    let rule = as_b01_admin(
+    let rule = call(
         &db,
+        Some("EXECUTIVE@XC-B01"),
         Method::PUT,
         &format!("/api/branches/{B01}/booking-slot-rule"),
-        json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 }),
-        "k-own-rule",
+        Some(json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 })),
+        Some("k-own-rule"),
     )
     .await;
     ok(&rule, "slotRuleSet on XC-B01");
@@ -346,12 +361,13 @@ async fn the_branch_admin_still_manages_its_own_branch() {
     assert_eq!(closures.len(), 1, "added one, removed one: {closures:?}");
     assert_eq!(closures[0].1, "own");
 
-    let cap = as_b01_admin(
+    let cap = call(
         &db,
+        Some("EXECUTIVE@XC-B01"),
         Method::PUT,
         &format!("/api/booking-slots/{open_slot}/capacity"),
-        json!({ "branch": B01, "capacity": 9 }),
-        "k-own-cap",
+        Some(json!({ "branch": B01, "capacity": 9 })),
+        Some("k-own-cap"),
     )
     .await;
     ok(&cap, "slotCapacitySet on an XC-B01 slot");
@@ -442,13 +458,14 @@ async fn seed_org_b(pool: &PgPool) -> Uuid {
 
 #[actix_web::test]
 async fn an_org_wide_admin_of_another_organisation_cannot_write_org_b_by_path_or_slot_id() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet and slotCapacitySet require BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let org_b_slot = seed_org_b(&db.pool).await;
     let slots_before = slot_count(&db.pool, ORG_B_BRANCH).await;
 
     let rule = call(
         &db,
-        Some(ORG_A_WIDE_ADMIN),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/branches/{ORG_B_BRANCH}/booking-slot-rule"),
         Some(json!({ "branch": B01, "slotMinutes": 60, "capacity": 3, "horizonDays": 7 })),
@@ -457,7 +474,7 @@ async fn an_org_wide_admin_of_another_organisation_cannot_write_org_b_by_path_or
     .await;
     out_of_scope(
         &rule,
-        "slotRuleSet on an org-B branch by an org-A org-wide ADMIN",
+        "slotRuleSet on an org-B branch by an org-A org-wide EXECUTIVE",
     );
 
     let add = call(
@@ -476,7 +493,7 @@ async fn an_org_wide_admin_of_another_organisation_cannot_write_org_b_by_path_or
 
     let cap = call(
         &db,
-        Some(ORG_A_WIDE_ADMIN),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/booking-slots/{org_b_slot}/capacity"),
         Some(json!({ "branch": B01, "capacity": 9 })),
@@ -485,7 +502,7 @@ async fn an_org_wide_admin_of_another_organisation_cannot_write_org_b_by_path_or
     .await;
     out_of_scope(
         &cap,
-        "slotCapacitySet on an org-B slot by an org-A org-wide ADMIN",
+        "slotCapacitySet on an org-B slot by an org-A org-wide EXECUTIVE",
     );
 
     assert_eq!(

@@ -819,6 +819,7 @@ async fn a_save_with_settings_makes_create_possible() {
 /// `RATE_MANAGER`; every role without it in `RoleGrants::seed(role)` (ADMIN included) is refused.
 #[actix_web::test]
 async fn only_holders_of_rate_alert_settings_save_may_save_or_read_the_settings() {
+    // Restated for #6004 (user-management-rbac.md §11.11): rateAlertSettingsSave is EXECUTIVE only; rate_alert_settings view requires SettingsRead (every staff role reads it, Customer is refused).
     use xc_auth::domain::access::{Permission, RoleGrants};
 
     let room = Room::start().await;
@@ -851,7 +852,13 @@ async fn only_holders_of_rate_alert_settings_save_may_save_or_read_the_settings(
             None,
         )
         .await;
-        assert_eq!(a.code(), NOT_ALLOWED, "{} reads: {}", role.as_str(), a.text);
+        assert_eq!(
+            a.status,
+            StatusCode::OK,
+            "{} reads via SettingsRead: {}",
+            role.as_str(),
+            a.text
+        );
     }
     let cx1 = room.customer(CX1).await;
     let a = call(
@@ -863,6 +870,15 @@ async fn only_holders_of_rate_alert_settings_save_may_save_or_read_the_settings(
     )
     .await;
     assert_eq!(a.code(), NOT_ALLOWED, "a customer saves: {}", a.text);
+    let a = call(
+        &room,
+        &cx1,
+        Method::GET,
+        "/api/v3/views/rate_alert_settings",
+        None,
+    )
+    .await;
+    assert_eq!(a.code(), NOT_ALLOWED, "a customer reads: {}", a.text);
     assert_eq!(
         room.count("SELECT count(*) FROM rate_alert_settings").await,
         0,

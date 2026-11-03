@@ -50,7 +50,7 @@ impl OrgFilter for CashTransferPolicyFilter {
 
 impl OrgView for CashTransferPolicyView {
     const NAME: &'static str = "cash_transfer_policy";
-    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "transferPolicySave");
+    const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "transferPolicyRead");
     type Filter = CashTransferPolicyFilter;
     type Data = Option<CashTransferPolicyData>;
 

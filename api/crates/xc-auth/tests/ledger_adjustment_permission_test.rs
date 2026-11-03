@@ -173,7 +173,8 @@ fn la_t3_it_enters_the_seed_in_version_8() {
         "SEED_ADDITIONS has (8, ApproveLedgerAdjustment) once"
     );
     // #5733 (PricingFormulaSave) raised it to 9 after LA-1 set 8; (8, ApproveLedgerAdjustment) is unchanged.
-    assert_eq!(RoleGrants::SEED_VERSION, 9, "SEED_VERSION is 9");
+    // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
+    assert_eq!(RoleGrants::SEED_VERSION, 10, "SEED_VERSION is 10");
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, p)| p != KIND),
         "it is never removed"
@@ -209,10 +210,11 @@ async fn la_t3_a_version_7_database_grants_it_to_finance_and_its_custom_groups_o
             want,
             "{role:?}: gains exactly ApproveLedgerAdjustment if FINANCE, else nothing"
         );
+        // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
         assert_eq!(
             seed_version(&db, role.as_str()).await,
-            9,
-            "{role:?} ends at seed version 9 (#5733 raised it after LA-1's 8)"
+            10,
+            "{role:?} ends at seed version 10 (#5733 raised it to 9, #6004 to 10)"
         );
     }
     assert_eq!(
@@ -273,7 +275,8 @@ async fn la_t3_a_fresh_database_seeds_it_on_finance_at_version_8() {
         "FINANCE holds it, once"
     );
     // #5733 raised the seed version to 9 after LA-1's 8.
-    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 9);
+    // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
+    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 10);
     db.drop_schema().await;
 }
 

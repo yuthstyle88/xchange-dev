@@ -394,12 +394,13 @@ async fn row4_another_organisation_row_never_shown() {
     room.finish().await;
 }
 
-// 5. caller without RatePolicySave (e.g. MARKETING) -> refused
+// 5. caller without RatePolicySave (e.g. MARKETING) reads view via SettingsRead, refused on save
 #[actix_web::test]
 async fn row5_caller_without_rate_policy_save_is_refused() {
+    // Restated for #6004 (user-management-rbac.md §11.11): margin_guard view inherits marginGuardRead (SettingsRead, held by every staff role including MARKETING), while PUT /api/margin-guard requires RatePolicySave and refuses MARKETING.
     let room = Room::start().await;
 
-    let ans = call(
+    let view_ans = call(
         &room,
         Some("MARKETING"),
         Method::GET,
@@ -407,11 +408,26 @@ async fn row5_caller_without_rate_policy_save_is_refused() {
         None,
     )
     .await;
+    assert_eq!(
+        view_ans.status,
+        StatusCode::OK,
+        "MARKETING reads margin_guard via SettingsRead: {}",
+        view_ans.text
+    );
+
+    let ans = call(
+        &room,
+        Some("MARKETING"),
+        Method::PUT,
+        "/api/margin-guard",
+        Some((json!({ "maxSpreadShare": "0.3" }), &unique("mg_refused"))),
+    )
+    .await;
 
     assert_eq!(
         ans.status,
         StatusCode::BAD_REQUEST,
-        "MARKETING must be refused: {}",
+        "MARKETING must be refused on save: {}",
         ans.text
     );
     assert_eq!(

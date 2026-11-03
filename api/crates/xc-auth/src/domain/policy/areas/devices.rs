@@ -22,12 +22,12 @@ pub const ROWS: &[AreaRow] = &[
     row(
         EntryPath::Devices,
         "setPrinter",
-        p(Permission::SystemSettings),
+        p(Permission::BranchesManage),
     ),
     row(
         EntryPath::Devices,
         "setDrawer",
-        p(Permission::SystemSettings),
+        p(Permission::BranchesManage),
     ),
     row(EntryPath::Devices, "queue", p(Permission::DeviceQueue)),
     row(EntryPath::Devices, "process", p(Permission::DeviceProcess)),

@@ -106,8 +106,8 @@ fn s2_attendance_close_for_enters_the_seed_at_version_7() {
         .collect();
     assert_eq!(entries, vec![7]);
     // LA-1 (ledger adjustment, ledger-inventory.md §13.3) raised it to 8 after SC-D2 set 7, #5733 (PricingFormulaSave) to 9;
-    // (7, AttendanceCloseFor) is unchanged.
-    assert_eq!(RoleGrants::SEED_VERSION, 9);
+    // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10; (7, AttendanceCloseFor) is unchanged.
+    assert_eq!(RoleGrants::SEED_VERSION, 10);
 }
 
 #[tokio::test]

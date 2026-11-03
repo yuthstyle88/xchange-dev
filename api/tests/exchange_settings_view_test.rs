@@ -168,13 +168,30 @@ async fn r4_branch_with_no_limit_row_or_null_answers_approval_limit_thb_null() {
 
 #[actix_web::test]
 async fn r5_caller_without_system_settings_is_refused() {
+    // Restated for #6004 (user-management-rbac.md §11.11): exchange_settings view inherits exchangeSettingsRead (SettingsRead, held by every staff role including Teller), while saving settings requires SystemSettings (EXECUTIVE only).
+    assert!(RoleGrants::seed(AccessRole::Teller).contains(&Permission::SettingsRead));
+    assert!(!RoleGrants::seed(AccessRole::Customer).contains(&Permission::SettingsRead));
     assert!(!RoleGrants::seed(AccessRole::Teller).contains(&Permission::SystemSettings));
-    assert!(RoleGrants::seed(AccessRole::Admin).contains(&Permission::SystemSettings));
+    assert!(!RoleGrants::seed(AccessRole::Admin).contains(&Permission::SystemSettings));
+    assert!(RoleGrants::seed(AccessRole::Executive).contains(&Permission::SystemSettings));
     let desk = Desk::start().await;
-    let a = get(&desk, VIEW, "teller").await;
+    let view = get(&desk, VIEW, "teller").await;
+    assert_eq!(
+        view.status,
+        StatusCode::OK,
+        "teller reads view: {}",
+        view.text
+    );
+    let a = put(
+        &desk,
+        SETTINGS,
+        "teller",
+        &json!({ "quoteTtlSeconds": 600 }),
+    )
+    .await;
     assert!(
         a.status.is_client_error() && matches!(a.code(), "roleNotAllowed" | "roleNotAllowedHere"),
-        "expected policy refusal for teller, got {} {}",
+        "expected policy refusal for teller saving settings, got {} {}",
         a.status,
         a.text
     );

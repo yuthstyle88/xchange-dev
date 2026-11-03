@@ -244,13 +244,14 @@ fn code(a: &Answer) -> String {
 
 #[actix_web::test]
 async fn e1_branch_scoped_admin_is_refused_with_403_out_of_scope_and_ttl_stays_unchanged() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; branch-scoped EXECUTIVE@XC-B01 is refused with 403 outOfScope.
     let db = TestDb::start().await;
     let before_ttl = db.ttl().await;
     let before_audits = db.audit_rows().await;
 
     let a = post(
         &db,
-        "ADMIN@XC-B01",
+        "EXECUTIVE@XC-B01",
         Method::PUT,
         SETTINGS,
         json!({ "quoteTtlSeconds": 3600 }),
@@ -261,7 +262,7 @@ async fn e1_branch_scoped_admin_is_refused_with_403_out_of_scope_and_ttl_stays_u
     assert_eq!(
         (a.status, code(&a).as_str()),
         (StatusCode::FORBIDDEN, "outOfScope"),
-        "E1: branch-scoped ADMIN@XC-B01 must be refused with 403 outOfScope: {}",
+        "E1: branch-scoped EXECUTIVE@XC-B01 must be refused with 403 outOfScope: {}",
         a.text
     );
     assert_eq!(
@@ -279,12 +280,13 @@ async fn e1_branch_scoped_admin_is_refused_with_403_out_of_scope_and_ttl_stays_u
 
 #[actix_web::test]
 async fn e2_org_wide_admin_updates_quote_ttl_seconds() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; org-wide EXECUTIVE@* updates quoteTtlSeconds.
     let db = TestDb::start().await;
     let before_audits = db.audit_rows().await;
 
     let a = post(
         &db,
-        "ADMIN@*",
+        "EXECUTIVE@*",
         Method::PUT,
         SETTINGS,
         json!({ "quoteTtlSeconds": 600 }),
@@ -295,7 +297,7 @@ async fn e2_org_wide_admin_updates_quote_ttl_seconds() {
     assert_eq!(
         a.status,
         StatusCode::OK,
-        "E2: ADMIN@* must succeed with 200: {}",
+        "E2: EXECUTIVE@* must succeed with 200: {}",
         a.text
     );
     assert_eq!(
@@ -342,6 +344,7 @@ async fn e3_teller_is_refused_by_the_policy_seam() {
 
 #[actix_web::test]
 async fn e4_org_wide_admin_with_invalid_ttl_gets_service_validation_refusal() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; org-wide EXECUTIVE@* reaches service validation.
     let db = TestDb::start().await;
     let before_ttl = db.ttl().await;
     let before_audits = db.audit_rows().await;
@@ -349,7 +352,7 @@ async fn e4_org_wide_admin_with_invalid_ttl_gets_service_validation_refusal() {
     for invalid_ttl in [29, 3601] {
         let a = post(
             &db,
-            "ADMIN@*",
+            "EXECUTIVE@*",
             Method::PUT,
             SETTINGS,
             json!({ "quoteTtlSeconds": invalid_ttl }),
@@ -360,7 +363,7 @@ async fn e4_org_wide_admin_with_invalid_ttl_gets_service_validation_refusal() {
         assert_eq!(
             (a.status, code(&a).as_str()),
             (StatusCode::BAD_REQUEST, "validationFailed"),
-            "E4 ({invalid_ttl}): ADMIN@* with invalid TTL must receive 400 validationFailed: {}",
+            "E4 ({invalid_ttl}): EXECUTIVE@* with invalid TTL must receive 400 validationFailed: {}",
             a.text
         );
     }

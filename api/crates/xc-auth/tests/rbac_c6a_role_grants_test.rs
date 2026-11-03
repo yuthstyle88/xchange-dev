@@ -43,6 +43,7 @@ impl Drop for Restore {
 }
 
 /// §11.2's seed, per built-in group, in `Permission::ALL` order.
+// Restated for #6004 (user-management-rbac.md §11.11): settings saves are EXECUTIVE-only; every staff group holds SettingsRead.
 const SEED: [(Role, &[Permission]); 9] = [
     (
         Role::Executive,
@@ -103,6 +104,8 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ApproveLoyaltyRuleVersion,
             P::AttendanceCloseFor, // staff corrections SC-D2
             P::PricingFormulaSave, // #5733 (owner ruling A): EXECUTIVE only by seed
+            P::SettingsRead,       // #6004 (§11.11)
+            P::BranchSettingsSave, // #6004 (§11.11)
         ],
     ),
     (
@@ -112,7 +115,6 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::BranchesManage,
             P::UsersManage,
             P::ShiftCloseCertify,
-            P::SystemSettings,
             P::CompatRead,
             P::DocumentsList,
             P::MarketingPerformance,
@@ -120,6 +122,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::SignedIn,
             P::AuditLogsRead,
             P::AttendanceCloseFor, // staff corrections SC-D2
+            P::SettingsRead,       // #6004 (§11.11)
         ],
     ),
     (
@@ -146,15 +149,13 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::CustomerHoldPlace,
             P::SignedIn,
             P::ReferenceRatesRead,
-            P::ConsentPolicyManage,
             P::ReferralAttach,
             P::ReferralSupersede,
             P::ReferralRead,
             P::ReportsExport,
-            P::RateAlertSettingsSave,
-            P::OrgStartingPricesManage,
             P::MarketRatesRefresh,
             P::LoyaltyRulesManage,
+            P::SettingsRead, // #6004 (§11.11)
         ],
     ),
     (
@@ -188,7 +189,6 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::CustomerHoldPlace,
             P::BranchDayOperate,
             P::SignedIn,
-            P::ConsentPolicyManage,
             P::ReferralAttach,
             P::ReferralSupersede,
             P::ReferralRead,
@@ -200,6 +200,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             // binding-quote D-13 (BQ-7): issue a binding quote.
             P::BindingQuoteIssue,
             P::AttendanceCloseFor, // staff corrections SC-D2
+            P::SettingsRead,       // #6004 (§11.11)
         ],
     ),
     (
@@ -228,6 +229,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferralRead,
             // binding-quote D-13 (BQ-7): issue a binding quote.
             P::BindingQuoteIssue,
+            P::SettingsRead, // #6004 (§11.11)
         ],
     ),
     (
@@ -247,18 +249,16 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::IdentityDocumentRead,
             P::MarketingPerformance,
             P::AttendanceClock,
-            P::CashTargetSet,
             P::SignedIn,
             P::ReferenceRatesRead,
             P::ReferralRead,
-            P::CashLimitsManage,
             P::ReportsExport,
-            P::CashTransferPolicySet,
             // RBAC §11.9 (AP-0): the branch approval kinds finance decides today.
             P::ApproveCountDifference,
             P::ApproveTransactionReversal,
             // ledger-inventory.md §13.3 (LA-1): decide a ledger adjustment.
             P::ApproveLedgerAdjustment,
+            P::SettingsRead, // #6004 (§11.11)
         ],
     ),
     (
@@ -269,6 +269,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::MarketingPerformance,
             P::AttendanceClock,
             P::SignedIn,
+            P::SettingsRead, // #6004 (§11.11)
         ],
     ),
     (Role::Customer, &[P::CustomerSelf, P::SignedIn]),
@@ -291,13 +292,15 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::ReferralRead,
             P::ReportsExport,
             P::AuditLogsRead,
+            P::SettingsRead, // #6004 (§11.11)
         ],
     ),
 ];
 
 /// The no-module permissions: §11.2's desk basics, "Branch cash basics" (`CashManage`, `ApprovalsDecide`),
 /// `SignedIn` and the rest of §11.3 rule 5, proposal A's five, and §11.9's nine approval kinds (AP-0).
-const NO_MODULE: [Permission; 29] = [
+// Restated for #6004 (user-management-rbac.md §11.11): the settings saves and SettingsRead have no module.
+const NO_MODULE: [Permission; 39] = [
     P::SignedIn,
     P::AttendanceClock,
     P::CompatRead,
@@ -331,6 +334,17 @@ const NO_MODULE: [Permission; 29] = [
     P::ApproveLedgerAdjustment,
     // #5733 (owner ruling A): EXECUTIVE-only by seed, so RatesStock at Full never implies it.
     P::PricingFormulaSave,
+    // #6004 (§11.11): business settings saves and SettingsRead.
+    P::CashTargetSet,
+    P::CashLimitsManage,
+    P::CashTransferPolicySet,
+    P::RateAlertSettingsSave,
+    P::OrgStartingPricesManage,
+    P::ConsentPolicyManage,
+    P::SystemSettings,
+    P::AlertSettingsSave,
+    P::BranchSettingsSave,
+    P::SettingsRead,
 ];
 
 fn in_all_order(set: &[Permission]) -> Vec<Permission> {
@@ -427,30 +441,25 @@ fn the_matrix_of_each_built_in_group_is_the_owners_table() {
     RoleGrants::install(RoleGrantsSnapshot::seeded());
     use Level::{Create as C, Full as F, View as V};
     use Module::*;
+    // Restated for #6004 (user-management-rbac.md §11.11): AlertSettingsSave and SystemSettings have no module, so EXECUTIVE's Dashboard falls to View and SystemSettings is absent.
     let rows: [(&str, &[(Module, Level)]); 8] = [
         (
             "EXECUTIVE",
             &[
-                (Dashboard, F),
+                (Dashboard, V),
                 (Customers, F),
                 (Documents, F),
                 (RatesStock, F),
                 (Finance, F),
                 (Reports, F),
                 (UserManagement, F),
-                (SystemSettings, F),
                 (AuditLogs, V),
             ],
         ),
         (
             "ADMIN",
             // #4155 W/A1: no DASHBOARD cell outside EXECUTIVE.
-            &[
-                (Reports, V),
-                (UserManagement, F),
-                (SystemSettings, F),
-                (AuditLogs, V),
-            ],
+            &[(Reports, V), (UserManagement, F), (AuditLogs, V)],
         ),
         (
             "RATE_MANAGER",

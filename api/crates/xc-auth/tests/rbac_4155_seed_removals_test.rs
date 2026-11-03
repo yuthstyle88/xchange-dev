@@ -129,12 +129,20 @@ fn seed_removals_holds_exactly_the_two_dashboard_permissions_at_version_3() {
     // RBAC §11.9 (AP-0) raised SEED_VERSION 3 -> 4 for the nine approval kinds; the removals stay at version 3.
     // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
     // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8; #5733: PricingFormulaSave at 9.
-    assert_eq!(RoleGrants::SEED_VERSION, 9);
+    // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10 and SEED_REMOVALS adds the seven settings saves at version 10.
+    assert_eq!(RoleGrants::SEED_VERSION, 10);
     assert_eq!(
         RoleGrants::SEED_REMOVALS,
         &[
             (3, Permission::OverviewRead),
-            (3, Permission::AlertSettingsSave)
+            (3, Permission::AlertSettingsSave),
+            (10, Permission::CashLimitsManage),
+            (10, Permission::CashTransferPolicySet),
+            (10, Permission::CashTargetSet),
+            (10, Permission::RateAlertSettingsSave),
+            (10, Permission::OrgStartingPricesManage),
+            (10, Permission::SystemSettings),
+            (10, Permission::ConsentPolicyManage),
         ]
     );
     for &(_, p) in RoleGrants::SEED_REMOVALS {

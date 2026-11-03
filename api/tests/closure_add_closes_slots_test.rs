@@ -30,9 +30,14 @@ async fn seed_branch_with_slots(db: &TestDb) -> NaiveDate {
         .await
         .expect("set opening_hours on B01");
 
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
+    sqlx::query("ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey")
+        .execute(&db.pool)
+        .await
+        .expect("drop fk");
     let res = call(
         db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/branches/{B01}/booking-slot-rule"),
         Some(json!({
@@ -334,7 +339,12 @@ async fn row_5_closure_add_on_branch_with_no_slot_rule_inserts_closure_and_no_sl
 // save rolls back.
 #[actix_web::test]
 async fn row_6_slot_rule_set_when_generation_fails_answers_error_and_rolls_back_rule() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
+    sqlx::query("ALTER TABLE booking_slot_rules DROP CONSTRAINT IF EXISTS booking_slot_rules_updated_by_fkey")
+        .execute(&db.pool)
+        .await
+        .expect("drop fk");
     sqlx::query("UPDATE branches SET opening_hours = '\"not-an-object\"'::jsonb WHERE id = $1")
         .bind(B01)
         .execute(&db.pool)
@@ -343,7 +353,7 @@ async fn row_6_slot_rule_set_when_generation_fails_answers_error_and_rolls_back_
 
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/branches/{B01}/booking-slot-rule"),
         Some(json!({

@@ -322,7 +322,8 @@ async fn test_ops_events_pinned_one_row_per_step() {
 
     let bm = actor_scoped(MANAGER_ID, Role::BranchManager, &branch);
     let teller = actor_scoped(TELLER_ID, Role::Teller, &branch);
-    let fin = actor_scoped(FINANCE_ID, Role::Finance, &branch);
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+    let owner = actor_scoped(FINANCE_ID, Role::Executive, &branch);
     let reviewer = actor_scoped(REVIEWER_ID, Role::VerificationReviewer, &branch);
 
     set_branch_phase(&db.pool, &branch, Phase::Ready).await;
@@ -356,7 +357,7 @@ async fn test_ops_events_pinned_one_row_per_step() {
         ForeignAmount::from_decimal(rust_decimal::Decimal::new(50_000, 2)),
     )]);
     service
-        .set_target(&mut tx, &fin, &branch, amounts, now())
+        .set_target(&mut tx, &owner, &branch, amounts, now())
         .await
         .expect("set_target");
 

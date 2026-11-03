@@ -8,9 +8,17 @@ use crate::domain::access::permission::Permission;
 use crate::domain::policy::entities::policy::Need;
 use crate::domain::policy::value_objects::entry_path::EntryPath;
 
-pub const ROWS: &[AreaRow] = &[AreaRow {
-    path: EntryPath::Rpc,
-    action: "transferPolicySave",
-    need: Need::Permission(Permission::CashTransferPolicySet),
-    scope: RowScope::Organisation,
-}];
+pub const ROWS: &[AreaRow] = &[
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "transferPolicySave",
+        need: Need::Permission(Permission::CashTransferPolicySet),
+        scope: RowScope::Organisation,
+    },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "transferPolicyRead",
+        need: Need::Permission(Permission::SettingsRead),
+        scope: RowScope::Request,
+    },
+];

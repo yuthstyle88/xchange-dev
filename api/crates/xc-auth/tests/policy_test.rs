@@ -628,7 +628,12 @@ fn every_mapped_case_is_answered_as_mapped() {
             named.as_ref(),
             now(),
         ));
-        let want = recorded_mapped(c);
+        // Restated for #6004 (user-management-rbac.md §11.11): C5's PaymentMethods "save" is a setting (SystemSettings), so SYSTEM (ADMIN) is refused with PAYMENT_OWNER_ONLY (403).
+        let want = if c.change.as_deref() == Some("C5") {
+            Err((PAYMENT_OWNER_ONLY.to_owned(), 403))
+        } else {
+            recorded_mapped(c)
+        };
         if got != want {
             wrong.push(format!(
                 "{} {:?} as {} ({}) naming {:?}: mapped {:?}, here {:?}",
@@ -800,6 +805,12 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
                 })
                 .collect();
             let who = caller(Some(&rows));
+            // Restated for #6004 (user-management-rbac.md §11.11): C5's PaymentMethods "save" is a setting (SystemSettings), so SYSTEM (ADMIN) is refused with PAYMENT_OWNER_ONLY (403).
+            let want = if c.change.as_deref() == Some("C5") {
+                Err((PAYMENT_OWNER_ONLY.to_owned(), 403))
+            } else {
+                recorded_mapped(c)
+            };
             assert_eq!(
                 answer(ask_on(
                     who.as_ref(),
@@ -807,7 +818,7 @@ fn which_branch_an_employee_belongs_to_changes_no_answer() {
                     &asked(&c.route, &c.path, &c.action),
                     Some(home),
                 )),
-                recorded_mapped(c),
+                want,
                 "{} {:?} as {} of {home}",
                 c.path,
                 c.action,
