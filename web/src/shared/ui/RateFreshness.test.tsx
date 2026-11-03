@@ -16,7 +16,7 @@
 // web/src/shared/i18n/index.ts gains 'rate'):
 //
 //   'rate.stale':        'เรทอ้างอิงเก่า'
-//   'rate.sourceDate':   'อ้างอิงวันที่ {date}'
+//   'rate.sourceDate':   'อัตราอ้างอิง ธปท. วันที่ {date}'  (F7: the BoT reference rate's own date, owner-approved)
 //   'rate.noSourceDate': 'ไม่มีเรทอ้างอิง'
 //   'rate.publishedAt':  'ประกาศเมื่อ {at}'
 //
@@ -66,9 +66,13 @@ function tableText(table: Record<string, string>, key: string): string | undefin
 describe('RateFreshness texts (RF-2)', () => {
   it('the shared th table carries the four rate.* keys, in Thai, with their placeholders', () => {
     expect(tableText(th, 'rate.stale')).toBe('เรทอ้างอิงเก่า');
-    expect(tableText(th, 'rate.sourceDate')).toBe('อ้างอิงวันที่ {date}');
+    expect(tableText(th, 'rate.sourceDate')).toBe('อัตราอ้างอิง ธปท. วันที่ {date}');
     expect(tableText(th, 'rate.noSourceDate')).toBe('ไม่มีเรทอ้างอิง');
     expect(tableText(th, 'rate.publishedAt')).toBe('ประกาศเมื่อ {at}');
+  });
+
+  it('F7: en names the date as the BoT reference rate date', () => {
+    expect(tableText(en, 'rate.sourceDate')).toBe('BoT reference rate of {date}');
   });
 
   it('en and zh carry all four keys, not in Thai, with the same placeholders', () => {
