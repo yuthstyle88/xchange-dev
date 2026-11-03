@@ -8,7 +8,7 @@ export type CashTransferLineRow = { currency: string, denominationId: number, qt
 /**
  * A row of `cash_transfers`.
  */
-export type CashTransferRow = { id: string, kind: string, status: string, fromBranchId: string, toBranchId: string | null, fromShiftId: string | null, toShiftId: string | null, createdBy: string, createdAt: string, note: string | null, lines: Array<CashTransferLineRow>, };
+export type CashTransferRow = { id: string, kind: string, status: string, approvalRequestId: string | null, approvalStatus: string | null, fromBranchId: string, toBranchId: string | null, fromShiftId: string | null, toShiftId: string | null, createdBy: string, createdAt: string, note: string | null, lines: Array<CashTransferLineRow>, };
 
 /**
  * The `cash_transfers` filter (§4.7): the transfer's status and kind, the table's values (D:21-23).

@@ -35,6 +35,8 @@ export function makeCashRecordOutput(o: Partial<CashRecordOutput> = {}): CashRec
   return {
     id: 'cash_record_output-1',
     status: 'status',
+    approvalRequestId: null,
+    approvalStatus: null,
     ...o,
   };
 }
