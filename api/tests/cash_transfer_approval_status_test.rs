@@ -27,7 +27,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
 use xc_approval::domain::request::Outcome;
-use xc_auth::domain::access::{Actor as User, Permission, Role, RoleGrants, ScopedRole};
+use xc_auth::domain::access::{Actor as User, Role, ScopedRole};
 use xc_cash::application::transfer::TransferFlow;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
