@@ -1,5 +1,6 @@
 // #2521: Admin cash flows — count (countedAt) and movement (createdAt) times are formatted
 // in Asia/Bangkok regardless of the device timezone.
+// #6065: the flow line names the creator by `createdByName`, so the rows carry a name.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -54,6 +55,7 @@ function transferFor(branch: string) {
     fromShiftId: null,
     toShiftId: null,
     createdBy: `EMP-${branch}`,
+    createdByName: `Name-${branch}`,
     createdAt: branch === 'B' ? ISO_B : ISO_A,
     note: `note-${branch}`,
     lines: [makeCashTransferLineRow({ currency: 'THB', denominationId: 1, qtySent: '10', qtyReceived: null })],
@@ -173,14 +175,14 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     expect(text).not.toContain('18:30');
   });
 
-  it('row 2: createdAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2569 01:30:00 · EMP-A in the flow line', async () => {
+  it('row 2: createdAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2569 01:30:00 · Name-A in the flow line', async () => {
     vi.stubEnv('TZ', 'UTC');
     expect(new Date(ISO_A).getHours()).toBe(18);
 
     await mount('A');
 
     const text = transferTimeText();
-    expect(text).toBe('16/10/2569 01:30:00 · EMP-A');
+    expect(text).toBe('16/10/2569 01:30:00 · Name-A');
     expect(text).not.toContain('15/10');
     expect(text).not.toContain('18:30');
   });
@@ -199,7 +201,7 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     const bkkTransfer = transferTimeText();
 
     expect(bkkCount).toBe('16/10/2569 01:30:00');
-    expect(bkkTransfer).toBe('16/10/2569 01:30:00 · EMP-A');
+    expect(bkkTransfer).toBe('16/10/2569 01:30:00 · Name-A');
     expect(utcCount).toBe(bkkCount);
     expect(utcTransfer).toBe(bkkTransfer);
   });
@@ -208,7 +210,7 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     vi.stubEnv('TZ', 'UTC');
     const { setBranch } = await mount('A');
     expect(countTimeText()).toBe('16/10/2569 01:30:00');
-    expect(transferTimeText()).toBe('16/10/2569 01:30:00 · EMP-A');
+    expect(transferTimeText()).toBe('16/10/2569 01:30:00 · Name-A');
 
     setBranch('B');
     await vi.waitFor(() => {
@@ -217,6 +219,6 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     });
 
     expect(countTimeText()).toBe('17/10/2569 02:45:00');
-    expect(transferTimeText()).toBe('17/10/2569 02:45:00 · EMP-B');
+    expect(transferTimeText()).toBe('17/10/2569 02:45:00 · Name-B');
   });
 });

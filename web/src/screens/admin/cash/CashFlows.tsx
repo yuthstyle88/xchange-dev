@@ -687,7 +687,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                       {(row) => (
                         <tr>
                           <td>
-                            {when(row.createdAt)} · {row.createdBy}
+                            {when(row.createdAt)} · {row.createdByName || '—'}
                           </td>
                           <td>{kindText(row.kind)}</td>
                           <td>
