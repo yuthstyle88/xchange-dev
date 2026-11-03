@@ -43,6 +43,8 @@ The owner asked for settings to work the way an ordinary banking system does. Th
 | Ticket author | Never write a business number into code scope or tests as a constant. Tests that need a value set it through the save command or a fixture row. |
 | Reviewer | A business value fixed in code, config or a seed is a **FAIL**, however small. |
 
+**Designs that apply this rule:** [owner-set-values](owner-set-values.md) (the Owner's pricing rules, Group A, and the hidden fallbacks, Group D) and [pricing-tiers](pricing-tiers.md) §15.14 (tier bands, row 1).
+
 ## Already stored settings (measured on main, 2026-11-02)
 
 | Value | Stored in | Saved by | Screen |
