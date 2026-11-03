@@ -68,6 +68,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [meBusy, setMeBusy] = createSignal<boolean>(false);
   const [meKnown, setMeKnown] = createSignal<boolean>(false);
   const canSavePolicy = () => permissions().includes('RatePolicySave');
+  const canDraft = () => !meKnown() || permissions().includes('RatesDraft');
 
   const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
   const [valueTiers, setValueTiers] = createSignal<TierFormRow[]>(emptyValueTiers());
@@ -366,6 +367,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       <RatesDraftCard
         branch={props.branch}
         busy={busy}
+        canDraft={canDraft}
         draftDetail={draftDetail}
         setDraftDetail={setDraftDetail}
         simulateResult={simulateResult}
