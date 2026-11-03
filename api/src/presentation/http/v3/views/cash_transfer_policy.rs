@@ -22,6 +22,7 @@ use crate::presentation::dto::v3::cash_transfer_policy::{
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::org_view::{OrgFilter, OrgView, OrgViewEndpoint};
+use crate::presentation::http::v3::setter_names::SetterNames;
 
 pub const ROUTE: &str = "/api/cash-transfer-policy";
 
@@ -93,6 +94,7 @@ impl OrgView for CashTransferPolicyView {
                 return Ok(None);
             };
 
+            let mut tx = pool.begin().await.map_err(AppError::Database)?;
             let row: Option<(String, serde_json::Value, Uuid, DateTime<Utc>)> = sqlx::query_as(
                 "SELECT version, limits, set_by, created_at \
                  FROM cash_transfer_policy_versions \
@@ -101,13 +103,18 @@ impl OrgView for CashTransferPolicyView {
                  LIMIT 1",
             )
             .bind(org_id)
-            .fetch_optional(&pool)
+            .fetch_optional(&mut *tx)
             .await
             .map_err(AppError::Database)?;
 
             let Some((version, limits_val, set_by, created_at)) = row else {
                 return Ok(None);
             };
+            let set_by = set_by.to_string();
+            let set_by_name = SetterNames::of_in(&mut tx, std::slice::from_ref(&set_by))
+                .await?
+                .remove(&set_by);
+            tx.commit().await.map_err(AppError::Database)?;
 
             let (limits, valid, invalid_entries) = match TransferPolicy::parse_limits(&limits_val) {
                 Ok(parsed) => (
@@ -142,7 +149,8 @@ impl OrgView for CashTransferPolicyView {
                 limits,
                 valid,
                 invalid_entries,
-                set_by: set_by.to_string(),
+                set_by,
+                set_by_name,
                 created_at: created_at.to_rfc3339(),
             }))
         }

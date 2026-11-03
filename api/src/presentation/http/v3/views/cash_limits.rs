@@ -17,25 +17,48 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::cash_limits::{CashLimitsData, CashLimitsRow};
 use crate::presentation::dto::v3::common::NoFilter;
+use crate::presentation::http::v3::setter_names::SetterNames;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
+
+pub async fn finish_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    row: Option<CashLimitsRow>,
+) -> AppResult<CashLimitsData> {
+    let levels = DrawerLowLevels::for_branch_in(tx, branch).await?;
+    let levels_meta = DrawerLowLevels::set_meta_in(tx, branch).await?;
+    let mut ids = Vec::with_capacity(2);
+    if let Some((_, ref by, _)) = row {
+        ids.push(by.clone());
+    }
+    if let Some((ref by, _)) = levels_meta {
+        ids.push(by.clone());
+    }
+    let names = SetterNames::of_in(tx, &ids).await?;
+    Ok(CashLimitsData::of(
+        branch.as_str(),
+        row,
+        levels,
+        levels_meta,
+        &names,
+    ))
+}
 
 pub async fn load_in(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     branch: &BranchId,
 ) -> AppResult<CashLimitsData> {
     let row: Option<CashLimitsRow> = sqlx::query_as(
-        "SELECT l.count_difference_limit_thb::text, l.updated_by, NULLIF(btrim(u.name), ''), l.updated_at \
+        "SELECT l.count_difference_limit_thb::text, l.updated_by, l.updated_at \
            FROM cash_limits l \
            JOIN branches b ON b.organization_id = l.organization_id AND b.id = l.branch_id \
-           LEFT JOIN users u ON u.id::text = l.updated_by \
           WHERE b.id = $1",
     )
     .bind(branch.as_str())
     .fetch_optional(&mut **tx)
     .await
     .map_err(pos_error::AppError::Database)?;
-    let levels = DrawerLowLevels::for_branch_in(tx, branch).await?;
-    Ok(CashLimitsData::of(branch.as_str(), row, levels))
+    finish_in(tx, branch, row).await
 }
 
 pub struct CashLimitsBranchView {

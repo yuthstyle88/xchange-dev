@@ -12,7 +12,6 @@ use rust_decimal::Decimal;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
-use xc_cash::infrastructure::drawer_low_levels::DrawerLowLevels;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Bound, Sign};
 
@@ -60,20 +59,15 @@ impl CommandAction for CashLimitsSaveCommand {
             .transpose()?;
 
         let row: CashLimitsRow = sqlx::query_as(
-            "WITH s AS ( \
-                 INSERT INTO cash_limits \
-                     (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
-                 SELECT b.organization_id, b.id, $2::numeric, $3, now() \
-                   FROM branches b WHERE b.id = $1 \
-                 ON CONFLICT (organization_id, branch_id) DO UPDATE \
-                    SET count_difference_limit_thb = EXCLUDED.count_difference_limit_thb, \
-                        updated_by = EXCLUDED.updated_by, \
-                        updated_at = EXCLUDED.updated_at \
-                 RETURNING count_difference_limit_thb::text, updated_by, updated_at \
-             ) \
-             SELECT s.count_difference_limit_thb, s.updated_by, NULLIF(btrim(u.name), ''), s.updated_at \
-               FROM s \
-               LEFT JOIN users u ON u.id::text = s.updated_by",
+            "INSERT INTO cash_limits \
+                 (organization_id, branch_id, count_difference_limit_thb, updated_by, updated_at) \
+             SELECT b.organization_id, b.id, $2::numeric, $3, now() \
+               FROM branches b WHERE b.id = $1 \
+             ON CONFLICT (organization_id, branch_id) DO UPDATE \
+                SET count_difference_limit_thb = EXCLUDED.count_difference_limit_thb, \
+                    updated_by = EXCLUDED.updated_by, \
+                    updated_at = EXCLUDED.updated_at \
+             RETURNING count_difference_limit_thb::text, updated_by, updated_at",
         )
         .bind(branch.as_str())
         .bind(limit.map(|l| l.to_string()))
@@ -82,11 +76,9 @@ impl CommandAction for CashLimitsSaveCommand {
         .await
         .map_err(|_| server_error())?;
 
-        let levels = DrawerLowLevels::for_branch_in(tx, branch)
+        v3::cash_limits::finish_in(tx, branch, Some(row))
             .await
-            .map_err(|_| server_error())?;
-
-        Ok(CashLimitsData::of(branch.as_str(), Some(row), levels))
+            .map_err(|_| server_error())
     }
 }
 

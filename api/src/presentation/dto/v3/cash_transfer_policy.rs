@@ -27,6 +27,7 @@ pub struct CashTransferPolicyData {
     pub valid: bool,
     pub invalid_entries: Vec<InvalidTransferLimitEntry>,
     pub set_by: String,
+    pub set_by_name: Option<String>,
     pub created_at: String,
 }
 

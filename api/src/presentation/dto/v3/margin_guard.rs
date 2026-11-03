@@ -11,5 +11,6 @@ use ts_rs::TS;
 pub struct MarginGuardData {
     pub max_spread_share: Option<String>,
     pub set_by: Option<String>,
+    pub set_by_name: Option<String>,
     pub set_at: Option<String>,
 }

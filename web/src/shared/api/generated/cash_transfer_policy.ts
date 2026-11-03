@@ -3,7 +3,7 @@
 /**
  * The answer of `transferPolicySave` and the `cash_transfer_policy` view's `data`.
  */
-export type CashTransferPolicyData = { version: string, limits: Record<string, string>, valid: boolean, invalidEntries: Array<InvalidTransferLimitEntry>, setBy: string, createdAt: string, };
+export type CashTransferPolicyData = { version: string, limits: Record<string, string>, valid: boolean, invalidEntries: Array<InvalidTransferLimitEntry>, setBy: string, setByName: string | null, createdAt: string, };
 
 /**
  * The `cash_transfer_policy` view query parameters.
