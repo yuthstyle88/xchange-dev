@@ -94,6 +94,9 @@ function createMockPaymentStore() {
     step: stepIndex,
     config: () => DESK_CONFIG,
     configError: () => undefined,
+    // CR-f (quote-transaction.md §13.9): the payment step reads the save outcome for the reconfirm notice
+    outcome: () => 'idle',
+    reconfirm: () => undefined,
     type: () => 'BUY',
     quote: () => quote,
     quoteError: () => undefined,
