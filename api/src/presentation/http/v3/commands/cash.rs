@@ -58,6 +58,7 @@ use crate::presentation::dto::v3::ticket_still_serving::{
 };
 use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::setter_names::SetterNames;
 
 #[path = "cash/handovers.rs"]
 mod handovers;
@@ -585,12 +586,19 @@ impl CommandAction for TransferPolicySave {
         .await
         .map_err(|_| server_error())?;
 
+        let set_by = who.user_id.clone();
+        let set_by_name = SetterNames::of_in(tx, std::slice::from_ref(&set_by))
+            .await
+            .map_err(|_| server_error())?
+            .remove(&set_by);
+
         Ok(CashTransferPolicyData {
             version,
             limits: input.limits,
             valid: true,
             invalid_entries: Vec::new(),
-            set_by: who.user_id.clone(),
+            set_by,
+            set_by_name,
             created_at: created_at.to_rfc3339(),
         })
     }

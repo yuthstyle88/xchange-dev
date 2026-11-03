@@ -13,6 +13,9 @@ export function makeCashLimitsData(o: Partial<CashLimitsData> = {}): CashLimitsD
     updatedByName: null,
     updatedAt: null,
     drawerLowLevels: [],
+    drawerLowLevelsUpdatedBy: null,
+    drawerLowLevelsUpdatedByName: null,
+    drawerLowLevelsUpdatedAt: null,
     ...o,
   };
 }

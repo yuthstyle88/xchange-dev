@@ -12,6 +12,7 @@ export function makeCashTransferPolicyData(o: Partial<CashTransferPolicyData> = 
     valid: false,
     invalidEntries: [],
     setBy: 'setBy',
+    setByName: null,
     createdAt: '2026-01-01T00:00:00Z',
     ...o,
   };

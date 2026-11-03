@@ -4,4 +4,4 @@
  * The `margin_guard` view's answer (`GET /api/v3/views/margin_guard`).
  * All three fields are `null` when the organisation has no `margin_guards` row, or when a field is `NULL`.
  */
-export type MarginGuardData = { maxSpreadShare: string | null, setBy: string | null, setAt: string | null, };
+export type MarginGuardData = { maxSpreadShare: string | null, setBy: string | null, setByName: string | null, setAt: string | null, };

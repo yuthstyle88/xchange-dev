@@ -72,4 +72,21 @@ impl DrawerLowLevels {
         }
         Ok(())
     }
+
+    pub async fn set_meta_in(
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+    ) -> AppResult<Option<(String, DateTime<Utc>)>> {
+        sqlx::query_as(
+            "SELECT l.updated_by::text, l.updated_at \
+               FROM cash_drawer_low_levels l \
+               JOIN branches b ON b.organization_id = l.organization_id AND b.id = l.branch_id \
+              WHERE b.id = $1 \
+              LIMIT 1",
+        )
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)
+    }
 }

@@ -9,6 +9,7 @@ export function makeMarginGuardData(o: Partial<MarginGuardData> = {}): MarginGua
   return {
     maxSpreadShare: null,
     setBy: null,
+    setByName: null,
     setAt: null,
     ...o,
   };

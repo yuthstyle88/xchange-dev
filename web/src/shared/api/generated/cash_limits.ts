@@ -6,7 +6,7 @@
  * non-zero difference goes to FINANCE). A branch with no row answers `null` everywhere but
  * `branch`.
  */
-export type CashLimitsData = { branch: string, countDifferenceLimitThb: string | null, updatedBy: string | null, updatedByName: string | null, updatedAt: string | null, drawerLowLevels: Array<DrawerLowLevel>, };
+export type CashLimitsData = { branch: string, countDifferenceLimitThb: string | null, updatedBy: string | null, updatedByName: string | null, updatedAt: string | null, drawerLowLevels: Array<DrawerLowLevel>, drawerLowLevelsUpdatedBy: string | null, drawerLowLevelsUpdatedByName: string | null, drawerLowLevelsUpdatedAt: string | null, };
 
 /**
  * One per-branch, per-currency drawer low-cash level (`ledger-inventory.md` §5.1.3 item 2).
