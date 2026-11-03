@@ -699,6 +699,47 @@ pub async fn reconcile_in(&self, tx, who: &Actor, id: &str, note: &str, now: Dat
 - **No new behaviour.** No permission, table, column or route changes. CA-7b's `BranchDayService` (§4.8) follows
   the same rule from the start.
 
+### 4.10 A submitted transfer says it is waiting for approval (F5, eb2849a5 on-screen report) `[required]`
+
+> designed-by: claude/b091f5e0 (BE sub-controller under claude/608dff), 2026-11-03, measured on `main` `eb2849a5`.
+> Triage: #564 issuecomment-6596339013, F5 (order item B3, 2026-11-02).
+
+**Measured.**
+- `transferSubmit` raises a `CASH_TRANSFER` approval request and leaves the transfer `DRAFT` (`xc-cash/src/application/transfer/transfer_flow.rs:585-608`). That is correct for the state machine: `DRAFT → APPROVED` happens in `on_decided` (`xc-cash/src/application/approval/transfer.rs:91-99`), and a rejection keeps it `DRAFT` (C4, `:100-107`).
+- The answers lose the difference:
+  - `answer(t)` gives only `{id, status: "DRAFT"}` (`api/src/presentation/http/v3/commands/cash/transfers.rs:31-36`, `CashRecordOutput` in `dto/v3/cash.rs:137-140`).
+  - The shared row (`TRANSFER_COLUMNS`, `api/src/presentation/http/v3/cash_transfer_rows.rs:12`, used by the `cash_transfers` and `my_shift` views) carries no approval column.
+- So a submitted transfer, a rejected one and an unsubmitted one all show "ร่าง".
+
+**The rule.** The transfer's `status` keeps its state-machine meaning. The answers add the approval request's state, read from `approval_requests` through `cash_transfers.approval_request_id`, as `countVerify` already does with `AWAITING_FINANCE` (`CountVerifyOutput`, `dto/v3/cash.rs:120-131`).
+- `CashRecordOutput` gains `approvalRequestId: string | null` and `approvalStatus: "PENDING" | "APPROVED" | "REJECTED" | null`. `transferSubmit` answers `{status: "DRAFT", approvalStatus: "PENDING", approvalRequestId}`. The other transfer and hand-over commands answer what the record holds, or `null`.
+- `CashTransferRow` gains the same two fields. `TRANSFER_COLUMNS` adds `t.approval_request_id::text` and `a.status` through `LEFT JOIN approval_requests a ON a.id = t.approval_request_id`. Both views get them at once (♻️: one shared row).
+- No status value, table or column changes. Re-submitting a rejected transfer sets a new request, so the fields follow the newest request (`set_approval_request_id`, `transfer_flow.rs:606-608`).
+
+| Class / function | File | Change |
+|---|---|---|
+| `CashRecordOutput` | `api/src/presentation/dto/v3/cash.rs` | `+approval_request_id`, `+approval_status` |
+| `CashTransferRow` | `api/src/presentation/dto/v3/cash.rs` | `+approval_request_id`, `+approval_status` |
+| `TRANSFER_COLUMNS`, `TransferSqlRow` | `api/src/presentation/http/v3/cash_transfer_rows.rs` | the join and the two columns |
+| `answer` | `api/src/presentation/http/v3/commands/cash/transfers.rs` | fills the two fields from the record |
+| generated TS and fixtures | `web/src/shared/api/generated/cash.ts`, `web/src/shared/api/generated/cash_transfers.ts`, `web/src/shared/testing/fixtures/index.ts` | regenerated |
+
+| # | Case | Required result |
+|---|---|---|
+| T-1 | Create, then submit | `{status: "DRAFT", approvalStatus: "PENDING", approvalRequestId: <id>}` |
+| T-2 | `cash_transfers` view after T-1 | the row has `status: "DRAFT"`, `approvalStatus: "PENDING"` and the same id |
+| T-3 | The Owner approves | the row has `status: "APPROVED"`, `approvalStatus: "APPROVED"` |
+| T-4 | The Owner rejects | `status: "DRAFT"`, `approvalStatus: "REJECTED"` |
+| T-5 | Re-submit after T-4 | `approvalStatus: "PENDING"`, with the new request's id |
+| T-6 | A transfer never submitted | both fields `null` |
+| T-7 | `my_shift` lists an OD (`SAFE_TO_DRAWER`) waiting for approval | its row carries `approvalStatus: "PENDING"` |
+
+**FE half (claude/01TxaRJG).**
+- `DRAFT` + `PENDING` reads "รออนุมัติ", and `DRAFT` + `REJECTED` reads "ไม่อนุมัติ". The wording goes to the owner.
+- This applies on the admin cash screen and on `staff/transfers`.
+
+**Data migration.** None: the answers only read `approval_requests`, which already exists.
+
 ## 5. Class diagram
 
 ```mermaid
