@@ -194,6 +194,7 @@ export interface RatesPolicyCardProps {
   branch: () => string;
   busy: () => boolean;
   canSavePolicy: () => boolean;
+  ownerSet?: () => boolean;
   disabledReason?: string;
   policyData: () => RatePolicyData | null;
   policyError: () => string | null;
@@ -512,24 +513,29 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
             <div class="eyebrow">{props.t('policyEyebrow')}</div>
             <h2>{props.t('policyTitle')}</h2>
           </div>
-          <div class="dialog-actions">
-            <button
-              type="button"
-              data-action="save-policy"
-              data-testid="save-policy"
-              disabled={
-                props.busy() ||
-                !props.canSavePolicy() ||
-                Boolean(props.policyError()) ||
-                !props.policyData() ||
-                !areValueTiersValid()
-              }
-              title={props.disabledReason}
-              onClick={handleSavePolicy}
-            >
-              {props.t('savePolicy')}
-            </button>
-          </div>
+          <Show
+            when={!props.ownerSet?.()}
+            fallback={<p data-testid="owner-set">{props.t('ownerSet')}</p>}
+          >
+            <div class="dialog-actions">
+              <button
+                type="button"
+                data-action="save-policy"
+                data-testid="save-policy"
+                disabled={
+                  props.busy() ||
+                  !props.canSavePolicy() ||
+                  Boolean(props.policyError()) ||
+                  !props.policyData() ||
+                  !areValueTiersValid()
+                }
+                title={props.disabledReason}
+                onClick={handleSavePolicy}
+              >
+                {props.t('savePolicy')}
+              </button>
+            </div>
+          </Show>
         </div>
         <Show when={tierIssue()}>
           {(issue) => (

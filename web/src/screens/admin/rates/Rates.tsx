@@ -66,6 +66,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
   const [permissions, setPermissions] = createSignal<readonly string[]>([]);
   const [meError, setMeError] = createSignal<unknown>(null);
   const [meBusy, setMeBusy] = createSignal<boolean>(false);
+  const [meKnown, setMeKnown] = createSignal<boolean>(false);
   const canSavePolicy = () => permissions().includes('RatePolicySave');
 
   const [valueTiersOn, setValueTiersOn] = createSignal<boolean>(false);
@@ -179,10 +180,12 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       } else {
         setPermissions([]);
       }
+      setMeKnown(true);
       setMeError(null);
     } catch (err: unknown) {
       if (gen !== readGen) return;
       setPermissions([]);
+      setMeKnown(false);
       setMeError(err);
     } finally {
       if (gen === readGen) {
@@ -338,6 +341,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         branch={props.branch}
         busy={busy}
         canSavePolicy={canSavePolicy}
+        ownerSet={() => meKnown() && !canSavePolicy()}
         disabledReason={meError() !== null ? permissionsUnavailableText(meError()) : undefined}
         policyData={policyData}
         policyError={policyError}
