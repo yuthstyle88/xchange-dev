@@ -324,6 +324,7 @@ async function answer(s: Sent): Promise<Reply> {
   const branch = (method === 'GET' ? p.get('branch') : (body?.branch as string | undefined)) ?? 'MAIN';
   const since = p.get('since');
   if (path === '/api/v3/views/me') {
+    // #564 F-3: the page draws the new-draft button only for a caller with RatesDraft (Rates.draft-permission.test.tsx).
     return {
       status: 200,
       body: {
@@ -331,8 +332,8 @@ async function answer(s: Sent): Promise<Reply> {
         changed: true,
         data:
           meRole === 'OWNER'
-            ? { kind: 'owner', id: 'owner-1', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner' }
-            : { kind: 'staff', id: 'employee-RATES', role: 'RATES', branch: 'MAIN', name: 'Rates', username: 'rates' },
+            ? { kind: 'owner', id: 'owner-1', role: 'OWNER', branch: 'MAIN', name: 'Owner', username: 'owner', permissions: ['RatesDraft'] }
+            : { kind: 'staff', id: 'employee-RATES', role: 'RATES', branch: 'MAIN', name: 'Rates', username: 'rates', permissions: ['RatesDraft'] },
       },
     };
   }
