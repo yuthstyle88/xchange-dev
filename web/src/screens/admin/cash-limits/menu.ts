@@ -10,7 +10,7 @@ export const menu: AdminMenu = {
   id: 'cash-limits',
   order: 28,
   group: 'money',
-  needs: 'CashLimitsManage',
+  needs: 'settingsRead',
   dated: false,
   icon: '⚖',
   label: () => t('label'),

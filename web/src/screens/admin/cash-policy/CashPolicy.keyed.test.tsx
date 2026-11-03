@@ -5,7 +5,8 @@ import { render } from 'solid-js/web';
 import { setLang } from '../../../shared/i18n';
 import { Toast } from '../parts/toast';
 import { CashPolicy } from './CashPolicy';
-import { makeAdminCashStockRow } from '../../../shared/testing/fixtures';
+import { makeAdminCashStockRow, makeMe } from '../../../shared/testing/fixtures';
+import { sharedSession } from '../../../shared/session/session';
 
 const SAVE = '/api/cash-transfer-policy';
 
@@ -32,6 +33,8 @@ describe('KW-3: CashPolicy idempotency key lifecycle (#2021 §9)', () => {
   };
 
   beforeEach(() => {
+    // #6016: the screen edits only for a user holding CashTransferPolicySet (read-only otherwise); these tests are about editing.
+    sharedSession().updateMe(makeMe({ permissions: ['CashTransferPolicySet'] }));
     setLang('th');
     writes = [];
     queue = [];

@@ -5,12 +5,14 @@ import {
   makeCashLimitsData,
   makeDrawerLowLevel,
   type CashLimitsData,
+  makeMe,
 } from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { Toast } from '../parts/toast';
 import { CashLimits } from './CashLimits';
 import { DrawerLowLevels } from './DrawerLowLevels';
 import * as texts from './i18n';
+import { sharedSession } from '../../../shared/session/session';
 
 interface Sent {
   method: string;
@@ -139,6 +141,8 @@ async function mount(opts: {
 }
 
 beforeEach(() => {
+  // #6016: the screen edits only for a user holding CashLimitsManage (read-only otherwise); these tests are about editing.
+  sharedSession().updateMe(makeMe({ permissions: ['CashLimitsManage'] }));
   server = new Server();
   onSavedCalls = [];
   vi.stubGlobal('fetch', vi.fn(server.fetch));

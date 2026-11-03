@@ -10,7 +10,7 @@ export const menu: AdminMenu = {
   id: 'cash-policy',
   order: 18,
   group: 'money',
-  needs: 'CashTransferPolicySet',
+  needs: 'settingsRead',
   dated: false,
   icon: '⚖',
   label: () => t('label'),
