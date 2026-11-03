@@ -87,6 +87,8 @@ const V1 = makeCashTransferPolicyData({
   valid: true,
   invalidEntries: [],
   setBy: 'u-exec',
+  // #564 F6: the banner names the setter by name, never the id (CashPolicy.setter.test.tsx).
+  setByName: 'ผู้บริหาร ก',
   createdAt: '2026-10-12T01:00:00Z',
 });
 const V2 = makeCashTransferPolicyData({
@@ -321,7 +323,7 @@ describe('the read (one, on open)', () => {
     expect(input(s, 'USD')?.value).toBe('300.00');
     expect(input(s, 'EUR')?.value).toBe('12.5');
     expect(input(s, 'THB')?.value).toBe('');
-    for (const shown of [V1.version, V1.setBy]) expect(text(s)).toContain(shown);
+    for (const shown of [V1.version, V1.setByName!]) expect(text(s)).toContain(shown);
     expect(text(s)).not.toContain(texts().th.noLimit ?? '\u0000');
   });
 
