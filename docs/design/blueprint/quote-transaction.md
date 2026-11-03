@@ -1128,7 +1128,7 @@ The two recomputing readers break as soon as `settle_thb` is rounded at write ti
 | CR9 | complete a cash BUY quoted CR1 | DRAWER THB −32.25; the stored line's `rounding_thb()` is +0.15 |
 | CR10 | admin row and `/devices/receipt` for CR9 | show settle 32.25 and rounding 0.15, read from the stored row, not recomputed |
 | CR11 | close a shift after CR9 with an exact count | no difference, verifies without FINANCE |
-| CR12 | desk: quote on step 0 (no method), then pick Cash on the payment step | a new quote is asked for with `paymentMethod: "Cash"`, and the transaction is created on that quote (never refused by CR8) |
+| CR12 | desk: quote on step 0 (no method), then pick Cash on the payment step | a new quote is asked for with `paymentMethod: "Cash"` (never refused by CR8). The transaction is created on it only when its net and rate equal what the teller confirmed; otherwise nothing is created and the teller confirms again (restated 2026-11-03, §13.9, rows CR13–CR19) |
 
 ### 13.8 Tickets
 
@@ -1141,3 +1141,88 @@ The two recomputing readers break as soon as `settle_thb` is rounded at write ti
 | CR-d (FE lane) | the desk sends `paymentMethod` with the quote, adds the method as a re-quote trigger (payment step and kiosk entry), and shows `roundingThb`; CR12 | the files are listed by path when the FE controller cuts it: at least `desk-store.ts`, `steps/payment/step.tsx` and `Summary.tsx` | FE controller, after CR-b's contract is merged |
 
 CR-b and CR-d change the quote contract together, so they deploy together.
+
+### 13.9 The teller confirms the figure that is paid (added 2026-11-03) [required]
+
+**The lane controller's ruling** (claude/608dff, 2026-11-03, after the day-9 run on #564): a teller must never attest one net and pay out another. The cash rounding of §13.2 does not change: the step is still 0.25 THB and it still favours the customer. Only *when* the teller sees the rounded net changes: before anything is created.
+
+**What happened** (day 9, cash BUY USD 20, receipt `XC-20261103-000006`):
+- The payment step showed `ยอดสุทธิ 671.45 THB` with Cash already picked. The ticked box read *"ยืนยันว่าตรวจรายการและยอดสุทธิ 671.45 THB ครบถ้วนแล้ว"*.
+- The drawer, the receipt and the summary after the save all show 671.50 (rounding +0.05).
+
+**The chain** (main `bc62c71a6`):
+1. The desk quotes before a method is picked, so that quote is an unrounded preview with `cashSettlement: false` (§13.4).
+2. Picking Cash asks for a new quote only after the 300 ms debounce (`web/src/screens/desk/desk-store.ts:379-382`, `QUOTE_DEBOUNCE_MS` at `:144`).
+3. A save pressed before that answer lands reaches `web/src/screens/desk/save.ts:336-343`. The held quote is *unusable* there (`cashSettlement !== (method === 'Cash')`), so the save asks for a new quote and creates on it at once, whatever its figures.
+4. Nothing compares the new quote with the one the teller confirmed.
+
+The same line 340 also re-quotes an **expired** quote and creates on it, so a rate that moved while the step was open is paid without being shown. Separately, `setMethod` leaves the confirm box ticked when the settlement kind changes (`desk-store.ts:379-382`), while `setFee` un-ticks it (`:383-387`).
+
+#### 13.9.1 The rule
+
+- **What the teller confirmed** is the quote on screen when the save is pressed. The step's net and its box label both come from that quote's `lines[0].settleThb` (`steps/payment/step.tsx:42`, `:271`). The figures compared are every line's **`settleThb` and `finalRate`**, as the server's strings. Comparing strings is not arithmetic, so W7 holds.
+- **At the save, when the held quote is unusable** (expired, or priced for the other settlement kind), the save asks for a new quote, as today. Then:
+  - **Same figures** (every line's `settleThb` and `finalRate` are equal) → the create names the new quote, as today. Example: a USD 100 cash BUY at 32.10 is 3,210.00, already a multiple of 0.25.
+  - **Different figures** → **no create.** `requote()` has already made the new quote the store's quote. The save un-ticks the confirm box, takes the desk back to the payment step (3) and shows what changed. The next save starts from the new quote, which is usable and matches, so it creates without another quote. Uploads already sent are kept; no create key is spent.
+- **`setMethod` un-ticks the confirm box** when the method moves between cash and non-cash. This is the same condition that re-quotes: `(v === 'Cash') !== wasCash`. A change between two non-cash methods leaves the box ticked, as it leaves the quote.
+- **Unchanged:**
+  - a usable held quote creates as today, with no extra quote (`save.cash-settlement.test.ts` R6);
+  - the server's `quoteExpired` refusal (`save.ts:362-365`) is still `refused` plus a re-quote;
+  - the rounding itself;
+  - the kiosk entry, which saves through the same `save.ts` and so gets the same rule.
+
+#### 13.9.2 Shapes
+
+```mermaid
+classDiagram
+  class DeskStore { <<web/src/screens/desk/desk-store.ts>> +outcome: Accessor~SaveOutcome~ +reconfirm: Accessor~Reconfirm|undefined~ +setMethod(m) +setPaymentChecked(v) +go(step) }
+  class SaveOutcome { <<type, desk-store.ts:27>> idle; saving; saved; refused; unknown; reconfirm }
+  class Reconfirm { <<desk-store.ts>> +fromNet: string +toNet: string +fromRate: string +toRate: string }
+  class Saver { <<web/src/screens/desk/save.ts createSaver>> step 2 compares the confirmed quote with the new one }
+  class SaveSink { <<save.ts>> +setReconfirm(r: Reconfirm|undefined) }
+  class PaymentStep { <<steps/payment/step.tsx>> shows the reconfirm notice }
+  Saver --> SaveSink : setOutcome(reconfirm), setReconfirm
+  Saver --> DeskStore : setPaymentChecked(false), go(3)
+  PaymentStep --> DeskStore : reconfirm()
+```
+
+| Name | Where | |
+|---|---|---|
+| `SaveOutcome` gains `'reconfirm'`: no transaction was created and the teller must confirm again | `desk-store.ts:27` | [required]: tests read it |
+| `Reconfirm { fromNet, toNet, fromRate, toRate }` (the first line's strings, as answered) and `DeskStore.reconfirm()` | `desk-store.ts` | [required] |
+| `SaveSink.setReconfirm(r)`: set on the stop; cleared (`undefined`) when the next save starts, on `backToEdit` and on `startNew` | `save.ts`, `desk-store.ts` | [required] |
+| The comparison, in step 2 of the save before `createWrite.send` | `save.ts:336-343` | [proposed] internal shape |
+| The notice on the payment step while `outcome() === 'reconfirm'`, with `role="alert"` | `steps/payment/step.tsx`, `steps/payment/i18n.ts` | [required] text below |
+
+**The notice text** [proposed; the strings go to the owner with the FE ticket, as the F1/F5 strings did]:
+- th: `ยอดเปลี่ยนจาก {fromNet} เป็น {toNet} THB (เรท {fromRate} → {toRate}) กรุณาตรวจแล้วติ๊กยืนยันอีกครั้ง`
+- en: `The net changed from {fromNet} to {toNet} THB (rate {fromRate} → {toRate}). Check it and confirm again.`
+- When only the net changed and the rate is equal, the rate part is left out.
+
+#### 13.9.3 Behaviour (up-front tests) [required]
+
+| # | Case | Expect |
+|---|---|---|
+| CR13 | step-0 quote non-cash, net 671.45; pick Cash; save at once; the cash quote answers net 671.50, rounding 0.05, same rate | no `POST /api/transactions`; `outcome()` is `'reconfirm'`; `paymentChecked()` false; `step()` 3; `quote()` is the new quote; `reconfirm()` = {fromNet 671.45, toNet 671.50, fromRate = toRate} |
+| CR14 | after CR13, tick the box and save again | no new `POST /api/quotes`; one create, naming the CR13 quote's id; `reconfirm()` undefined |
+| CR15 | step-0 quote non-cash, net 3210.00; pick Cash; save at once; the cash quote answers 3210.00, same rate | created on the new quote (today's behaviour; `save.cash-settlement.test.ts` R5 stays green) |
+| CR16 | the held quote has expired; the new quote has another `finalRate` and net | no create; `reconfirm`, box un-ticked, step 3; `reconfirm()` names both nets and both rates |
+| CR17 | the held quote has expired; the new quote has the same figures | created on the new quote (`save.test.ts` V3 stays green) |
+| CR18 | box ticked; `setMethod('Cash')` from a non-cash method, then back | `paymentChecked()` is false after each; `setMethod` between two non-cash methods leaves it true |
+| CR19 | the payment step while `outcome()` is `'reconfirm'` | the notice above is shown with both nets, and the box label shows the new net |
+
+**Tests that pin today's behaviour: none flips.** Measured 2026-11-03 on `bc62c71a6`:
+- **What was run:** a throwaway of §13.9.1. `save.ts` stops when the figures differ; `setMethod` un-ticks on a settlement-kind change.
+- **Result:** the whole web suite (`npx vitest run`, Node 24.21.0) passed, 887 files and 6,855 tests.
+- **Why nothing pins the old rule:** the tests that save through an unusable quote are `save.cash-settlement.test.ts` R5, `save.test.ts` V3 and `save.stock-wait.test.ts`. Their fake servers answer the second quote with the same `settleThb` and rate as the first.
+- **What this means:** no existing test pins "create whatever the figures". The new rows need new tests.
+
+#### 13.9.4 Ticket
+
+| # | Ticket | Scope | Class |
+|---|---|---|---|
+| CR-f (FE lane) | §13.9.1–13.9.3; CR13–CR19 | `web/src/screens/desk/save.ts`, `desk-store.ts`, `steps/payment/step.tsx`, `steps/payment/i18n.ts` and the provided test files | logic; the FE controller dispatches |
+
+#### 13.9.5 Data migration
+
+None. This is FE-only: no table, column, constraint or wire field changes. `POST /api/quotes` and `POST /api/transactions` are unchanged.
