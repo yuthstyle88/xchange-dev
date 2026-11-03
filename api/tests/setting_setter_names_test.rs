@@ -20,7 +20,7 @@ use std::time::Duration;
 
 use actix_web::http::{Method, StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{TimeZone, Utc};
 use serde_json::{Value, json};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
@@ -48,7 +48,6 @@ fn unique(prefix: &str) -> String {
     xc_testdb::unique_schema_name(prefix)
 }
 
-/// A role holding `CashTransferPolicySet` (EXECUTIVE and FINANCE under §11.2).
 // ------------------------------------------------------------ database
 
 struct Room {
