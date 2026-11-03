@@ -335,20 +335,20 @@ impl CommandAction for QuotesCommand {
                     )
                 })?;
 
-        let quote_needs: Vec<(CurrencyCode, Decimal)> = quote
-            .lines
-            .iter()
-            .flat_map(|l| {
-                let settle = Decimal::from_i128_with_scale(l.settle_thb.minor_i128(), 2);
-                drawer_check::needs(
-                    l.shop_side,
-                    l.currency,
-                    l.quantity.value(),
-                    settle,
-                    quote.cash_settlement,
-                )
-            })
-            .collect();
+        let payout = match payment_method {
+            Some(m) if m.is_cash() => drawer_check::Payout::Cash,
+            Some(_) => drawer_check::Payout::NonCash,
+            None => drawer_check::Payout::Undecided,
+        };
+        let has_buy = quote.lines.iter().any(|l| l.shop_side == Side::Buy);
+        let quote_needs = drawer_check::quote_needs(&quote.lines, payout).map_err(|e| {
+            V3Error::new(
+                "serverError",
+                None,
+                e.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+        })?;
 
         let mut dto = QuoteDto::from_domain(quote, pub_version).map_err(|e| {
             V3Error::new(
@@ -377,6 +377,7 @@ impl CommandAction for QuotesCommand {
                 )
             })?;
             if let Some(shift_id) = shift_id {
+                dto.drawer_check_if_cash = payout == drawer_check::Payout::Undecided && has_buy;
                 let shortfall = drawer_check::drawer_shortfall_in(tx, &shift_id, &quote_needs)
                     .await
                     .map_err(|e| {

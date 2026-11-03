@@ -19,6 +19,7 @@ export const th = {
   drawerShortTitle: 'เงินในลิ้นชักไม่พอจ่ายรายการนี้',
   drawerShortNext: 'ให้ผู้จัดการสาขาเบิก OD จากตู้เซฟเข้าลิ้นชักก่อนบันทึกรายการ',
   drawerLowAfter: 'หลังรายการนี้ เงินในลิ้นชักจะเหลือน้อย ควรเบิก OD: {currencies}',
+  cashLead: 'หากจ่ายเป็นเงินสด: ',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -41,4 +42,5 @@ export const en: Record<keyof typeof th, string> = {
   drawerShortTitle: 'The drawer does not hold enough to pay this',
   drawerShortNext: 'Ask the branch manager to move cash from the safe into the drawer before saving',
   drawerLowAfter: 'After this transaction the drawer will be low on: {currencies}',
+  cashLead: 'If paid in cash: ',
 };

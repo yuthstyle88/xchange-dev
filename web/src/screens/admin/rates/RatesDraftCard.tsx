@@ -48,6 +48,7 @@ function validateLine(line: RateDraftLineDto): LineFieldErrors {
 export interface RatesDraftCardProps {
   branch: () => string;
   busy: () => boolean;
+  canDraft?: () => boolean;
   draftDetail: () => RateDraftDetailData | null;
   setDraftDetail: (
     updater: RateDraftDetailData | null | ((prev: RateDraftDetailData | null) => RateDraftDetailData | null),
@@ -413,14 +414,16 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
               </Show>
             </div>
             <div class="dialog-actions">
-              <button
-                type="button"
-                class="btn-new-draft"
-                disabled={props.busy()}
-                onClick={handleNewDraft}
-              >
-                {props.t('newDraft')}
-              </button>
+              <Show when={props.canDraft?.() ?? true}>
+                <button
+                  type="button"
+                  class="btn-new-draft"
+                  disabled={props.busy()}
+                  onClick={handleNewDraft}
+                >
+                  {props.t('newDraft')}
+                </button>
+              </Show>
               <Show when={props.draftDetail()?.draft}>
                 <Show when={isEditable()}>
                   <button

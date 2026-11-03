@@ -55,6 +55,10 @@ describe('WE-21: Rates screen worded error tests (web-worded-error.md)', () => {
           headers: { 'content-type': 'application/json' },
         });
 
+      // #564 F-3: the page draws the new-draft button only for a caller with RatesDraft (Rates.draft-permission.test.tsx).
+      if (url.pathname === '/api/v3/views/me') {
+        return viewWrap({ permissions: ['RatesDraft'] });
+      }
       if (url.pathname === '/api/v3/views/published_rates') {
         return viewWrap({ lines: [{ currency: 'USD', group: 'ALL', unitSize: '1', buyRate: '33.00', sellRate: '34.00', lineId: 'l1' }] });
       }

@@ -19,6 +19,7 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
   const locked = () => store.entry()?.locked === true;
   const shiftOpen = () => store.config()?.shiftOpen === true;
   const line = () => store.quote()?.lines[0];
+  const cashLead = () => (store.quote()?.drawerCheckIfCash ? t('cashLead') : '');
   const amountError = () => {
     if (badAmount() && store.amount() === '') {
       return sharedT('input.invalid', { field: t('amount') });
@@ -140,7 +141,7 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
           <Show when={store.quote()?.belowLowCashLevel?.length ? store.quote()!.belowLowCashLevel : undefined}>
             {(low) => (
               <p class="desk-notice" data-testid="drawer-low-after">
-                {t('drawerLowAfter', { currencies: low().join(', ') })}
+                {cashLead()}{t('drawerLowAfter', { currencies: low().join(', ') })}
               </p>
             )}
           </Show>
@@ -148,7 +149,7 @@ function RateStep(props: { store: DeskStore }): JSX.Element {
       >
         {(q) => (
           <div class="desk-notice" role="alert" data-testid="drawer-shortfall">
-            <p>{t('drawerShortTitle')}</p>
+            <p>{cashLead()}{t('drawerShortTitle')}</p>
             <Show when={q().drawerShortfallMessage}>{(m) => <p>{m()}</p>}</Show>
             <p>{t('drawerShortNext')}</p>
           </div>
