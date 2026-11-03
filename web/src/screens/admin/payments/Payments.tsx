@@ -461,7 +461,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
           <div class="xc-branch-notice">{branchNotice()}</div>
         </Show>
 
-        <Show when={!canEdit()}>
+        <Show when={data() && !canEdit()}>
           <p class="stock-banner" data-testid="owner-set">
             {t('ownerSet')}
           </p>
