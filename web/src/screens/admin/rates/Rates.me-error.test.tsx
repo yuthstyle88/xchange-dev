@@ -244,7 +244,8 @@ describe('Rates me-error (R3-3 / #4741)', () => {
     expect(saveBtn!.title).toBe('');
   });
 
-  it('M4 me loads without RatePolicySave: no permissions line; save control disabled as today (no reason title)', async () => {
+  // #6016 pattern (F3 of the eb2849a5 report): with me read and no RatePolicySave, the save control is not drawn; one owner note stands in its place.
+  it('M4 me loads without RatePolicySave: no permissions line; no save control, one owner note', async () => {
     const server = createServer({
       meHandler: () =>
         new Response(
@@ -259,10 +260,38 @@ describe('Rates me-error (R3-3 / #4741)', () => {
     await mountRates(server.fn);
 
     expect(host.querySelector('[data-permissions-unavailable]')).toBeNull();
+    expect(host.querySelector('button[data-testid="save-policy"]')).toBeNull();
+    const notes = host.querySelectorAll('[data-testid="owner-set"]');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.textContent?.trim()).toBe('ตั้งค่าโดยเจ้าของ');
+  });
+
+  it('M6 me answers 500: no owner note, because the permissions are unknown; the save control stays disabled with the reason', async () => {
+    const server = createServer({
+      meHandler: () =>
+        new Response(JSON.stringify({ error: { code: 'serverError', message: 'server broke' } }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
+    await mountRates(server.fn);
+    expect(host.querySelector('[data-testid="owner-set"]')).toBeNull();
     const saveBtn = host.querySelector<HTMLButtonElement>('button[data-testid="save-policy"]');
     expect(saveBtn).not.toBeNull();
     expect(saveBtn!.disabled).toBe(true);
-    expect(saveBtn!.title).toBe('');
+  });
+
+  it('M7 me loads with RatePolicySave: no owner note, the save control is drawn', async () => {
+    const server = createServer({
+      meHandler: () =>
+        new Response(JSON.stringify({ version: 1, changed: true, data: makeMe({ permissions: ['RatePolicySave'] }) }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
+    await mountRates(server.fn);
+    expect(host.querySelector('[data-testid="owner-set"]')).toBeNull();
+    expect(host.querySelector('button[data-testid="save-policy"]')).not.toBeNull();
   });
 
   it('M5 rate_policy fails, me loads: the policy error shows as today, and no permissions line', async () => {

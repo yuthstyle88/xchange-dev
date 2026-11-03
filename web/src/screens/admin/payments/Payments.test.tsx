@@ -84,7 +84,7 @@ const T = {
   intro: 'ร้านขายเงินต่างประเทศ = ร้านรับเงินบาท · ร้านรับซื้อเงินต่างประเทศ = ร้านจ่ายเงินบาท',
   neverEdited: 'ใช้ค่าเริ่มต้นของระบบ · ยังไม่เคยแก้ไข',
   reload: 'โหลดล่าสุด',
-  readOnly: 'ดูการตั้งค่าได้ · ให้เจ้าของระบบเป็นผู้แก้ไข',
+  ownerSet: 'ตั้งค่าโดยเจ้าของ',
   // a card (:15)
   enabled: 'เปิดใช้',
   sell: 'รับเงินบาทจากลูกค้า',
@@ -674,7 +674,9 @@ describe("V2-payments Y1: v2's intro, count and meta line", () => {
     expect(w).toContain(`แก้ไข ${dateText(EDITED_AT, 'th-TH')} โดย somchai`);
     expect(w).not.toContain(T.neverEdited);
     expect(w).toContain(T.footnote);
-    expect(w).not.toContain(T.readOnly);
+    expect(w).not.toContain(T.ownerSet);
+    expect(page().querySelector('[data-testid="owner-set"]')).toBeNull();
+    expect(buttons(page(), T.save)).toHaveLength(1);
     expect(isDisabled(button(page(), T.reload))).toBe(false);
   });
 
@@ -1007,19 +1009,22 @@ describe("V2-payments Y3: v2's save bar", () => {
 // ── canEdit false (§9, §8) ───────────────────────────────────────────────────
 
 describe('V2-payments: an employee reads their branch and cannot change it', () => {
-  it('shows v2’s read-only line, locks every control, offers no save and sends nothing', async () => {
+  // #6016 pattern (F3 of the eb2849a5 report): the owner's note replaces v2's read-only line, and no save or discard control is drawn.
+  it('shows one owner note, locks every control, offers no save or discard and sends nothing', async () => {
     const s = server.settings.MAIN!;
     s.canEdit = false;
     s.history = [];
     await mount();
-    expect(words()).toContain(T.readOnly);
+    const notes = page().querySelectorAll('[data-testid="owner-set"]');
+    expect(notes).toHaveLength(1);
+    expect(norm(notes[0]!.textContent)).toBe(T.ownerSet);
+    expect(buttons(page(), T.save), 'no save button').toEqual([]);
+    expect(buttons(page(), T.discard), 'no discard button').toEqual([]);
     for (const c of CHANNELS) {
       for (const el of Array.from(card(c.id).querySelectorAll<Control>('input, textarea'))) {
         expect(isDisabled(el), `${c.id} ${el.name}`).toBe(true);
       }
     }
-    const saves = buttons(page(), T.save);
-    expect(saves.every((b) => isDisabled(b)), 'no save button, or a disabled one').toBe(true);
     for (const form of Array.from(page().querySelectorAll('form'))) {
       form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
@@ -1031,6 +1036,17 @@ describe('V2-payments: an employee reads their branch and cannot change it', () 
 });
 
 // ── Y4: history (:11, :15) ───────────────────────────────────────────────────
+
+describe('F3: the owner note follows the language', () => {
+  it("reads 'Set by the owner' in English", async () => {
+    const s = server.settings.MAIN!;
+    s.canEdit = false;
+    await mount();
+    setLang('en');
+    await settle();
+    expect(norm(page().querySelector('[data-testid="owner-set"]')?.textContent)).toBe('Set by the owner');
+  });
+});
 
 describe("V2-payments Y4: v2's history of the settings", () => {
   it("lists the entries under v2's summary and headers: date, who, which channels changed, version", async () => {
