@@ -629,6 +629,56 @@ The ticket lists each test by name.
   - **Correction:** today `ensure_non_negative` judges only the end balance. It must refuse only a currency whose change is negative and whose end is below zero, as the port does (`ledger_postings.rs:899-903`), so a SELL that adds THB is never refused.
 - `complete`'s refusal stays, for a drawer that changed between create and complete.
 
+**1a. Before the payment method is chosen, the quote checks a cash payout (F1, eb2849a5 on-screen report, #564 issuecomment-6596339013).** `[required]`
+
+> designed-by: claude/b091f5e0 (BE sub-controller under claude/608dff), 2026-11-03, measured on `main` `eb2849a5`.
+
+- **The gap.** The desk quotes at the rate step (step 02), but the payment method is chosen only at step 04, so the rate step's quote carries no `paymentMethod` (`web/src/screens/desk/desk-store.ts:324`). The chain runs as follows:
+  1. The quote resolves `cash_settlement = req.payment_method.is_some_and(|m| m.is_cash())` to `false` (`api/src/application/workflows/exchange/quote.rs:361`).
+  2. `drawer_check::needs` gives a BUY that is not cash no need (`api/src/application/workflows/exchange/drawer_check.rs:25-26`).
+  3. The quote therefore answers an empty `drawerShortfall` and `belowLowCashLevel` (`api/src/presentation/http/v3/commands/quotes.rs:337-350`, `:380-410`).
+  4. As a result, the teller learns of a THB shortfall only when create refuses (2.3g on the eb2849a5 run).
+- **The rule.** For the drawer check, a DESK quote's payout has three states, not two:
+
+  | Payout | When | A BUY line needs from the drawer |
+  |---|---|---|
+  | `Cash` | `paymentMethod` is cash | `settleThb` (the cash-rounded settle, as today) |
+  | `NonCash` | `paymentMethod` is given and is not cash | nothing (as today, K6) |
+  | `Undecided` | no `paymentMethod` | **the THB a cash payout would take**: `Settlement::of(Buy, thbAmount, feeThb, cash = true).settle()` |
+
+  - A SELL line needs its foreign quantity in every state, as today.
+  - The quote itself does not change: its `settleThb`, `roundingThb` and `cashSettlement` are still those of the method given (none, so non-cash). Only the drawer check assumes cash.
+- **The answer says which basis it used.** `QuoteDto` gains `[required]` `drawerCheckIfCash: boolean`. It is `true` when the payout is `Undecided` and the quote has a BUY line. In that case `drawerShortfall`, `drawerShortfallMessage` and `belowLowCashLevel` describe a cash payout, and the FE words them as "if paid in cash". Otherwise it is `false`, and the three fields mean what they mean today.
+- **Create is unchanged.** `POST /api/transactions` still refuses a short cash exchange (item 1, 2.3g). The re-quote at step 04 (`web/src/screens/desk/save.ts:338` re-quotes when `cashSettlement` differs from the chosen method) answers with the chosen payout and `drawerCheckIfCash = false`.
+- **One owner of the need.** `drawer_check.rs` gains `Payout` and `quote_needs(lines, payout)`. The quote command calls it instead of building the needs inline. `needs()` stays for `transactions.rs:412`, which always knows the method.
+- **With GA-4.** GA-4 (`owner-set-values.md` §7) gives `Settlement::of` a `CashStep` argument. Whichever of the two lands second adapts the one call in `quote_needs`. Where the step is "not set" (GA-4), an `Undecided` BUY has no cash need to compute. The quote then answers `drawerCheckIfCash = false` with no cash advice, as a quote that names no method does today.
+
+| Class / function | File | Change |
+|---|---|---|
+| `Payout`, `quote_needs` | `api/src/application/workflows/exchange/drawer_check.rs` | new; `Undecided` BUY ⇒ cash-rounded settle |
+| quote command | `api/src/presentation/http/v3/commands/quotes.rs` | `Payout` from the input's `paymentMethod`; sets `drawerCheckIfCash` |
+| `QuoteDto` | `api/src/presentation/dto/v3/quote.rs` | `+drawer_check_if_cash: bool` |
+| generated TS and fixtures | `web/src/shared/api/generated/quote.ts`, `web/src/shared/testing/fixtures/quote.ts`, `web/src/shared/testing/fixtures/index.ts` | regenerated |
+
+**Behaviour (up-front tests, `class:logic`).** The drawer starts with THB 1,000 unless a row says otherwise.
+
+| # | Case | Required result |
+|---|---|---|
+| K-8 | DESK BUY USD worth THB 3,000, **no** `paymentMethod` | `drawerShortfall = [{THB, DRAWER, 2000}]` (cash-rounded), `drawerShortfallMessage` set, `drawerCheckIfCash = true`, `cashSettlement = false` |
+| K-9 | The same BUY with a settle that is not a multiple of 0.25 | `shortBy` uses the cash-rounded settle, not `settleThb` |
+| K-10 | A BUY the drawer can pay, no method, leaving THB at or below the drawer low level | `drawerShortfall = []`, `belowLowCashLevel = ["THB"]`, `drawerCheckIfCash = true` |
+| K-11 | A BUY with no method that the drawer can pay with room to spare | everything empty, `drawerCheckIfCash = true` |
+| K-12 | SELL with no method, short of USD | `drawerShortfall = [{USD, …}]` as today, `drawerCheckIfCash = false` (no BUY line) |
+| K-13 | BUY with `paymentMethod: Cash` (K1) or PromptPay (K6) | as today, `drawerCheckIfCash = false` |
+| K-14 | The K-8 quote, then create with Cash | `409 stockInsufficient`, as K3 |
+| K-15 | KIOSK or another non-DESK channel, no method | no drawer advice, `drawerCheckIfCash = false` |
+
+`api/tests/keyin_drawer_check_test.rs` (K1–K7) and `api/tests/drawer_low_levels_test.rs` (L7) pass a method in every quote, so they stay green unchanged. The ticket's flip table comes from running `api`'s `keyin_*`, `drawer_*` and `quote*` modules against a throwaway of the change.
+
+**FE half (claude/01TxaRJG).** At the rate step, when `drawerCheckIfCash` is set, the shortfall and low-level warnings show with an "if paid in cash" lead. The wording goes to the owner. Nothing else changes.
+
+**Data migration.** None: no table, column, constraint or default changes. The DTO gains one field.
+
 **2. Low-cash warning: a separate drawer level (owner's rulings, 17:3x ICT 2026-11-02, on #5971).**
 - **(a) A level of its own.** The EX-5 floor (`branch_stock_floors`) stays as it is: the branch total, for the executive alert. The desk warning compares a **separate per-branch, per-currency drawer level** with **one drawer's** expected balance.
 - **(b) Finance sets it on `#cash-limits`**, beside the count-difference limit, under the cash-limits permission (`Permission::CashLimitsManage`, `xc-auth/src/domain/policy/areas/cash_limits.rs:15-22`). `AlertSettingsSave` is not granted to FINANCE.
