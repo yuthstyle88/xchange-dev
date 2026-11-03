@@ -67,7 +67,7 @@ impl BranchView for MyShiftView {
             let transfer_rows: Vec<TransferSqlRow> = sqlx::query_as(AssertSqlSafe(format!(
                 "SELECT {TRANSFER_COLUMNS} \
                  FROM cash_transfers t \
-                 WHERE t.to_shift_id = $1 AND t.status = 'DISPATCHED' \
+                 WHERE t.to_shift_id = $1 \
                  ORDER BY t.created_at, t.id"
             )))
             .bind(&id)

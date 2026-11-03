@@ -1,6 +1,8 @@
 //! `my_shift.incomingTransfers` (design `docs/design/blueprint/cash-shift-transfer.md` §4.7, "`my_shift.incomingTransfers`
-//! (added 2026-11-02)"): the teller sees the DISPATCHED transfers into their own open shift, so they can receive a
-//! `SAFE_TO_DRAWER` top-up (`ledger-inventory.md` §5.1.2). Another shift's transfer never shows.
+//! (added 2026-11-02)", restated 2026-11-03 "the teller sees every transfer addressed to their shift", rows M-1…M-10,
+//! and "Every transfer row names its creator", rows N-1…N-4): the teller sees every transfer into their own open shift,
+//! whatever its status, read-only; receiving stays DISPATCHED-only. Another shift's transfer never shows. Every
+//! `CashTransferRow` carries `createdByName` (null for a missing or blank name, never the id).
 //!
 //! Root cause pinned here: the only transfer list, `cash_transfers`, needs `CashManage`
 //! (`xc-auth/src/domain/policy/areas/cash.rs:108-112`), so a teller (`ShiftOperate`) could receive a transfer it could
@@ -370,28 +372,41 @@ async fn another_shifts_transfer_never_shows() {
     room.finish().await;
 }
 
-/// Row 2: DRAFT, APPROVED, RECEIVED and RECONCILED transfers into the shift are not listed; only DISPATCHED is.
+/// Row 2, restated 2026-11-03 (M-1, M-4, M-5, M-6, M-7): every status into the shift is listed, oldest first.
+/// Was `only_a_dispatched_transfer_is_listed` (DISPATCHED only), reversed by the lane controller's ruling of 2026-11-03.
 #[actix_web::test]
-async fn only_a_dispatched_transfer_is_listed() {
+async fn every_status_into_the_shift_is_listed_oldest_first() {
     let room = Room::start().await;
-    for status in ["DRAFT", "APPROVED", "RECEIVED", "RECONCILED"] {
-        room.transfer("SAFE_TO_DRAWER", status, None, Some(&room.shift_a), 1, 0)
-            .await;
+    let mut expected = Vec::new();
+    for (offset, status) in ["DRAFT", "APPROVED", "DISPATCHED", "RECEIVED", "RECONCILED"]
+        .into_iter()
+        .enumerate()
+    {
+        expected.push(
+            room.transfer(
+                "SAFE_TO_DRAWER",
+                status,
+                None,
+                Some(&room.shift_a),
+                1,
+                offset as i64 * 10,
+            )
+            .await,
+        );
     }
-    let dispatched = room
-        .transfer(
-            "SAFE_TO_DRAWER",
-            "DISPATCHED",
-            None,
-            Some(&room.shift_a),
-            2,
-            0,
-        )
-        .await;
 
+    let data = room.my_shift(&room.teller_a).await;
+    let incoming = &data["incomingTransfers"];
+    assert_eq!(ids_of(incoming), expected, "{data}");
+    let statuses: Vec<&str> = incoming
+        .as_array()
+        .expect("an array")
+        .iter()
+        .map(|r| r["status"].as_str().expect("a status"))
+        .collect();
     assert_eq!(
-        ids_of(&room.my_shift(&room.teller_a).await["incomingTransfers"]),
-        vec![dispatched]
+        statuses,
+        vec!["DRAFT", "APPROVED", "DISPATCHED", "RECEIVED", "RECONCILED"]
     );
     room.finish().await;
 }
@@ -470,5 +485,270 @@ async fn a_caller_with_no_open_shift_gets_null() {
     )
     .await;
     assert_eq!(room.my_shift(&room.manager).await, Value::Null);
+    room.finish().await;
+}
+
+impl Room {
+    /// Attaches an approval request in `status` to transfer `id` (setup only), as `transferSubmit` would.
+    async fn approval(&self, id: &str, status: &str) {
+        sqlx::query(
+            "WITH r AS ( \
+                 INSERT INTO approval_requests (id, organization_id, type, branch_id, object_id, \
+                     object_version_hash, policy_version, proposed_payload, requested_by, requested_at, status, \
+                     idempotency_key) \
+                 VALUES (gen_random_uuid(), $1::uuid, 'CASH_TRANSFER', 'MAIN', $2, 'h', '1', '{}'::jsonb, $3, now(), \
+                     $4, $5) \
+                 RETURNING id) \
+             UPDATE cash_transfers SET approval_request_id = (SELECT id FROM r) WHERE id = $2::uuid",
+        )
+        .bind(ORG_1)
+        .bind(id)
+        .bind(&self.manager.id)
+        .bind(status)
+        .bind(unique("approval"))
+        .execute(&self.db.pool)
+        .await
+        .unwrap_or_else(|e| panic!("attach a {status} approval: {e}"));
+    }
+
+    /// Sets `who`'s stored name (setup only).
+    async fn name(&self, who: &Who, name: &str) {
+        sqlx::query("UPDATE users SET name = $2 WHERE id = $1::uuid")
+            .bind(&who.id)
+            .bind(name)
+            .execute(&self.db.pool)
+            .await
+            .expect("set the name");
+    }
+
+    /// Makes `who` the creator of transfer `id` (setup only).
+    async fn created_by(&self, id: &str, who: &Who) {
+        sqlx::query("UPDATE cash_transfers SET created_by = $2::uuid WHERE id = $1::uuid")
+            .bind(id)
+            .bind(&who.id)
+            .execute(&self.db.pool)
+            .await
+            .expect("set the creator");
+    }
+
+    /// The `cash_transfers` view as `who`: the view's `data`.
+    async fn cash_transfers(&self, who: &Who) -> Value {
+        let a = self
+            .call(
+                who,
+                Method::GET,
+                "/api/v3/views/cash_transfers?branch=MAIN",
+                None,
+            )
+            .await;
+        assert_eq!(a.status, StatusCode::OK, "cash_transfers: {}", a.text);
+        a.body["data"].clone()
+    }
+}
+
+fn row_of<'a>(rows: &'a Value, id: &str) -> &'a Value {
+    rows.as_array()
+        .unwrap_or_else(|| panic!("an array of rows: {rows}"))
+        .iter()
+        .find(|r| r["id"] == json!(id))
+        .unwrap_or_else(|| panic!("row {id} is listed: {rows}"))
+}
+
+/// M-1: a DRAFT never submitted is listed with no approval.
+#[actix_web::test]
+async fn m1_a_draft_never_submitted_is_listed_without_approval() {
+    let room = Room::start().await;
+    let t = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+
+    let data = room.my_shift(&room.teller_a).await;
+    let row = row_of(&data["incomingTransfers"], &t);
+    assert_eq!(row["status"], json!("DRAFT"), "{row}");
+    assert_eq!(row["approvalStatus"], Value::Null, "{row}");
+    assert_eq!(row["approvalRequestId"], Value::Null, "{row}");
+    room.finish().await;
+}
+
+/// M-2 (and §4.10's T-7 on `my_shift`): a DRAFT waiting for approval is listed as PENDING.
+#[actix_web::test]
+async fn m2_a_pending_transfer_is_listed_as_pending() {
+    let room = Room::start().await;
+    let t = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+    room.approval(&t, "PENDING").await;
+
+    let data = room.my_shift(&room.teller_a).await;
+    let row = row_of(&data["incomingTransfers"], &t);
+    assert_eq!(row["status"], json!("DRAFT"), "{row}");
+    assert_eq!(row["approvalStatus"], json!("PENDING"), "{row}");
+    room.finish().await;
+}
+
+/// M-3: a rejected transfer stays DRAFT and is listed as REJECTED.
+#[actix_web::test]
+async fn m3_a_rejected_transfer_is_listed_as_rejected() {
+    let room = Room::start().await;
+    let t = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+    room.approval(&t, "REJECTED").await;
+
+    let data = room.my_shift(&room.teller_a).await;
+    let row = row_of(&data["incomingTransfers"], &t);
+    assert_eq!(row["status"], json!("DRAFT"), "{row}");
+    assert_eq!(row["approvalStatus"], json!("REJECTED"), "{row}");
+    room.finish().await;
+}
+
+/// M-8: another teller's shift is never listed, whatever the status.
+#[actix_web::test]
+async fn m8_another_shifts_transfer_is_never_listed_in_any_status() {
+    let room = Room::start().await;
+    for status in ["DRAFT", "APPROVED", "DISPATCHED", "RECEIVED", "RECONCILED"] {
+        room.transfer("SAFE_TO_DRAWER", status, None, Some(&room.shift_b), 1, 0)
+            .await;
+    }
+    let data = room.my_shift(&room.teller_a).await;
+    assert_eq!(data["incomingTransfers"], json!([]), "{data}");
+    room.finish().await;
+}
+
+/// M-10: the teller cannot receive a transfer that is visible but not dispatched; nothing changes.
+#[actix_web::test]
+async fn m10_receiving_a_listed_transfer_that_is_not_dispatched_is_refused() {
+    let room = Room::start().await;
+    let thb20 = room.thb20().await;
+    let pending = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+    room.approval(&pending, "PENDING").await;
+    let approved = room
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "APPROVED",
+            None,
+            Some(&room.shift_a),
+            1,
+            10,
+        )
+        .await;
+
+    for t in [&pending, &approved] {
+        let a = room
+            .call(
+                &room.teller_a,
+                Method::POST,
+                &format!("/api/cash-transfers/{t}/receive"),
+                Some(json!({
+                    "branch": "MAIN",
+                    "lines": [{ "currency": "THB", "denominationId": thb20, "qtyReceived": "1" }]
+                })),
+            )
+            .await;
+        assert!(
+            a.status.is_client_error(),
+            "receive of {t} must be refused: {} {}",
+            a.status,
+            a.text
+        );
+    }
+    let data = room.my_shift(&room.teller_a).await;
+    let incoming = &data["incomingTransfers"];
+    assert_eq!(row_of(incoming, &pending)["status"], json!("DRAFT"));
+    assert_eq!(row_of(incoming, &approved)["status"], json!("APPROVED"));
+    room.finish().await;
+}
+
+/// N-1: a `cash_transfers` row names its creator.
+#[actix_web::test]
+async fn n1_a_cash_transfers_row_names_its_creator() {
+    let room = Room::start().await;
+    room.name(&room.manager, "Malee Manager").await;
+    let t = room
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            1,
+            0,
+        )
+        .await;
+
+    let data = room.cash_transfers(&room.manager).await;
+    let row = row_of(&data, &t);
+    assert_eq!(row["createdBy"], json!(room.manager.id), "{row}");
+    assert_eq!(row["createdByName"], json!("Malee Manager"), "{row}");
+    room.finish().await;
+}
+
+/// N-2: a `my_shift.incomingTransfers` row names its creator.
+#[actix_web::test]
+async fn n2_a_my_shift_row_names_its_creator() {
+    let room = Room::start().await;
+    room.name(&room.manager, "Malee Manager").await;
+    let t = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+
+    let data = room.my_shift(&room.teller_a).await;
+    let row = row_of(&data["incomingTransfers"], &t);
+    assert_eq!(row["createdByName"], json!("Malee Manager"), "{row}");
+    room.finish().await;
+}
+
+/// N-3: a blank name answers null, never the id, on both views.
+#[actix_web::test]
+async fn n3_a_blank_name_is_null_never_the_id() {
+    let room = Room::start().await;
+    room.name(&room.manager, "   ").await;
+    let t = room
+        .transfer(
+            "SAFE_TO_DRAWER",
+            "DISPATCHED",
+            None,
+            Some(&room.shift_a),
+            1,
+            0,
+        )
+        .await;
+
+    let shift = room.my_shift(&room.teller_a).await;
+    assert_eq!(
+        row_of(&shift["incomingTransfers"], &t)["createdByName"],
+        Value::Null,
+        "{shift}"
+    );
+    let list = room.cash_transfers(&room.manager).await;
+    assert_eq!(row_of(&list, &t)["createdByName"], Value::Null, "{list}");
+    room.finish().await;
+}
+
+/// N-4: rows by two creators each name their own creator.
+#[actix_web::test]
+async fn n4_each_row_names_its_own_creator() {
+    let room = Room::start().await;
+    room.name(&room.manager, "Malee Manager").await;
+    room.name(&room.teller_b, "Somchai Teller").await;
+    let by_manager = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 0)
+        .await;
+    let by_teller = room
+        .transfer("SAFE_TO_DRAWER", "DRAFT", None, Some(&room.shift_a), 1, 10)
+        .await;
+    room.created_by(&by_teller, &room.teller_b).await;
+
+    let data = room.my_shift(&room.teller_a).await;
+    let incoming = &data["incomingTransfers"];
+    assert_eq!(
+        row_of(incoming, &by_manager)["createdByName"],
+        json!("Malee Manager")
+    );
+    assert_eq!(
+        row_of(incoming, &by_teller)["createdByName"],
+        json!("Somchai Teller")
+    );
     room.finish().await;
 }
