@@ -12,7 +12,7 @@ import type {
 } from '../../shared/api/generated/transactions';
 import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
-import type { DeskStore, SaveOutcome, TransactionState } from './desk-store';
+import type { DeskStore, Reconfirm, SaveOutcome, TransactionState } from './desk-store';
 import * as screenI18n from './i18n';
 
 /** The completed exchange. `…/complete` (TX-5 #873) has no generated answer yet, so only `id`, `status` and
@@ -29,6 +29,7 @@ export interface StockWait {
 
 export interface SaveSink {
   setOutcome(o: SaveOutcome): void;
+  setReconfirm(r: Reconfirm | undefined): void;
   setTransactionState(s: TransactionState | undefined): void;
   setSaveError(e: string | undefined): void;
   setSaved(a: SaveAnswer | undefined): void;
@@ -312,6 +313,7 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
 
   async function run(): Promise<SaveOutcome> {
     sink.setOutcome('saving');
+    sink.setReconfirm(undefined);
     sink.setSaveError(undefined);
     const s: Session = (session ??= { paidAt: new Date().toISOString() });
 
@@ -337,9 +339,28 @@ export function createSaver(store: DeskStore, sink: SaveSink) {
         const unusable = (x: typeof q) =>
           !x || expired(x.expiresAt) || x.cashSettlement !== (store.method() === 'Cash');
         if (!s.quoteId || q?.id !== s.quoteId || unusable(q)) {
+          const held = q;
           if (unusable(q)) q = await store.requote();
           if (!q) throw new Refused(store.quoteError()?.message ?? t('noQuote'), 'noQuote');
           s.quoteId = q.id;
+          if (
+            held &&
+            (held.lines.length !== q.lines.length ||
+              held.lines.some((l, i) => l.settleThb !== q!.lines[i]?.settleThb || l.finalRate !== q!.lines[i]?.finalRate))
+          ) {
+            const from = held.lines[0];
+            const to = q.lines[0];
+            store.setPaymentChecked(false);
+            store.go(3);
+            sink.setReconfirm({
+              fromNet: from?.settleThb ?? '',
+              toNet: to?.settleThb ?? '',
+              fromRate: from?.finalRate ?? '',
+              toRate: to?.finalRate ?? '',
+            });
+            sink.setOutcome('reconfirm');
+            return 'reconfirm';
+          }
         }
         s.tx = await createWrite.send(createBody(s.quoteId, s));
       }
