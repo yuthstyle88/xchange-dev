@@ -451,10 +451,79 @@ gains `myShift`; its `staff_requests` view is replaced by these two lists (§10)
 | Case | `incomingTransfers` |
 |---|---|
 | the caller's shift has a DISPATCHED `SAFE_TO_DRAWER` transfer whose `to_shift_id` is it (the only kind with a `to_shift_id`, `20261111160000_cash_transfer_ends.sql`) | that transfer, with its lines |
-| the transfer is DRAFT, APPROVED (not yet dispatched), RECEIVED or RECONCILED | not listed |
+| the transfer is DRAFT, APPROVED (not yet dispatched), RECEIVED or RECONCILED | not listed (**restated 2026-11-03: listed**, rows M-1…M-6 below) |
 | another teller's shift in the same branch has a DISPATCHED transfer | not listed |
 | a transfer leaving this shift (`from_shift_id` = it, `DRAWER_TO_SAFE`) | not listed |
 | the caller has no open shift | `my_shift` is `null`, as today |
+
+**Restated 2026-11-03: the teller sees every transfer addressed to their shift** (ruling of the lane controller claude/608dff, item B of 2026-11-03; from the day-10 run on #564, issuecomment-6604675252, step 2.2b).
+
+- **Why.** On day 10, Teller 1's /staff card had no row for an OD waiting for approval or rejected, while the Branch Manager's card showed both.
+  - **Cause:** this list was DISPATCHED-only (`views/my_shift.rs:70`), and a pending or rejected transfer is still `DRAFT` (§4.10).
+  - The teller lacks `CashManage`, so `TransfersCard.tsx:175` reads only this list. The labels added by §4.10's FE half therefore never reached the teller.
+- **The rule [required].** `incomingTransfers` lists **every** transfer with `to_shift_id` = the caller's open shift, **whatever its status**: `DRAFT` (never submitted, pending or rejected, told apart by `approvalStatus`, §4.10), `APPROVED`, `DISPATCHED`, `RECEIVED` and `RECONCILED`.
+  - It stays oldest first (`created_at, id`), with lines, as a `cash_transfers` row.
+  - The list is bounded by the shift, because `to_shift_id` is one open shift.
+- **The name stays `incomingTransfers`.** The wire shape does not change, only which rows it carries. Renaming it would change `generated/my_shift.ts` and break the FE build inside a BE ticket, for no reader's gain.
+- **Read-only; receiving is unchanged [required].**
+  - The server already refuses a receive from any status but `DISPATCHED`: the transfer state machine, `transfer_flow.rs:727` `t.status.next(TransferStep::Receive)`.
+  - The staff card already offers *รับเงิน* only on a `DISPATCHED` row (`web/src/screens/staff/transfers/TransfersCard.tsx:700-709`).
+  - The card already labels every status and the two approval states (`TransfersCard.tsx:44-63`: "รออนุมัติ", "ไม่อนุมัติ", "ส่งออกแล้ว", …).
+- **Policy.** Unchanged. The list is still only the caller's own shift, under `myShift` (`ShiftOperate`).
+- **`cash_transfers` is unchanged** (it keeps `CashManage`).
+- **This also makes §4.10's T-7 true as written.** Today it holds only for `cash_transfers`, and the up-front test was restated to read that view (`cash_transfer_approval_status_test.rs:675`). Row M-2 below checks it on `my_shift`.
+- **Data migration.** None. The change reads the same stored columns with one predicate fewer.
+
+| # | Case | `incomingTransfers` |
+|---|---|---|
+| M-1 | an OD into this shift, `DRAFT`, never submitted | listed; `status` `DRAFT`, `approvalStatus` `null` |
+| M-2 | the same, submitted (pending) | listed; `approvalStatus` `PENDING` |
+| M-3 | the same, rejected | listed; `status` `DRAFT`, `approvalStatus` `REJECTED` |
+| M-4 | `APPROVED`, not yet dispatched | listed |
+| M-5 | `DISPATCHED` | listed, as before |
+| M-6 | `RECEIVED` and `RECONCILED` | listed |
+| M-7 | mixed statuses | oldest first by `created_at, id`, regardless of status |
+| M-8 | another teller's shift, any status | never listed (as before) |
+| M-9 | a transfer leaving this shift (`DRAWER_TO_SAFE`) | not listed (as before) |
+| M-10 | the teller tries `transferReceive` on an M-2 or M-4 row | refused, nothing posted (as before; pinned here because the row is now visible) |
+
+**Tests that flip.** Measured 2026-11-03 21:xx ICT:
+- **The run:** a throwaway removing `AND t.status = 'DISPATCHED'` from `my_shift.rs:70`, against the whole `xchange` package (`cargo nextest run -p xchange`, base `bc62c71a6`). 5,187 run, 5,166 passed, 21 failed.
+- **The flip:** exactly one, `api/tests/my_shift_incoming_transfers_test.rs` `only_a_dispatched_transfer_is_listed` (row 2 above). The ticket author restates it on the test branch to M-1…M-6.
+- **The other 20 are environment noise, not flips.** None of their files reads `my_shift`, `incomingTransfers` or `cash_transfers` (grep over the eight files):
+  - 5 shell and page tests answer "build web/dist first", which was not built;
+  - 15 panicked in the shared setup helpers (`snapshot_common`, `quote_common`, `auth_http_common`, `shift_setup_common`, `rpc_common`) after waits of 15–200 s, which is database contention on one test DB.
+- **Not run:** the `createdByName` half was not swept, because the Postgres container had to be freed for a deploy. Its flip run, over every test file that reads `cash_transfers` or `my_shift`, is part of the BE ticket's preparation.
+
+**FE half.** No FE code change is needed for the rows (measured above). The FE sub-controller (claude/01TxaRJG) decides whether to add a regression test for a teller seeing a pending or rejected row without *รับเงิน*.
+
+**Every transfer row names its creator (added 2026-11-03).** This is the lane controller's decision (claude/608dff, #564 issuecomment-6604734587): the creator UUID on the admin #cash transfer row becomes a name. claude/01TxaRJG cuts the FE half; the BE half is here, so `CashTransferRow` changes once.
+
+- **Measured** (main `d38e78cac`):
+  - `CashTransferRow` has `created_by` (the user id) and no name (`api/src/presentation/dto/v3/cash.rs:240-254`).
+  - Both views build the row in one place, `with_lines` (`http/v3/cash_transfer_rows.rs:39-90`).
+  - Admin #cash prints the id (`web/src/screens/admin/cash/CashFlows.tsx:683`).
+- **The field [required].** `CashTransferRow.createdByName: Option<String>` (TS `string | null`).
+  - It is the creator's name from `SetterNames::of_in` (`http/v3/setter_names.rs`), which is the one owner of "user id → name" (`user-set-settings.md`, rule 1 of "Every setting names who saved it").
+  - A missing user or a blank name gives `null`, never the id.
+  - `createdBy` stays as it is.
+- **Where [proposed].**
+  - `with_lines` keeps its signature `(pool, rows)`. Inside, it opens one read transaction from the pool, runs the lines query and `SetterNames::of_in` over the distinct `created_by` ids in it, and commits.
+  - One extra query per view call, not one per row.
+  - No second name join is written.
+- **Both views carry it.** `cash_transfers` (admin) and `my_shift.incomingTransfers` (the teller) read the same row.
+- **Generated files.** These are regenerated in the BE PR:
+  - `web/src/shared/api/generated/cash_transfers.ts` (`CashTransferRow`);
+  - not `generated/my_shift.ts`: it imports `CashTransferRow` from `./cash_transfers` (`my_shift.ts:2`), so it does not change;
+  - `web/src/shared/testing/fixtures/` for them (`npm run gen:fixtures`).
+- **Data migration.** None: it reads `users.name`.
+
+| # | Case | `createdByName` |
+|---|---|---|
+| N-1 | `cash_transfers` row created by a user with a name | that name |
+| N-2 | `my_shift.incomingTransfers` row, the same | that name |
+| N-3 | the creator's name is blank or only spaces | `null` (never the id) |
+| N-4 | several rows by two creators | each row its own creator's name, from one name query |
 
 **The transfer-limit policy read (CA-8c, added 2026-10-11).** The policy screen (CA-9b) needs the current limits
 before it can offer a new version, and the list above has no view for them. `cash_transfer_policy` (organisation,
