@@ -104,7 +104,14 @@ fn rows_in_a_second_area_file_are_found_too() {
 #[test]
 fn need_table_is_todays_route_table_unchanged() {
     // #5558: `TODAY` is what `Policy::need` answers (area rows, then the table).
+    // Restated for #6004 (user-management-rbac.md §11.11): DeviceSetup, setPrinter, and setDrawer map to BranchesManage.
     for &(path, action, want) in TODAY {
+        let want = match (path, action) {
+            (EntryPath::DeviceSetup, _) | (EntryPath::Devices, "setDrawer" | "setPrinter") => {
+                Some(Need::Permission(Permission::BranchesManage))
+            }
+            _ => want,
+        };
         assert_eq!(
             Policy::need(path, &Action::new(action)),
             want,

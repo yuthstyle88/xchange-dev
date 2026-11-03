@@ -65,6 +65,12 @@ pub const ROWS: &[AreaRow] = &[
         need: Need::Permission(Permission::RatePolicySave),
         scope: RowScope::Organisation,
     },
+    AreaRow {
+        path: EntryPath::Rpc,
+        action: "marginGuardRead",
+        need: Need::Permission(Permission::SettingsRead),
+        scope: RowScope::Request,
+    },
     // MK-7 (#1406, ruling 1): the three marketing views (design §4.5).
     AreaRow {
         path: EntryPath::Rpc,

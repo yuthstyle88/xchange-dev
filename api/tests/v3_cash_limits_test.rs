@@ -280,8 +280,9 @@ fn code(a: &Answer) -> String {
 
 #[actix_web::test]
 async fn finance_saves_a_limit_and_reads_it_back() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only; FINANCE reads via SettingsRead.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("500")).await;
+    let a = save(&db, EXECUTIVE, B01, json!("500")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["branch"], B01);
     assert_eq!(
@@ -289,13 +290,13 @@ async fn finance_saves_a_limit_and_reads_it_back() {
         "two places: {}",
         a.text
     );
-    assert_eq!(a.body["updatedBy"], user_id(FINANCE).as_str());
+    assert_eq!(a.body["updatedBy"], user_id(EXECUTIVE).as_str());
     assert!(a.body["updatedAt"].is_string(), "{}", a.text);
 
     let (org, limit, by, _) = db.row(B01).await.expect("one row");
     assert_eq!(org, ORG, "the branch's organisation");
     assert_eq!(limit.as_deref(), Some("500.00"));
-    assert_eq!(by, user_id(FINANCE));
+    assert_eq!(by, user_id(EXECUTIVE));
 
     let r = read(&db, FINANCE, B01).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
@@ -309,8 +310,9 @@ async fn finance_saves_a_limit_and_reads_it_back() {
 /// §11.2: `CashLimitsManage` (`FINANCE` `FULL`) is held by `EXECUTIVE` and `FINANCE`.
 #[actix_web::test]
 async fn executive_may_set_it_too_and_a_second_save_replaces_the_first() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    save(&db, FINANCE, B01, json!("500.00")).await;
+    save(&db, EXECUTIVE, B01, json!("500.00")).await;
     let a = save(&db, EXECUTIVE, B01, json!("250.5")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], "250.50");
@@ -336,9 +338,10 @@ async fn executive_may_set_it_too_and_a_second_save_replaces_the_first() {
 
 #[actix_web::test]
 async fn null_removes_the_limit_so_every_difference_goes_to_finance() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    save(&db, FINANCE, B01, json!("500")).await;
-    let a = save(&db, FINANCE, B01, Value::Null).await;
+    save(&db, EXECUTIVE, B01, json!("500")).await;
+    let a = save(&db, EXECUTIVE, B01, Value::Null).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], Value::Null);
     let (_, limit, _, _) = db.row(B01).await.expect("the row stays");
@@ -348,8 +351,9 @@ async fn null_removes_the_limit_so_every_difference_goes_to_finance() {
 
 #[actix_web::test]
 async fn zero_is_a_limit_not_an_absence() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B01, json!("0")).await;
+    let a = save(&db, EXECUTIVE, B01, json!("0")).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["countDifferenceLimitThb"], "0.00");
     db.finish().await;
@@ -373,6 +377,7 @@ async fn a_branch_without_a_row_reads_as_no_limit() {
 /// §11.2: roles without `CashLimitsManage` in `RoleGrants::seed(role)` may neither save nor read.
 #[actix_web::test]
 async fn roles_without_cash_limits_manage_may_neither_save_nor_read() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only; every staff role holds SettingsRead and may read.
     let db = TestDb::start().await;
     let candidates = [
         ("EXECUTIVE@*", Role::Executive),
@@ -399,8 +404,7 @@ async fn roles_without_cash_limits_manage_may_neither_save_nor_read() {
         assert_ne!(a.status, StatusCode::OK, "{who} save: {}", a.text);
         assert_eq!(code(&a), "roleNotAllowedHere", "{who} save: {}", a.text);
         let r = read(&db, who, B01).await;
-        assert_ne!(r.status, StatusCode::OK, "{who} read: {}", r.text);
-        assert_eq!(code(&r), "roleNotAllowedHere", "{who} read: {}", r.text);
+        assert_eq!(r.status, StatusCode::OK, "{who} read: {}", r.text);
     }
     assert_eq!(db.rows().await, 0, "nothing written");
     db.finish().await;
@@ -408,14 +412,15 @@ async fn roles_without_cash_limits_manage_may_neither_save_nor_read() {
 
 #[actix_web::test]
 async fn a_bad_amount_is_refused_and_nothing_is_written() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
     for bad in [json!("-1"), json!("1.234"), json!("abc"), json!("")] {
-        let a = save(&db, FINANCE, B01, bad.clone()).await;
+        let a = save(&db, EXECUTIVE, B01, bad.clone()).await;
         assert_eq!(a.status, StatusCode::BAD_REQUEST, "{bad}: {}", a.text);
         assert_eq!(code(&a), "validationFailed", "{bad}: {}", a.text);
     }
     // money is a decimal string on the wire; a JSON number does not parse at all (the seam's answer)
-    let n = save(&db, FINANCE, B01, json!(500)).await;
+    let n = save(&db, EXECUTIVE, B01, json!(500)).await;
     assert_eq!(n.status, StatusCode::BAD_REQUEST, "{}", n.text);
     assert_eq!(db.rows().await, 0);
     db.finish().await;
@@ -423,8 +428,9 @@ async fn a_bad_amount_is_refused_and_nothing_is_written() {
 
 #[actix_web::test]
 async fn a_branch_outside_the_callers_scope_is_out_of_scope() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only; FINANCE holds SettingsRead on B01 and is outOfScope on B09.
     let db = TestDb::start().await;
-    let a = save(&db, FINANCE, B09, json!("100")).await;
+    let a = save(&db, "EXECUTIVE@XC-B01", B09, json!("100")).await;
     assert_eq!(code(&a), "outOfScope", "{}", a.text);
     let r = read(&db, FINANCE, B09).await;
     assert_eq!(code(&r), "outOfScope", "{}", r.text);
@@ -434,21 +440,22 @@ async fn a_branch_outside_the_callers_scope_is_out_of_scope() {
 
 #[actix_web::test]
 async fn the_idempotency_key_is_required_and_a_repeat_writes_once() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashLimitsManage is held by EXECUTIVE only.
     let db = TestDb::start().await;
-    let a = save_with(&db, FINANCE, B01, json!("100"), Key::Missing).await;
+    let a = save_with(&db, EXECUTIVE, B01, json!("100"), Key::Missing).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(db.rows().await, 0);
 
-    let first = save_with(&db, FINANCE, B01, json!("100"), Key::This("k-1")).await;
+    let first = save_with(&db, EXECUTIVE, B01, json!("100"), Key::This("k-1")).await;
     assert_eq!(first.status, StatusCode::OK, "{}", first.text);
     let (_, _, _, at1) = db.row(B01).await.expect("written");
-    let again = save_with(&db, FINANCE, B01, json!("100"), Key::This("k-1")).await;
+    let again = save_with(&db, EXECUTIVE, B01, json!("100"), Key::This("k-1")).await;
     assert_eq!(again.status, StatusCode::OK, "{}", again.text);
     assert_eq!(again.body, first.body, "the stored answer");
     let (_, _, _, at2) = db.row(B01).await.expect("still one row");
     assert_eq!(at1, at2, "not written again");
 
-    let other = save_with(&db, FINANCE, B01, json!("999"), Key::This("k-1")).await;
+    let other = save_with(&db, EXECUTIVE, B01, json!("999"), Key::This("k-1")).await;
     assert_eq!(code(&other), "idempotencyConflict", "{}", other.text);
     let (_, limit, _, _) = db.row(B01).await.expect("row");
     assert_eq!(limit.as_deref(), Some("100.00"), "unchanged");

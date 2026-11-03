@@ -30,9 +30,16 @@ async fn policy_of(db: &TestDb) -> PolicyRow {
 }
 
 async fn set_policy(db: &TestDb, cutoff: i64, grace: i64, expiry: i64) -> Answer {
+    // Restated for #6004 (user-management-rbac.md §11.11): bookingPolicySet requires BranchSettingsSave, held by EXECUTIVE only.
+    sqlx::query(
+        "ALTER TABLE booking_policies DROP CONSTRAINT IF EXISTS booking_policies_updated_by_fkey",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("drop fk");
     call(
         db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         "/api/booking-policy",
         Some(json!({

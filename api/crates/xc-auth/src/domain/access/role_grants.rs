@@ -109,8 +109,8 @@ impl RoleGrants {
 
     /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN;
     /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2); 8, ApproveLedgerAdjustment (ledger adjustment);
-    /// 9, PricingFormulaSave (organisation pricing formula, #5733)).
-    pub const SEED_VERSION: i32 = 9;
+    /// 9, PricingFormulaSave (organisation pricing formula, #5733); 10, business settings EXECUTIVE-only and SettingsRead (#6004, §11.11)).
+    pub const SEED_VERSION: i32 = 10;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
@@ -130,6 +130,8 @@ impl RoleGrants {
         (7, Permission::AttendanceCloseFor),
         (8, Permission::ApproveLedgerAdjustment),
         (9, Permission::PricingFormulaSave),
+        (10, Permission::SettingsRead),
+        (10, Permission::BranchSettingsSave),
     ];
 
     /// Existing permissions seeded on one more built-in role after version 1 (#5108).
@@ -142,6 +144,13 @@ impl RoleGrants {
     pub const SEED_REMOVALS: &[(i32, Permission)] = &[
         (3, Permission::OverviewRead),
         (3, Permission::AlertSettingsSave),
+        (10, Permission::CashLimitsManage),
+        (10, Permission::CashTransferPolicySet),
+        (10, Permission::CashTargetSet),
+        (10, Permission::RateAlertSettingsSave),
+        (10, Permission::OrgStartingPricesManage),
+        (10, Permission::SystemSettings),
+        (10, Permission::ConsentPolicyManage),
     ];
 
     /// §11.2: the seed of the built-in group `role`, in [`Permission::ALL`] order, no duplicates.
@@ -160,6 +169,7 @@ impl RoleGrants {
                     P::MarketingPerformance,
                     P::AttendanceClock,
                     P::SignedIn,
+                    P::SettingsRead,
                 ];
             }
             Role::Customer => return vec![P::CustomerSelf, P::SignedIn],
@@ -235,6 +245,16 @@ impl RoleGrants {
                 P::DrawerPassport,
                 P::SignedIn,
                 P::PricingFormulaSave,
+                P::CashTargetSet,
+                P::CashLimitsManage,
+                P::CashTransferPolicySet,
+                P::RateAlertSettingsSave,
+                P::OrgStartingPricesManage,
+                P::ConsentPolicyManage,
+                P::SystemSettings,
+                P::AlertSettingsSave,
+                P::BranchSettingsSave,
+                P::SettingsRead,
             ],
             Role::Admin => &[
                 P::ShiftCloseCertify,
@@ -243,12 +263,14 @@ impl RoleGrants {
                 P::CompatRead,
                 P::DocumentsList,
                 P::SignedIn,
+                P::SettingsRead,
             ],
             Role::RateManager | Role::VerificationReviewer => &[
                 P::AttendanceClock,
                 P::CompatRead,
                 P::DocumentsList,
                 P::SignedIn,
+                P::SettingsRead,
             ],
             Role::BranchManager => &[
                 P::ApprovalsDecide,
@@ -270,6 +292,7 @@ impl RoleGrants {
                 P::DrawerPassport,
                 P::SignedIn,
                 P::BindingQuoteIssue,
+                P::SettingsRead,
             ],
             Role::Teller => &[
                 P::ShiftOperate,
@@ -282,6 +305,7 @@ impl RoleGrants {
                 P::DrawerPassport,
                 P::SignedIn,
                 P::BindingQuoteIssue,
+                P::SettingsRead,
             ],
             Role::Finance => &[
                 P::ApprovalsDecide,
@@ -295,6 +319,7 @@ impl RoleGrants {
                 P::DocumentsList,
                 P::ProofUpload,
                 P::SignedIn,
+                P::SettingsRead,
             ],
             Role::Marketing | Role::Customer => unreachable!(),
         };

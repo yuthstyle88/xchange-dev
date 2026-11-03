@@ -827,8 +827,7 @@ async fn user_management_above_view_on_a_teller_base_is_guardrail_2() {
     let db = TestDb::start().await;
     let version = db.grant_version().await;
     let users_full = above_view_in(Module::UserManagement);
-    let settings_full = above_view_in(Module::SystemSettings);
-
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings has no permission any more, so guardrail 2 is pinned through UserManagement only.
     let mut with_users = night_set();
     with_users.push(users_full);
     let a = add(&db, EXEC, NIGHT, "TELLER", &names(&with_users)).await;
@@ -839,14 +838,14 @@ async fn user_management_above_view_on_a_teller_base_is_guardrail_2() {
         &format!("a TELLER base with {users_full:?}"),
     );
 
-    let mut with_settings = module_part(Role::Teller);
-    with_settings.push(settings_full);
-    let s = save(&db, EXEC, "TELLER", &names(&with_settings)).await;
+    let mut save_with_users = module_part(Role::Teller);
+    save_with_users.push(users_full);
+    let s = save(&db, EXEC, "TELLER", &names(&save_with_users)).await;
     refused(
         &s,
         StatusCode::CONFLICT,
         "guardrail:2",
-        &format!("TELLER saved with {settings_full:?}"),
+        &format!("TELLER saved with {users_full:?}"),
     );
 
     assert!(!db.group_exists(NIGHT).await);

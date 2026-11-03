@@ -385,9 +385,10 @@ async fn h4_an_executive_alone_saves_exchange_settings() {
     db.finish().await;
 }
 
-/// H-5: an org-wide ADMIN is unchanged: 200, audited as `ADMIN` (V.9's `SYSTEM` until #5630).
+/// H-5: an org-wide ADMIN is refused on exchange_settings (#6004: SystemSettings is EXECUTIVE only).
 #[actix_web::test]
 async fn h5_an_org_wide_admin_is_unchanged_on_exchange_settings() {
+    // Restated for #6004 (user-management-rbac.md §11.11): SystemSettings is EXECUTIVE only; ADMIN@* is refused by the policy seam and writes no audit row.
     let db = TestDb::start().await;
     let a = post(
         &db,
@@ -398,12 +399,17 @@ async fn h5_an_org_wide_admin_is_unchanged_on_exchange_settings() {
         Key::Fresh,
     )
     .await;
-    assert_eq!(a.status, StatusCode::OK, "H-5: {}", a.text);
+    assert!(
+        a.status.is_client_error()
+            && matches!(code(&a).as_str(), "roleNotAllowed" | "roleNotAllowedHere"),
+        "H-5: {} {}",
+        a.status,
+        a.text
+    );
     assert_eq!(
         db.audited("exchangeSettingsSave").await,
-        // #5630 (§14.5, ruling Q-1 A on #5661), restated by claude/studio-claude-17: was V.9's `SYSTEM`.
-        vec![(user_id("ADMIN@*"), "ADMIN".to_owned())],
-        "H-5: audited as SYSTEM"
+        Vec::<(String, String)>::new(),
+        "H-5: no audit row on refusal"
     );
     db.finish().await;
 }
@@ -430,9 +436,10 @@ async fn h6_an_executive_alone_saves_a_branch_exchange_limit() {
     db.finish().await;
 }
 
-/// H-7: an org-wide ADMIN is unchanged on the branch limit: 200, audited as `ADMIN` (V.9's `SYSTEM` until #5630).
+/// H-7: an org-wide ADMIN is refused on the branch limit (#6004: BranchSettingsSave is EXECUTIVE only).
 #[actix_web::test]
 async fn h7_an_org_wide_admin_is_unchanged_on_a_branch_exchange_limit() {
+    // Restated for #6004 (user-management-rbac.md §11.11): branchExchangeLimitSave requires BranchSettingsSave (EXECUTIVE only); ADMIN@* is refused.
     let db = TestDb::start().await;
     let a = post(
         &db,
@@ -443,12 +450,17 @@ async fn h7_an_org_wide_admin_is_unchanged_on_a_branch_exchange_limit() {
         Key::Fresh,
     )
     .await;
-    assert_eq!(a.status, StatusCode::OK, "H-7: {}", a.text);
+    assert!(
+        a.status.is_client_error()
+            && matches!(code(&a).as_str(), "roleNotAllowed" | "roleNotAllowedHere"),
+        "H-7: {} {}",
+        a.status,
+        a.text
+    );
     assert_eq!(
         db.audited("branchExchangeLimitSave").await,
-        // #5630 (§14.5, ruling Q-1 A on #5661), restated by claude/studio-claude-17: was V.9's `SYSTEM`.
-        vec![(user_id("ADMIN@*"), "ADMIN".to_owned())],
-        "H-7: audited as SYSTEM"
+        Vec::<(String, String)>::new(),
+        "H-7: no audit row on refusal"
     );
     db.finish().await;
 }

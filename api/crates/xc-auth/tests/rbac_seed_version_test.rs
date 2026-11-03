@@ -345,10 +345,13 @@ async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_
                     Permission::AttendanceCloseFor,
                     // #5733 (version 9): the same sync gives EXECUTIVE-based groups PricingFormulaSave.
                     Permission::PricingFormulaSave,
+                    // Restated for #6004 (user-management-rbac.md §11.11): version 10 gives EXECUTIVE-based groups SettingsRead and BranchSettingsSave.
+                    Permission::SettingsRead,
+                    Permission::BranchSettingsSave,
                 ])
                 .collect::<Vec<_>>()
         ),
-        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor and PricingFormulaSave"
+        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor, PricingFormulaSave, SettingsRead and BranchSettingsSave"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,

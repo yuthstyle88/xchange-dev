@@ -367,7 +367,8 @@ async fn each_method_refuses_an_actor_without_its_permission() {
         "a refused cut-off leaves the branch OPEN"
     );
 
-    // set_target needs CashTargetSet (held by Finance; Teller and BranchManager lack it)
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+    // set_target needs CashTargetSet (only EXECUTIVE holds CashTargetSet save; Teller, BranchManager, and Finance lack it)
     assert_refused_for_permission(
         in_tx!(db, branch, |tx| service.set_target(
             tx,
@@ -387,6 +388,16 @@ async fn each_method_refuses_an_actor_without_its_permission() {
             now()
         )),
         "set_target as BRANCH_MANAGER",
+    );
+    assert_refused_for_permission(
+        in_tx!(db, branch, |tx| service.set_target(
+            tx,
+            &fin,
+            &branch,
+            target_bal.clone(),
+            now()
+        )),
+        "set_target as FINANCE",
     );
 
     // clock needs AttendanceClock (held by staff roles; Customer lacks it)
@@ -588,7 +599,8 @@ async fn target_attendance_hold_and_draft_rows_are_written_on_the_branch_transac
 
     seed_test_user(&db.pool, FINANCE_ID, "FinanceBob").await;
     seed_test_user(&db.pool, TELLER_ID, "TellerAlice").await;
-    let fin = actor_scoped(FINANCE_ID, Role::Finance, &branch);
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+    let owner = actor_scoped(FINANCE_ID, Role::Executive, &branch);
     let teller = actor_scoped(TELLER_ID, Role::Teller, &branch);
 
     set_branch_phase(&db.pool, &branch, Phase::Open).await;
@@ -598,7 +610,7 @@ async fn target_attendance_hold_and_draft_rows_are_written_on_the_branch_transac
     let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("7500.00"))]);
     in_tx!(db, branch, |tx| service.set_target(
         tx,
-        &fin,
+        &owner,
         &branch,
         amounts.clone(),
         now()
@@ -1041,7 +1053,8 @@ async fn every_method_finishes_on_the_callers_locked_transaction_with_no_self_wa
     }
     let bm = actor_scoped(MANAGER_ID, Role::BranchManager, &branch);
     let teller = actor_scoped(TELLER_ID, Role::Teller, &branch);
-    let fin = actor_scoped(FINANCE_ID, Role::Finance, &branch);
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+    let owner = actor_scoped(FINANCE_ID, Role::Executive, &branch);
     let reviewer = actor_scoped(REVIEWER_ID, Role::VerificationReviewer, &branch);
 
     set_branch_phase(&db.pool, &branch, Phase::Ready).await;
@@ -1068,7 +1081,7 @@ async fn every_method_finishes_on_the_callers_locked_transaction_with_no_self_wa
     let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("500.00"))]);
     on_tx!(
         "set_target",
-        service.set_target(&mut tx, &fin, &branch, amounts, now())
+        service.set_target(&mut tx, &owner, &branch, amounts, now())
     )
     .expect("set_target");
     on_tx!(
@@ -1159,7 +1172,8 @@ async fn rolling_back_the_callers_transaction_leaves_no_rows() {
 
     seed_test_user(&db.pool, FINANCE_ID, "FinanceBob").await;
     seed_test_user(&db.pool, TELLER_ID, "TellerAlice").await;
-    let fin = actor_scoped(FINANCE_ID, Role::Finance, &branch);
+    // Restated for #6004 (user-management-rbac.md §11.11): only the Owner (EXECUTIVE) saves this setting.
+    let owner = actor_scoped(FINANCE_ID, Role::Executive, &branch);
     let teller = actor_scoped(TELLER_ID, Role::Teller, &branch);
 
     set_branch_phase(&db.pool, &branch, Phase::Open).await;
@@ -1169,7 +1183,7 @@ async fn rolling_back_the_callers_transaction_leaves_no_rows() {
     let amounts = Balances::of(&[(CurrencyCode::parse("USD").unwrap(), amt("500.00"))]);
     on_tx!(
         "set_target",
-        service.set_target(&mut tx, &fin, &branch, amounts, now())
+        service.set_target(&mut tx, &owner, &branch, amounts, now())
     )
     .expect("set_target");
     on_tx!(

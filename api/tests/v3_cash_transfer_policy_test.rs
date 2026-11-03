@@ -529,14 +529,20 @@ async fn the_view_never_answers_another_organisations_version() {
     room.finish().await;
 }
 
-/// Case 8: every staff role without `CashTransferPolicySet` is refused the view.
+/// Case 8: every staff role reads the view via `SettingsRead`, while a customer without `SettingsRead` is refused.
 #[actix_web::test]
 async fn the_view_is_refused_to_every_role_without_the_permission() {
+    // Restated for #6004 (user-management-rbac.md §11.11): cash_transfer_policy view inherits transferPolicyRead (SettingsRead), held by every staff role and refused to Customer.
     let room = Room::start().await;
     for role in STAFF_ROLES.iter().copied().filter(|r| !holds(*r)) {
+        assert!(RoleGrants::seed(role).contains(&Permission::SettingsRead));
         let who = room.person(role, ORG).await;
         let a = read(&room, &who, B01).await;
-        assert_eq!(code(&a), NOT_ALLOWED, "{}: {}", role.as_str(), a.text);
+        assert_eq!(data(&a, role.as_str()), Value::Null, "{}", a.text);
     }
+    assert!(!RoleGrants::seed(Role::Customer).contains(&Permission::SettingsRead));
+    let customer = room.person(Role::Customer, ORG).await;
+    let a = read(&room, &customer, B01).await;
+    assert_eq!(code(&a), NOT_ALLOWED, "CUSTOMER: {}", a.text);
     room.finish().await;
 }

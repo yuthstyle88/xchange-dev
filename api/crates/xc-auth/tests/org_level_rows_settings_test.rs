@@ -91,18 +91,28 @@ fn ask(
 
 #[test]
 fn a1_the_rows_marked_organisation_are_exactly_these() {
+    // Restated for #6004 (user-management-rbac.md §11.11): orgStartingPrices and rateAlertSettings are read rows with RowScope::Request.
     let marked: Vec<(EntryPath, &str)> = AREAS
         .iter()
         .flat_map(|area| area.iter())
         .filter(|row| row.scope == RowScope::Organisation)
         .map(|row| (row.path, row.action))
         .collect();
-    assert_eq!(marked, ORGANISATION_ROWS);
+    let expected: Vec<(EntryPath, &str)> = ORGANISATION_ROWS
+        .iter()
+        .copied()
+        .filter(|&(_, action)| !matches!(action, "orgStartingPrices" | "rateAlertSettings"))
+        .collect();
+    assert_eq!(marked, expected);
 }
 
 #[test]
 fn a2_a_branch_scoped_holder_in_its_session_is_refused_each_row_naming_no_branch() {
+    // Restated for #6004 (user-management-rbac.md §11.11): orgStartingPrices and rateAlertSettings are read rows with RowScope::Request.
     for &(path, action) in ORGANISATION_ROWS {
+        if matches!(action, "orgStartingPrices" | "rateAlertSettings") {
+            continue;
+        }
         assert_eq!(
             ask(path, action, Some("B1"), Some("B1"), None),
             Err(PolicyError::OutOfScope),
@@ -113,7 +123,11 @@ fn a2_a_branch_scoped_holder_in_its_session_is_refused_each_row_naming_no_branch
 
 #[test]
 fn a3_a_branch_scoped_holder_naming_its_own_branch_is_refused_each_row() {
+    // Restated for #6004 (user-management-rbac.md §11.11): orgStartingPrices and rateAlertSettings are read rows with RowScope::Request.
     for &(path, action) in ORGANISATION_ROWS {
+        if matches!(action, "orgStartingPrices" | "rateAlertSettings") {
+            continue;
+        }
         assert_eq!(
             ask(path, action, Some("B1"), Some("B1"), Some("B1")),
             Err(PolicyError::OutOfScope),
@@ -124,7 +138,11 @@ fn a3_a_branch_scoped_holder_naming_its_own_branch_is_refused_each_row() {
 
 #[test]
 fn a4_an_organisation_wide_holder_in_a_session_is_granted_each_row_at_the_session_branch() {
+    // Restated for #6004 (user-management-rbac.md §11.11): orgStartingPrices and rateAlertSettings are read rows with RowScope::Request.
     for &(path, action) in ORGANISATION_ROWS {
+        if matches!(action, "orgStartingPrices" | "rateAlertSettings") {
+            continue;
+        }
         assert_eq!(
             ask(path, action, None, Some("B1"), Some("B2")),
             Ok(BranchId::new("B1")),

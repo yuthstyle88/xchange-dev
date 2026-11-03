@@ -103,11 +103,18 @@ pub enum Permission {
     /// price formula (`pricingFormulaSave`) and preview it at scope `ORGANISATION`. No module, so RatesStock at Full
     /// (RATE_MANAGER) never implies it; seeded on EXECUTIVE only at seed v9, and editable on the `/users` matrix.
     PricingFormulaSave,
+    /// RBAC §11.11 (#6004): read any business setting. No module; seeded on every built-in staff group at seed v10.
+    #[serde(rename = "settingsRead")]
+    SettingsRead,
+    /// RBAC §11.11 (#6004): save branch-level business settings (`bookingPolicySet`, `slotRuleSet`, `slotCapacitySet`,
+    /// `branchExchangeLimitSave`). No module; seeded on EXECUTIVE only at seed v10.
+    #[serde(rename = "branchSettingsSave")]
+    BranchSettingsSave,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 65] = [
+    pub const ALL: [Permission; 67] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -173,5 +180,7 @@ impl Permission {
         Permission::AttendanceCloseFor,
         Permission::ApproveLedgerAdjustment,
         Permission::PricingFormulaSave,
+        Permission::SettingsRead,
+        Permission::BranchSettingsSave,
     ];
 }

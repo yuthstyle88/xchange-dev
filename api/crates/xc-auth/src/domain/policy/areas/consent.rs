@@ -25,8 +25,11 @@ const fn p(permission: Permission) -> Need {
     Need::Permission(permission)
 }
 
-pub const ROWS: &[AreaRow] = &[org_row(
-    EntryPath::Rpc,
-    "consentPolicy",
-    p(Permission::ConsentPolicyManage),
-)];
+pub const ROWS: &[AreaRow] = &[
+    org_row(
+        EntryPath::Rpc,
+        "consentPolicy",
+        p(Permission::ConsentPolicyManage),
+    ),
+    row(EntryPath::Rpc, "consentTexts", p(Permission::SettingsRead)),
+];

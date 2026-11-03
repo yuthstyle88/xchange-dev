@@ -17,7 +17,7 @@ pub const ROWS: &[AreaRow] = &[
     AreaRow {
         path: EntryPath::Rpc,
         action: "orgStartingPrices",
-        need: Need::Permission(Permission::OrgStartingPricesManage),
-        scope: RowScope::Organisation,
+        need: Need::Permission(Permission::SettingsRead),
+        scope: RowScope::Request,
     },
 ];

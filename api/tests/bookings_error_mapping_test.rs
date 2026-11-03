@@ -86,10 +86,11 @@ async fn closure_add_on_an_unknown_branch_answers_403_out_of_scope() {
 
 #[actix_web::test]
 async fn slot_rule_set_on_an_unknown_branch_answers_403_out_of_scope() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotRuleSet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/branches/{UNKNOWN_BRANCH}/booking-slot-rule"),
         Some(json!({ "branch": B01, "slotMinutes": 30, "capacity": 5, "horizonDays": 14 })),
@@ -127,6 +128,7 @@ async fn closure_remove_of_a_date_never_closed_stays_200() {
 /// Keep-pin: the slot commands already answer 404 for an unknown slot id.
 #[actix_web::test]
 async fn slot_commands_on_an_unknown_slot_answer_404_not_found() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotCapacitySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let missing = Uuid::new_v4();
     let cases = [
@@ -151,7 +153,15 @@ async fn slot_commands_on_an_unknown_slot_answer_404_not_found() {
     ];
     for (name, method, uri, body) in cases {
         let key = format!("k-bkerr-404-{}", name.to_lowercase());
-        let res = call(&db, Some("ADMIN@*"), method, &uri, Some(body), Some(&key)).await;
+        let res = call(
+            &db,
+            Some("EXECUTIVE@*"),
+            method,
+            &uri,
+            Some(body),
+            Some(&key),
+        )
+        .await;
         not_found(&res, &format!("{name} on an unknown slot"));
     }
     db.finish().await;
@@ -339,11 +349,12 @@ async fn keep_qr_mismatch_400() {
 /// `SlotError::CapacityBelowReserved` keeps `400 capacityBelowReserved`.
 #[actix_web::test]
 async fn keep_capacity_below_reserved_400() {
+    // Restated for #6004 (user-management-rbac.md §11.11): slotCapacitySet requires BranchSettingsSave, held by EXECUTIVE only.
     let db = TestDb::start().await;
     let slot_id = seed_open_slot(&db, 5, 3).await;
     let res = call(
         &db,
-        Some("ADMIN@*"),
+        Some("EXECUTIVE@*"),
         Method::PUT,
         &format!("/api/booking-slots/{slot_id}/capacity"),
         Some(json!({ "branch": B01, "capacity": 2 })),

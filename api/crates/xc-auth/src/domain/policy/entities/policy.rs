@@ -104,7 +104,7 @@ impl Policy {
             EntryPath::File => Some(Need::Permission(Permission::FileRead)),
             EntryPath::StaffFile => Some(Need::Permission(Permission::IdentityDocumentRead)),
             EntryPath::DrawerPassport => Some(Need::Permission(Permission::DrawerPassport)),
-            EntryPath::DeviceSetup => Some(Need::Permission(Permission::SystemSettings)),
+            EntryPath::DeviceSetup => Some(Need::Permission(Permission::BranchesManage)),
         }
     }
 

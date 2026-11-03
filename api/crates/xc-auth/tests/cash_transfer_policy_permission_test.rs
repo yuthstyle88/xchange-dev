@@ -19,15 +19,14 @@ use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 
 #[test]
 fn executive_and_finance_hold_cash_transfer_policy_set_per_section_11_2() {
-    // 1. EXECUTIVE and FINANCE hold CashTransferPolicySet (§11.2 seed)
+    // Restated for #6004 (user-management-rbac.md §11.11): CashTransferPolicySet is a setting, held by EXECUTIVE only.
     assert!(
         RoleGrants::seed(Role::Executive).contains(&Permission::CashTransferPolicySet),
         "EXECUTIVE must hold CashTransferPolicySet"
     );
-    // §11.2: FINANCE holds Finance FULL, which includes CashTransferPolicySet
     assert!(
-        RoleGrants::seed(Role::Finance).contains(&Permission::CashTransferPolicySet),
-        "FINANCE must hold CashTransferPolicySet (§11.2)"
+        !RoleGrants::seed(Role::Finance).contains(&Permission::CashTransferPolicySet),
+        "FINANCE must not hold CashTransferPolicySet (§11.11)"
     );
 
     // 2. Explicitly verify RATE_MANAGER and ADMIN do not hold CashTransferPolicySet
@@ -40,12 +39,13 @@ fn executive_and_finance_hold_cash_transfer_policy_set_per_section_11_2() {
         "ADMIN must not hold CashTransferPolicySet"
     );
 
-    // 3. Enumerate every non-executive, non-finance role
+    // 3. Enumerate every non-executive role
     let non_executive_roles = [
         Role::Admin,
         Role::RateManager,
         Role::BranchManager,
         Role::Teller,
+        Role::Finance,
         Role::Marketing,
         Role::Customer,
         Role::VerificationReviewer,
@@ -58,15 +58,15 @@ fn executive_and_finance_hold_cash_transfer_policy_set_per_section_11_2() {
         );
     }
 
-    // 4. Over the entire Blueprint role set, EXECUTIVE and FINANCE hold it (§11.2)
+    // 4. Over the entire Blueprint role set, EXECUTIVE alone holds it (§11.11)
     let holders: Vec<Role> = BLUEPRINT
         .into_iter()
         .filter(|r| RoleGrants::seed(*r).contains(&Permission::CashTransferPolicySet))
         .collect();
     assert_eq!(
         holders,
-        vec![Role::Executive, Role::Finance],
-        "// §11.2: EXECUTIVE and FINANCE hold CashTransferPolicySet"
+        vec![Role::Executive],
+        "// §11.11: EXECUTIVE alone holds CashTransferPolicySet"
     );
 }
 
@@ -81,6 +81,7 @@ fn transfer_policy_save_needs_cash_transfer_policy_set() {
 
 #[test]
 fn policy_authorize_on_transfer_policy_save_grants_executive_and_finance() {
+    // Restated for #6004 (user-management-rbac.md §11.11): CashTransferPolicySet is held by EXECUTIVE only; FINANCE and every other role receive roleNotAllowedHere.
     let now = Utc::now();
     let action = Action::new("transferPolicySave");
 
@@ -90,22 +91,6 @@ fn policy_authorize_on_transfer_policy_save_grants_executive_and_finance() {
     assert!(
         grant.is_ok(),
         "EXECUTIVE must be granted transferPolicySave, got: {grant:?}"
-    );
-
-    // §11.2: FINANCE holds Finance FULL (including CashTransferPolicySet), so FINANCE is also granted.
-    // Restated for #5526 (org-wide-actor-branch.md §10): the transfer policy is organisation-level, so
-    // the FINANCE row must be organisation-wide; a FINANCE row at one branch is refused outOfScope.
-    let finance_actor = user("U-FINANCE", vec![row(Role::Finance, None)]);
-    let grant_finance = Policy::authorize(Some(&finance_actor), EntryPath::Rpc, &action, None, now);
-    assert!(
-        grant_finance.is_ok(),
-        "// §11.2: FINANCE must be granted transferPolicySave, got: {grant_finance:?}"
-    );
-    let branch_finance = staff(Role::Finance, "MAIN");
-    assert_eq!(
-        Policy::authorize(Some(&branch_finance), EntryPath::Rpc, &action, None, now),
-        Err(PolicyError::OutOfScope),
-        "#5526: a FINANCE row at MAIN must receive outOfScope on the organisation-level transferPolicySave"
     );
 
     // Explicitly verify RATE_MANAGER and ADMIN are refused with roleNotAllowedHere
@@ -123,12 +108,13 @@ fn policy_authorize_on_transfer_policy_save_grants_executive_and_finance() {
         "ADMIN must receive roleNotAllowedHere"
     );
 
-    // Enumerate every non-executive, non-finance role: each receives roleNotAllowedHere
+    // Enumerate every non-executive role: each receives roleNotAllowedHere
     let other_roles = [
         Role::Admin,
         Role::RateManager,
         Role::BranchManager,
         Role::Teller,
+        Role::Finance,
         Role::Marketing,
         Role::Customer,
         Role::VerificationReviewer,
