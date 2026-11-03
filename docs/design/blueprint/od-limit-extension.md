@@ -90,11 +90,12 @@ The Owner decides through the existing `approvalDecide` (`api/src/presentation/h
 - **The requester never decides their own request.** The core already refuses that before asking the policy (`xc-approval/src/domain/policy.rs`, `may_decide` doc).
 - **Approving needs the Owner's OTP** (user-set-settings rule 2):
   - `approvalDecide` gains an optional `otp` field.
-  - `ApprovalPolicy` gains `fn step_up(&self, request) -> Option<StepUpPurpose>`. The default is `None`, so every existing kind is unchanged. `SettingChangePolicy` returns `Some(SettingChange)` for `APPROVED`.
-  - The decide command calls `StepUpGuard::confirm(tx, who, purpose, otp)` before `ApprovalService::decide`.
+  - `ApprovalPolicy` gains `fn step_up(&self, request) -> Option<StepUpPurpose>`. The default is `None`, so every existing kind is unchanged. `SettingChangePolicy` returns `Some(SettingChange)` for `APPROVED` and `None` for `REJECTED`, so a rejection needs no code.
+  - `ApprovalService::decide_confirmed(.., otp)` asks the policy's `step_up(request, outcome)` after `may_decide` and before anything is written, and calls `StepUpGuard::confirm(tx, who, purpose, otp)` when it answers `Some`. The guard lives in the core (`ApprovalService::with_step_up`), so every caller of the core gets the step-up, not only `approvalDecide`. `decide` becomes `decide_confirmed(.., None)`. `approvalDecide` passes its new `otp` field.
+  - **The refusal codes go through the existing `ApprovalError` variants**, so no caller's match changes: `stepUpRequired` and `stepUpFailed` are `PolicyRefused` (403), and `stepUpUnavailable` is `DependencyUnavailable` (503).
   - **The OTP design owns `StepUpGuard`'s implementation.** Until it lands, the only implementation is `StepUpGuard::NotConfigured`, which refuses with 503 `stepUpUnavailable`. That is the safe "not set": no setting changes without an OTP.
   - A missing or wrong code is refused (403 `stepUpRequired` / `stepUpFailed`), and nothing changes.
-- **Approve:** in the same transaction, `OdLimitChange::apply` writes one new version per currency through `OdLimitStore::write_version` (§2.6) and an `audit_events` row with the before and after values.
+- **Approve:** in the same transaction, `OdLimitChange::apply` (`SettingTarget::apply(tx, request)`; the decider is the request's `approval_decisions.approver_id`, which the core writes before it calls the subject) writes one new version per currency through `OdLimitStore::write_version` (§2.6) and an `audit_events` row with the before and after values.
 - **Reject:** nothing changes. The reason (at least 1 character, `approval_decide.rs:79`) stays in `approval_decisions.reason`.
 - **Stale:** the request's `object_version_hash` is a hash of B's current override versions. If the Owner saved B's limit directly in the meantime, deciding returns 409 `staleVersion`, and the manager files again.
 
@@ -115,7 +116,7 @@ There is one new table, `branch_od_limit_versions` (§6). It uses the version pa
 - the writer locks the current row `FOR UPDATE`, closes it, and inserts version + 1;
 - "current" therefore has no tie, and two saves at once are serialised.
 
-The key is `(branch_id, currency_code, term)`. A branch can hold one current permanent row and one current temporary row per currency. Old and new values are both kept, and the view reads the history back.
+The key is `(branch_id, currency_code, term)`. A branch can hold one current permanent row and one current temporary row per currency. **A temporary extension approved while another is in force supersedes it** (O-32): it becomes the next version of the same key, so a branch never has two temporary extensions for one currency. Old and new values are both kept, and the view reads the history back.
 
 ### 2.7 What the screens show
 
@@ -140,7 +141,7 @@ classDiagram
     <<trait>>
     +key() &'static str
     +version_hash(tx, object_id) AppResult~String~
-    +apply(tx, request: &ApprovalRequest, decider: &Actor, now) AppResult~()~
+    +apply(tx, request: &ApprovalRequest) AppResult~()~
   }
   class SettingChangeSubject {
     +new(targets: Vec~Arc~dyn SettingTarget~~)
@@ -182,17 +183,22 @@ classDiagram
     +in_force(now) bool
   }
   class EffectiveLimits {
-    +policy() TransferPolicy
-    +limit_until() Option~DateTime~
+    +resolve(base: Option~&TransferPolicy~, overrides, kind, now)$ EffectiveLimits
+    +policy() &TransferPolicy
+    +limit_until(currencies) Option~DateTime~
     +source(currency) LimitSource
   }
   class OdLimitResolver {
     +limits_for(tx, org, branch, kind, now) AppResult~EffectiveLimits~
   }
   class OdLimitStore {
-    +current(tx, branch) AppResult~Vec~OdLimitVersion~~
-    +write_version(tx, change, set_by, approval: Option~ApprovalRequestId~) AppResult~OdLimitVersion~
-    +history(tx, branch) AppResult~Vec~OdLimitVersion~~
+    +current_in(tx, branch) AppResult~Vec~OdLimitVersion~~
+    +write_version_in(tx, change: &OdLimitWrite, set_by: Uuid, approval: Option~Uuid~, now) AppResult~OdLimitVersion~
+    +history_in(tx, branch) AppResult~Vec~OdLimitVersion~~
+  }
+  class ApprovalService {
+    +with_step_up(guard: Arc~dyn StepUpGuard~) Self
+    +decide_confirmed(tx, id, who, outcome, reason, key, otp: Option~&str~) Result
   }
   SettingChangeSubject o-- SettingTarget
   SettingTarget <|.. OdLimitChange
@@ -209,16 +215,17 @@ classDiagram
 | Class | File | Who provides | Who uses |
 |---|---|---|---|
 | `SettingTarget`, `SettingChangeSubject`, `SettingChangePolicy` | `api/crates/xc-approval/src/application/setting_change.rs` (new) | OD-2 | OD-4, `api/src/bootstrap/approval_subjects/setting_change.rs` (new) |
-| `ApprovalPolicy::step_up` (default `None`), `StepUpPurpose` | `api/crates/xc-approval/src/domain/policy.rs` | OD-2 | `approval_decide.rs` |
-| `StepUpGuard`, `StepUpError`, `NotConfigured` | `api/crates/xc-auth/src/domain/step_up.rs` (new) | OD-2 (seam); the OTP design adds the real guard | `approval_decide.rs`, `od_limit_save.rs` |
-| `OdTerm`, `OdLimitVersion`, `EffectiveLimits`, `LimitSource` | `api/crates/xc-cash/src/domain/transfer/od_limit.rs` (new) | OD-1 | OD-3, OD-4 |
+| `ApprovalPolicy::step_up` (default `None`) | `api/crates/xc-approval/src/domain/policy.rs` | OD-2 | `ApprovalService` |
+| `ApprovalService::with_step_up`, `decide_confirmed` | `api/crates/xc-approval/src/application/approval_service.rs` | OD-2 | `approval_decide.rs`, OD-5 |
+| `StepUpGuard`, `StepUpPurpose`, `StepUpError`, `NotConfigured` | `api/crates/xc-auth/src/domain/step_up.rs` (new) | OD-2 (seam); the OTP design adds the real guard | `ApprovalService`, `odLimitSave` |
+| `OdTerm`, `OdLimitVersion`, `OdLimitWrite`, `EffectiveLimits` (with `resolve`, §2.1), `LimitSource` | `api/crates/xc-cash/src/domain/transfer/od_limit.rs` (new) | OD-1 | OD-3, OD-4 |
 | `OdLimitStore` | `api/crates/xc-cash/src/infrastructure/od_limit_store.rs` (new) | OD-1 | OD-3, OD-4, the view |
-| `OdLimitResolver` | `api/crates/xc-cash/src/application/transfer/od_limit_resolver.rs` (new) | OD-3 | `transfer_flow.rs` |
+| `OdLimitResolver` (reads the base and `OdLimitStore::current_in`, then `EffectiveLimits::resolve`) | `api/crates/xc-cash/src/application/transfer/od_limit_resolver.rs` (new) | OD-3 | `transfer_flow.rs` |
 | `TransferApprovalPolicy` (`limit_until`) | `api/crates/xc-cash/src/application/approval/transfer.rs` | OD-3 | — |
 | `OdLimitChange` | `api/crates/xc-cash/src/application/approval/od_limit_change.rs` (new) | OD-4 | `SettingChangeSubject` |
 | `odLimitRequest`, `odLimitSave` | `api/src/presentation/http/v3/commands/od_limits.rs` (new) | OD-5 | FE |
 | view `od_limits` | `api/src/presentation/http/v3/views/od_limits.rs` (new) | OD-5 | FE |
-| `Permission::{OdLimitRequest, OdLimitSave, ApproveSettingChange}` | `api/crates/xc-auth/src/domain/access/permission.rs`, `role_grants.rs`, `permission_module.rs` | OD-1 | all |
+| `Permission::{OdLimitRequest, OdLimitSave, ApproveSettingChange}` and their seed | `api/crates/xc-auth/src/domain/access/permission.rs`, `role_grants.rs`, `permission_module.rs` | OD-2 (moved from OD-1: `SettingChangePolicy` needs `ApproveSettingChange`, and OD-1 needs no permission) | all |
 
 **Stub rule:** a ticket whose provider has not merged declares the signature above in its own file, with a comment saying it will move, and never edits the provider's file.
 
@@ -258,26 +265,28 @@ The base is THB 20,000 in every row unless the row says otherwise. B is the bran
 | O-28 | The Owner clears a permanent override | New version with `limit_amount = NULL`; the base applies |
 | O-29 | `od_limits` view | Shows the base, permanent, temporary with `endsAt` and state, the limit in force with its source, the pending request, the history; "not set" where nothing is set |
 | O-30 | Every existing kind's `step_up` | `None`; `approvalDecide` behaves as today without `otp` |
+| O-31 | A draw submitted `within_limit = true` against B's permanent override, then the Owner clears (or lowers) the override, then B's branch manager approves the draw | Approved: the flag is **frozen at submit, as today**. The base limit is frozen the same way (§1 step 4), so the override follows the same rule. `limit_until` stays `null` for a permanent override. Owner's lever: reject the draw, or ask the manager to withdraw it (6024 review follow-up 1) |
+| O-32 | B has a temporary THB extension in force (version n), and a second temporary THB extension is approved | The second becomes version n + 1 of `(B, THB, TEMPORARY)` and supersedes the first; one temporary row is current; its own `starts_at`/`ends_at` apply (6024 review follow-up 2) |
 
 **Tests that pin today's behaviour and must be read when the tickets are cut:**
 - `xc-cash/tests/ap4_transfer_policy_kinds_test.rs` and `or71_transfer_policy_test.rs` pin `may_decide`. O-10 keeps them green. They gain `limit_until` cases in a new file and are not edited.
 - `api/tests/v3_cash_transfer_policy_test.rs` and `xc-cash/tests/transfer_flow_test.rs` pin the base read. For non-`SAFE_TO_DRAWER` kinds they stay green, and the `SAFE_TO_DRAWER` cases stay green with no override.
-- `APPROVAL_KINDS` grows from 10 to 11 (`permission_module.rs:78`). Any test that counts it must be swept by running the crates (`xc-auth`, `xc-cash`, `api`), not by grep.
+- `APPROVAL_KINDS` grows from 10 to 11 (`permission_module.rs:78`). The seed-pinning tests this flips are listed in §5; they were found by running `xc-auth` against a throwaway, not by grep.
 
 ## 5. Tickets (cut only after the controller brings §6 to the owner and the owner approves)
 
 | Ticket | Class | What | Depends on |
 |---|---|---|---|
-| OD-1 | guarded | Migration (§6), `od_limit.rs` domain, `OdLimitStore`, the three permissions and the next seed version | — |
-| OD-2 | logic | `setting_change.rs` core, `ApprovalPolicy::step_up`, `StepUpGuard` + `NotConfigured`, `approvalDecide`'s `otp` field and step-up call | — |
-| OD-3 | logic | `OdLimitResolver`, `submit_in` reads it, `limit_until` in the payload and in `TransferApprovalPolicy` | OD-1's signatures |
+| OD-1 | guarded | Migration (§6), `od_limit.rs` domain (`EffectiveLimits::resolve` included), `OdLimitStore` | — |
+| OD-2 | logic | The three permissions and the next seed version, `setting_change.rs` core, `ApprovalPolicy::step_up`, `StepUpGuard` + `NotConfigured`, `ApprovalService::decide_confirmed`, `approvalDecide`'s `otp` field | GA-1 merged (seed version) |
+| OD-3 | logic | `OdLimitResolver`, `submit_in` reads it, `limit_until` in the payload and in `TransferApprovalPolicy`; O-31 | OD-1's signatures |
 | OD-4 | logic | `OdLimitChange` and its registration in `api/src/bootstrap/approval_subjects/setting_change.rs` (new) plus one `mod.rs` line | OD-1, OD-2 |
 | OD-5 | logic | `odLimitRequest`, `odLimitSave`, view `od_limits`, generated TS and fixtures | OD-1..OD-4 |
 | FE | (claude/01TxaRJG) | Request form, approvals row with OTP, overrides with expiry on `admin/cash-policy` | OD-5 merged |
 
-OD-1 and OD-2 run in parallel. OD-3 and OD-4 are released after the signatures they consume have merged (the PR 6019 review's follow-up 4). OD-5's File scope lists `web/src/shared/testing/fixtures/index.ts` and the web tests that build the new DTOs.
+OD-1 runs now. OD-2 is released after GA-1 merges: both bump `RoleGrants::SEED_VERSION`, and every bump restates the same seed-pinning tests in `api/crates/xc-auth/tests/` (measured on a throwaway of OD-2: 17 tests in 12 files, for example `binding_quote_permission_test.rs` "SEED_VERSION is 10", `pt14_market_rates_refresh_test.rs` "Permission::ALL … 67", `permission_module_test.rs` per-role counts). So the two would lock the same files. OD-3 and OD-4 are released after the signatures they consume have merged (the PR 6019 review's follow-up 4). OD-5's File scope lists `web/src/shared/testing/fixtures/index.ts` and the web tests that build the new DTOs.
 
-**Seed version:** OD-1 takes the next free `RoleGrants::SEED_VERSION`. Group A's GA-1 also needs one, so whichever merges second takes the next number.
+**Seed version:** GA-1 takes the next free `RoleGrants::SEED_VERSION` first (the lane controller's release order, #564 issuecomment-6596511858). OD-2 takes the one after it. If OD-2 reaches `pr_open` before GA-1 merges, it still uses GA-1's number + 1 and rebases after GA-1.
 
 ## 6. Data migration
 
