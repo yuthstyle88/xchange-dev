@@ -276,7 +276,8 @@ describe("#5957 the teller's mode", () => {
     expect(reads).toContain("my_shift");
     expect(reads).not.toContain("cash_transfers");
     expect(host.querySelectorAll("[data-transfer-id]")).toHaveLength(0);
-    expect(host.textContent ?? "").toContain(transfersTh.empty);
+    // #6013: the teller's own empty line; it no longer contains `empty` once it names the OD draw.
+    expect(host.textContent ?? "").toContain(transfersTh.tellerEmpty);
   });
 
   it("edge: my_shift answers null (the shift closed meanwhile): the empty line, no error", async () => {
