@@ -35,11 +35,7 @@ pub struct CashLimitsData {
     pub drawer_low_levels_updated_at: Option<String>,
 }
 
-pub type CashLimitsRow = (
-    Option<String>,
-    String,
-    chrono::DateTime<chrono::Utc>,
-);
+pub type CashLimitsRow = (Option<String>, String, chrono::DateTime<chrono::Utc>);
 
 impl CashLimitsData {
     /// The answer for `branch` from its `cash_limits` row, read as
