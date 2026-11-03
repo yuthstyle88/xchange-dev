@@ -248,6 +248,7 @@ pub struct CashTransferRow {
     pub from_shift_id: Option<String>,
     pub to_shift_id: Option<String>,
     pub created_by: String,
+    pub created_by_name: Option<String>,
     pub created_at: String,
     pub note: Option<String>,
     pub lines: Vec<CashTransferLineRow>,
@@ -287,6 +288,7 @@ pub struct MyShift {
     pub status: String,
     pub opened_at: String,
     pub balances: Vec<MyShiftBalance>,
+    // every transfer addressed to this open shift, any status
     pub incoming_transfers: Vec<CashTransferRow>,
 }
 
