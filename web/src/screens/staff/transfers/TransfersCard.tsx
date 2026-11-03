@@ -700,6 +700,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                   const canReceive = () => {
                     if (row.status !== 'DISPATCHED') return false;
                     if (teller()) return true;
+                    if (row.toShiftId) return row.toShiftId === props.ctx.floor?.myShift?.id;
                     if (!can(props.ctx.me, 'CashManage')) return false;
                     return (
                       row.toBranchId === props.ctx.me.branchId ||
