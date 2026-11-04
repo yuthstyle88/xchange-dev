@@ -211,6 +211,9 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("create branch");
+        xc_testdb::seed_branch_currencies(&self.pool, branch, &["USD"])
+            .await
+            .expect("seed branch currencies");
     }
 
     /// Policy version 1 of `branch` (`pricing_common::policy_v1`'s shape): adjust −0.5 / +0.4, guards ±5 % for USD

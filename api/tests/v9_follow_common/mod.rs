@@ -194,6 +194,9 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("create branch");
+        xc_testdb::seed_branch_currencies(&self.pool, branch, &["USD", "EUR", "GBP", "CNY", "AUD"])
+            .await
+            .expect("seed branch currencies");
     }
 
     /// A current policy version of `branch`: adjust 0 / 0, value tiers OFF, references stale after 24 h, and a
