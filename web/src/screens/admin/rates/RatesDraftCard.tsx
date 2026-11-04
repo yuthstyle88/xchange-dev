@@ -8,6 +8,7 @@ import type {
   RateDraftLineDto,
 } from '../../../shared/api/generated/rate_draft';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
+import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
 import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { Field } from '../../../shared/ui/Field';
@@ -69,6 +70,7 @@ export interface RatesDraftCardProps {
   policyError: () => string | null;
   policyData: () => RatePolicyData | null;
   pubData: () => PublishedRatesData | null;
+  draftableData?: () => RatesDraftableData | null;
   refData: () => RatesReferenceData | null;
   adjustBuyPct: () => string;
   setAdjustBuyPct: (val: string) => void;
@@ -122,7 +124,7 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
     { equals: (a, b) => a.length === b.length && a.every((c, i) => c === b[i]) },
   );
 
-  const addableCurrencies = createMemo(() => draftableCurrencies(props.refData(), lineCurrencies()));
+  const addableCurrencies = createMemo(() => draftableCurrencies(props.draftableData?.() ?? null, lineCurrencies()));
   const [selectedAddCurrency, setSelectedAddCurrency] = createSignal('');
   let addCurrencySelect: HTMLSelectElement | undefined;
 
@@ -131,9 +133,11 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
     const picked = selectedAddCurrency() || addCurrencySelect?.value || '';
     const currency = codes.includes(picked) ? picked : codes[0];
     if (!currency) return;
+    const row = props.draftableData?.()?.rows?.find((r) => (r.code ?? '').trim().toUpperCase() === currency);
+    const mode = row?.hasReference === false ? 'MANUAL' : 'AUTO';
     setEditLines((prev) => [
       ...prev,
-      { currency, buyMode: 'AUTO', sellMode: 'AUTO', manualBuy: null, manualSell: null, reason: null },
+      { currency, buyMode: mode, sellMode: mode, manualBuy: null, manualSell: null, reason: null },
     ]);
     setSelectedAddCurrency('');
   };
@@ -145,6 +149,8 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
   const getUnitSize = (currency: string): string => {
     const pubLine = props.pubData()?.lines?.find((p) => p.currency === currency);
     if (pubLine?.unitSize) return pubLine.unitSize;
+    const dRow = props.draftableData?.()?.rows?.find((r) => (r.code ?? '').trim().toUpperCase() === currency);
+    if (dRow?.unitSize) return dRow.unitSize;
     const rRow = props.refData()?.rows?.find((r) => r.code === currency);
     if (rRow?.unit) return String(rRow.unit);
     return '1';
