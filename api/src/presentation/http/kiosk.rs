@@ -23,7 +23,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xc_kiosk::application::kiosk::request_issue::RequestIssueService;
 use xc_kiosk::application::kiosk::service::KioskService;
-use xc_kiosk::domain::kiosk::commands::configure_currency::ConfigureCurrency;
+use xc_kiosk::domain::kiosk::commands::configure_currency::{ConfigureCurrency, ConfigureDisplay};
 use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
 use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
@@ -687,6 +687,28 @@ async fn handle_kiosk(
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
+            if let Some(display_val) = payload.get("display") {
+                let Some(display) = display_val.as_str() else {
+                    return refuse(400, "Invalid currency settings.");
+                };
+                let group = match payload.get("group") {
+                    None | Some(Value::Null) => "ALL".to_string(),
+                    Some(Value::String(s)) => s.clone(),
+                    Some(_) => return refuse(400, "Invalid currency settings."),
+                };
+                let cmd = ConfigureDisplay {
+                    code,
+                    group,
+                    display: display.to_string(),
+                };
+                return match service
+                    .configure_display(&branch, &kiosk_actor, cmd, now)
+                    .await
+                {
+                    Ok(()) => saved_response(),
+                    Err(err) => handle_service_error(err),
+                };
+            }
             let enabled = match payload.get("enabled").and_then(Value::as_bool) {
                 Some(b) => b,
                 None => return refuse(400, "Invalid currency settings."),

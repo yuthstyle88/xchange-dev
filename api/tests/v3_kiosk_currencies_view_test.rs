@@ -82,7 +82,7 @@ const DATA_KEYS: [&str; 3] = ["currencies", "freshness", "kbank"];
 /// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`;
 /// plus `unitSize` (#603 item 3).
 // pricing-tiers.md §15.8a adds `quoteEnabled` (XC-V9-PRICING skeleton, restated by the sub-controller).
-const CURRENCY_KEYS: [&str; 13] = [
+const CURRENCY_KEYS: [&str; 14] = [
     "code",
     "name",
     "nameEn",
@@ -93,6 +93,7 @@ const CURRENCY_KEYS: [&str; 13] = [
     "updated",
     "partnerName",
     "partnerCost",
+    "display",
     "enabled",
     "kbank",
     "quoteEnabled",

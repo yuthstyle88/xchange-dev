@@ -174,17 +174,17 @@ function cardOf(c: KioskCurrency): HTMLElement {
   );
   if (!h) throw new Error(`no heading ${heading(c)}`);
   let el: HTMLElement | null = h.parentElement;
-  while (el && el !== host && !el.querySelector('input[type="checkbox"]')) {
+  while (el && el !== host && !el.querySelector('input[type="radio"]')) {
     el = el.parentElement;
   }
   if (!el || el === host) throw new Error(`no card with a switch around ${heading(c)}`);
   return el;
 }
 
-function switchOf(card: HTMLElement): HTMLInputElement {
-  const boxes = card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-  expect(boxes, 'one switch per card').toHaveLength(1);
-  return boxes[0]!;
+function switchOf(card: HTMLElement, value: 'SHOW' | 'ASK' | 'HIDE' = 'SHOW'): HTMLInputElement {
+  const boxes = card.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+  expect(boxes, 'three-way control per card').toHaveLength(3);
+  return card.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)!;
 }
 
 function cardStatus(card: HTMLElement): string {
@@ -199,7 +199,7 @@ function pageStatuses(): string[] {
 
 async function loaded(n = CURRENCIES.length): Promise<void> {
   await vi.waitFor(() =>
-    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(n),
+    expect(host.querySelectorAll('input[type="radio"][value="SHOW"]')).toHaveLength(n),
   );
 }
 
@@ -217,7 +217,7 @@ describe('KioskCurrenciesScreen re-read after configure (#2197)', () => {
     expect(cardStatus(cardOf(JPY))).toBe(th.savedOn);
 
     // Second toggle: configure OK, re-read OK -> card says what view answers, page message clears error
-    switchOf(cardOf(USD)).click();
+    switchOf(cardOf(USD), 'HIDE').click();
     await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(th.savedOff));
     expect(switchOf(cardOf(USD)).checked).toBe(false);
     expect(switchOf(cardOf(JPY)).checked).toBe(true);
@@ -265,7 +265,7 @@ describe('KioskCurrenciesScreen re-read after configure (#2197)', () => {
     expect(pageStatuses()).toContain(sharedTh['error.serverError']);
 
     // Toggle USD off: configure OK, re-read fails with network error
-    switchOf(cardOf(USD)).click();
+    switchOf(cardOf(USD), 'HIDE').click();
     await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(th.savedOff));
     expect(switchOf(cardOf(USD)).checked).toBe(false);
     expect(pageStatuses()).toContain(sharedTh['error.network']);
@@ -304,7 +304,7 @@ describe('KioskCurrenciesScreen re-read after configure (#2197)', () => {
     expect(pageStatuses()).toContain(sharedTh['error.serverError']);
 
     // Next successful re-read (triggered when toggling USD off) replaces JPY's optimistic true with server's false
-    switchOf(cardOf(USD)).click();
+    switchOf(cardOf(USD), 'HIDE').click();
     await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(th.savedOff));
     expect(switchOf(cardOf(JPY)).checked).toBe(false);
     expect(pageStatuses()).toContain(fill(th.found, { n: 3 }));

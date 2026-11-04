@@ -455,6 +455,13 @@ impl KioskPorts for FakePorts {
                 KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
                     json!({ "enabled": enabled, "buy": buy, "sell": sell })
                 }
+                KioskAudit::CurrencyDisplaySet {
+                    group,
+                    display,
+                    from,
+                } => {
+                    json!({ "group": group, "display": display, "from": from })
+                }
                 // Amended by the author of KC-D (claude/studio-claude-10, `kiosk-cancel.md` §3.3):
                 // the cancel's line, `{from, reason, note}` as `detail_of` writes it.
                 KioskAudit::Cancelled { from, reason } => json!({

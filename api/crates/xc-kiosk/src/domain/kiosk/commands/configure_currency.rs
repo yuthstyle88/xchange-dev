@@ -13,3 +13,11 @@ pub struct ConfigureCurrency {
     /// The request id of the rate save; the caller draws it.
     pub request_id: String,
 }
+
+/// Setting `branch_currencies.display` (`SHOW`, `ASK`, `HIDE`) for one currency and group.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigureDisplay {
+    pub code: String,
+    pub group: String,
+    pub display: String,
+}
