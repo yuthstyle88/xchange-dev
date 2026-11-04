@@ -3,11 +3,13 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
-use pos_error::AppResult;
+use chrono_tz::Tz;
+use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 
+use crate::domain::shift::value_objects::shift_error::ShiftError;
 use crate::domain::shift_plan::repository::ShiftTemplateStore;
 use crate::domain::shift_plan::shift_instance::ShiftInstance;
 use crate::domain::shift_plan::shift_plan::ShiftPlan;
@@ -41,12 +43,22 @@ impl ShiftPlanService {
         tx: &mut Transaction<'_, Postgres>,
         branch: &BranchId,
     ) -> AppResult<ShiftPlan> {
-        let _ = (tx, branch, &self.store);
-        todo!("CS-3")
+        let tz_str: Option<String> =
+            sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await?;
+        let tz_str =
+            tz_str.ok_or_else(|| AppError::Domain(ShiftError::BranchNotFound.to_string()))?;
+        let tz: Tz = tz_str
+            .parse()
+            .map_err(|e| AppError::Internal(format!("invalid timezone {tz_str}: {e}")))?;
+        let templates = self.store.live_in(tx, branch).await?;
+        Ok(ShiftPlan::new(templates, tz))
     }
 
     /// Validates (`ShiftPlan::validate`) and replaces the list. A refusal is
-    /// `AppError::Validation(format!("shiftPlanInvalid:{reason}:{index}"))`, with `index` empty when there is none;
+    /// `AppError::Validation(format!("shiftPlanInvalid:{reason}:{detail}"))`, with `detail` empty when there is none;
     /// nothing is written.
     pub async fn save_in(
         &self,
@@ -56,8 +68,13 @@ impl ShiftPlanService {
         inputs: Vec<ShiftTemplateInput>,
         now: DateTime<Utc>,
     ) -> AppResult<ShiftPlan> {
-        let _ = (tx, branch, org, inputs, now);
-        todo!("CS-3")
+        let validated = ShiftPlan::validate(inputs).map_err(|r| {
+            AppError::Validation(format!("shiftPlanInvalid:{}:{}", r.reason(), r.detail()))
+        })?;
+        self.store
+            .replace_in(tx, branch, org, &validated, now)
+            .await?;
+        self.plan_in(tx, branch).await
     }
 
     /// The instances covering `now`; `preselect` is the template id when exactly one covers.
@@ -67,13 +84,19 @@ impl ShiftPlanService {
         branch: &BranchId,
         now: DateTime<Utc>,
     ) -> AppResult<ShiftChoices> {
-        let _ = (tx, branch, now);
-        todo!("CS-3")
+        let choices = self.plan_in(tx, branch).await?.covering(now);
+        let preselect = match choices.as_slice() {
+            [only] => Some(only.template_id.clone()),
+            _ => None,
+        };
+        Ok(ShiftChoices { choices, preselect })
     }
 
     /// Seeds the defaults for a new branch in its own branch transaction; idempotent.
     pub async fn seed_defaults(&self, branch: &BranchId, org: &str) -> AppResult<bool> {
-        let _ = (branch, org, &self.branch_tx);
-        todo!("CS-3")
+        let mut tx = self.branch_tx.pool().begin().await?;
+        let inserted = self.store.seed_defaults_in(&mut tx, branch, org).await?;
+        tx.commit().await?;
+        Ok(inserted)
     }
 }
