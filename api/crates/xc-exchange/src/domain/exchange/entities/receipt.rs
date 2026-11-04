@@ -25,17 +25,18 @@ pub fn receipt_html_marked(
     branch_name: &str,
     marks: &ReceiptMarks,
 ) -> String {
-    let _ = (form, document_ref, branch_name, marks);
-    todo!("BK-6: backdated-keying.md §8")
-}
-
-pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
     let title_val = escape_html(document_ref);
     let demo_banner_val = match form.customer.mode {
         Mode::Demo => {
-            "<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">SAMPLE / DEMO — NOT A VALID RECEIPT</p>"
+            "<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">SAMPLE / DEMO — NOT A VALID RECEIPT</p>".to_string()
         }
-        Mode::Live => "",
+        Mode::Live => match &marks.backdated {
+            Some(m) => {
+                let time = m.entered_at.with_timezone(&bangkok()).format("%d/%m/%Y %H:%M");
+                format!("<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">ย้อนหลัง · บันทึกเมื่อ {time}</p>")
+            }
+            None => String::new(),
+        },
     };
     let currency_val = escape_html(&form.currency);
     let rows_val = build_rows(form, document_ref, branch_name);
@@ -58,7 +59,7 @@ pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &st
             let placeholder = &after_start[..end + 2];
             match placeholder {
                 "{{TITLE}}" => result.push_str(&title_val),
-                "{{DEMO_BANNER}}" => result.push_str(demo_banner_val),
+                "{{DEMO_BANNER}}" => result.push_str(&demo_banner_val),
                 "{{CURRENCY}}" => result.push_str(&currency_val),
                 "{{ROWS}}" => result.push_str(&rows_val),
                 "{{TOTAL}}" => result.push_str(&total_val),
@@ -73,6 +74,10 @@ pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &st
     }
     result.push_str(remaining);
     result
+}
+
+pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
+    receipt_html_marked(form, document_ref, branch_name, &ReceiptMarks::default())
 }
 
 fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
