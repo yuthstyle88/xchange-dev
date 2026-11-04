@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use xc_approval::application::approval_service::ApprovalService;
@@ -12,14 +13,18 @@ use xc_approval::domain::approval_repository::ApprovalRepository;
 use xc_approval::infrastructure::approval_repository::PgApprovalRepository;
 use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Role, ScopedRole, Target};
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::shift_hook::ShiftLifecycleHook;
+use xc_shift::application::shift_plan::service::ShiftPlanService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift::value_objects::opened_as::OpenedAs;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 use xc_shift::infrastructure::custody::custody_repository::append_cash_exception_in;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use crate::application::count::CashCountService;
 use crate::application::count::count_service::{held_of, post_difference_in, post_opening_in};
@@ -367,14 +372,14 @@ impl HandoverService {
             }
         }
 
-        let shift_teller: Option<String> = sqlx::query_scalar(
-            "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+        let shift_row: Option<(String, chrono::NaiveDate)> = sqlx::query_as(
+            "SELECT teller_id::text, business_date FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
         )
         .bind(&cmd.from_shift_id)
         .bind(cmd.branch.as_str())
         .fetch_optional(&mut **tx)
         .await?;
-        let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+        let (teller_id, shift_business_date) = shift_row.ok_or(ShiftError::NoOpenShift)?;
         PersonRules::teller_owns_shift(&teller_id, actor)
             .map_err(|e| AppError::Domain(e.to_string()))?;
 
@@ -499,9 +504,8 @@ impl HandoverService {
             created_at: now,
             updated_at: now,
             rejection: None,
-            // CS-19 sets the business date to the handing-over shift's.
             shift_template_id: None,
-            business_date: None,
+            business_date: Some(shift_business_date),
         };
 
         self.counts
@@ -559,17 +563,6 @@ impl HandoverService {
         shift_template_id: Option<&str>,
         now: DateTime<Utc>,
     ) -> AppResult<HandoverAccepted> {
-        let _ = (tx, actor, id, shift_template_id, now);
-        todo!("CS-19")
-    }
-
-    pub async fn accept_or_await_in(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        actor: &Actor,
-        id: &str,
-        now: DateTime<Utc>,
-    ) -> AppResult<HandoverAccepted> {
         let handover_uuid = handover_id(id)?;
         let r: Option<Row> = sqlx::query_as(
             "SELECT id::text, branch_id, from_shift_id, to_shift_id, count_id::text, receiver_id::text, status \
@@ -606,6 +599,28 @@ impl HandoverService {
             now,
         )
         .map_err(|_| AppError::Forbidden)?;
+
+        let covering = ShiftPlanService::new(
+            Arc::new(PgShiftTemplateStore),
+            BranchTx::new(Transactor::new(self.pool.clone())),
+        )
+        .plan_in(tx, &h.branch_id)
+        .await?
+        .covering(now);
+        let chosen = match shift_template_id {
+            Some(tid) => covering
+                .into_iter()
+                .find(|i| i.template_id == tid)
+                .ok_or(ShiftError::OutsideShiftWindow)?,
+            None => {
+                let mut it = covering.into_iter();
+                let first = it.next().ok_or(ShiftError::OutsideShiftWindow)?;
+                if it.next().is_some() {
+                    return Err(ShiftError::ShiftNotChosen.into());
+                }
+                first
+            }
+        };
 
         let repo = self.counts.repo().clone();
         let mut totals = repo.get_count_totals(&mut *tx, &h.count_id).await?;
@@ -760,8 +775,11 @@ impl HandoverService {
                 &h.receiver_id,
                 &h.count_id,
                 &counted,
-                // CS-19 replaces this with the template the receiver chose on accepting.
-                &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
+                &OpenedAs {
+                    template_id: Some(chosen.template_id),
+                    template_name: Some(chosen.name),
+                    business_date: Some(chosen.business_date),
+                },
                 now,
             )
             .await?;
@@ -790,6 +808,17 @@ impl HandoverService {
         Ok(HandoverAccepted::Accepted(Box::new(
             self.load_in(tx, id).await?,
         )))
+    }
+
+    pub async fn accept_or_await_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<HandoverAccepted> {
+        self.accept_chosen_or_await_in(tx, actor, id, None, now)
+            .await
     }
 
     pub async fn reject_in(
