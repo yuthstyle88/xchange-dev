@@ -756,6 +756,8 @@ DROP TRIGGER cash_counts_business_date_default ON cash_counts;
 DROP FUNCTION cash_counts_business_date_default();
 DROP TRIGGER shifts_business_date_default ON shifts;
 DROP FUNCTION shifts_business_date_default();
+DROP TRIGGER branches_default_shift_templates ON branches;   -- before the table it writes to (Q10)
+DROP FUNCTION branches_default_shift_templates();
 ALTER TABLE shifts DROP CONSTRAINT shifts_template_named,
     DROP COLUMN business_date, DROP COLUMN template_name, DROP COLUMN template_id;
 DROP TABLE shift_templates;
