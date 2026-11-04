@@ -62,7 +62,14 @@ fn bc1_the_real_table_keeps_all_48_rows() {
 #[test]
 fn bc1_each_row_carries_the_unit_of_the_design_table() {
     let rows = bot_rows(&live()).expect("accepted");
-    for (code, unit) in [("USD", 1), ("JPY", 100), ("IDR", 1000), ("VND", 100), ("LAK", 100), ("KRW", 1)] {
+    for (code, unit) in [
+        ("USD", 1),
+        ("JPY", 100),
+        ("IDR", 1000),
+        ("VND", 100),
+        ("LAK", 100),
+        ("KRW", 1),
+    ] {
         assert_eq!(row(&rows, code)["unit"], json!(unit), "{code}");
     }
 }
@@ -152,12 +159,16 @@ fn row_of(code: &str) -> Value {
 
 #[test]
 fn bc2_a_batch_with_every_sentinel_is_complete_whatever_else_is_missing() {
-    let rows = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"].map(row_of).to_vec();
+    let rows = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"]
+        .map(row_of)
+        .to_vec();
     assert!(BotProvider.parse(&rates(rows)).expect("parsed").complete);
 }
 
 #[test]
 fn bc2_a_batch_missing_a_sentinel_is_not_complete() {
-    let rows = ["USD", "EUR", "GBP", "JPY", "CNY", "SGD"].map(row_of).to_vec();
+    let rows = ["USD", "EUR", "GBP", "JPY", "CNY", "SGD"]
+        .map(row_of)
+        .to_vec();
     assert!(!BotProvider.parse(&rates(rows)).expect("parsed").complete);
 }

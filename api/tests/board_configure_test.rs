@@ -98,7 +98,13 @@ async fn thb_is_refused() {
 #[actix_web::test]
 async fn any_success_writes_one_audit_row_with_from_and_display() {
     let desk = Desk::start().await;
-    publish(&desk.pool, "MAIN", Utc::now(), &[both("AUD", "21.0", "22.0")]).await;
+    publish(
+        &desk.pool,
+        "MAIN",
+        Utc::now(),
+        &[both("AUD", "21.0", "22.0")],
+    )
+    .await;
     let app = desk_app!(desk);
     let owner = desk.owner_session("owner").await;
 
@@ -179,7 +185,10 @@ async fn new_row_writes_note_links() {
     .fetch_one(&desk.pool)
     .await
     .expect("count linked notes");
-    assert_eq!(linked, 5, "AUD's 5 seeded notes (5, 10, 20, 50, 100) are linked");
+    assert_eq!(
+        linked, 5,
+        "AUD's 5 seeded notes (5, 10, 20, 50, 100) are linked"
+    );
     desk.drop_schema().await;
 }
 

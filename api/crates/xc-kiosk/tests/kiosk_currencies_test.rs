@@ -13,7 +13,10 @@ fn code(s: &str) -> CurrencyCode {
 fn row1_empty_switches_offers_default_currencies() {
     let kc = KioskCurrencies::new(&[]);
     for c in ["USD", "EUR", "GBP", "JPY", "CNY", "AUD", "SGD"] {
-        assert!(!kc.offers(code(c)), "{c} should not be offered with no rows");
+        assert!(
+            !kc.offers(code(c)),
+            "{c} should not be offered with no rows"
+        );
     }
 }
 

@@ -59,8 +59,17 @@ async fn bc5_draftable_lists_show_and_ask_rows_with_the_register_unit() {
     let rows = view(&app, &owner, DRAFTABLE).await;
 
     let krw = &rows_of(&rows, "KRW");
-    assert!(krw.iter().any(|r| r["group"] == "ALL" && r["unitSize"] == "1000"), "the register's unit: {krw:?}");
-    assert!(rows_of(&rows, "TRY").iter().any(|r| r["hasReference"] == false), "ASK, no BoT line");
+    assert!(
+        krw.iter()
+            .any(|r| r["group"] == "ALL" && r["unitSize"] == "1000"),
+        "the register's unit: {krw:?}"
+    );
+    assert!(
+        rows_of(&rows, "TRY")
+            .iter()
+            .any(|r| r["hasReference"] == false),
+        "ASK, no BoT line"
+    );
     assert!(rows_of(&rows, "AED").is_empty(), "HIDE is not draftable");
     assert!(rows_of(&rows, "THB").is_empty(), "THB is never drafted");
 }
@@ -76,7 +85,11 @@ async fn bc10_the_set_lists_every_row_by_sort_order() {
     assert_eq!(rows.as_array().expect("rows").len(), 45);
     assert_eq!(rows[0]["code"], "THB");
     assert_eq!(rows[1]["code"], "USD");
-    assert_eq!(rows_of(&rows, "AED")[0]["display"], "HIDE", "a HIDE row can still be chosen");
+    assert_eq!(
+        rows_of(&rows, "AED")[0]["display"],
+        "HIDE",
+        "a HIDE row can still be chosen"
+    );
     assert_eq!(rows_of(&rows, "AED")[0]["held"], false);
 }
 
@@ -150,14 +163,19 @@ async fn bc11_a_note_is_added_once() {
     let first = add_note(&app, &owner, body.clone()).await;
     assert_eq!(first.status, 200, "{}", first.text);
     let second = add_note(&app, &owner, body).await;
-    assert_eq!(second.status, 200, "repeating is idempotent: {}", second.text);
+    assert_eq!(
+        second.status, 200,
+        "repeating is idempotent: {}",
+        second.text
+    );
     assert_eq!(notes(&desk, "KRW", "KRWS").await, 1);
     assert_eq!(first.json()["data"]["id"], second.json()["data"]["id"]);
-    let audited: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'denominationNoteAdd'")
-            .fetch_one(&desk.pool)
-            .await
-            .expect("count audit rows");
+    let audited: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM audit_events WHERE action = 'denominationNoteAdd'",
+    )
+    .fetch_one(&desk.pool)
+    .await
+    .expect("count audit rows");
     assert_eq!(audited, 1, "one audit row for the note, none on the repeat");
 }
 
@@ -167,7 +185,12 @@ async fn bc11_a_bad_face_value_is_refused() {
     let app = desk_app!(desk);
     let owner = desk.owner_session("owner").await;
     for bad in ["0", "-5", "abc", "1.23456"] {
-        let answer = add_note(&app, &owner, json!({ "currency": "USD", "group": "ALL", "faceValue": bad })).await;
+        let answer = add_note(
+            &app,
+            &owner,
+            json!({ "currency": "USD", "group": "ALL", "faceValue": bad }),
+        )
+        .await;
         assert_eq!(answer.status, 400, "{bad}: {}", answer.text);
     }
 }
