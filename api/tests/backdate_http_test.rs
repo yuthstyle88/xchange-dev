@@ -232,6 +232,27 @@ async fn b1_owner_keys_a_past_buy_with_no_shift_into_the_safe() {
         Some("83925.00"),
         "100000.00 - 16075.00"
     );
+    // Lane controller 2026-11-04: a BUY into the SAFE moves the branch's foreign stock exactly as a desk BUY does
+    // (one lot, the position at its cost).
+    assert_eq!(
+        desk.db
+            .text(
+                "SELECT quantity::numeric(20,4)::text || '|' || cost_thb::numeric(20,2)::text \
+                 FROM inventory_positions WHERE branch_id = 'MAIN' AND currency = 'USD'"
+            )
+            .await
+            .as_deref(),
+        Some("500.0000|16075.00"),
+        "MAIN's USD position is the lot bought"
+    );
+    assert_eq!(
+        desk.db
+            .count(
+                "SELECT count(*) FROM inventory_lots WHERE branch_id = 'MAIN' AND currency = 'USD'"
+            )
+            .await,
+        1
+    );
     finish(desk, scratch).await;
 }
 

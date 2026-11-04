@@ -293,6 +293,11 @@ same key with another body, as every v3 command does).
   `legs(&t, CashPlace::Safe(t.branch_id))`.
 - BUY cash: foreign `Customer → SAFE`, THB `SAFE → Customer`. BUY transfer: foreign `Customer → SAFE`, THB
   `Bank → Customer`. SELL is the mirror image. These are the same legs as today, with the drawer replaced by the SAFE.
+- `[required]` The foreign stock moves exactly as a desk BUY's does (lane controller, 2026-11-04). The SAFE is an
+  "inside" place (`ledger_postings.rs:532-536`), so `Customer → SAFE` takes the same acquire arm as
+  `Customer → Drawer`: one `inventory_lots` row, an `inventory_movements` row and the `inventory_positions` update in
+  the posting itself (`:745-777`, `:1094-1140`). A SELL disposes at the average. `backdate_http_test::b1` pins the
+  position and the lot.
 - `[required]` The posting keeps the ledger's never-below-zero rule. A backdated BUY in cash needs the THB in the SAFE
   at entry time, or it is refused `stockInsufficient`. A replay funds the SAFE first through the normal external-in
   transfer. No negative-stock approval is offered on this path.
