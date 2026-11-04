@@ -5,7 +5,7 @@
 //! Rulings on #1068 (issuecomment-6109917312):
 //! - Q1: the transactions part is EX-3's `ExchangeFacts::branch_day_totals`, `count` included. No second reader.
 //! - Q2: the exceptions part is the branch's open `cash_exceptions`, not day-scoped, and **not** in the hash.
-//! - Q3: E-8's "that day" is a count's `counted_at` business date in the branch's timezone.
+//! - Q3: E-8's "that day" is a count's stored `business_date` (design `configurable-shifts.md` §2.11).
 //!
 //! The four parts FN-2 fills come through `SheetPartsPort`; until then `UnavailableParts` answers each one
 //! unavailable, naming the ticket it waits for.
@@ -317,7 +317,7 @@ impl ReconciliationService {
 
     /// Certifies the sheet of `branch` on `date` in the caller's transaction (design §8.2):
     /// 1. the sheet is recomputed; another hash than `figures_hash` is `StaleVersion`;
-    /// 2. a caller who verified a count of that day (its `counted_at` business date in the branch's timezone, Q3)
+    /// 2. a caller who verified a count of that day (its stored `business_date`, Q3)
     ///    is `SamePerson` (E-8);
     /// 3. one certification row is appended, holding the six parts.
     ///
@@ -339,9 +339,9 @@ impl ReconciliationService {
         }
         let verified_that_day: bool = sqlx::query_scalar(
             "SELECT EXISTS ( \
-               SELECT 1 FROM cash_counts c JOIN branches b ON b.id = c.branch_id \
+               SELECT 1 FROM cash_counts c \
                 WHERE c.branch_id = $1 AND c.verified_by = $2 \
-                  AND (c.counted_at AT TIME ZONE b.timezone)::date = $3)",
+                  AND c.business_date = $3)",
         )
         .bind(branch.as_str())
         .bind(certifier)
