@@ -30,6 +30,14 @@ async fn view(app: &TestApp, token: &str, path: &str) -> Value {
     answer.json()["data"]["rows"].clone()
 }
 
+/// `Desk::start` funds every currency into MAIN (`lg4_fund_safe`). These tests choose the stock themselves.
+async fn no_stock(desk: &Desk) {
+    sqlx::query("DELETE FROM inventory_positions WHERE branch_id = 'MAIN'")
+        .execute(&desk.pool)
+        .await
+        .expect("clear MAIN's stock");
+}
+
 fn rows_of(rows: &Value, code: &str) -> Vec<Value> {
     rows.as_array()
         .expect("rows")
@@ -62,6 +70,7 @@ async fn bc10_the_set_lists_every_row_by_sort_order() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
     let owner = desk.owner_session("owner").await;
+    no_stock(&desk).await;
     let rows = view(&app, &owner, BRANCH_CURRENCIES).await;
 
     assert_eq!(rows.as_array().expect("rows").len(), 45);
@@ -76,6 +85,7 @@ async fn bc10_a_currency_held_with_no_row_is_listed_as_held() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
     let owner = desk.owner_session("owner").await;
+    no_stock(&desk).await;
     sqlx::query(
         "INSERT INTO inventory_positions (organization_id, branch_id, currency, quantity, cost_thb) \
          SELECT organization_id, 'MAIN', 'PLN', 10, 85 FROM branches WHERE id = 'MAIN'",
@@ -96,6 +106,7 @@ async fn bc10_a_hidden_currency_with_stock_reads_held() {
     let desk = Desk::start().await;
     let app = desk_app!(desk);
     let owner = desk.owner_session("owner").await;
+    no_stock(&desk).await;
     sqlx::query(
         "INSERT INTO inventory_positions (organization_id, branch_id, currency, quantity, cost_thb) \
          SELECT organization_id, 'MAIN', 'AED', 10, 90 FROM branches WHERE id = 'MAIN'",
