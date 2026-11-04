@@ -143,6 +143,11 @@ async fn fetched_hours_ago(db: &TestDb, publication: &str, hours_ago: i64) {
 #[tokio::test]
 async fn a_get_without_if_none_match_answers_200_the_same_body_a_publication_tag_and_no_store() {
     let db = TestDb::start().await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD", "JPY"])
+        .await
+        .expect("seed branch currencies");
     let published = db
         .publish(
             "MAIN",
@@ -208,6 +213,11 @@ async fn a_repeat_with_that_tag_answers_304_with_no_body_and_the_same_tag() {
 #[tokio::test]
 async fn a_new_publication_answers_200_with_the_new_body_and_a_new_tag() {
     let db = TestDb::start().await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let old = db
         .publish("MAIN", &[Line::manual("USD", "1", "35.10", "35.50")])
         .await;
@@ -235,6 +245,11 @@ async fn a_new_publication_answers_200_with_the_new_body_and_a_new_tag() {
 #[tokio::test]
 async fn the_reference_ageing_past_its_limit_flips_the_tag_to_s1_with_no_new_publication() {
     let db = TestDb::start().await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let policy = db.policy("MAIN", None, None).await;
     let published = db.publish("MAIN", &[auto_usd(&policy)]).await;
     fetched_hours_ago(&db, &published.id, 1).await;
@@ -355,6 +370,18 @@ async fn an_unknown_organisation_or_branch_answers_todays_404_with_no_tag() {
 async fn another_branchs_tag_answers_200() {
     let db = TestDb::start().await;
     xc_branch(&db, "b-north", "NORTH").await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
+        .await
+        .expect("seed branch currencies");
+    db.exec(
+        "UPDATE branch_currencies SET display='HIDE' WHERE branch_id='b-north' AND display='ASK'",
+    )
+    .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "b-north", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let main = db
         .publish("MAIN", &[Line::manual("USD", "1", "35.10", "35.50")])
         .await;
@@ -380,6 +407,11 @@ async fn another_branchs_tag_answers_200() {
 async fn every_200_tag_names_the_publication_and_stale_flag_of_its_own_body() {
     let db = TestDb::start().await;
     xc_branch(&db, "b-empty", "EMPTY").await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let policy = db.policy("MAIN", None, None).await;
     db.publish("MAIN", &[Line::manual("USD", "1", "35.10", "35.50")])
         .await;
@@ -405,6 +437,11 @@ async fn every_200_tag_names_the_publication_and_stale_flag_of_its_own_body() {
 #[tokio::test]
 async fn the_tag_follows_the_publication_the_body_reads_not_the_newest_version() {
     let db = TestDb::start().await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let first = db
         .publish("MAIN", &[Line::manual("USD", "1", "35.10", "35.50")])
         .await;

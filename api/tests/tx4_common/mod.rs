@@ -195,6 +195,9 @@ impl Desk {
     pub async fn start() -> Self {
         let db = TestDb::start().await;
         db.branch(BR2).await;
+        xc_testdb::seed_branch_currencies(&db.pool, BR2, &["USD"])
+            .await
+            .expect("seed branch currencies");
         db.publish("MAIN", &[USD]).await;
         db.publish(BR2, &[USD]).await;
         db.exec(&format!(

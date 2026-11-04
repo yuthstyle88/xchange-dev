@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::{Postgres, Transaction};
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_auth::domain::access::{Actor, Role, audit_role};
-use xc_kernel::money::CurrencyCode;
+use xc_kernel::money::{Bound, CurrencyCode, Sign};
 
 use crate::domain::currency::denomination_groups::{DenominationGroups, GroupCode};
 use crate::domain::draft::rate_engine_error::RateEngineError;
@@ -333,5 +333,75 @@ impl DenominationGroupService {
             .map_err(|e| RateEngineError::Internal(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Adds a face value to a currency's group (`denominationNoteAdd`).
+    pub async fn add_note(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        who: &Actor,
+        code: CurrencyCode,
+        group: &GroupCode,
+        face: &str,
+    ) -> Result<i64, RateEngineError> {
+        let now = Utc::now();
+        executive_org_wide(who, now)?;
+
+        let face_val = Bound::numeric(20, 4, Sign::Positive)
+            .parse(face)
+            .map_err(|e| RateEngineError::ValidationFailed(e.to_string()))?;
+
+        let inserted: Option<(i64,)> = sqlx::query_as(
+            "INSERT INTO denominations (organization_id, currency_code, group_code, face_value) \
+             VALUES ($1::uuid, $2, $3, $4) \
+             ON CONFLICT (organization_id, currency_code, group_code, face_value) \
+             WHERE face_value IS NOT NULL \
+             DO NOTHING \
+             RETURNING id",
+        )
+        .bind(&who.organization_id)
+        .bind(code.as_str())
+        .bind(group.as_str())
+        .bind(face_val)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| RateEngineError::Database(e.to_string()))?;
+
+        let Some((id,)) = inserted else {
+            let (id,): (i64,) = sqlx::query_as(
+                "SELECT id FROM denominations \
+                 WHERE organization_id = $1::uuid AND currency_code = $2 AND group_code = $3 AND face_value = $4",
+            )
+            .bind(&who.organization_id)
+            .bind(code.as_str())
+            .bind(group.as_str())
+            .bind(face_val)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|e| RateEngineError::Database(e.to_string()))?;
+            return Ok(id);
+        };
+
+        let event = AuditEvent {
+            actor_id: who.user_id.clone(),
+            actor_role: audit_role(&[Role::Executive], who, now).to_string(),
+            scope: "RATE_ENGINE".to_string(),
+            action: "denominationNoteAdd".to_string(),
+            object_ref: format!("{}/{}", code.as_str(), group.as_str()),
+            branch_id: None,
+            before: None,
+            after: Some(serde_json::json!({
+                "id": id,
+                "currency": code.as_str(),
+                "group": group.as_str(),
+                "faceValue": face_val.to_string(),
+            })),
+        };
+        self.audit
+            .append_in(tx, &who.organization_id, &event)
+            .await
+            .map_err(|e| RateEngineError::Internal(e.to_string()))?;
+
+        Ok(id)
     }
 }

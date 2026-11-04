@@ -58,6 +58,7 @@ export function makeKioskCurrency(o: Partial<KioskCurrency> = {}): KioskCurrency
     updated: 'updated',
     partnerName: 'partnerName',
     partnerCost: null,
+    display: 'display',
     enabled: false,
     kbank: [],
     quoteEnabled: false,

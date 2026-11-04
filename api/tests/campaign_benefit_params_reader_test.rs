@@ -54,6 +54,9 @@ use serde_json::{Value, json};
 /// The stored rule's params are malformed: the quote must be refused, not priced with a 0 benefit.
 async fn refused(benefit_type: &str, calculation: Value) {
     let (db, _rule) = room_with_rule(benefit_type, calculation.clone()).await;
+    xc_testdb::seed_branch_currencies(&db.pool, BRANCH, &["USD"])
+        .await
+        .expect("seed branch currencies");
 
     let ans = quote(&db, "100.00").await;
 
@@ -77,6 +80,9 @@ async fn applied(
     amount_thb: &str,
 ) {
     let (db, rule_id) = room_with_rule(benefit_type, calculation.clone()).await;
+    xc_testdb::seed_branch_currencies(&db.pool, BRANCH, &["USD"])
+        .await
+        .expect("seed branch currencies");
 
     let ans = quote(&db, "100.00").await;
 

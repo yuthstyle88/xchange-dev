@@ -595,6 +595,9 @@ async fn a_staff_caller_naming_another_branch_is_out_of_scope_and_stores_nothing
 async fn the_owner_naming_a_branch_is_quoted_on_that_branchs_line() {
     let db = TestDb::start().await;
     db.branch("XC-B01").await;
+    xc_testdb::seed_branch_currencies(&db.pool, "XC-B01", &["JPY"])
+        .await
+        .expect("seed branch currencies");
     db.publish("MAIN", &[JPY]).await;
     let b01 = db.publish("XC-B01", &[B01_JPY]).await;
     // OR-4b (#767, design §4.2 C2): ExchangeTransact is TELLER's, so a TELLER (v2's FRONT) of

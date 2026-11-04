@@ -8,8 +8,7 @@ use serde_json::Value;
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::rate::entities::rate_source::ReferenceRates;
 use crate::domain::reference::reference_provider::{ParsedBatch, ParsedLine, ReferenceProvider};
-
-const BOT_CURRENCIES: [&str; 6] = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
+use crate::infrastructure::reference_source::bot_table::BOT_TABLE_SENTINELS;
 
 fn parse_decimal(val: &Value) -> Option<Decimal> {
     match val {
@@ -119,7 +118,7 @@ impl ReferenceProvider for BotProvider {
             });
         }
 
-        let is_complete = BOT_CURRENCIES
+        let is_complete = BOT_TABLE_SENTINELS
             .iter()
             .all(|c| seen_line_currencies.contains(*c));
 

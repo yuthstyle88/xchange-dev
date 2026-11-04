@@ -192,9 +192,8 @@ describe('the kiosk currencies page shows the publication freshness once (RF-3)'
     ]);
     const el = await mount(f.api);
     expect(theLine(el).querySelector('.xc-rate-stale'), 'fresh at first').toBeNull();
-    const box = el.querySelector<HTMLInputElement>('form.quote input[type="checkbox"]')!;
-    box.checked = true;
-    box.dispatchEvent(new Event('change', { bubbles: true }));
+    const box = el.querySelector<HTMLInputElement>('form.quote input[type="radio"][value="SHOW"]')!;
+    box.click();
     await settle();
     expect(f.views.length, 'the view was read again').toBeGreaterThanOrEqual(2);
     const p = theLine(el);

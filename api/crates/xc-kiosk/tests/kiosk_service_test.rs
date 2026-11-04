@@ -151,10 +151,6 @@ fn the_limits_are_the_ones_measured_on_v2() {
     let limits = &fixture()["limits"];
     assert_eq!(limits["pageSize"], 50);
     assert_eq!(limits["receiptImageMaxLength"], ReceiptImage::MAX_LENGTH);
-    let mut defaults: Vec<&str> = DEFAULT_CODES.to_vec();
-    defaults.sort_unstable();
-    assert_eq!(limits["defaults"], json!(defaults));
-    assert_eq!(DEFAULT_CODES.len(), 6);
 }
 
 #[test]
@@ -667,11 +663,7 @@ async fn a_command_whose_audit_line_fails_stores_nothing() {
             .await
             .is_err()
     );
-    assert_eq!(
-        db.count("kiosk_currencies").await,
-        0,
-        "the switch is not stored"
-    );
+    assert_eq!(db.switch_count().await, 0, "the switch is not stored");
     ports.audit_fails(false);
 
     assert_eq!(

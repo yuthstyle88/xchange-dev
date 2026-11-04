@@ -83,7 +83,6 @@ pub use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 pub use xc_kiosk::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 pub use xc_kiosk::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
-pub use xc_kiosk::domain::kiosk::value_objects::kiosk_currencies::DEFAULT_CODES;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -456,6 +455,13 @@ impl KioskPorts for FakePorts {
                 KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
                     json!({ "enabled": enabled, "buy": buy, "sell": sell })
                 }
+                KioskAudit::CurrencyDisplaySet {
+                    group,
+                    display,
+                    from,
+                } => {
+                    json!({ "group": group, "display": display, "from": from })
+                }
                 // Amended by the author of KC-D (claude/studio-claude-10, `kiosk-cancel.md` §3.3):
                 // the cancel's line, `{from, reason, note}` as `detail_of` writes it.
                 KioskAudit::Cancelled { from, reason } => json!({
@@ -664,6 +670,15 @@ impl TestDb {
             .execute(&pool)
             .await
             .expect("insert the second branch");
+        for b in [MAIN, B2] {
+            xc_testdb::seed_branch_currencies(
+                &pool,
+                b,
+                &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+            )
+            .await
+            .expect("seed the six currencies");
+        }
         sqlx::query(
             "CREATE TABLE test_audit (seq bigserial PRIMARY KEY, branch_id text NOT NULL, \
              actor text NOT NULL, kind text NOT NULL, subject text NOT NULL, \
@@ -747,10 +762,19 @@ impl TestDb {
             .expect("read kiosk_requests")
     }
 
+    /// How many rows `configure` wrote (`branch_currencies`; the migration's seed is not counted).
+    pub async fn switch_count(&self) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
+            .fetch_one(&self.pool)
+            .await
+            .expect("count branch_currencies")
+    }
+
     /// Every stored switch, as the fixture writes `switches`.
     pub async fn switches(&self) -> Value {
         let rows = sqlx::query(
-            "SELECT branch_id, code::text, enabled FROM kiosk_currencies ORDER BY branch_id, code",
+            "SELECT branch_id, currency_code::text AS code, display <> 'HIDE' AS enabled FROM branch_currencies \
+             WHERE updated_by IS NOT NULL ORDER BY branch_id, currency_code",
         )
         .fetch_all(&self.pool)
         .await

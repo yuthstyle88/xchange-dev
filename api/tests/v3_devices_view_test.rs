@@ -311,6 +311,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
+        xc_testdb::seed_branch_currencies(&self.desk.db.pool, branch, &[code])
+            .await
+            .expect("seed branch currencies");
         // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
         // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
@@ -547,7 +550,7 @@ impl Room {
             "shifts",
             "transaction_files",
             "transactions",
-            "kiosk_currencies",
+            "branch_currencies",
         ] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
                 "ALTER TABLE {table} RENAME TO hidden_{table}"

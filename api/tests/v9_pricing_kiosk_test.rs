@@ -87,6 +87,9 @@ async fn a_desk_quote_of_a_hidden_follow_line_answers_pricing_hidden() {
     let room = Room::start().await;
     let now = whole_second_now();
     room.create_branch(BR_B).await;
+    xc_testdb::seed_branch_currencies(&room.pool, BR_B, &["USD"])
+        .await
+        .expect("seed branch currencies");
     room.policy(BR_B).await;
     b_follows_and_main_blocks(&room, BR_B, now).await;
 

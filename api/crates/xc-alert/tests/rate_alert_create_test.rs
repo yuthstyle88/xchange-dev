@@ -87,6 +87,9 @@ async fn customer_sell_is_stored_as_the_shop_buying() {
 async fn unit_size_is_the_registers() {
     let db = TestDb::world().await;
     db.owners_settings().await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["KRW"])
+        .await
+        .expect("KRW is seeded");
     let svc = db.service();
     for (code, unit) in [("JPY", "100"), ("KRW", "1000"), ("USD", "1")] {
         let alert = db

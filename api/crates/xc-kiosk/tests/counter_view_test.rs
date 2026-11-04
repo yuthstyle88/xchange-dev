@@ -38,7 +38,10 @@ fn view_with(open: bool, rates: Vec<CounterRate>) -> CounterView {
 #[test]
 fn row1_facts_buy_selects_buy_rate() {
     let view = view_with(true, vec![counter_rate(1, "USD", "32.1", "32.6")]);
-    let currencies = KioskCurrencies::new(&[]);
+    let currencies = KioskCurrencies::new(&[CurrencySwitch {
+        code: code("USD"),
+        enabled: true,
+    }]);
 
     let got = view.facts(&currencies, code("USD"), Side::Buy);
 
@@ -60,7 +63,10 @@ fn row1_facts_buy_selects_buy_rate() {
 #[test]
 fn row2_facts_sell_selects_sell_rate() {
     let view = view_with(true, vec![counter_rate(1, "USD", "32.1", "32.6")]);
-    let currencies = KioskCurrencies::new(&[]);
+    let currencies = KioskCurrencies::new(&[CurrencySwitch {
+        code: code("USD"),
+        enabled: true,
+    }]);
 
     let got = view.facts(&currencies, code("USD"), Side::Sell);
 
@@ -125,7 +131,10 @@ fn row5_facts_with_duplicate_currency_lines_picks_first_line() {
             counter_rate(2, "USD", "33.0", "33.5"),
         ],
     );
-    let currencies = KioskCurrencies::new(&[]);
+    let currencies = KioskCurrencies::new(&[CurrencySwitch {
+        code: code("USD"),
+        enabled: true,
+    }]);
 
     let got = view.facts(&currencies, code("USD"), Side::Buy);
 
@@ -138,7 +147,10 @@ fn row5_facts_with_duplicate_currency_lines_picks_first_line() {
 #[test]
 fn row6_facts_when_closed_preserves_open_false_and_fills_line() {
     let view = view_with(false, vec![counter_rate(1, "USD", "32.1", "32.6")]);
-    let currencies = KioskCurrencies::new(&[]);
+    let currencies = KioskCurrencies::new(&[CurrencySwitch {
+        code: code("USD"),
+        enabled: true,
+    }]);
 
     let got = view.facts(&currencies, code("USD"), Side::Buy);
 
@@ -162,10 +174,20 @@ fn row7_offered_drops_switched_off_currency_and_preserves_view_order() {
     let usd = counter_rate(30, "USD", "32.1", "32.6");
     // Not alphabetical, so an `offered` that sorted by code instead of keeping the view's order goes red.
     let view = view_with(true, vec![usd, gbp, eur]);
-    let currencies = KioskCurrencies::new(&[CurrencySwitch {
-        code: code("GBP"),
-        enabled: false,
-    }]);
+    let currencies = KioskCurrencies::new(&[
+        CurrencySwitch {
+            code: code("USD"),
+            enabled: true,
+        },
+        CurrencySwitch {
+            code: code("EUR"),
+            enabled: true,
+        },
+        CurrencySwitch {
+            code: code("GBP"),
+            enabled: false,
+        },
+    ]);
 
     let got = view.offered(&currencies);
 

@@ -32,8 +32,10 @@ use xc_marketing::infrastructure::pg_budget_ledger::{
     BudgetLedger, ReserveOutcome, ReserveRequest,
 };
 use xc_marketing::infrastructure::pg_campaign_repository::PgCampaignRepository;
+use xc_rate::domain::currency::branch_currencies::{BranchCurrencies, Display};
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
+use xc_rate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use super::benefit_pricing::{
@@ -213,6 +215,24 @@ impl QuoteService {
                 )));
             }
         };
+
+        if PgBranchCurrencies
+            .display_in(
+                tx,
+                &req.branch_id,
+                line_req.currency,
+                &line_req.denomination_group,
+            )
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?
+            == Some(Display::Ask)
+            && req.channel != QuoteChannel::Desk
+        {
+            return Err(AppError::Domain(format!(
+                "rateUnavailable: {} is ASK",
+                line_req.currency
+            )));
+        }
 
         // Step 4: Arithmetic
         let thb_amount = thb_or_refuse(

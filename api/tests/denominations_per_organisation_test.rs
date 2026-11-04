@@ -230,7 +230,7 @@ async fn organisation_bs_denominations_view_lists_only_bs_face_values() {
         &desk.pool,
         &format!(
             "INSERT INTO denominations (currency_code, face_value, group_code, organization_id) VALUES \
-               ('USD', 100, 'ALL', '{ORG_A}'), ('USD', 50, 'ALL', '{ORG_B}')"
+               ('USD', 3, 'ALL', '{ORG_A}'), ('USD', 50, 'ALL', '{ORG_B}')"
         ),
     )
     .await;

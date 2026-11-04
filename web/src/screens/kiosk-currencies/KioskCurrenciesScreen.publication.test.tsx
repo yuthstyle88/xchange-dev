@@ -285,17 +285,17 @@ function cardOf(c: KioskCurrency): HTMLElement {
   );
   if (!h) throw new Error(`no heading ${heading(c)}`);
   let el: HTMLElement | null = h.parentElement;
-  while (el && el !== host && !el.querySelector('input[type="checkbox"]')) {
+  while (el && el !== host && !el.querySelector('input[type="radio"]')) {
     el = el.parentElement;
   }
   if (!el || el === host) throw new Error(`no card with a switch around ${heading(c)}`);
   return el;
 }
 
-function switchOf(card: HTMLElement): HTMLInputElement {
-  const boxes = card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-  expect(boxes, 'one switch per card').toHaveLength(1);
-  return boxes[0]!;
+function switchOf(card: HTMLElement, value: 'SHOW' | 'ASK' | 'HIDE' = 'SHOW'): HTMLInputElement {
+  const boxes = card.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+  expect(boxes, 'three-way control per card').toHaveLength(3);
+  return card.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)!;
 }
 
 function cardStatus(card: HTMLElement): string {
@@ -304,7 +304,7 @@ function cardStatus(card: HTMLElement): string {
 
 async function loaded(n = CURRENCIES.length): Promise<void> {
   await vi.waitFor(() =>
-    expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(n),
+    expect(host.querySelectorAll('input[type="radio"][value="SHOW"]')).toHaveLength(n),
   );
 }
 
@@ -449,7 +449,7 @@ describe('#603 RE-6: the screen has no rate input and no save-rate control (D-3,
     for (const c of CURRENCIES) {
       const card = cardOf(c);
       expect(
-        [...card.querySelectorAll('input')].filter((i) => i.type !== 'checkbox'),
+        [...card.querySelectorAll('input')].filter((i) => i.type !== 'radio'),
         c.code,
       ).toEqual([]);
       expect(card.querySelectorAll('textarea, select, [contenteditable="true"]'), c.code).toHaveLength(0);
@@ -477,7 +477,7 @@ describe('#603 RE-6: the screen has no rate input and no save-rate control (D-3,
 // ── 3. the switch ────────────────────────────────────────────────────────────
 
 describe('#603 RE-6: ticking the switch sends configure with no rate (§4.8, D-3)', () => {
-  it('switching JPY on sends exactly { branchId, code, enabled: true }, reads the view again and says it is on', async () => {
+  it('switching JPY on sends exactly { branchId, code, group, display: "SHOW" }, reads the view again and says it is on', async () => {
     const after = answer([AFN, { ...JPY, enabled: true }, KRW, CNY, NOK, USD], 8);
     const f = fake([answer(), after]);
     mount(f.api, 'B9');
@@ -488,7 +488,7 @@ describe('#603 RE-6: ticking the switch sends configure with no rate (§4.8, D-3
     expect(f.posts).toStrictEqual([
       {
         path: '/api/kiosk',
-        body: { action: 'configure', payload: { branchId: 'B9', code: 'JPY', enabled: true } },
+        body: { action: 'configure', payload: { branchId: 'B9', code: 'JPY', group: 'ALL', display: 'SHOW' } },
       },
     ]);
     expect(f.views[1]!.name).toBe('kiosk_currencies');
@@ -498,18 +498,18 @@ describe('#603 RE-6: ticking the switch sends configure with no rate (§4.8, D-3
     expect(cardStatus(cardOf(USD))).toBe('');
   });
 
-  it('switching USD off sends exactly { branchId: MAIN, code, enabled: false } — no partner, no time — and says it is off', async () => {
+  it('switching USD off sends exactly { branchId: MAIN, code, group, display: "HIDE" } — no partner, no time — and says it is off', async () => {
     const after = answer([AFN, JPY, KRW, CNY, NOK, { ...USD, enabled: false }], 8);
     const f = fake([answer(), after]);
     mount(f.api, 'MAIN');
     await loaded();
-    switchOf(cardOf(USD)).click();
+    switchOf(cardOf(USD), 'HIDE').click();
 
     await vi.waitFor(() => expect(cardStatus(cardOf(USD))).toBe(th.savedOff));
     expect(f.posts).toStrictEqual([
       {
         path: '/api/kiosk',
-        body: { action: 'configure', payload: { branchId: 'MAIN', code: 'USD', enabled: false } },
+        body: { action: 'configure', payload: { branchId: 'MAIN', code: 'USD', group: 'ALL', display: 'HIDE' } },
       },
     ]);
     expect(switchOf(cardOf(USD)).checked).toBe(false);
@@ -552,7 +552,7 @@ describe('#603 RE-6: ticking the switch sends configure with no rate (§4.8, D-3
     expect(f.posts).toStrictEqual([
       {
         path: '/api/kiosk',
-        body: { action: 'configure', payload: { branchId: 'B9', code: 'AFN', enabled: true } },
+        body: { action: 'configure', payload: { branchId: 'B9', code: 'AFN', group: 'ALL', display: 'SHOW' } },
       },
     ]);
     await vi.waitFor(() => expect(switchOf(cardOf(AFN)).checked).toBe(false));

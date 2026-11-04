@@ -4,6 +4,10 @@ import type {
   AdminDenominationGroupsData,
   GroupDto,
 } from '../../../shared/api/generated/admin_denomination_groups';
+import type {
+  DenominationNoteAddInput,
+  DenominationNoteAddOutput,
+} from '../../../shared/api/generated/denomination_note_add';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
@@ -142,12 +146,20 @@ function GroupRow(props: GroupRowProps): JSX.Element {
 export function DenominationGroups(props: AdminMenuProps): JSX.Element {
   const client = new ApiClient();
   const addGroupWrite = keyedWrite(client, 'POST', '/api/denomination-groups');
+  const addNoteWrite = keyedWrite<
+    DenominationNoteAddInput & { branch: string },
+    DenominationNoteAddOutput
+  >(client, 'POST', '/api/denomination-notes');
 
   const [data, setData] = createSignal<AdminDenominationGroupsData | null>(null);
   const [selectedCurrency, setSelectedCurrency] = createSignal('');
   const [newGroup, setNewGroup] = createSignal('');
   const [addError, setAddError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
+  const [noteGroup, setNoteGroup] = createSignal('ALL');
+  const [faceValue, setFaceValue] = createSignal('');
+  const [noteError, setNoteError] = createSignal<string | null>(null);
+  const [noteBusy, setNoteBusy] = createSignal(false);
   let loadSeq = 0;
 
   const loadView = async () => {
@@ -179,11 +191,20 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
     setData(null);
     setAddError(null);
     setBusy(false);
+    setNoteError(null);
+    setNoteBusy(false);
     loadView();
   });
 
   const currentCurrency = () =>
     data()?.currencies.find((c) => c.currency === selectedCurrency());
+
+  createEffect(() => {
+    const groups = currentCurrency()?.groups ?? [];
+    if (groups.length > 0 && !groups.some((g) => g.group === noteGroup())) {
+      setNoteGroup(groups[0]!.group);
+    }
+  });
 
   const handleAddGroup = async () => {
     const code = newGroup();
@@ -222,6 +243,46 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
     }
   };
 
+  const handleAddNote = async () => {
+    const face = faceValue();
+    if (!/^\d+(\.\d{1,4})?$/.test(face) || Number(face) <= 0) {
+      const msg = t('faceValueInvalid');
+      setNoteError(msg);
+      toast(msg);
+      return;
+    }
+    const curr = selectedCurrency();
+    if (!curr) return;
+    const group = noteGroup();
+    if (!group) return;
+
+    const branch = props.branch();
+    setNoteBusy(true);
+    try {
+      await addNoteWrite.send({
+        currency: curr,
+        group,
+        faceValue: face,
+        branch,
+      });
+      if (props.branch() === branch && selectedCurrency() === curr) {
+        setFaceValue('');
+        setNoteError(null);
+      }
+      await loadView();
+    } catch (err: unknown) {
+      if (props.branch() !== branch) return;
+      if (selectedCurrency() !== curr) return;
+      const message = wordedError(err);
+      setNoteError(message);
+      toast(message);
+    } finally {
+      if (props.branch() === branch) {
+        setNoteBusy(false);
+      }
+    }
+  };
+
   return (
     <div class="denomination-groups-screen">
       <label class="denomination-groups-currency-picker">
@@ -231,10 +292,12 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
           onInput={(e) => {
             setSelectedCurrency(e.currentTarget.value);
             setAddError(null);
+            setNoteError(null);
           }}
           onChange={(e) => {
             setSelectedCurrency(e.currentTarget.value);
             setAddError(null);
+            setNoteError(null);
           }}
         >
           <option value="" disabled selected={selectedCurrency() === ''}>
@@ -286,6 +349,51 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
           </button>
           <Show when={addError()}>
             <div class="error-msg">{addError()}</div>
+          </Show>
+        </div>
+
+        <div class="add-note-form">
+          <label>
+            {t('noteGroup')}
+            <select
+              value={noteGroup()}
+              onInput={(e) => {
+                setNoteGroup(e.currentTarget.value);
+                setNoteError(null);
+              }}
+              onChange={(e) => {
+                setNoteGroup(e.currentTarget.value);
+                setNoteError(null);
+              }}
+              disabled={noteBusy()}
+            >
+              <For each={currentCurrency()?.groups ?? []}>
+                {(g) => (
+                  <option value={g.group} selected={g.group === noteGroup()}>
+                    {g.group}
+                  </option>
+                )}
+              </For>
+            </select>
+          </label>
+          <label>
+            {t('faceValue')}
+            <input
+              type="text"
+              value={faceValue()}
+              onInput={(e) => {
+                setFaceValue(e.currentTarget.value);
+                setNoteError(null);
+              }}
+              onChange={(e) => setFaceValue(e.currentTarget.value)}
+              disabled={noteBusy()}
+            />
+          </label>
+          <button type="button" onClick={handleAddNote} disabled={noteBusy()}>
+            {t('addNote')}
+          </button>
+          <Show when={noteError()}>
+            <div class="error-msg">{noteError()}</div>
           </Show>
         </div>
       </Show>

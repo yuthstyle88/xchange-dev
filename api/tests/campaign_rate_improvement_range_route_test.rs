@@ -60,6 +60,9 @@ async fn verify_save_refused(db: &TestDb, calculation: Value, expected_field: &s
 #[actix_web::test]
 async fn test_q1_quote_refuses_stored_negative_delta() {
     let (db, _rule) = room_with_rule("RATE_IMPROVEMENT", json!({ "delta": "-0.10" })).await;
+    xc_testdb::seed_branch_currencies(&db.pool, BRANCH, &["USD"])
+        .await
+        .expect("seed branch currencies");
 
     let ans = quote(&db, "100.00").await;
 
