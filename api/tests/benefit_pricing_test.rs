@@ -180,6 +180,9 @@ async fn be1_row16_also_admitted_on_desk_drops_an_app_only_rule() {
     let db = TestDb::start().await;
     let branch = "B-BE1-R16";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user = Uuid::new_v4();
@@ -342,6 +345,9 @@ async fn row15_world(
     now: DateTime<Utc>,
 ) -> (Vec<(String, &'static str)>, String) {
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user = Uuid::new_v4();
