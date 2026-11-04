@@ -34,6 +34,9 @@ So a currency that was never published can never enter a publication from the UI
 | R6 | The BOT feed needs no change. | Once a draft carrying EUR is published, the feed's copy carries EUR from then on. |
 | R7 | Removing a currency from the draft is out of scope. | Not asked; stopping a currency has its own business questions. |
 
+**Corrected 2026-11-04 (claude/94389a6b):** R1's "39 codes" is the SR batch. The newest BOT batch on xc-v3 has 6 lines. The add list and R3's starting
+modes are replaced by [`board-currencies.md`](board-currencies.md) D-8 and D-9.
+
 ## 3. Class diagram (new and changed units only)
 
 ```mermaid
