@@ -832,6 +832,64 @@ async fn t3_a_blank_requester_name_is_null() {
     room.finish().await;
 }
 
+/// F17a: a request with `requested_by = 'SYSTEM:...'` shows the actor id itself as `requestedByName`.
+#[actix_web::test]
+async fn t3_f17a_system_requester_actor_names_itself() {
+    let room = Room::start().await;
+    let request = room
+        .request(
+            "LEDGER_ADJUSTMENT",
+            &Uuid::new_v4().to_string(),
+            json!({ "branch": B1 }),
+            "SYSTEM:rate-feed:BOT",
+            bangkok(DAY, 9, 0),
+        )
+        .await;
+
+    let items = approval_items(&room).await;
+    let item = item_of(&items, request);
+    assert_eq!(
+        item["requestedByName"], "SYSTEM:rate-feed:BOT",
+        "system actor id is used when no user matches: {item}"
+    );
+    room.finish().await;
+}
+
+/// F17d: a request decided by a `SYSTEM:*` approver shows the actor id itself as `approverName`.
+#[actix_web::test]
+async fn t3_f17d_system_approver_actor_names_itself() {
+    let room = Room::start().await;
+    let request = room
+        .request(
+            "LEDGER_ADJUSTMENT",
+            &Uuid::new_v4().to_string(),
+            json!({ "branch": B1 }),
+            &user_id(MANAGER),
+            bangkok(DAY, 9, 0),
+        )
+        .await;
+    room.exec(
+        "UPDATE approval_requests SET status = 'APPROVED' WHERE id = $1::uuid",
+        &[&request.to_string()],
+    )
+    .await;
+    room.exec(
+        "INSERT INTO approval_decisions (id, request_id, approver_id, approver_role, outcome, reason, at) \
+         VALUES (gen_random_uuid(), $1::uuid, 'SYSTEM:pricing-follow', 'SYSTEM', 'APPROVED', 'auto', now())",
+        &[&request.to_string()],
+    )
+    .await;
+
+    let items = approval_items(&room).await;
+    let item = item_of(&items, request);
+    let decision = &item["decision"];
+    assert_eq!(
+        decision["approverName"], "SYSTEM:pricing-follow",
+        "system approver actor id is used when no user matches: {item}"
+    );
+    room.finish().await;
+}
+
 // ------------------------------------------------------------ the finance sheet
 
 /// Design §2: `ReversalPendingRow` is `{ requestId, createdAt, subject }`, `subject` the view's `ReversalSubject`.
