@@ -76,7 +76,7 @@ export function PasswordField(props: {
       </div>
       {props.hint && <small>{props.hint}</small>}
       {(props.error || (props.field.invalid() && props.field.error())) && (
-        <span id={props.field.errorId} role="alert">
+        <span id={props.field.errorId} role="alert" data-field-error={props.field.name}>
           {props.error || props.field.error()}
         </span>
       )}

@@ -7,6 +7,8 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import { screenT, t } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure } from '../../../shared/i18n/worded-error';
+import { useForm } from '../../../shared/ui/form';
+import { PasswordField } from '../../../shared/ui/PasswordField';
 import { safeNext } from '../../login/home';
 import * as table from './i18n';
 import './sign-in.css';
@@ -60,12 +62,25 @@ export function SignIn(props: {
   let requesting: Promise<void> | undefined;
 
   // Password mode state
+  const form = useForm();
+  const passwordField = form.field('password');
   const [pwdPhone, setPwdPhone] = createSignal('');
   const [pwdPhoneError, setPwdPhoneError] = createSignal('');
   const [pwdPasswordError, setPwdPasswordError] = createSignal('');
   const [pwdPending, setPwdPending] = createSignal(false);
   let pwdPhoneInput: HTMLInputElement | undefined;
   let pwdPasswordInput: HTMLInputElement | undefined;
+
+  const passwordBinding = {
+    ...passwordField,
+    invalid: () => passwordField.invalid() || Boolean(pwdPasswordError()),
+    error: () => pwdPasswordError() || passwordField.error(),
+    ref: (el: HTMLInputElement) => {
+      pwdPasswordInput = el;
+      passwordField.ref(el);
+      el.addEventListener('input', () => setPwdPasswordError(''));
+    },
+  };
 
   const showError = (err: unknown, defaultCodeTarget: 'phone' | 'code') => {
     const fe = fieldError(err, { phone: tr('phone'), code: tr('code') });
@@ -316,23 +331,12 @@ export function SignIn(props: {
               </span>
             </Show>
           </label>
-          <label>
-            {tr('password')}
-            <input
-              ref={pwdPasswordInput}
-              type="password"
-              name="password"
-              autocomplete="current-password"
-              aria-invalid={pwdPasswordError() ? 'true' : undefined}
-              aria-describedby={pwdPasswordError() ? 'pwd-password-error' : undefined}
-              onInput={() => setPwdPasswordError('')}
-            />
-            <Show when={pwdPasswordError()}>
-              <span id="pwd-password-error" role="alert" class="xc-sign-in-error" data-field-error="password">
-                {pwdPasswordError()}
-              </span>
-            </Show>
-          </label>
+          <PasswordField
+            field={passwordBinding}
+            label={tr('password')}
+            autocomplete="current-password"
+            error={pwdPasswordError() || undefined}
+          />
           <button type="submit" disabled={pwdPending()}>
             {tr('signInTitle')}
           </button>
