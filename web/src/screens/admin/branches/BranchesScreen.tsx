@@ -15,6 +15,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
 import { BranchTablets } from './BranchTablets';
+import { ShiftsEditor } from './ShiftsEditor';
 import * as table from './i18n';
 import './branches.css';
 
@@ -464,6 +465,10 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
               </form>
             </div>
           )}
+        </Show>
+
+        <Show when={profile()}>
+          <ShiftsEditor branchId={selectedBranch()} api={api} />
         </Show>
 
         <Show when={canPairTablets() && profile()?.code}>
