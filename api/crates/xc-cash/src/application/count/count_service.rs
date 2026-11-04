@@ -1187,6 +1187,8 @@ impl CashCountService {
                     &count.counted_by,
                     count_id,
                     &opening_pairs,
+                    // CS-7 replaces this with the template the teller chose on the count.
+                    &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
                     now,
                 )
                 .await?;

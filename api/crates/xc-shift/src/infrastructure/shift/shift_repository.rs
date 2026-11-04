@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use sqlx::PgPool;
@@ -27,6 +27,9 @@ type ShiftRow = (
     String,                // close_note
     String,                // open_request_id
     Option<String>,        // close_request_id
+    Option<String>,        // template_id
+    Option<String>,        // template_name
+    NaiveDate,             // business_date
 );
 
 type OpenShiftSqlRow = (
@@ -72,7 +75,7 @@ macro_rules! select_shifts {
     ($tail:literal) => {
         concat!(
             "SELECT id, branch_id, status, opened_at, opened_by, closed_at, closed_by, close_note, \
-             open_request_id, close_request_id FROM shifts ",
+             open_request_id, close_request_id, template_id::text, template_name, business_date FROM shifts ",
             $tail
         )
     };
@@ -103,6 +106,9 @@ fn build_shift(
         note: r.7,
         open_request_id: r.8,
         close_request_id: r.9,
+        template_id: r.10,
+        template_name: r.11,
+        business_date: r.12,
     }
 }
 
@@ -397,8 +403,9 @@ impl ShiftRepository for PgShiftRepository {
         let teller_id = resolve_teller(tx, &shift.branch_id, &shift.opened_by).await?;
 
         sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid)",
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id, \
+             template_id, template_name, business_date) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $6::uuid, $7::uuid, $8, $9)",
         )
         .bind(&shift.id)
         .bind(shift.branch_id.as_str())
@@ -406,6 +413,9 @@ impl ShiftRepository for PgShiftRepository {
         .bind(&shift.opened_by)
         .bind(&shift.open_request_id)
         .bind(&teller_id)
+        .bind(&shift.template_id)
+        .bind(&shift.template_name)
+        .bind(shift.business_date)
         .execute(&mut **tx)
         .await?;
 

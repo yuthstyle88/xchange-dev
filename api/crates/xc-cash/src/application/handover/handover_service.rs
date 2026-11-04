@@ -741,6 +741,8 @@ impl HandoverService {
                 &h.receiver_id,
                 &h.count_id,
                 &counted,
+                // CS-19 replaces this with the template the receiver chose on accepting.
+                &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
                 now,
             )
             .await?;
