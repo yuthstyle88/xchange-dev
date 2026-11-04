@@ -5,6 +5,7 @@ use actix_web::http::StatusCode;
 use pos_error::AppError;
 use xc_cash::domain::shortfall::{ShortPlace, StockShortfall};
 
+use crate::presentation::dto::v3::stock_shortfall::StockShortfallDetails;
 use crate::presentation::http::v3::error::V3Error;
 
 /// The refusal's message when `e` is the posting port's `stockInsufficient`.
@@ -36,13 +37,22 @@ pub fn shortfall_message(s: &StockShortfall) -> String {
     format!("ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: {}", items.join(", "))
 }
 
+/// Builds the structured `StockShortfallDetails` from a `StockShortfall`.
+pub fn shortfall_details(s: &StockShortfall) -> StockShortfallDetails {
+    StockShortfallDetails::from(s)
+}
+
 /// Answers `409 stockInsufficient` naming each short place (`ledger-inventory.md` §5.1.2).
 pub fn stock_refusal_answer(refusal: &str) -> V3Error {
     let s = StockShortfall::from_refusal(refusal);
-    V3Error::new(
+    let mut err = V3Error::new(
         "stockInsufficient",
         None,
         shortfall_message(&s),
         StatusCode::CONFLICT,
-    )
+    );
+    if !s.lines.is_empty() {
+        err = err.with_details(shortfall_details(&s));
+    }
+    err
 }

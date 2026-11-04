@@ -69,7 +69,7 @@ use crate::presentation::http::v3::command::{
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
-use crate::presentation::http::v3::negative_stock::shortfall_message;
+use crate::presentation::http::v3::negative_stock::{shortfall_details, shortfall_message};
 
 // ------------------------------------------------------------ inputs
 
@@ -421,7 +421,8 @@ impl CommandAction for TransactionCreateCommand {
                     None,
                     shortfall_message(&shortfall),
                     StatusCode::CONFLICT,
-                ));
+                )
+                .with_details(shortfall_details(&shortfall)));
             }
         }
         answer(&self.store, tx, made.id).await
@@ -540,5 +541,6 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     TransactionConfirmInput::export_all(&cfg)?;
     TransactionCancelInput::export_all(&cfg)?;
     TransactionDto::export_all(&cfg)?;
+    crate::presentation::dto::v3::stock_shortfall::export_types(dir)?;
     Ok(())
 }
