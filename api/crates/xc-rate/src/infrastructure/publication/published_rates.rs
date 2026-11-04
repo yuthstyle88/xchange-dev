@@ -93,7 +93,11 @@ impl PublishedRates for PgPublishedRates {
                  FROM branches b \
                  JOIN rate_publications p ON p.id = b.current_publication_id \
                  JOIN published_rate_lines l ON l.publication_id = p.id \
-                 WHERE b.id = $1 AND l.denomination_group = 'ALL' \
+                 JOIN branch_currencies bc \
+                   ON bc.branch_id = b.id \
+                  AND bc.currency_code = l.currency_code \
+                  AND bc.group_code = l.denomination_group \
+                 WHERE b.id = $1 AND l.denomination_group = 'ALL' AND bc.display <> 'HIDE' \
                  ORDER BY 1",
             )
             .bind(branch.as_str())
@@ -154,7 +158,12 @@ impl PublishedRates for PgPublishedRates {
                  FROM branches b \
                  JOIN rate_publications p ON p.id = b.current_publication_id \
                  JOIN published_rate_lines l ON l.publication_id = p.id \
-                 WHERE b.id = $1 AND l.currency_code = $2 AND l.denomination_group = $3",
+                 JOIN branch_currencies bc \
+                   ON bc.branch_id = b.id \
+                  AND bc.currency_code = l.currency_code \
+                  AND bc.group_code = l.denomination_group \
+                 WHERE b.id = $1 AND l.currency_code = $2 AND l.denomination_group = $3 \
+                   AND bc.display <> 'HIDE'",
             )
             .bind(branch.as_str())
             .bind(sel.code.as_str())
