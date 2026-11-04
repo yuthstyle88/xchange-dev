@@ -919,3 +919,27 @@ async fn a_rate_of_plain_digits_and_one_dot_is_read_as_written() {
         );
     }
 }
+
+/// Board currencies D-4: one exotic row must not stop USD. Added by the reviewer (claude/94389a6b).
+#[test]
+fn a_non_sentinel_code_twice_keeps_the_first_row_and_the_table_stands() {
+    use xc_rate::infrastructure::reference_source::bot_rows::bot_rows;
+
+    let row = |code: &str, sell: &str| {
+        serde_json::json!({
+            "currency_id": code, "period": "2026-11-03",
+            "buying_sight": "1.0", "buying_transfer": "1.1", "selling": sell,
+        })
+    };
+    let mut detail: Vec<Value> = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"]
+        .iter()
+        .map(|c| row(c, "1.2"))
+        .collect();
+    detail.push(row("SGD", "2.5"));
+    detail.push(row("SGD", "9.9"));
+
+    let rows = bot_rows(&detail).expect("the table stands");
+    assert_eq!(rows.len(), 7);
+    let sgd = rows.iter().find(|r| r["code"] == "SGD").expect("SGD");
+    assert_eq!(sgd["selling"], serde_json::json!(2.5), "the first row");
+}

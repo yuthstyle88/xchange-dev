@@ -99,18 +99,20 @@ pub fn bot_rows(detail: &[serde_json::Value]) -> AppResult<Vec<serde_json::Value
     }
 
     let mut seen_currencies = HashSet::new();
-    for (code, _) in &kept_rows {
-        if !seen_currencies.insert(code.as_str()) {
+    let mut unique_rows = Vec::with_capacity(kept_rows.len());
+    for (code, row) in kept_rows {
+        if seen_currencies.insert(code.clone()) {
+            unique_rows.push(row);
+        } else if BOT_TABLE_SENTINELS.contains(&code.as_str()) {
             return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
         }
     }
     if !BOT_TABLE_SENTINELS
         .iter()
-        .all(|s| seen_currencies.contains(s))
+        .all(|s| seen_currencies.contains(*s))
     {
         return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
     }
 
-    let rows: Vec<serde_json::Value> = kept_rows.into_iter().map(|(_, r)| r).collect();
-    Ok(rows)
+    Ok(unique_rows)
 }
