@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
+import type { BranchCurrenciesData, BranchCurrencyRow } from '../../../shared/api/generated/branch_currencies';
 import type { CashLineInput, CountSubmitInput } from '../../../shared/api/generated/cash';
 import type { CashCountRow, CashCountTotalRow } from '../../../shared/api/generated/cash_counts';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
@@ -55,6 +56,7 @@ export function CountForm(p: CountFormProps): JSX.Element {
   const submitCmd = command<CountSubmitInput, { id: string }>(api, 'POST', '/api/cash-counts');
 
   const [ownDenominations, setOwnDenominations] = createSignal<DenominationRow[]>([]);
+  const [countable, setCountable] = createSignal<string[] | undefined>(undefined);
   const [myShift, setMyShift] = createSignal<MyShift | null>(null);
   const [myShiftLoaded, setMyShiftLoaded] = createSignal<boolean>(p.kind !== 'CLOSE');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
@@ -68,6 +70,20 @@ export function CountForm(p: CountFormProps): JSX.Element {
   });
 
   onMount(() => {
+    void (async () => {
+      try {
+        const res = await api.view<BranchCurrenciesData | BranchCurrencyRow[]>('branch_currencies', {
+          branch: p.ctx.me.branchId,
+        });
+        const data = res.data;
+        const rows = Array.isArray(data) ? data : data?.rows;
+        if (Array.isArray(rows)) {
+          setCountable(rows.map((r) => r.code));
+        }
+      } catch {
+        setCountable(undefined);
+      }
+    })();
     if (!p.denominations) {
       void (async () => {
         try {
@@ -213,6 +229,7 @@ export function CountForm(p: CountFormProps): JSX.Element {
     <form data-testid="shift-count-form" class="xc-shift-count-form" onSubmit={handleSubmit}>
       <CurrencyCount
         denominations={denoms()}
+        countable={countable()}
         locked={countLocked()}
         expected={countExpected()}
         quantities={quantities()}
