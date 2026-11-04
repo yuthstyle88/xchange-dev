@@ -76,7 +76,7 @@ export function DeskPage<S extends FrameStore>(props: {
         </Show>
         <Show when={canBackdate()}>
           <a href="/desk/backdated" data-desk-backdated-link="">
-            คีย์ย้อนหลัง
+            {t('backdatedLink')}
           </a>
         </Show>
         {task?.nav()}

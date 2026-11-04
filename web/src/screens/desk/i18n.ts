@@ -51,6 +51,7 @@ export const th = {
   stockCancelReason: 'ยกเลิกระหว่างรอเบิก OD เข้าลิ้นชัก',
   lowCashTitle: 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการเบิก OD จากตู้เซฟ',
   lowCashCurrencies: 'สกุลที่เหลือน้อย: {currencies}',
+  backdatedLink: 'คีย์ย้อนหลัง',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -103,4 +104,5 @@ export const en: Record<keyof typeof th, string> = {
   stockCancelReason: 'Cancelled while waiting for the drawer to be topped up',
   lowCashTitle: 'The drawer is running low. Ask the manager to move cash from the safe',
   lowCashCurrencies: 'Low on: {currencies}',
+  backdatedLink: 'Backdated entry',
 };
