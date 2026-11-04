@@ -592,7 +592,13 @@ async fn assert_still_draft(room: &Room, c: &Cast, id: &str, safe: &str, what: &
 async fn f1_approving_a_safe_to_drawer_move_the_safe_cannot_cover_is_refused() {
     let room = Room::start().await;
     let c = cast(&room).await;
-    let id = submitted(&room, &c, 12, json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT })).await;
+    let id = submitted(
+        &room,
+        &c,
+        12,
+        json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT }),
+    )
+    .await;
 
     let a = approve_over_http(&room, &c, &id).await;
 
@@ -606,7 +612,13 @@ async fn f1_approving_a_safe_to_drawer_move_the_safe_cannot_cover_is_refused() {
 async fn f1_approving_a_branch_move_the_safe_cannot_cover_is_refused_on_every_path() {
     let room = Room::start().await;
     let c = cast(&room).await;
-    let id = submitted(&room, &c, 12, json!({ "kind": "BRANCH", "toBranchId": B09 })).await;
+    let id = submitted(
+        &room,
+        &c,
+        12,
+        json!({ "kind": "BRANCH", "toBranchId": B09 }),
+    )
+    .await;
 
     let err = TransferFlow::pg(room.pool.clone())
         .decide(
@@ -631,12 +643,26 @@ async fn f1_approving_a_branch_move_the_safe_cannot_cover_is_refused_on_every_pa
 async fn f1_a_move_the_safe_covers_is_approved_and_dispatches() {
     let room = Room::start().await;
     let c = cast(&room).await;
-    let id = submitted(&room, &c, 8, json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT })).await;
+    let id = submitted(
+        &room,
+        &c,
+        8,
+        json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT }),
+    )
+    .await;
 
     let a = approve_over_http(&room, &c, &id).await;
-    assert_eq!(a.status, StatusCode::OK, "approve within the safe: {}", a.text);
+    assert_eq!(
+        a.status,
+        StatusCode::OK,
+        "approve within the safe: {}",
+        a.text
+    );
     assert_eq!(room.stored(&id).await, ("APPROVED".to_owned(), 0));
-    assert_dispatched(&dispatch(&room, &c, &id, &unique("key")).await, "within the safe");
+    assert_dispatched(
+        &dispatch(&room, &c, &id, &unique("key")).await,
+        "within the safe",
+    );
     room.finish().await;
 }
 
@@ -645,13 +671,28 @@ async fn f1_a_move_the_safe_covers_is_approved_and_dispatches() {
 async fn f1_after_a_top_up_the_same_request_is_approved() {
     let room = Room::start().await;
     let c = cast(&room).await;
-    let id = submitted(&room, &c, 12, json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT })).await;
-    assert_refused(&approve_over_http(&room, &c, &id).await, SAFE_SHORT, "before the top-up");
+    let id = submitted(
+        &room,
+        &c,
+        12,
+        json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT }),
+    )
+    .await;
+    assert_refused(
+        &approve_over_http(&room, &c, &id).await,
+        SAFE_SHORT,
+        "before the top-up",
+    );
 
     fund(&room.pool, CashPlace::Safe(BranchId::new(B01)), "100.00").await;
     let a = approve_over_http(&room, &c, &id).await;
 
-    assert_eq!(a.status, StatusCode::OK, "approve after the top-up: {}", a.text);
+    assert_eq!(
+        a.status,
+        StatusCode::OK,
+        "approve after the top-up: {}",
+        a.text
+    );
     assert_eq!(room.stored(&id).await, ("APPROVED".to_owned(), 0));
     room.finish().await;
 }
@@ -661,7 +702,13 @@ async fn f1_after_a_top_up_the_same_request_is_approved() {
 async fn f1_rejecting_a_move_the_safe_cannot_cover_still_works() {
     let room = Room::start().await;
     let c = cast(&room).await;
-    let id = submitted(&room, &c, 12, json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT })).await;
+    let id = submitted(
+        &room,
+        &c,
+        12,
+        json!({ "kind": "SAFE_TO_DRAWER", "toShiftId": SHIFT }),
+    )
+    .await;
     let request: String = sqlx::query_scalar(
         "SELECT approval_request_id::text FROM cash_transfers WHERE id = $1::uuid",
     )
