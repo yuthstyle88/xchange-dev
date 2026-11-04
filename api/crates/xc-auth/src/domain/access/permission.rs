@@ -110,11 +110,16 @@ pub enum Permission {
     /// `branchExchangeLimitSave`). No module; seeded on EXECUTIVE only at seed v10.
     #[serde(rename = "branchSettingsSave")]
     BranchSettingsSave,
+    /// Backdated keying (`docs/design/backdated-keying.md` §3; owner rule R1 of 2026-11-04 *"Owner and Manager roles
+    /// only"*): key an exchange at its real past time with no shift (`transactionBackdate`). No module; seeded on
+    /// EXECUTIVE (which the Owner holds) and BRANCH_MANAGER only, at seed v11.
+    #[serde(rename = "exchangeBackdate")]
+    ExchangeBackdate,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 67] = [
+    pub const ALL: [Permission; 68] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -182,5 +187,6 @@ impl Permission {
         Permission::PricingFormulaSave,
         Permission::SettingsRead,
         Permission::BranchSettingsSave,
+        Permission::ExchangeBackdate,
     ];
 }

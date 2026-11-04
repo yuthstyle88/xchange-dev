@@ -43,8 +43,8 @@ fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
     // Restated for #6004 (user-management-rbac.md §11.11): Permission::ALL grows 65 -> 67 (SettingsRead, BranchSettingsSave).
     assert_eq!(
         Permission::ALL.len(),
-        67,
-        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), 63 (staff corrections AttendanceCloseFor), 64 (LA-1), 65 (#5733 PricingFormulaSave), 67 (#6004 SettingsRead, BranchSettingsSave)"
+        68,
+        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), 63 (staff corrections AttendanceCloseFor), 64 (LA-1), 65 (#5733 PricingFormulaSave), 67 (#6004 SettingsRead, BranchSettingsSave), 68 (backdated keying ExchangeBackdate)"
     );
     for p in APPROVAL_KINDS {
         assert_eq!(
@@ -89,7 +89,8 @@ fn seed_version_4_adds_the_nine() {
     // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
     // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8; #5733: PricingFormulaSave at 9.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
-    assert_eq!(RoleGrants::SEED_VERSION, 10);
+    // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
+    assert_eq!(RoleGrants::SEED_VERSION, 11);
     for p in APPROVAL_KINDS {
         // LA-1 (ledger-inventory.md §13.3): the tenth kind enters at version 8, not with §11.9's nine.
         let want = if p == P::ApproveLedgerAdjustment {

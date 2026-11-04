@@ -33,7 +33,8 @@ pub const ROW_COLUMNS: &str = "\
     t.staff_id, \
     t.notes, \
     t.shift_id, \
-    p.slip_file_key AS slip_key";
+    p.slip_file_key AS slip_key, \
+    t.backdated";
 
 /// From clause with joins for transaction list views (§7, §8).
 pub const ROW_FROM: &str = "\
@@ -94,6 +95,7 @@ pub struct TxSqlRow {
     pub notes: String,
     pub shift_id: Option<String>,
     pub slip_key: Option<String>,
+    pub backdated: bool,
 }
 
 pub type TransactionSqlRow = TxSqlRow;
@@ -221,6 +223,7 @@ pub struct TransactionRow {
     pub reference_percent: Option<String>,
     pub payment_ref: Option<String>,
     pub slip_url: Option<String>,
+    pub backdated: bool,
 }
 
 impl TransactionRow {
@@ -333,6 +336,7 @@ impl TransactionRow {
             reference_percent: ref_pct_str,
             payment_ref,
             slip_url,
+            backdated: false,
         })
     }
 
@@ -340,10 +344,12 @@ impl TransactionRow {
     pub fn from_sql_row(r: TxSqlRow) -> Result<Self, AppError> {
         let status = r.status.clone();
         let cancel_reason = r.cancel_reason.clone();
+        let backdated = r.backdated;
         let record = TransactionRecord::try_from(r)?;
         let mut row = Self::try_from_record(&record)?;
         row.status = status;
         row.cancel_reason = cancel_reason;
+        row.backdated = backdated;
         Ok(row)
     }
 }
@@ -378,6 +384,7 @@ mod tests {
             notes: "".into(),
             shift_id: None,
             slip_key: None,
+            backdated: false,
         }
     }
 
