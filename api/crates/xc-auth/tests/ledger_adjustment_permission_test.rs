@@ -212,10 +212,11 @@ async fn la_t3_a_version_7_database_grants_it_to_finance_and_its_custom_groups_o
             "{role:?}: gains exactly ApproveLedgerAdjustment if FINANCE, else nothing"
         );
         // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
+        // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11.
         assert_eq!(
             seed_version(&db, role.as_str()).await,
-            10,
-            "{role:?} ends at seed version 10 (#5733 raised it to 9, #6004 to 10)"
+            11,
+            "{role:?} ends at seed version 11 (#5733 raised it to 9, #6004 to 10, backdated keying to 11)"
         );
     }
     assert_eq!(
@@ -277,7 +278,8 @@ async fn la_t3_a_fresh_database_seeds_it_on_finance_at_version_8() {
     );
     // #5733 raised the seed version to 9 after LA-1's 8.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
-    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 10);
+    // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11.
+    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 11);
     db.drop_schema().await;
 }
 

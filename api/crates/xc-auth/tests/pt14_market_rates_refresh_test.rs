@@ -50,8 +50,8 @@ fn pt14_permission_all_holds_market_rates_refresh_exactly_once() {
     // Restated for #6004 (user-management-rbac.md §11.11): Permission::ALL grows 65 -> 67 (SettingsRead, BranchSettingsSave).
     assert_eq!(
         Permission::ALL.len(),
-        67,
-        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9), then 62 (BQ-7), 63 (staff corrections), 64 (LA-1), 65 (#5733), 67 (#6004)"
+        68,
+        "Permission::ALL grows 51 -> 52 (PT-14), then 52 -> 61 (§11.9), then 62 (BQ-7), 63 (staff corrections), 64 (LA-1), 65 (#5733), 67 (#6004), 68 (backdated keying)"
     );
 }
 
