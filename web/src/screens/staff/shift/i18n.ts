@@ -37,6 +37,7 @@ export const th: Record<string, string> = {
   difference: 'ผลต่าง',
   shiftOpenedDaysAgo: 'กะนี้เปิดเมื่อ {date} ({n} วันก่อน)',
   shiftOpenedOneDayAgo: 'กะนี้เปิดเมื่อ {date} (1 วันก่อน)',
+  outsideShiftHours: 'นอกเวลากะ',
 };
 
 export const en: Record<string, string> = {
@@ -77,4 +78,5 @@ export const en: Record<string, string> = {
   difference: 'Difference',
   shiftOpenedDaysAgo: 'This shift opened on {date} ({n} days ago)',
   shiftOpenedOneDayAgo: 'This shift opened on {date} (1 day ago)',
+  outsideShiftHours: 'Outside shift hours',
 };
