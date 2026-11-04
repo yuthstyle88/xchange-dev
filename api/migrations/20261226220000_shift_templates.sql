@@ -34,6 +34,20 @@ SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.position
        ('C', time '22:00', time '06:00', 2)
      ) AS d (name, starts_at, ends_at, position);
 
+-- Every branch created later gets the same defaults, whichever path inserts it (the admin command, a test fixture).
+-- The Owner edits the list afterwards; a branch never starts without a plan.
+CREATE FUNCTION branches_default_shift_templates() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position)
+    VALUES (NEW.organization_id, NEW.id, 'A', time '06:00', time '14:00', 0),
+           (NEW.organization_id, NEW.id, 'B', time '14:00', time '22:00', 1),
+           (NEW.organization_id, NEW.id, 'C', time '22:00', time '06:00', 2);
+    RETURN NEW;
+END $$;
+CREATE TRIGGER branches_default_shift_templates
+    AFTER INSERT ON branches
+    FOR EACH ROW EXECUTE FUNCTION branches_default_shift_templates();
+
 -- A teller's shift records the template, its name at opening, and the business date.
 ALTER TABLE shifts
     ADD COLUMN template_id   uuid REFERENCES shift_templates (id),
