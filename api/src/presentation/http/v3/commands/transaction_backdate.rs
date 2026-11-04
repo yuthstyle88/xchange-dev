@@ -34,6 +34,7 @@ use crate::presentation::http::v3::command::{
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
+use crate::presentation::http::v3::negative_stock::stock_refusal_answer;
 
 /// `[required]` §4's body. Every figure is the caller's.
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -97,9 +98,9 @@ fn refusal(e: AppError) -> V3Error {
         AppError::Domain(ref m) if m.starts_with("dayClosed") => {
             V3Error::new("dayClosed", None, m.clone(), StatusCode::CONFLICT)
         }
-        AppError::Domain(ref m) if m.starts_with("stockInsufficient") => {
-            V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT)
-        }
+        // The SAFE posting's raw marker becomes the shared 409: the Thai message plus the shortfall details
+        // (`ledger-inventory.md` §5.1.2), as `complete.rs` and `reversal_post.rs` answer it.
+        AppError::Domain(ref m) if m.starts_with("stockInsufficient") => stock_refusal_answer(m),
         other => super::transactions::refusal(other),
     }
 }
@@ -215,4 +216,36 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
     TransactionBackdateInput::export_all(&cfg)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The SAFE posting's raw `stockInsufficient` marker is answered as the shared 409 (`negative_stock.rs`): the
+    /// Thai message and the shortfall details, never the internal string.
+    #[test]
+    fn a_short_safe_answers_the_shared_stock_refusal() {
+        let raw = "stockInsufficient: the posting takes SAFE below zero; \
+                   shortfall=[{\"currency\":\"THB\",\"place\":\"SAFE\",\"shortBy\":\"15975\"}]";
+        let err = refusal(AppError::Domain(raw.to_owned()));
+        assert_eq!(err.code, "stockInsufficient");
+        assert_eq!(err.status, StatusCode::CONFLICT);
+        assert!(
+            err.message.starts_with("ยอดเงินสดไม่พอ"),
+            "the Thai shortfall message, not the marker: {}",
+            err.message
+        );
+        assert!(!err.message.contains("shortfall=["), "{}", err.message);
+        assert!(err.details.is_some(), "the shortfall details are attached");
+    }
+
+    #[test]
+    fn a_closed_day_stays_409_day_closed() {
+        let err = refusal(AppError::Domain(
+            "dayClosed: business date 2026-11-01 is closed".to_owned(),
+        ));
+        assert_eq!(err.code, "dayClosed");
+        assert_eq!(err.status, StatusCode::CONFLICT);
+    }
 }
