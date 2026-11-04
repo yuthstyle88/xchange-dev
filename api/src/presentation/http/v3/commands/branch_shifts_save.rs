@@ -22,7 +22,7 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::branch_shifts::{BranchShiftsData, BranchShiftsSaveInput};
 use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, Locks, server_error,
+    CommandAction, CommandEndpoint, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 
@@ -72,10 +72,6 @@ impl CommandAction for BranchShiftsSaveCommand {
     type Output = BranchShiftsData;
     const ROUTE: &'static str = "/api/branches/shifts";
     const METHOD: Method = Method::PUT;
-
-    fn locks(&self, _branch: &BranchId, input: &Self::Input) -> Locks {
-        Locks::One(BranchId::new(&input.branch))
-    }
 
     async fn run(
         &self,
@@ -148,6 +144,12 @@ impl CommandAction for BranchShiftsSaveCommand {
                     let (reason, detail) = rest.split_once(':').unwrap_or((rest, ""));
                     shift_plan_invalid(reason, detail)
                 }
+                pos_error::AppError::Validation(msg) if msg == "shiftTemplateUnknown" => V3Error::new(
+                    "shiftTemplateUnknown",
+                    None,
+                    "ไม่พบกะที่ต้องการแก้ไข กรุณารีเฟรช".to_string(),
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                ),
                 pos_error::AppError::Domain(msg) => {
                     V3Error::new("domainError", None, msg, StatusCode::BAD_REQUEST)
                 }
