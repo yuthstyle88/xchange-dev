@@ -64,11 +64,11 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 
 | # | Rule |
 |---|---|
-| T1 | **Anchor.** The plan's anchor `S0` is the earliest template start. With the defaults `S0 = 10:00`. |
+| T1 | **Anchor.** The plan's anchor `S0` is the template start that follows the longest stretch of the 24-hour clock that no template covers. A tie, or a plan with no uncovered stretch, takes the earliest such start. With the defaults the uncovered stretch is 04:00–10:00, so `S0 = 10:00`. (The earliest start alone is wrong: with A 10–19, C 19–04 and D 00:30–06:00 it would anchor the day at 00:30 and refuse a normal plan.) |
 | T2 | **Offsets.** A template's start offset is `(start − S0) mod 24 h`; its duration is `end − start`, plus 24 h when `end <= start` (crosses midnight). End offset = start offset + duration. |
-| T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the defaults: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight (e.g. 02:00 with `S0 = 10:00`) still belongs to the date before. |
+| T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the defaults: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight inside the night (D 00:30–06:00 next to C 19–04) belongs to the date before. |
 | T4 | **Service span.** The branch's service window on business date `d` is `[d + S0, d + S0 + max endOffset)`. Defaults: 10:00–04:00 next day. This **replaces** `opening_hours` as the gate for start, begin and save (§5). |
-| T5 | **Plan validity.** `max endOffset <= 24 h` (the span fits in one day), names are non-empty, ≤ 40 characters and unique case-insensitively, `start != end`, and a break (both ends or neither) lies inside its shift, measured on the same offsets. 1 to 12 templates. |
+| T5 | **Plan validity.** `max endOffset <= 24 h` (only reachable when no stretch is uncovered, e.g. A 08–20 + B 20–09), names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively, `start != end`, and a break lies inside its shift, measured on the same offsets. 1 to 12 templates. A break with only one end is refused by the command when it parses the body (`breakIncomplete`), before `validate`. |
 | T6 | **Covering now.** Template `t` covers instant `now` when `start(t, d) <= now < end(t, d)` for `d` = local today or local yesterday. Each covering instance carries its own `d`. |
 | T7 | **Business date of an instant.** `d` such that `now` lies in the service span of `d`. Outside every span there is none. |
 | T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4). |
@@ -84,6 +84,7 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
   opens the shift: the teller's choice was checked when they counted.
 - `[required]` `GET /api/v3/views/open_shift_choices?branch=` returns the covering instances: `{templateId, name, businessDate, startsAt, endsAt, breakStartsAt?, breakEndsAt?}[]`, plus `preselect: templateId | null`, set when exactly one covers now. The count form shows a picker; one choice is preselected; none shows "outside shift hours" and disables Save.
 - `[proposed]` No grace before the start (Q3).
+- `[required]` **Handover.** Accepting a handover opens the receiver's drawer (`HandoverService`, `xc-cash/src/application/handover/handover_service.rs:738`), so it follows the same rule: the accept carries the receiver's `shiftTemplateId`, checked against the accept time, with the same refusals. Ticket CS-19.
 
 ### 2.4 Selling and the business date
 
@@ -210,7 +211,7 @@ classDiagram
         <<xc-shift/src/domain/shift/value_objects/opened_as.rs · skeleton>>
         +template_id: Option~String~
         +template_name: Option~String~
-        +business_date: NaiveDate
+        +business_date: Option~NaiveDate~
     }
     class Shift {
         <<xc-shift/src/domain/shift/entities/shift.rs · skeleton adds fields; CS-6 reads them>>
@@ -271,7 +272,8 @@ Files under `xc-shift/` are `api/crates/xc-shift/`; `xc-cash/` is `api/crates/xc
 | `ShiftError::{OutsideShiftWindow, ShiftNotChosen}` | `xc-shift/src/domain/shift/value_objects/shift_error.rs` | skeleton | CS-7 |
 | span from the plan | `api/src/infrastructure/custody/custody_ports.rs` | **CS-4** | — |
 | hours + `onBreak` on the floor | `api/src/application/staff_floor/reader.rs` (+ `StaffFloorTeller.onBreak` DTO field, skeleton) | **CS-5** | web |
-| `open_on_verified(..., &OpenedAs, ..)` | `xc-shift/src/application/shift/service.rs` | signature: skeleton · body: **CS-6** | CS-7 |
+| `open_on_verified(..., &OpenedAs, ..)` writing the three columns, `insert_shift` likewise | `xc-shift/src/application/shift/service.rs`, `shift_repository.rs` | **skeleton** (whole; it must write the columns for today's tests to stay green) | CS-7, CS-19 |
+| handover accept carries the receiver's template | `xc-cash/src/application/handover/handover_service.rs` + its command input | **CS-19** | — |
 | OPEN count carries the template | `xc-cash/src/application/count/count_service.rs` + input field in `api/src/presentation/http/v3/commands/cash.rs` | **CS-7** | — |
 | LIVE `value_date` | `api/src/application/workflows/exchange/create.rs` | **CS-8** | reports |
 | `branchShiftsSave` + `branch_shifts` view + DTO + policy rows | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs` (new), `xc-auth/src/domain/policy/areas/branch_shifts.rs` (new) | DTO + policy: skeleton · handlers: **CS-9** | web CS-14 |
@@ -335,7 +337,8 @@ impl ShiftPlanService {
 }
 
 // xc-shift/src/domain/shift/value_objects/opened_as.rs
-pub struct OpenedAs { pub template_id: Option<String>, pub template_name: Option<String>, pub business_date: NaiveDate }
+pub struct OpenedAs { pub template_id: Option<String>, pub template_name: Option<String>, pub business_date: Option<NaiveDate> }
+impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates the row (§5)
 ```
 
 ## 4. Behaviour tables (up-front tests)
@@ -355,9 +358,12 @@ pub struct OpenedAs { pub template_id: Option<String>, pub template_name: Option
 | P9 | `span_for(5 Nov 05:00)` | the 5 Nov span `(5 Nov 10:00, 6 Nov 04:00)` |
 | P10 | `on_break(B, 4 Nov 18:30)` true; `on_break(B, 4 Nov 19:00)` false; `on_break(C, 4 Nov 23:30)` true |
 | P11 | `instance(C, 4 Nov)` | `starts 4 Nov 19:00, ends 5 Nov 04:00, break 4 Nov 23:00–5 Nov 00:00` |
-| P12 | `validate` on: empty list / 13 rows / blank name / 41-char name / "a" and "A" / start = end / break with one end / break 05:00–06:00 in A / A 10–19 + D 09:00–10:30 (span 24 h 30) | `None` / `TooMany` / `EmptyName(i)` / `NameTooLong(i)` / `DuplicateName(1)` / `ZeroLength(i)` / `BreakIncomplete(i)` / `BreakOutsideShift(0)` / `SpanOver24h` |
+| P12 | `validate` on: empty list / 13 rows / blank name / 41-char name / "A" and " a " / start = end / break 05:00–06:00 in A / A 08–20 + B 20–09 (no gap, 25 h) | `None` / `TooMany` / `EmptyName(1)` / `NameTooLong(0)` / `DuplicateName(1)` / `ZeroLength(1)` / `BreakOutsideShift(0)` / `SpanOver24h`; a 40-character name and an exact 24 h plan (08–20 + 20–08) are accepted; names come back trimmed, in order |
 | P13 | `validate(defaults())` | `Ok`, unchanged |
-| P14 | a plan whose earliest start is 02:00 (one template 02:00–08:00) | anchor 02:00; `business_date_of(3 Nov 03:00)` = 3 Nov |
+| P14 | a plan whose only template is 02:00–08:00 | anchor 02:00; `business_date_of(3 Nov 03:00)` = 3 Nov |
+| P15 | A 10–19, C 19–04, D 00:30–06:00 | anchor 10:00; at 5 Nov 01:00 covering = `[C@4 Nov, D@4 Nov]`; span of 4 Nov = 10:00–5 Nov 06:00 |
+| P16 | the defaults in `Asia/Tokyo` | 10:00 Tokyo = 08:00 Bangkok opens A |
+| P17 | an empty plan | covers nothing, no span, no business date |
 
 ### CS-2 `PgShiftTemplateStore` (DB test, `TEST_DATABASE_URL`)
 
@@ -394,7 +400,9 @@ pub struct OpenedAs { pub template_id: Option<String>, pub template_name: Option
 
 | # | Case | Required |
 |---|---|---|
-| O1 | `open_on_verified` with `OpenedAs{A, "A", 4 Nov}` | the row has `template_id`, `template_name = 'A'`, `business_date = 2026-11-04`; `Shift` returned with the same |
+| O1 | `open_on_verified` with `OpenedAs{A, "A", Some(4 Nov)}` | the row has `template_id`, `template_name = 'A'`, `business_date = 2026-11-04`; `Shift` returned with the same (skeleton) |
+| O2 | `OpenedAs::untemplated()` at 5 Nov 02:00 Bangkok | the trigger dates the row 5 Nov (the calendar rule of the backfill) |
+| H1 | accept a handover at 19:10 choosing C | the receiver's shift opens as C, 4 Nov; choosing A refuses `outsideShiftWindow` |
 | C1 | OPEN count at 05:00 | `409 outsideShiftWindow`; no count row |
 | C2 | OPEN count at 15:30 choosing B | stored with B and 4 Nov |
 | C3 | OPEN count at 11:00 choosing B | `409 outsideShiftWindow` |
@@ -481,7 +489,22 @@ ALTER TABLE shifts
 ALTER TABLE shifts
     ADD CONSTRAINT shifts_template_named CHECK ((template_id IS NULL) = (template_name IS NULL));
 
--- Shifts opened before this feature: the business date is the local date they opened on.
+-- A shift written without a business date (one opened with no template) is dated by the local day it opened on.
+-- Templated shifts always write it (ShiftService::open_on_verified).
+CREATE FUNCTION shifts_business_date_default() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.business_date IS NULL THEN
+        SELECT (NEW.opened_at AT TIME ZONE b.timezone)::date
+          INTO NEW.business_date
+          FROM branches b
+         WHERE b.id = NEW.branch_id;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER shifts_business_date_default
+    BEFORE INSERT ON shifts
+    FOR EACH ROW EXECUTE FUNCTION shifts_business_date_default();
+
 UPDATE shifts s
    SET business_date = (s.opened_at AT TIME ZONE b.timezone)::date
   FROM branches b
@@ -511,9 +534,13 @@ SELECT count(*) AS branches_without_org FROM branches WHERE organization_id IS N
 SELECT count(*) AS open_counts_pending FROM cash_counts WHERE kind = 'OPEN' AND verified_at IS NULL AND rejected_at IS NULL;  -- should be 0 at deploy
 ```
 
-**(3) Deploy order:** migrations run at boot with the new binary (`sqlx::migrate!`). The old binary on the new schema:
-`INSERT INTO shifts` without `business_date` fails `NOT NULL`, so **a rollback to the old binary needs
-`ALTER TABLE shifts ALTER COLUMN business_date DROP NOT NULL` first**. Everything else the old binary ignores.
+**Why a trigger.** 115 files insert into `shifts` directly (`grep -rln "INSERT INTO shifts" api` at `6334e748`, nearly all test
+fixtures). A bare `NOT NULL` would break every one of them. The trigger applies the backfill's own rule to any insert that
+does not name a date, so the column stays `NOT NULL` and the reader never falls back. Every production insert that knows the
+template writes the date itself.
+
+**(3) Deploy order:** migrations run at boot with the new binary (`sqlx::migrate!`). The old binary on the new schema still
+works: its `INSERT INTO shifts` gets its date from the trigger, and it ignores the new table and columns. A rollback needs no SQL.
 
 **(4) What `down` loses:** dropping the table and columns loses the configured plans, each shift's name and business date, and
 each pending count's choice. Shifts and counts themselves survive.
@@ -522,6 +549,8 @@ each pending count's choice. Shifts and counts themselves survive.
 -- down (by hand, not shipped)
 ALTER TABLE cash_counts DROP CONSTRAINT cash_counts_template_only_open, DROP CONSTRAINT cash_counts_template_dated,
     DROP COLUMN business_date, DROP COLUMN shift_template_id;
+DROP TRIGGER shifts_business_date_default ON shifts;
+DROP FUNCTION shifts_business_date_default();
 ALTER TABLE shifts DROP CONSTRAINT shifts_template_named,
     DROP COLUMN business_date, DROP COLUMN template_name, DROP COLUMN template_id;
 DROP TABLE shift_templates;
@@ -552,13 +581,13 @@ DROP TABLE shift_templates;
 | CS-3 `ShiftPlanService` | logic | Argon | `application/shift_plan/service.rs` | 1 |
 | CS-4 custody window | logic | Argon | `custody_ports.rs` | 1 |
 | CS-5 floor hours + onBreak | logic | Argon | `staff_floor/reader.rs` | 1 (onBreak part after Q1) |
-| CS-6 `open_on_verified` | mechanical | Flash | `shift/service.rs` | 1 |
 | CS-7 OPEN count | guarded | Argon | `count_service.rs`, `commands/cash.rs` | 1 |
 | CS-8 LIVE `value_date` | guarded | Argon | `create.rs` | 1 |
 | CS-9 save command + view | mechanical | Flash | `branch_shifts_save.rs`, `views/branch_shifts.rs` | 1 |
 | CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs` | 1 |
 | CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + DTOs | 1 |
 | CS-13 seed on create | mechanical | Flash | `compat/rpc.rs` | 1 |
+| CS-19 handover accept | guarded | Argon | `handover_service.rs` + accept command input | 1 |
 | CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 2 (after CS-9) |
 | CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 2 (after CS-10) |
 | CS-16 admin cash UI | mechanical | Flash | `Cash.tsx`, `ShiftDetail.tsx` | 2 (after CS-11) |
@@ -566,7 +595,7 @@ DROP TABLE shift_templates;
 | CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | 3 (after CS-12) |
 | CS-18 floor onBreak UI | mechanical | Flash | `FloorCard.tsx` | after Q1 |
 
-Wave 1 is twelve disjoint File scopes, released together. Up-front tests for every `logic`/`guarded` ticket are written on the
+Wave 1 is twelve disjoint File scopes (CS-6 folded into the skeleton), released together. Up-front tests for every `logic`/`guarded` ticket are written on the
 skeleton; `mechanical` tickets carry the behaviour table and the reviewer checks each row has a test that fails when reverted.
 
 ## 9. Out of scope (found, not fixed here)
