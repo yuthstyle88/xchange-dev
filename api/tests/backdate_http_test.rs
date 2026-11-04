@@ -556,7 +556,12 @@ async fn invalid_quantity_is_refused() {
         let mut b = body(OWNER, &live);
         b["quantity"] = json!(bad_qty);
         let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
-        assert_eq!(a.status, StatusCode::BAD_REQUEST, "case {bad_qty}: {}", a.text);
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "case {bad_qty}: {}",
+            a.text
+        );
         assert_eq!(a.code(), "validationFailed", "case {bad_qty}: {}", a.text);
         assert_eq!(a.field(), "quantity", "case {bad_qty}: {}", a.text);
     }
