@@ -83,7 +83,7 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 | T2 | **Offsets.** A template's start offset is `(start − S0) mod 24 h`; its duration is `end − start`, plus 24 h when `end <= start` (crosses midnight). End offset = start offset + duration. |
 | T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the first table: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. With the defaults: A = d 06:00–14:00, B = d 14:00–22:00, C = d 22:00–d+1 06:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight inside the night (D 00:30–06:00 next to C 19–04) belongs to the date before. |
 | T4 | **Business day.** Business date `d` is the 24 hours `[d + S0, d + S0 + 24 h)`. A shift straddling the cutover (C 22–07 with `S0` = 06:00) belongs to the day it started (T3), so its instance may end after the business day does. This span **replaces** `opening_hours` as the gate for start, begin and save. |
-| T5 | **Plan validity.** Names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively; `start != end`; a break, when set, lies strictly inside its shift; 1 to 12 templates; and **the plan covers all 24 hours**. The first uncovered window going forward from `S0` is refused as `PlanRefusal::Gap { from, to }` (wire `shiftPlanInvalid:gap:04:00-06:00`, message *"ช่วง 04:00–06:00 ไม่มีกะ"*). Overlaps are allowed. |
+| T5 | **Plan validity.** Names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively; `start != end`; a break, when set, lies strictly inside its shift (it may not start at the shift's start or end at its end); 1 to 12 templates; and **the plan covers all 24 hours**. The first uncovered window going forward from `S0` is refused as `PlanRefusal::Gap { from, to }` (wire `shiftPlanInvalid:gap:04:00-06:00`, message *"ช่วง 04:00–06:00 ไม่มีกะ"*). Overlaps are allowed. |
 | T6 | **Covering now.** Template `t` covers `now` when `start(t, d) <= now < end(t, d)` for `d` = local today, yesterday or the day before (a long shift reaches two days). Each covering instance carries its own `d`. |
 | T7 | **Business date of an instant.** The `d` (yesterday or today) whose business day holds it; always defined for a non-empty plan. |
 | T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4 = A). |
@@ -115,7 +115,7 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
   (`xc-cash/src/domain/count/cash_count.rs:40`) gains `shift_template_id` and `business_date`: both in CS-7's File scope.
 - `[required]` `GET /api/v3/views/open_shift_choices?branch=` returns the covering instances: `{templateId, name, businessDate, startsAt, endsAt, breakStartsAt?, breakEndsAt?}[]`, plus `preselect: templateId | null`, set when exactly one covers now. The count form shows a picker; one choice is preselected; none shows "outside shift hours" and disables Save.
 - `[proposed]` No grace before the start (Q3).
-- `[required]` **Handover.** Accepting a handover opens the receiver's drawer (`HandoverService::accept…`, `xc-cash/src/application/handover/handover_service.rs:738`), so it follows rule 3: the accept carries the **receiver's** `shiftTemplateId`, checked against the accept time (not the giver's template: a handover at 14:00 is A → B), with the same refusals; the receiver's shift gets that instance's name and business date. The skeleton passes `OpenedAs::untemplated()` there until CS-19 lands. The three test files that call `open_on_verified` were updated by the skeleton.
+- `[required]` **Handover.** Accepting a handover opens the receiver's drawer (`HandoverService::accept…`, `xc-cash/src/application/handover/handover_service.rs:738`), so it follows rule 3: the accept carries the **receiver's** `shiftTemplateId`, checked against the accept time (not the giver's template: a handover at 14:00 is A → B), with the same refusals; the receiver's shift gets that instance's name and business date. Until CS-19 lands, the skeleton passes `OpenedAs::untemplated()` there, so a handed-over drawer opens untemplated and dated by the trigger (O2); this is a temporary gap in the feat branch, closed before the feat→main merge. The three test files that call `open_on_verified` were updated by the skeleton.
 
 ### 2.4 Selling and the business date
 
@@ -216,13 +216,19 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
   queue's WAITING/CALLED tickets and the kiosk's unfinished requests (`xc-queue/src/application/day/queue_day_hook.rs:46-60`,
   `xc-kiosk/src/application/kiosk/day_close.rs:47-80`) would never be ended.
 - `[required]` **The cutover ends the previous business day's waiting work; work a teller holds gets one more day.** For each
-  branch with a plan, the cutover is the start of the span holding now (`ShiftPlan::span_for(now).0`, when `now` is inside it).
-  - **Waiting work** issued before the cutover is ended exactly as the branch-day close ends it today: queue tickets in
-    `WAITING` (`dayClosed`) and kiosk requests in `WAITING` (`DAY_CLOSED`).
-  - **Work in progress** (`CALLED` tickets; `ACCEPTED`/`ID_CHECKED` kiosk requests and their SERVING tickets) is a teller
-    serving a customer across the cutover (a C teller who called someone at 05:58). It is **not** ended at that cutover; it is
-    ended at the next one, i.e. when it was issued before the **previous** cutover (more than one business day old). Normal
-    service finishes it long before; the rule only clears what was abandoned.
+  branch, the cutover is the start of the current business day: `ShiftPlan::span_for(now).0`. Every plan covers 24 hours (T5),
+  so `now` is always inside a business day and there is no gap to fall into.
+  - **At or after the cutover is the new day:** an item issued at exactly 06:00:00 is not swept (`issued_at < cutover` sweeps).
+  - **Waiting work** issued before the cutover is ended with the same per-row effect the branch-day close uses today (same
+    status, reason, event and booking notice): queue tickets in `WAITING` (`dayClosed`) and kiosk requests in `WAITING`
+    (`DAY_CLOSED`). It is **not** the day close itself: the day close runs only with no shift open; this runs while tellers sell.
+  - **Which instant counts for a kiosk request:** the moment it entered the queue, its ticket's `issued_at` (issued at
+    confirm, `xc-kiosk/src/application/kiosk/customer.rs:284,404`), and `created_at` (the quote time) only for a request that
+    has no ticket yet. So a quote at 05:58 confirmed at 06:02 belongs to the new day and is not swept.
+  - **What survives the cutover:** `CALLED` and `SERVING` tickets, and `ACCEPTED`/`ID_CHECKED` kiosk requests (with their
+    tickets). That is a teller serving a customer across the cutover (a C teller who called someone at 05:58). None of it is
+    ended at that cutover; it is ended at the next one, i.e. only when it was issued before the **previous** cutover (more
+    than one business day old). Normal service finishes it long before; the rule only clears what was abandoned.
   - Today's branch-day close knew no teller held anything (it runs after the last CLOSE is verified). The cutover has no
     such guarantee, hence the grace. This is the sub-controller's reading of *"Yes, at cutover"*, sent to the owner as
     information (he may object).
@@ -230,6 +236,14 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
 - `[required]` **Stateless and idempotent, no migration.** The rule is "issued before the cutover", so running it again finds
   nothing. A sweeper runs it every 60 s, like `BookingSweeper` (`api/src/bootstrap/mod.rs:475-485`), one branch transaction per
   branch. A branch whose plan fails to load or whose sweep errors is logged and skipped; the round goes on.
+- `[required]` **One instance sweeps a branch at a time.** Each branch's transaction first takes
+  `pg_try_advisory_xact_lock(<hash of 'business-day-close:' || branch_id>)` and skips the branch when it is held (the
+  per-tick lock pattern of `rate_feed/feed_loop.rs:113`). Row locks are taken `ORDER BY id`. No new index: the scan is per
+  branch over the unfinished statuses, the same scan the branch-day close does today.
+- **A plan edited during the day** takes effect at the next tick: the cutover is recomputed from the live plan each time, so
+  moving the earliest shift moves the next cutover; nothing already ended is reopened.
+- **Not changed here:** the queue's `service_date` and its display numbering still roll at local midnight
+  (`xc-queue/.../ticket_issuer.rs:221`); see §9.
 - `[required]` **A sweep that ends nothing changes nothing.** `on_day_closed` ends with `status.refresh_in`, which bumps
   `branch_service_status.queue_version` (`xc-queue/src/application/status/status_service.rs:141-200`). The cutover method calls
   `refresh_in` only when it ended at least one ticket or kiosk request; otherwise every polled queue client would refetch
@@ -255,7 +269,9 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
 | Q4 | a WAITING kiosk request created 5 Nov 05:50 | cancelled `DAY_CLOSED` at the 06:01 sweep |
 | Q4b | a CALLED ticket issued 5 Nov 05:58; an `ID_CHECKED` kiosk request created 5 Nov 05:50 | untouched at the 5 Nov 06:01 sweep; ended at the 6 Nov 06:01 sweep if still open |
 | Q4c | a sweep where one branch's plan cannot load | that branch is logged and skipped; the others are swept |
-| Q5 | overlapping plan (gap 04:00–10:00), sweep at 5 Nov 05:00 | nothing (now is not inside a span); at 10:01 the tickets from before 10:00 end |
+| Q5 | a kiosk quote created 5 Nov 05:58, confirmed (ticket issued) 06:02; sweep at 06:03 | untouched |
+| Q5b | a WAITING ticket issued at exactly 5 Nov 06:00:00; sweep at 06:01 | untouched (at the cutover is the new day) |
+| Q5c | two sweepers on the same branch at once | one ends the rows; the other skips the branch (advisory lock), no second event |
 | Q6 | branch-day close (cut-off, last shift closed) | unchanged: `on_day_closed` ends everything, as today |
 
 ## 3. Class diagram
@@ -408,7 +424,7 @@ Files under `xc-shift/` are `api/crates/xc-shift/`; `xc-cash/` is `api/crates/xc
 | LIVE `value_date` | `api/src/application/workflows/exchange/create.rs` | **CS-8** | reports |
 | `branchShiftsSave` + `branch_shifts` view + DTO + policy rows | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs` (new), `xc-auth/src/domain/policy/areas/branch_shifts.rs` (new) | DTO + policy: skeleton · handlers: **CS-9** | web CS-14 |
 | `open_shift_choices` view | `views/open_shift_choices.rs` (new), DTO in `dto/v3/branch_shifts.rs` | **CS-10** | web CS-15 |
-| defaults on branch create | `api/src/application/compat/rpc.rs` (one call after `create_in`) | **CS-13** | — |
+| defaults on branch create | the migration's `branches_default_shift_templates` trigger (Q10 = A; CS-13 dropped) | migration | — |
 | `shiftName`, `businessDate` on shift views | `views/my_shift.rs`, `views/admin_shifts.rs` and their DTOs | **CS-11** | web CS-16 |
 | `byShift` + business-date day | `views/staff_daily_report.rs`, `dto/v3/staff_daily_report.rs` | **CS-12** (after `feat/board-currencies` lands, §6) | web CS-17 |
 | Owner's shift editor | `web/src/screens/admin/branches/ShiftsEditor.tsx` (new) + mount in `BranchesScreen.tsx` + i18n | **CS-14** | — |
@@ -703,7 +719,7 @@ ALTER TABLE cash_counts ALTER COLUMN business_date SET NOT NULL;
 **(1) Existing rows after the migration**
 - `branches`: every branch gets A, B, C (`branches.organization_id` is `NOT NULL` with a default, `20261011100000_organizations.sql:13`). MAIN's selling hours move from its `opening_hours` (12:00–18:00) to 24 hours; `opening_hours` stays as the customer-facing hours (Q5 = A).
 - `shifts`: every row gets `business_date` = its local opening date; `template_id`/`template_name` stay NULL and report as the `null` group ("before shifts"). OPEN shifts at deploy keep working: closing never reads the template.
-- `cash_counts`: `shift_template_id` stays NULL; `business_date` is backfilled from the local date of `counted_at` (the rule reconciliation used until now, so old sheets do not move). An **unverified OPEN** count made before deploy is refused at verify (C8); measured below so it is zero at deploy.
+- `cash_counts`: `shift_template_id` stays NULL; `business_date` is backfilled from the local date of `counted_at` (the rule reconciliation used until now, so old sheets do not move). An **unverified OPEN** count made before deploy opens an untemplated shift at verify (C8); measured below so it is zero at deploy.
 - **Why the backfill uses the calendar date.** A pre-feature shift or count at 00:30 keeps its calendar date, matching the calendar `value_date` its sales kept (Q6 = A). Re-dating them alone would split old days; leave it.
 - `transactions`: unchanged. Past 00:00–04:00 sales keep the calendar date the client sent (no backfill, Q6).
 
@@ -797,7 +813,7 @@ Decided (lane controller's messages and comments on #6149/#6170, 2026-11-04 21:1
 
 CS-6 is folded into the skeleton (it had to write the new columns for today's tests to stay green). Waves follow the
 providers: a consumer whose provider is a `todo!()` cannot pass its tests, so it is released when the provider merges into
-the feat branch. Wave 1 is seven disjoint File scopes released together. Up-front tests for every `logic`/`guarded` ticket are
+the feat branch. Wave 1 was five disjoint File scopes released together (CS-1, CS-2, CS-8, CS-11, CS-21). Up-front tests for every `logic`/`guarded` ticket are
 on the feat branch before release; `mechanical` tickets carry the behaviour table and the reviewer checks each row has a test
 that fails when reverted.
 
