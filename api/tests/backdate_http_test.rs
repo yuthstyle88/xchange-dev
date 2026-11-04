@@ -542,3 +542,28 @@ async fn b1b_a_backdated_sale_needs_no_passport() {
     assert_eq!(a.body["status"], "COMPLETED", "{}", a.text);
     finish(desk, scratch).await;
 }
+
+/// Refusal cases for invalid quantity (-5, 5 decimals, non-numeric) naming `quantity`.
+#[actix_web::test]
+async fn invalid_quantity_is_refused() {
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    for bad_qty in ["-5", "1.12345", "abc"] {
+        let mut b = body(OWNER, &live);
+        b["quantity"] = json!(bad_qty);
+        let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
+        assert_eq!(
+            a.status,
+            StatusCode::BAD_REQUEST,
+            "case {bad_qty}: {}",
+            a.text
+        );
+        assert_eq!(a.code(), "validationFailed", "case {bad_qty}: {}", a.text);
+        assert_eq!(a.field(), "quantity", "case {bad_qty}: {}", a.text);
+    }
+    finish(desk, scratch).await;
+}
