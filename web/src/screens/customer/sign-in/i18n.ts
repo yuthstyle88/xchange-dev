@@ -32,6 +32,9 @@ export const th = {
   termsFailed: 'โหลดข้อกำหนดการใช้บริการไม่สำเร็จ จึงยังสมัครสมาชิกไม่ได้ กรุณาลองอีกครั้ง',
   termsRetry: 'ลองอีกครั้ง',
   codeRequired: 'กรุณากรอกรหัสยืนยัน',
+  modeOtp: 'รหัสยืนยันทาง SMS',
+  modePassword: 'รหัสผ่าน',
+  passwordRequired: 'กรุณากรอกรหัสผ่าน',
 };
 
 export const en = {
@@ -63,6 +66,9 @@ export const en = {
   termsFailed: 'The terms of service could not be loaded, so sign-up is not available yet. Please try again',
   termsRetry: 'Try again',
   codeRequired: 'Verification code is required',
+  modeOtp: 'SMS verification code',
+  modePassword: 'Password',
+  passwordRequired: 'Password is required',
 };
 
 export const zh = {
@@ -94,4 +100,7 @@ export const zh = {
   termsFailed: '服务条款加载失败，暂时无法注册，请重试',
   termsRetry: '重试',
   codeRequired: '请输入验证码',
+  modeOtp: '短信验证码',
+  modePassword: '密码',
+  passwordRequired: '请输入密码',
 };

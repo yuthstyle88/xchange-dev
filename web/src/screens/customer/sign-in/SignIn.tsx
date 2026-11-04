@@ -1,6 +1,6 @@
-// APP-7 (#998) C14 sign-in (design customer-app.md §4.5): Identity's OTP through OR-3's BFF. One form: with the code
-// empty, submitting sends the phone number to `POST /api/auth/otp/request`; with a code typed, it sends it to
-// `POST /api/auth/otp/verify` (after the code request has answered), and only a `200` from verify navigates to `/app`.
+// APP-7 (#998, #5958) C14 sign-in (design customer-app.md §4.5): Identity's OTP and phone+password through OR-3's BFF.
+// Two doors: OTP (default, unchanged: request -> verify) and password (POST /api/auth/login).
+// Only a `200` navigates to `/app` (or `next`).
 // The server claims this browser's anonymous drafts at verify (P6). No demo login and no fixed code.
 import { createSignal, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
@@ -43,6 +43,9 @@ export function SignIn(props: {
 }): JSX.Element {
   const api = new ApiClient(props.fetch);
   const next = () => nextTarget(props.search);
+  const [mode, setMode] = createSignal<'otp' | 'password'>('otp');
+
+  // OTP mode state
   const [challenge, setChallenge] = createSignal<string | undefined>();
   const [error, setError] = createSignal('');
   const [phoneError, setPhoneError] = createSignal('');
@@ -50,9 +53,19 @@ export function SignIn(props: {
   const [pending, setPending] = createSignal(false);
   const [sending, setSending] = createSignal(false);
   const [hasCode, setHasCode] = createSignal(false);
+  const [otpPhone, setOtpPhone] = createSignal('');
+  const [otpCode, setOtpCode] = createSignal('');
   let phoneInput: HTMLInputElement | undefined;
   let codeInput: HTMLInputElement | undefined;
   let requesting: Promise<void> | undefined;
+
+  // Password mode state
+  const [pwdPhone, setPwdPhone] = createSignal('');
+  const [pwdPhoneError, setPwdPhoneError] = createSignal('');
+  const [pwdPasswordError, setPwdPasswordError] = createSignal('');
+  const [pwdPending, setPwdPending] = createSignal(false);
+  let pwdPhoneInput: HTMLInputElement | undefined;
+  let pwdPasswordInput: HTMLInputElement | undefined;
 
   const showError = (err: unknown, defaultCodeTarget: 'phone' | 'code') => {
     const fe = fieldError(err, { phone: tr('phone'), code: tr('code') });
@@ -70,9 +83,26 @@ export function SignIn(props: {
     }
   };
 
+  const showPasswordError = (err: unknown) => {
+    const fe = fieldError(err, { phone: tr('phone'), password: tr('password') });
+    let target = fe.field;
+    if (!target && err instanceof ApiError && !isServerFailure(err)) {
+      if (err.code === 'invalidCredentials') target = 'password';
+      else if (PHONE_CODES.has(err.code)) target = 'phone';
+    }
+    if (target === 'password') {
+      setPwdPasswordError(fe.message);
+      if (pwdPasswordInput) pwdPasswordInput.value = '';
+    } else if (target === 'phone') {
+      setPwdPhoneError(fe.message);
+    } else {
+      setError(fe.message);
+    }
+  };
+
   const requestCode = (): Promise<void> => {
     if (requesting) return requesting;
-    const rawPhone = (phoneInput?.value ?? '').trim();
+    const rawPhone = (phoneInput?.value ?? otpPhone()).trim();
     if (!rawPhone) {
       setPhoneError(t('input.code.phoneRequired'));
       return Promise.resolve();
@@ -127,7 +157,7 @@ export function SignIn(props: {
 
   const submit = (e: Event) => {
     e.preventDefault();
-    const code = (codeInput?.value ?? '').trim();
+    const code = (codeInput?.value ?? otpCode()).trim();
     if (challenge() || requesting) {
       if (!code) {
         setCodeError(tr('codeRequired'));
@@ -139,61 +169,175 @@ export function SignIn(props: {
     }
   };
 
+  const submitPassword = async (e: Event) => {
+    e.preventDefault();
+    if (pwdPending()) return;
+    const rawPhone = (pwdPhoneInput?.value ?? pwdPhone()).trim();
+    const rawPassword = pwdPasswordInput?.value ?? '';
+    let hasErr = false;
+    if (!rawPhone) {
+      setPwdPhoneError(t('input.code.phoneRequired'));
+      hasErr = true;
+    }
+    if (!rawPassword) {
+      setPwdPasswordError(tr('passwordRequired'));
+      hasErr = true;
+    }
+    if (hasErr) return;
+
+    setPwdPending(true);
+    setError('');
+    setPwdPhoneError('');
+    setPwdPasswordError('');
+
+    try {
+      await api.post('/api/auth/login', {
+        identifier: e164(rawPhone),
+        password: rawPassword,
+      });
+      props.navigate(next() ?? '/app');
+    } catch (err: unknown) {
+      showPasswordError(err);
+    } finally {
+      setPwdPending(false);
+    }
+  };
+
   return (
     <section class="xc-sign-in">
       <h2>{tr('signInTitle')}</h2>
-      <form class="xc-sign-in-form" onSubmit={submit}>
-        <label>
-          {tr('phone')}
-          <input
-            ref={phoneInput}
-            type="tel"
-            name="phone"
-            autocomplete="tel"
-            inputmode="tel"
-            aria-invalid={phoneError() ? 'true' : undefined}
-            aria-describedby={phoneError() ? 'phone-error' : undefined}
-            onInput={() => setPhoneError('')}
-          />
-          <Show when={phoneError()}>
-            <span id="phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
-              {phoneError()}
-            </span>
-          </Show>
-        </label>
-        <Show when={challenge()}>
-          <p>{tr('codeSent')}</p>
-        </Show>
-        <label>
-          {tr('code')}
-          <input
-            ref={codeInput}
-            type="text"
-            name="code"
-            autocomplete="one-time-code"
-            inputmode="numeric"
-            aria-invalid={codeError() ? 'true' : undefined}
-            aria-describedby={codeError() ? 'code-error' : undefined}
-            onInput={(e) => {
-              setHasCode(e.currentTarget.value.trim().length > 0);
-              setCodeError('');
-            }}
-          />
-          <Show when={codeError()}>
-            <span id="code-error" role="alert" class="xc-sign-in-error" data-field-error="code">
-              {codeError()}
-            </span>
-          </Show>
-        </label>
-        <button type="submit" disabled={pending() || (sending() && !hasCode())}>
-          {challenge() ? tr('verify') : tr('requestCode')}
+      <div class="xc-sign-in-mode" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode() === 'otp'}
+          class={mode() === 'otp' ? 'xc-sign-in-tab active' : 'xc-sign-in-tab'}
+          onClick={() => {
+            setError('');
+            setMode('otp');
+          }}
+        >
+          {tr('modeOtp')}
         </button>
-        <Show when={challenge()}>
-          <button type="button" class="xc-sign-in-link" disabled={sending()} onClick={() => void requestCode()}>
-            {tr('resendCode')}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode() === 'password'}
+          class={mode() === 'password' ? 'xc-sign-in-tab active' : 'xc-sign-in-tab'}
+          onClick={() => {
+            setError('');
+            setMode('password');
+          }}
+        >
+          {tr('modePassword')}
+        </button>
+      </div>
+      <Show when={mode() === 'otp'}>
+        <form class="xc-sign-in-form" onSubmit={submit}>
+          <label>
+            {tr('phone')}
+            <input
+              ref={phoneInput}
+              type="tel"
+              name="phone"
+              autocomplete="tel"
+              inputmode="tel"
+              value={otpPhone()}
+              aria-invalid={phoneError() ? 'true' : undefined}
+              aria-describedby={phoneError() ? 'phone-error' : undefined}
+              onInput={(e) => {
+                setOtpPhone(e.currentTarget.value);
+                setPhoneError('');
+              }}
+            />
+            <Show when={phoneError()}>
+              <span id="phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
+                {phoneError()}
+              </span>
+            </Show>
+          </label>
+          <Show when={challenge()}>
+            <p>{tr('codeSent')}</p>
+          </Show>
+          <label>
+            {tr('code')}
+            <input
+              ref={codeInput}
+              type="text"
+              name="code"
+              autocomplete="one-time-code"
+              inputmode="numeric"
+              value={otpCode()}
+              aria-invalid={codeError() ? 'true' : undefined}
+              aria-describedby={codeError() ? 'code-error' : undefined}
+              onInput={(e) => {
+                setOtpCode(e.currentTarget.value);
+                setHasCode(e.currentTarget.value.trim().length > 0);
+                setCodeError('');
+              }}
+            />
+            <Show when={codeError()}>
+              <span id="code-error" role="alert" class="xc-sign-in-error" data-field-error="code">
+                {codeError()}
+              </span>
+            </Show>
+          </label>
+          <button type="submit" disabled={pending() || (sending() && !hasCode())}>
+            {challenge() ? tr('verify') : tr('requestCode')}
           </button>
-        </Show>
-      </form>
+          <Show when={challenge()}>
+            <button type="button" class="xc-sign-in-link" disabled={sending()} onClick={() => void requestCode()}>
+              {tr('resendCode')}
+            </button>
+          </Show>
+        </form>
+      </Show>
+      <Show when={mode() === 'password'}>
+        <form class="xc-sign-in-form" onSubmit={submitPassword}>
+          <label>
+            {tr('phone')}
+            <input
+              ref={pwdPhoneInput}
+              type="tel"
+              name="phone"
+              autocomplete="tel"
+              inputmode="tel"
+              value={pwdPhone()}
+              aria-invalid={pwdPhoneError() ? 'true' : undefined}
+              aria-describedby={pwdPhoneError() ? 'pwd-phone-error' : undefined}
+              onInput={(e) => {
+                setPwdPhone(e.currentTarget.value);
+                setPwdPhoneError('');
+              }}
+            />
+            <Show when={pwdPhoneError()}>
+              <span id="pwd-phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
+                {pwdPhoneError()}
+              </span>
+            </Show>
+          </label>
+          <label>
+            {tr('password')}
+            <input
+              ref={pwdPasswordInput}
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              aria-invalid={pwdPasswordError() ? 'true' : undefined}
+              aria-describedby={pwdPasswordError() ? 'pwd-password-error' : undefined}
+              onInput={() => setPwdPasswordError('')}
+            />
+            <Show when={pwdPasswordError()}>
+              <span id="pwd-password-error" role="alert" class="xc-sign-in-error" data-field-error="password">
+                {pwdPasswordError()}
+              </span>
+            </Show>
+          </label>
+          <button type="submit" disabled={pwdPending()}>
+            {tr('signInTitle')}
+          </button>
+        </form>
+      </Show>
       <Show when={error()}>
         <p role="alert" class="xc-sign-in-error">
           {error()}

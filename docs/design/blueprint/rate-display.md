@@ -77,7 +77,7 @@ Every rule below is a Blueprint row or a recorded owner answer. The four owner q
 | D10 | **Logo = the existing company asset**, a byte copy at `rate-display/logo.png` (the original cannot move, §1); a test pins its sha256 to `9149f7e8…95ca` so the two cannot drift. | B5 |
 | D11 | **States** (B2): no `branch` → a "this display has no branch" message and no request · host not linked (`/api/public/host` 404) → the D13 message and no rates request · first load → loading · `404` → not found, polling stops · no publication → empty ("no published rates yet") · first load fails → error + retry button · a poll fails after a success → rows stay, a banner says the board could not update and shows the last `publishedAt`, and the next success clears it. | B2, B8 |
 | D12 | **Opening hours** from the branch list's `openingHours` (B5 *"เวลาเปิดบริการ"*). **Contact channel and conditions** are not in phase 1 (owner, Q-3 A). | B5, B15 |
-| D13 | **Host rows are written by the operator with SQL** (owner, Q-4), once per deployment, from the statement in §7. There is no admin screen in phase 1. A host with no row gets the public `404`, and the board shows "this display is not linked to an organisation". | B15 |
+| D13 | **Host rows are written by the operator with SQL** (owner, Q-4), once per deployment, from the statement in §7. There is no admin screen in phase 1. A host with no row gets the public `404`, and the board shows "this display is not linked to an organisation". **Amended 2026-11-02 (§10):** `create-owner --host` records the first host at install; this SQL stays for further hosts. | B15 |
 
 ## 3. Class diagram
 
@@ -474,3 +474,76 @@ Skeleton first (the sub-controller): the folder `board/` with every component as
 - Q1. Tiers off (`bandHeadings: []`): one "all amounts" column, or the four example headings with the one rate repeated? This design picks the single column, because band limits that do not exist should not be printed.
 - Q2. 中文 on every fixed label (three languages per label), or TH · EN as the example with 中文 only in the ticker? This design keeps the example (TH · EN).
 - Q3. The example's welcome ticker also greets in Japanese, Korean and Russian (`ようこそ`, `환영합니다`, `ДОБРО ПОЖАЛОВАТЬ`). They are kept as fixed design text; `languages.md` names only TH/EN/中文 as UI languages, and these are greetings, not UI.
+
+## 10. The install records the first host (2026-11-02, amends D13 and §7 item 2)
+
+Asked by claude/608dff on 2026-11-02 (13:5x ICT), after claude-4 found that a wiped install has no `organization_hosts` row (#564 issuecomment-6571050361). Designed by claude/b091f5e0.
+
+### 10.1 Root cause (measured at `db9077f0`)
+
+Every public `/app` screen fails on a fresh install ← `GET /api/public/host` answers `404` ← `organization_hosts` is empty ← nothing in the install path writes it:
+
+| Writer looked for | Found | Evidence |
+|---|---|---|
+| The migration | seeds no row, on purpose (§7 item 2) | `api/migrations/20261112100000_organization_hosts.sql:1-5` |
+| `create-owner` | takes `--name` and `--phone` only, writes `users` and `user_roles` | `api/src/main.rs:37-38`; `SessionService::create_owner`, `api/crates/xc-auth/src/application/session/session_service.rs:1157-1266` |
+| `install.sh` | does not run `create-owner` and has no host setting; its last message points the operator at deploy/README §2 | `deploy/server/install.sh:176-181` |
+| deploy/README "First owner account" | the only install step after `install.sh`; it never mentions hosts | `deploy/README.md:103-123` |
+| A route or screen | none | `git grep -n "organization_hosts" -- api/src web/src` finds only the reader `public/host.rs:30` |
+| The test seed | `INSERT … ON CONFLICT (host) DO NOTHING` | `deploy/server/seed-test-booking.sh:204` |
+
+So the only step that wrote a host row was the test seed. §7 item 2's SQL lives in this design, which an operator installing from deploy/README never reads; after the 2026-11-02 wipe the seed was not run and nothing else wrote the row.
+
+### 10.2 Decision
+
+**`create-owner` takes the host and records it.** The operator still supplies the host, as Q-4 decided; the change is that the install's one required step asks for it, so it can't be skipped. There is still no admin screen and no seed in the migration. §7 item 2's SQL stays valid for adding more hosts later.
+
+- `[required]` The command becomes `xchange create-owner --name <name> --phone <phone> --host <host>`. All three flags are required, in this order. The old two-flag form falls through to `Invalid command or arguments` and exit 1, so an install can't silently skip the host.
+- `[required]` The host is normalised as `request_host()` reads it (§4.1a): it is trimmed and lower-cased. The command refuses it, with an error starting `host:`, if it is empty, contains whitespace, `/` or `@`, or ends in `:80` or `:443`. A non-default port such as `:8443` is kept. A refused host writes nothing and calls Identity zero times.
+- `[required]` The row is written **before** the Identity call, with `INSERT … ON CONFLICT (host) DO NOTHING`, for the organisation the owner is created in. That is `XC` when no owner exists, or the existing owner's organisation. If the host already maps to another organisation, the command refuses (`host: <host> belongs to another organisation`), changes nothing, and calls Identity zero times.
+- `[required]` **Re-runs keep one row.** A run that Identity refuses leaves the row, and the owner `PENDING` as today. The next run completes the owner and the host stays one row. A run against an `ACTIVE` owner still records the host, so an existing install can be linked without SQL. It still refuses the owner with today's message `The owner user is already ACTIVE`, and exits 1.
+- `[proposed]` The success line names the host: `Owner <name> created (user <id>); host <host> linked; sign in on /login with the phone`.
+- **install.sh is not changed.** It doesn't run `create-owner` and knows no public host; nginx and DNS are the host owner's. deploy/README §2 is the step that changes: its command gains `--host "$3"` and a `<host>` argument, with one sentence saying it is the name browsers open (for example `xc-v3.spacing.cloud`).
+- `deploy/server/seed-test-booking.sh:204` keeps its INSERT, as a test fixture only.
+
+### 10.3 Class diagram
+
+```mermaid
+classDiagram
+  class main_rs { <<api src/main.rs>> create-owner --name --phone --host }
+  class SessionService { <<xc-auth application/session/session_service.rs>> create_owner(name, phone, password, host, now) Result~String,String~ }
+  class OwnerHost { <<xc-auth application/session/owner_host.rs  new>> parse(raw) Result~OwnerHost,String~; record(conn, org_id) Result~(),String~; as_str() }
+  class OrganizationHosts { <<api migrations/20261112100000_organization_hosts.sql  unchanged>> host PK; organization_id FK }
+  main_rs --> SessionService : create_owner(..., host, now)
+  SessionService --> OwnerHost : parse first, record before Identity
+  OwnerHost --> OrganizationHosts : INSERT ON CONFLICT DO NOTHING, then check the owner org
+```
+
+| Provides | Used by |
+|---|---|
+| `OwnerHost::parse` / `record` (new file, `[proposed]` names) | `SessionService::create_owner` only |
+| `create_owner(name, phone, password, host, now)` (`[required]`: `host: &str` before `now`) | `api/src/main.rs`; `api/tests/user_create_test.rs` test 07 (restated by the ticket author for the new argument) |
+
+### 10.4 Behaviour table (the up-front tests pin these)
+
+| Case | Result |
+|---|---|
+| Empty database, `create_owner(…, "xc-v3.spacing.cloud", …)`, Identity 201 | `Ok`; exactly one `organization_hosts` row, for `XC`; `GET /api/public/host` with `Host: xc-v3.spacing.cloud` → `200 {"org":"XC"}` |
+| The same call again (owner now `ACTIVE`) | `Err` containing `already ACTIVE`; still one row; Identity got one `/auth/register` in total |
+| Identity refuses the first run, the second run succeeds | first `Err`, row recorded, owner `PENDING`; second `Ok`, owner `ACTIVE`; one row throughout |
+| Host `XC-V3.Spacing.Cloud` | stored `xc-v3.spacing.cloud` |
+| Host `xc-v3.spacing.cloud:8443` | stored as given |
+| Host `""`, `"  "`, `https://xc-v3.spacing.cloud`, `xc-v3.spacing.cloud/app`, `xc v3`, `a@b`, `xc-v3.spacing.cloud:443`, `xc-v3.spacing.cloud:80` | `Err` starting `host:`; zero rows; no owner user; Identity called zero times |
+| Host already linked to organisation `YY` | `Err` containing `another organisation`; the row still points at `YY`; no owner user; Identity called zero times |
+
+### 10.5 Data migration
+
+No schema change: `organization_hosts` (§7) is unchanged.
+1. **Existing rows** are untouched. `ON CONFLICT DO NOTHING` never rewrites a row.
+2. **Backfill: none.** An install that already has an owner gets its row by running `create-owner … --host <host>` once, which records the host and then refuses the owner as `ACTIVE`, or by §7 item 2's SQL. Either is the operator's step, run on the owner's order. Check with `SELECT count(*) FROM organization_hosts;` before and after.
+3. **Deploy order:** binary only. The old binary's two-flag `create-owner` is replaced, so deploy/README §2 changes in the same PR.
+4. **`down`:** nothing to lose; no migration.
+
+### 10.6 Ticket
+
+One BE ticket, `class:logic` (a public CLI signature and an install write), files: `api/src/main.rs`, `api/crates/xc-auth/src/application/session/session_service.rs`, `api/crates/xc-auth/src/application/session/owner_host.rs` (new), `api/crates/xc-auth/src/application/session/mod.rs`, `deploy/README.md`. The up-front tests are in `api/tests/create_owner_host_test.rs`, plus test 07's restated call in `api/tests/user_create_test.rs`.

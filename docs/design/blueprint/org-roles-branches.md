@@ -407,6 +407,8 @@ server calls it, and only for an OWNER/ADMIN.
 - **The first user of an install.** The `create-owner` CLI takes the owner's phone and password, registers them in
   `xc-identity` the same way, and creates the organisation's first user, `ACTIVE`, with EXECUTIVE + ADMIN (B3).
   `create-admin-invite` is withdrawn.
+  Since 2026-11-02 it also takes the public host (`--host`) and links it to the organisation
+  (`rate-display.md` §10).
 - **No public registration.** There is no `/api/auth/register` and no invite or claim route (B6, #1097).
 
 **Withdrawn 2026-10-10 (#1157):** the invite design (`invite_code`, `user_invites`, `/api/auth/invite/claim`,
