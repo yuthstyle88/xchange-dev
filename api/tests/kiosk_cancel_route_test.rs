@@ -192,6 +192,10 @@ impl TestDb {
         .await
         .expect("upsert branch_service_status");
 
+        xc_testdb::seed_branch_currencies(&pool, B01, &["USD"])
+            .await
+            .expect("seed branch currencies");
+
         // Seed counter rate for USD per RE-7
         rates_re4c_common::set_counter_rate(&pool, B01, "USD", "35.0", "36.0").await;
 
