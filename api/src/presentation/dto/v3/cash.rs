@@ -40,6 +40,8 @@ pub struct CountSubmitInput {
     pub kind: String,
     #[serde(default)]
     pub shift_id: Option<String>,
+    #[serde(default)]
+    pub shift_template_id: Option<String>,
     pub lines: Vec<CashLineInput>,
     #[serde(default)]
     pub note: Option<String>,

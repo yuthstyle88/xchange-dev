@@ -41,6 +41,7 @@ use xc_queue::application::status::status_service::StatusService;
 use xc_queue::domain::repository::QueueRepository;
 use xc_queue::domain::ticket::live_ticket::LiveTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -196,6 +197,10 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
+            } else if message == ShiftError::OutsideShiftWindow.to_string() {
+                V3Error::new("outsideShiftWindow", None, message, StatusCode::CONFLICT)
+            } else if message == ShiftError::ShiftNotChosen.to_string() {
+                V3Error::new("shiftNotChosen", None, message, StatusCode::CONFLICT)
             } else if message.starts_with("stockInsufficient")
                 || message == TransferError::StockInsufficient.to_string()
             {
@@ -345,7 +350,7 @@ impl CommandAction for CountSubmit {
         let user = caller_in(tx, who, now).await?;
         let count = self
             .counts
-            .submit_in(
+            .submit_chosen_in(
                 tx,
                 &user,
                 SubmitCount {
@@ -356,6 +361,7 @@ impl CommandAction for CountSubmit {
                     note: input.note,
                     idempotency_key: key.as_str().to_owned(),
                 },
+                input.shift_template_id.as_deref(),
                 now,
             )
             .await
