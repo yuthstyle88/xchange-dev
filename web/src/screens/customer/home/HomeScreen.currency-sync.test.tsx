@@ -480,7 +480,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
     expect(host.querySelector('.xc-home-estimate-card')).not.toBeNull();
   });
 
-  it('edge case (§9): Rates empty (fallback list) keeps today behaviour with USD selected', async () => {
+  it('edge case (§9): Rates empty lists no currency', async () => {
     const emptyRates = makePublishedRatesData({
       publication: makePublishedPublicationDto({ id: 'pub-empty', version: 1, publishedAt: '2026-10-16T08:00:00Z' }),
       sourceDate: '2026-10-16',
@@ -494,6 +494,7 @@ describe('Customer home currency sync (#2539 §8 & §9)', () => {
     await settle();
 
     const currSelect = host.querySelector<HTMLSelectElement>('#currency-select')!;
-    expect(currSelect.value).toBe('USD');
+    expect(currSelect.options.length).toBe(0);
+    expect(currSelect.value).toBe('');
   });
 });
