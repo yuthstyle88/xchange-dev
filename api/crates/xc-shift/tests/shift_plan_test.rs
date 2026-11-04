@@ -1,5 +1,9 @@
-//! Up-front tests for ticket CS-1: `ShiftPlan` (docs/design/configurable-shifts.md §4, rows P1–P14).
+//! Up-front tests for ticket CS-1: `ShiftPlan` (docs/design/configurable-shifts.md §4, rows P1–P20).
 //! The implementer must not edit, delete or weaken these.
+//!
+//! Most rows use the overlapping plan the owner first sent (A 10–19 break 15–16, B 15–00 break 18–19, C 19–04 break
+//! 23–00), because it exercises overlaps, a gap and breaks. P13 and P18–P20 pin the owner's defaults (A 06–14, B 14–22,
+//! C 22–06, no breaks, 24-hour operation).
 
 use chrono::{DateTime, NaiveDate, NaiveTime, TimeZone, Utc};
 use chrono_tz::Asia::Bangkok;
@@ -40,12 +44,30 @@ fn templates_from(inputs: Vec<ShiftTemplateInput>) -> Vec<ShiftTemplate> {
         .collect()
 }
 
-fn defaults_in(tz: Tz) -> ShiftPlan {
-    ShiftPlan::new(templates_from(ShiftPlan::defaults()), tz)
+fn with_break(mut t: ShiftTemplateInput, start: NaiveTime, end: NaiveTime) -> ShiftTemplateInput {
+    t.break_window = Some((start, end));
+    t
 }
 
-fn defaults() -> ShiftPlan {
-    defaults_in(Bangkok)
+/// The owner's first table: overlapping shifts with breaks and a 04:00–10:00 gap.
+fn overlapping_inputs() -> Vec<ShiftTemplateInput> {
+    vec![
+        with_break(input("A", hm(10, 0), hm(19, 0)), hm(15, 0), hm(16, 0)),
+        with_break(input("B", hm(15, 0), hm(0, 0)), hm(18, 0), hm(19, 0)),
+        with_break(input("C", hm(19, 0), hm(4, 0)), hm(23, 0), hm(0, 0)),
+    ]
+}
+
+fn overlapping_in(tz: Tz) -> ShiftPlan {
+    ShiftPlan::new(templates_from(overlapping_inputs()), tz)
+}
+
+fn overlapping() -> ShiftPlan {
+    overlapping_in(Bangkok)
+}
+
+fn owner_defaults() -> ShiftPlan {
+    ShiftPlan::new(templates_from(ShiftPlan::defaults()), Bangkok)
 }
 
 /// `(template id, business date)` of each covering instance, in order.
@@ -72,13 +94,13 @@ fn input(name: &str, start: NaiveTime, end: NaiveTime) -> ShiftTemplateInput {
 
 #[test]
 fn p1_ten_oclock_is_shift_a_only() {
-    assert_eq!(covering(&defaults(), bkk(4, 10, 0)), vec![named("A", 4)]);
+    assert_eq!(covering(&overlapping(), bkk(4, 10, 0)), vec![named("A", 4)]);
 }
 
 #[test]
 fn p2_fifteen_oclock_is_a_and_b() {
     assert_eq!(
-        covering(&defaults(), bkk(4, 15, 0)),
+        covering(&overlapping(), bkk(4, 15, 0)),
         vec![named("A", 4), named("B", 4)]
     );
 }
@@ -86,29 +108,29 @@ fn p2_fifteen_oclock_is_a_and_b() {
 #[test]
 fn p3_nineteen_oclock_is_b_and_c_because_a_ends_exclusive() {
     assert_eq!(
-        covering(&defaults(), bkk(4, 19, 0)),
+        covering(&overlapping(), bkk(4, 19, 0)),
         vec![named("B", 4), named("C", 4)]
     );
 }
 
 #[test]
 fn p4_two_am_is_shift_c_of_the_previous_business_date() {
-    assert_eq!(covering(&defaults(), bkk(5, 2, 0)), vec![named("C", 4)]);
+    assert_eq!(covering(&overlapping(), bkk(5, 2, 0)), vec![named("C", 4)]);
 }
 
 #[test]
 fn p5_five_am_is_outside_every_shift() {
-    assert!(covering(&defaults(), bkk(5, 5, 0)).is_empty());
+    assert!(covering(&overlapping(), bkk(5, 5, 0)).is_empty());
 }
 
 #[test]
 fn p6_one_minute_before_a_is_outside_every_shift() {
-    assert!(covering(&defaults(), bkk(4, 9, 59)).is_empty());
+    assert!(covering(&overlapping(), bkk(4, 9, 59)).is_empty());
 }
 
 #[test]
 fn p7_business_date_of_two_am_is_the_day_before_and_five_am_has_none() {
-    let plan = defaults();
+    let plan = overlapping();
     assert_eq!(plan.business_date_of(bkk(5, 2, 0)), Some(date(4)));
     assert_eq!(plan.business_date_of(bkk(4, 10, 0)), Some(date(4)));
     assert_eq!(plan.business_date_of(bkk(5, 5, 0)), None);
@@ -116,7 +138,7 @@ fn p7_business_date_of_two_am_is_the_day_before_and_five_am_has_none() {
 
 #[test]
 fn p8_service_span_runs_ten_to_four_next_day() {
-    let span = defaults().service_span(date(4));
+    let span = overlapping().service_span(date(4));
     assert_eq!(span, Some((bkk(4, 10, 0), bkk(5, 4, 0))));
     assert_eq!(
         span.map(|(a, b)| (a.to_rfc3339(), b.to_rfc3339())),
@@ -129,7 +151,7 @@ fn p8_service_span_runs_ten_to_four_next_day() {
 
 #[test]
 fn p9_span_for_an_instant_between_spans_is_the_next_span() {
-    let plan = defaults();
+    let plan = overlapping();
     assert_eq!(
         plan.span_for(bkk(5, 5, 0)),
         Some((bkk(5, 10, 0), bkk(6, 4, 0)))
@@ -142,7 +164,7 @@ fn p9_span_for_an_instant_between_spans_is_the_next_span() {
 
 #[test]
 fn p10_on_break_follows_each_templates_break() {
-    let plan = defaults();
+    let plan = overlapping();
     assert!(plan.on_break("B", bkk(4, 18, 30)));
     assert!(!plan.on_break("B", bkk(4, 19, 0)));
     assert!(plan.on_break("C", bkk(4, 23, 30)));
@@ -152,7 +174,7 @@ fn p10_on_break_follows_each_templates_break() {
 
 #[test]
 fn p11_instance_of_c_crosses_midnight_with_its_break() {
-    let plan = defaults();
+    let plan = overlapping();
     let c = plan.templates()[2].clone();
     let i = plan.instance(&c, date(4));
     assert_eq!(i.template_id, "C");
@@ -233,8 +255,20 @@ fn p12d_a_plan_covering_exactly_twenty_four_hours_is_accepted() {
 }
 
 #[test]
-fn p13_the_defaults_are_valid_and_unchanged() {
-    assert_eq!(ShiftPlan::validate(ShiftPlan::defaults()), Ok(ShiftPlan::defaults()));
+fn p13_the_defaults_are_the_owners_and_valid() {
+    let d = ShiftPlan::defaults();
+    assert_eq!(
+        d.iter()
+            .map(|t| (t.name.as_str(), t.starts_at, t.ends_at, t.break_window))
+            .collect::<Vec<_>>(),
+        vec![
+            ("A", hm(6, 0), hm(14, 0), None),
+            ("B", hm(14, 0), hm(22, 0), None),
+            ("C", hm(22, 0), hm(6, 0), None),
+        ]
+    );
+    assert_eq!(ShiftPlan::validate(d.clone()), Ok(d));
+    assert_eq!(ShiftPlan::validate(overlapping_inputs()), Ok(overlapping_inputs()));
 }
 
 #[test]
@@ -279,7 +313,7 @@ fn p15_a_template_starting_after_midnight_inside_the_night_belongs_to_the_day_be
 
 #[test]
 fn p16_the_timezone_is_the_plans() {
-    let plan = defaults_in(chrono_tz::Asia::Tokyo);
+    let plan = overlapping_in(chrono_tz::Asia::Tokyo);
     // 10:00 in Tokyo is 08:00 in Bangkok.
     assert_eq!(covering(&plan, bkk(4, 8, 0)), vec![named("A", 4)]);
     assert!(covering(&plan, bkk(4, 10, 30)).iter().any(|c| c.0 == "A"));
@@ -293,4 +327,31 @@ fn p17_an_empty_plan_covers_nothing_and_has_no_span() {
     assert_eq!(plan.service_span(date(4)), None);
     assert_eq!(plan.span_for(bkk(4, 12, 0)), None);
     assert_eq!(plan.business_date_of(bkk(4, 12, 0)), None);
+}
+
+#[test]
+fn p18_defaults_open_each_shift_at_its_start() {
+    let plan = owner_defaults();
+    assert_eq!(covering(&plan, bkk(4, 6, 0)), vec![named("A", 4)]);
+    assert_eq!(covering(&plan, bkk(4, 14, 0)), vec![named("B", 4)]);
+    assert_eq!(covering(&plan, bkk(4, 22, 0)), vec![named("C", 4)]);
+}
+
+#[test]
+fn p19_defaults_date_the_night_by_the_day_it_started_and_cut_over_at_six() {
+    let plan = owner_defaults();
+    assert_eq!(covering(&plan, bkk(5, 2, 0)), vec![named("C", 4)]);
+    assert_eq!(plan.business_date_of(bkk(5, 2, 0)), Some(date(4)));
+    assert_eq!(plan.business_date_of(bkk(5, 5, 59)), Some(date(4)));
+    assert_eq!(plan.business_date_of(bkk(5, 6, 0)), Some(date(5)));
+    assert_eq!(plan.business_date_of(bkk(4, 5, 59)), Some(date(3)));
+}
+
+#[test]
+fn p20_defaults_run_twenty_four_hours_from_six() {
+    let plan = owner_defaults();
+    assert_eq!(plan.service_span(date(4)), Some((bkk(4, 6, 0), bkk(5, 6, 0))));
+    assert_eq!(plan.span_for(bkk(5, 2, 0)), Some((bkk(4, 6, 0), bkk(5, 6, 0))));
+    assert_eq!(plan.span_for(bkk(5, 6, 0)), Some((bkk(5, 6, 0), bkk(6, 6, 0))));
+    assert!(!plan.on_break("C", bkk(5, 2, 0)));
 }

@@ -40,31 +40,19 @@ impl ShiftPlan {
         Self { templates, tz }
     }
 
-    /// The owner's defaults, 2026-11-04 ("default ตามนี้"). The migration seeds the same rows.
+    /// The owner's defaults, 2026-11-04 (#6149 issuecomment by claude/022a7453, ~21:4x ICT): three 8-hour shifts,
+    /// 24-hour operation, no breaks, day cutover 06:00. The migration seeds the same rows.
     pub fn defaults() -> Vec<ShiftTemplateInput> {
-        vec![
-            ShiftTemplateInput {
+        [("A", 6, 14), ("B", 14, 22), ("C", 22, 6)]
+            .into_iter()
+            .map(|(name, start, end)| ShiftTemplateInput {
                 id: None,
-                name: "A".to_owned(),
-                starts_at: hm(10, 0),
-                ends_at: hm(19, 0),
-                break_window: Some((hm(15, 0), hm(16, 0))),
-            },
-            ShiftTemplateInput {
-                id: None,
-                name: "B".to_owned(),
-                starts_at: hm(15, 0),
-                ends_at: hm(0, 0),
-                break_window: Some((hm(18, 0), hm(19, 0))),
-            },
-            ShiftTemplateInput {
-                id: None,
-                name: "C".to_owned(),
-                starts_at: hm(19, 0),
-                ends_at: hm(4, 0),
-                break_window: Some((hm(23, 0), hm(0, 0))),
-            },
-        ]
+                name: name.to_owned(),
+                starts_at: hm(start, 0),
+                ends_at: hm(end, 0),
+                break_window: None,
+            })
+            .collect()
     }
 
     pub fn templates(&self) -> &[ShiftTemplate] {

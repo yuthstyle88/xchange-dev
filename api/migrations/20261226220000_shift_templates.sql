@@ -1,5 +1,5 @@
 -- Configurable shifts (docs/design/configurable-shifts.md §5).
--- Owner 2026-11-04: "ระบบให้ รองรับ กะ สามารถ config ได้ ว่ามีกี่กะ", defaults A/B/C ("default ตามนี้").
+-- Owner 2026-11-04: "ระบบให้ รองรับ กะ สามารถ config ได้ ว่ามีกี่กะ"; defaults "มาตรฐานการทำงาน 24 ชม ไม่มีพัก".
 
 CREATE TABLE shift_templates (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -23,16 +23,16 @@ CREATE UNIQUE INDEX shift_templates_live_name
 CREATE INDEX shift_templates_live_branch
     ON shift_templates (branch_id, position) WHERE retired_at IS NULL;
 
--- The owner's defaults for every existing branch. ShiftPlan::defaults() holds the same rows (test S4).
-INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, break_starts_at, break_ends_at, position)
-SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.break_starts_at, d.break_ends_at, d.position
+-- The owner's defaults for every branch (2026-11-04 ~21:4x ICT: 3 x 8 h, 24-hour operation, no breaks, cutover 06:00).
+-- ShiftPlan::defaults() holds the same rows (test S4).
+INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position)
+SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.position
   FROM branches b
  CROSS JOIN (VALUES
-       ('A', time '10:00', time '19:00', time '15:00', time '16:00', 0),
-       ('B', time '15:00', time '00:00', time '18:00', time '19:00', 1),
-       ('C', time '19:00', time '04:00', time '23:00', time '00:00', 2)
-     ) AS d (name, starts_at, ends_at, break_starts_at, break_ends_at, position)
- WHERE b.organization_id IS NOT NULL;
+       ('A', time '06:00', time '14:00', 0),
+       ('B', time '14:00', time '22:00', 1),
+       ('C', time '22:00', time '06:00', 2)
+     ) AS d (name, starts_at, ends_at, position);
 
 -- A teller's shift records the template, its name at opening, and the business date.
 ALTER TABLE shifts
@@ -42,8 +42,8 @@ ALTER TABLE shifts
 ALTER TABLE shifts
     ADD CONSTRAINT shifts_template_named CHECK ((template_id IS NULL) = (template_name IS NULL));
 
--- A shift written without a business date (one opened with no template) is dated by the local day it opened on.
--- Templated shifts always write it (ShiftService::open_on_verified).
+-- A shift written without a business date (one opened with no template) is dated by the local day it opened on,
+-- the same rule as the backfill below. Templated shifts always write it (ShiftService::open_on_verified).
 CREATE FUNCTION shifts_business_date_default() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.business_date IS NULL THEN
@@ -58,6 +58,8 @@ CREATE TRIGGER shifts_business_date_default
     BEFORE INSERT ON shifts
     FOR EACH ROW EXECUTE FUNCTION shifts_business_date_default();
 
+-- Shifts opened before this feature: the local calendar date they opened on. A pre-feature shift opened at 00:30
+-- therefore keeps the calendar date, matching the calendar value_date its sales kept (owner Q6 = A: no re-dating).
 UPDATE shifts s
    SET business_date = (s.opened_at AT TIME ZONE b.timezone)::date
   FROM branches b
