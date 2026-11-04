@@ -153,6 +153,12 @@ async fn bc11_a_note_is_added_once() {
     assert_eq!(second.status, 200, "repeating is idempotent: {}", second.text);
     assert_eq!(notes(&desk, "KRW", "KRWS").await, 1);
     assert_eq!(first.json()["data"]["id"], second.json()["data"]["id"]);
+    let audited: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM audit_events WHERE action = 'denominationNoteAdd'")
+            .fetch_one(&desk.pool)
+            .await
+            .expect("count audit rows");
+    assert_eq!(audited, 1, "one audit row for the note, none on the repeat");
 }
 
 #[actix_web::test]
