@@ -1,5 +1,6 @@
 import { createEffect, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
+import { sharedSession, type SessionStore } from '../../shared/session/session';
 import './desk.css';
 import * as screenI18n from './i18n';
 import { LowCashBanner } from './LowCashBanner';
@@ -21,11 +22,16 @@ export function DeskPage<S extends FrameStore>(props: {
   steps: DeskStep<S>[];
   aside?: JSX.Element;
   shift?: { open(): boolean; Panel(): JSX.Element };
+  session?: SessionStore;
 }): JSX.Element {
   const t = screenT('desk', screenI18n);
   const current = () => props.steps.find((s) => s.index === props.store.step());
   const task = taskMod?.createTask?.({ store: props.store });
   const shiftOpen = () => (props.shift ? props.shift.open() : true);
+  const sessionProp = props.session;
+  const storeAny = props.store as any;
+  const session = () => sessionProp ?? (storeAny?.path ? sharedSession() : undefined);
+  const canBackdate = () => session()?.me()?.permissions?.includes('exchangeBackdate') ?? false;
   const withEntry = props.store as S & {
     entry?: () => { banner: () => string; actions?: () => JSX.Element } | undefined;
     lowCash?: { low(): string[]; reload(): Promise<void> };
@@ -67,6 +73,11 @@ export function DeskPage<S extends FrameStore>(props: {
               )}
             </For>
           </ol>
+        </Show>
+        <Show when={canBackdate()}>
+          <a href="/desk/backdated" class="desk-backdated-link" data-desk-backdated-link="">
+            คีย์ย้อนหลัง
+          </a>
         </Show>
         {task?.nav()}
       </nav>
