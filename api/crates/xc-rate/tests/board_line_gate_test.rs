@@ -90,10 +90,12 @@ async fn bc3_no_row_refuses_the_line() {
     let db = TestDb::start().await;
     let e = db.engine();
     publish_eur(&db, &e).await;
-    sqlx::query("DELETE FROM branch_currency_notes WHERE branch_id = 'MAIN' AND currency_code = 'EUR'")
-        .execute(&db.pool)
-        .await
-        .expect("delete links");
+    sqlx::query(
+        "DELETE FROM branch_currency_notes WHERE branch_id = 'MAIN' AND currency_code = 'EUR'",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("delete links");
     sqlx::query("DELETE FROM branch_currencies WHERE branch_id = 'MAIN' AND currency_code = 'EUR'")
         .execute(&db.pool)
         .await

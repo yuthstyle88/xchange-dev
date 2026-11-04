@@ -19,8 +19,14 @@ fn bc3_no_rows_offers_nothing() {
 #[test]
 fn bc3_a_row_on_is_offered_and_a_row_off_is_not() {
     let offers = KioskCurrencies::new(&[
-        CurrencySwitch { code: code("SGD"), enabled: true },
-        CurrencySwitch { code: code("USD"), enabled: false },
+        CurrencySwitch {
+            code: code("SGD"),
+            enabled: true,
+        },
+        CurrencySwitch {
+            code: code("USD"),
+            enabled: false,
+        },
     ]);
     assert!(offers.offers(code("SGD")));
     assert!(!offers.offers(code("USD")));

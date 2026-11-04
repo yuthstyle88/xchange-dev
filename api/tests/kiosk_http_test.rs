@@ -586,10 +586,11 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
     assert_eq!(answer.status, 500, "{}", answer.text);
     assert_eq!(answer.json(), json!({ "error": SERVER_ERROR }));
 
-    let switches: (i64,) = sqlx::query_as("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
-        .fetch_one(&counter.desk.db.pool)
-        .await
-        .expect("read kiosk_currencies");
+    let switches: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("read kiosk_currencies");
     assert_eq!(switches.0, 0, "no switch was stored");
     // re-expected for RE-7 #604 by the ticket author: `rates` is dropped (design §8 migration
     // 6); that configure saved no rate is now that it published nothing either

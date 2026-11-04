@@ -104,7 +104,11 @@ async fn show_row_with_stale_follow_is_hidden_with_reason_as_today() {
         .plan_once(now)
         .await
         .unwrap_or_else(|e| panic!("plan_once: {}", e.code()));
-    assert_eq!(planned[0].status, FollowResultStatus::Published, "{planned:?}");
+    assert_eq!(
+        planned[0].status,
+        FollowResultStatus::Published,
+        "{planned:?}"
+    );
 
     room.tt_fetched_at(batch, now - minutes(31)).await;
 
@@ -136,10 +140,7 @@ async fn more_is_exactly_the_ask_rows_with_no_shown_line() {
 
     room.publish_manual(
         MAIN,
-        &[
-            ("USD", "1", "35.10", "35.50"),
-            ("CNY", "1", "4.80", "4.95"),
-        ],
+        &[("USD", "1", "35.10", "35.50"), ("CNY", "1", "4.80", "4.95")],
     )
     .await;
 

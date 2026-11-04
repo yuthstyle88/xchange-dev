@@ -25,11 +25,20 @@ async fn main_has_45_rows_4_show_14_ask_27_hide() {
     tx.rollback().await.expect("roll back");
     let of = |d: Display| rows.iter().filter(|r| r.display == d).count();
     assert_eq!(
-        (rows.len(), of(Display::Show), of(Display::Ask), of(Display::Hide)),
+        (
+            rows.len(),
+            of(Display::Show),
+            of(Display::Ask),
+            of(Display::Hide)
+        ),
         (45, 4, 14, 27)
     );
     let first: Vec<&str> = rows.iter().take(7).map(|r| r.code.as_str()).collect();
-    assert_eq!(first, ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "AUD"], "v2's report look first");
+    assert_eq!(
+        first,
+        ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+        "v2's report look first"
+    );
 }
 
 #[tokio::test]
@@ -41,7 +50,12 @@ async fn display_in_answers_a_row_and_none_without_one() {
         .await
         .expect("read");
     let myrs = PgBranchCurrencies
-        .display_in(&mut tx, &main_branch(), code("MYR"), &GroupCode::new("MYRS").expect("a group"))
+        .display_in(
+            &mut tx,
+            &main_branch(),
+            code("MYR"),
+            &GroupCode::new("MYRS").expect("a group"),
+        )
         .await
         .expect("read");
     let none = PgBranchCurrencies
@@ -49,7 +63,10 @@ async fn display_in_answers_a_row_and_none_without_one() {
         .await
         .expect("read");
     tx.rollback().await.expect("roll back");
-    assert_eq!((usd, myrs, none), (Some(Display::Show), Some(Display::Ask), None));
+    assert_eq!(
+        (usd, myrs, none),
+        (Some(Display::Show), Some(Display::Ask), None)
+    );
 }
 
 #[tokio::test]
@@ -65,7 +82,11 @@ async fn every_board_currency_has_notes_except_the_two_open_variants() {
     .fetch_all(&db.pool)
     .await
     .expect("read");
-    assert_eq!(without, ["GBP/SCP", "KRW/KRWS"], "the owner has not given these notes yet");
+    assert_eq!(
+        without,
+        ["GBP/SCP", "KRW/KRWS"],
+        "the owner has not given these notes yet"
+    );
 }
 
 #[tokio::test]
@@ -79,7 +100,10 @@ async fn a_variant_takes_its_notes_from_the_all_row() {
     .fetch_all(&db.pool)
     .await
     .expect("read");
-    assert_eq!(faces, ["ALL:1", "ALL:50", "ALL:100", "MYRS:5", "MYRS:10", "MYRS:20"]);
+    assert_eq!(
+        faces,
+        ["ALL:1", "ALL:50", "ALL:100", "MYRS:5", "MYRS:10", "MYRS:20"]
+    );
 }
 
 #[tokio::test]
@@ -99,5 +123,12 @@ async fn a_note_of_another_currency_cannot_be_linked() {
     .execute(&db.pool)
     .await;
     assert!(linked.is_err(), "the composite FK refuses it");
-    assert_eq!(count(&db, "SELECT count(DISTINCT currency_code) FROM denominations WHERE face_value IS NOT NULL").await, 40);
+    assert_eq!(
+        count(
+            &db,
+            "SELECT count(DISTINCT currency_code) FROM denominations WHERE face_value IS NOT NULL"
+        )
+        .await,
+        40
+    );
 }

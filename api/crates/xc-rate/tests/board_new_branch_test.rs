@@ -110,14 +110,16 @@ async fn create_failing_later_writes_no_rows() {
     let cmd = create_from("Silom", MAIN);
     let would_be_id = format!("B{}", cmd.request_id);
     let res = db.branches().create(cmd, ACTOR, at(0)).await;
-    assert!(res.is_err(), "later failure in create transaction must abort");
+    assert!(
+        res.is_err(),
+        "later failure in create transaction must abort"
+    );
 
-    let branch_count: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM branches WHERE id = $1")
-            .bind(&would_be_id)
-            .fetch_one(&db.pool)
-            .await
-            .expect("count branches");
+    let branch_count: i64 = sqlx::query_scalar("SELECT count(*) FROM branches WHERE id = $1")
+        .bind(&would_be_id)
+        .fetch_one(&db.pool)
+        .await
+        .expect("count branches");
     let currency_count: i64 =
         sqlx::query_scalar("SELECT count(*) FROM branch_currencies WHERE branch_id = $1")
             .bind(&would_be_id)

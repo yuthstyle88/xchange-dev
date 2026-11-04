@@ -67,12 +67,14 @@ impl BranchView for RatesDraftableView {
             Ok(RatesDraftableData {
                 rows: rows
                     .into_iter()
-                    .map(|(code, group, unit_size, has_reference)| DraftableCurrency {
-                        code,
-                        group,
-                        unit_size: unit_size.normalize().to_string(),
-                        has_reference,
-                    })
+                    .map(
+                        |(code, group, unit_size, has_reference)| DraftableCurrency {
+                            code,
+                            group,
+                            unit_size: unit_size.normalize().to_string(),
+                            has_reference,
+                        },
+                    )
                     .collect(),
             })
         }
