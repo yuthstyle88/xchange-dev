@@ -155,6 +155,8 @@ impl BranchService {
                         &trimmed_req,
                     )
                     .await?;
+                    repo.copy_currency_set_in(tx, &from_branch_id, &new_id)
+                        .await?;
 
                     Ok(Branch {
                         id: BranchId::new(&new_id),

@@ -24,7 +24,7 @@ export type KioskCurrencies = { currencies: Array<KioskCurrency>, kbank: KbankRe
 /**
  * One currency in the kiosk currencies view.
  */
-export type KioskCurrency = { code: string, name: string, nameEn: string, countries: Array<KioskCountry>, buy: Rate | null, sell: Rate | null, unitSize: string, updated: string, partnerName: string, partnerCost: Rate | null, enabled: boolean, kbank: Array<KbankComparison>, 
+export type KioskCurrency = { code: string, name: string, nameEn: string, countries: Array<KioskCountry>, buy: Rate | null, sell: Rate | null, unitSize: string, updated: string, partnerName: string, partnerCost: Rate | null, display: string, enabled: boolean, kbank: Array<KbankComparison>, 
 /**
  * pricing-tiers.md §15.8a: true only when the currency is kiosk-enabled and its line is not `hidden`. A
  * board-only currency is listed with `false` ("contact staff").

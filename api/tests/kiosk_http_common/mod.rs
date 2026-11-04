@@ -185,6 +185,13 @@ fn detail_of(what: &KioskAudit) -> Value {
         KioskAudit::CurrencyConfigured { enabled, buy, sell } => {
             json!({ "enabled": enabled, "buy": buy, "sell": sell })
         }
+        KioskAudit::CurrencyDisplaySet {
+            group,
+            display,
+            from,
+        } => {
+            json!({ "group": group, "display": display, "from": from })
+        }
         // Amended by the author of KC-D #4174 (claude/studio-claude-10, `kiosk-cancel.md` §3.3):
         // the cancel's line, as `detail_of` in `kiosk_ports.rs` writes it.
         KioskAudit::Cancelled { from, reason } => json!({
@@ -226,7 +233,9 @@ impl KioskAuditLog for TestAudit {
                 KioskAudit::Cancelled { .. } => Some("CANCELLED"),
                 // XC-BE-GAPS-A row 5: written after the save completed the request (D13).
                 KioskAudit::CustomerDiffers { .. } => Some("COMPLETED"),
-                KioskAudit::Completed { .. } | KioskAudit::CurrencyConfigured { .. } => None,
+                KioskAudit::Completed { .. }
+                | KioskAudit::CurrencyConfigured { .. }
+                | KioskAudit::CurrencyDisplaySet { .. } => None,
             };
             if let Some(expected) = moved_to {
                 let seen: Option<(String,)> = sqlx::query_as(

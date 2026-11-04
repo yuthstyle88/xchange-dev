@@ -86,7 +86,7 @@ const B9: &str = "B9";
 
 /// The keys of one currency: today's eleven plus `unitSize`.
 // pricing-tiers.md §15.8a adds `quoteEnabled` (XC-V9-PRICING skeleton, restated by the sub-controller).
-const CURRENCY_KEYS: [&str; 13] = [
+const CURRENCY_KEYS: [&str; 14] = [
     "code",
     "name",
     "nameEn",
@@ -97,6 +97,7 @@ const CURRENCY_KEYS: [&str; 13] = [
     "updated",
     "partnerName",
     "partnerCost",
+    "display",
     "enabled",
     "kbank",
     "quoteEnabled",

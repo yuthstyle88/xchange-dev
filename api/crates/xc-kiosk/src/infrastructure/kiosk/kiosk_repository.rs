@@ -321,10 +321,8 @@ impl PgKioskRepository {
     }
 }
 
-const SELECT_SWITCHES: &str =
-    // SKELETON (board-currencies BC-0): a row `configure` never wrote is ignored, so the seed changes no kiosk yet. BC-3 replaces this.
-    "SELECT currency_code::text, display <> 'HIDE' FROM branch_currencies \
-     WHERE branch_id = $1 AND group_code = 'ALL' AND updated_by IS NOT NULL ORDER BY currency_code";
+const SELECT_SWITCHES: &str = "SELECT currency_code::text, display = 'SHOW' FROM branch_currencies \
+     WHERE branch_id = $1 AND group_code = 'ALL' ORDER BY currency_code";
 
 impl KioskRepository for PgKioskRepository {
     async fn find(&self, branch: &BranchId, id: &str) -> AppResult<Option<KioskRequest>> {

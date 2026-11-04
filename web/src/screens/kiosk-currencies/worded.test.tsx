@@ -201,7 +201,7 @@ describe('screens/kiosk-currencies wordedError (WE-36 #1785)', () => {
       dispose = render(() => <KioskCurrenciesScreen api={client.api} branch="B1" />, host);
       await vi.waitFor(() => expect(host.textContent).toContain('USD'));
 
-      const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      const checkbox = host.querySelector<HTMLInputElement>('input[type="radio"][value="HIDE"]');
       expect(checkbox).not.toBeNull();
       checkbox!.click();
 
@@ -233,7 +233,7 @@ describe('screens/kiosk-currencies wordedError (WE-36 #1785)', () => {
       dispose = render(() => <KioskCurrenciesScreen api={client.api} branch="B1" />, host);
       await vi.waitFor(() => expect(host.textContent).toContain('USD'));
 
-      const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      const checkbox = host.querySelector<HTMLInputElement>('input[type="radio"][value="HIDE"]');
       expect(checkbox).not.toBeNull();
       checkbox!.click();
 
@@ -258,7 +258,7 @@ describe('screens/kiosk-currencies wordedError (WE-36 #1785)', () => {
       dispose = render(() => <KioskCurrenciesScreen api={client.api} branch="B1" />, host);
       await vi.waitFor(() => expect(host.textContent).toContain('USD'));
 
-      const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      const checkbox = host.querySelector<HTMLInputElement>('input[type="radio"][value="HIDE"]');
       expect(checkbox).not.toBeNull();
       checkbox!.click();
 

@@ -4,15 +4,21 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+use xc_approval::infrastructure::audit_log::PgAuditLog;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::CurrencyCode;
+use xc_rate::application::currency::denomination_group_service::DenominationGroupService;
+use xc_rate::domain::currency::denomination_groups::GroupCode;
+use xc_rate::infrastructure::currency::denomination_groups::PgDenominationGroups;
 
+use super::commands::map_rate_engine_error;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::http::v3::caller::Caller;
@@ -40,7 +46,15 @@ pub struct DenominationNoteAddOutput {
     pub face_value: String,
 }
 
-pub struct DenominationNoteAddCommand;
+pub struct DenominationNoteAddCommand {
+    service: Arc<DenominationGroupService>,
+}
+
+impl DenominationNoteAddCommand {
+    pub fn new(service: Arc<DenominationGroupService>) -> Self {
+        Self { service }
+    }
+}
 
 impl CommandAction for DenominationNoteAddCommand {
     const NAME: &'static str = "denominationNoteAdd";
@@ -63,18 +77,53 @@ impl CommandAction for DenominationNoteAddCommand {
 
     async fn run_as(
         &self,
-        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         _branch: &BranchId,
-        _caller: &Caller,
-        _input: Self::Input,
+        caller: &Caller,
+        input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        todo!("BC-11")
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
+        let code = CurrencyCode::parse(&input.currency).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("currency"),
+                e.to_string(),
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+        let group = GroupCode::new(&input.group).map_err(|e| {
+            V3Error::new(
+                "validationFailed",
+                Some("group"),
+                e,
+                StatusCode::BAD_REQUEST,
+            )
+        })?;
+
+        let id = self
+            .service
+            .add_note(tx, who, code, &group, &input.face_value)
+            .await
+            .map_err(map_rate_engine_error)?;
+
+        Ok(DenominationNoteAddOutput {
+            id,
+            currency: code.as_str().to_string(),
+            group: group.as_str().to_string(),
+            face_value: input.face_value,
+        })
     }
 }
 
-pub fn register(cfg: &mut web::ServiceConfig, _state: &AppState) {
-    CommandEndpoint::register(cfg, Arc::new(DenominationNoteAddCommand));
+pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
+    let groups = Arc::new(PgDenominationGroups::new(state.db.clone()));
+    let audit = Arc::new(PgAuditLog::new(state.db.clone()));
+    let service = Arc::new(DenominationGroupService::new(groups, audit));
+    CommandEndpoint::register(cfg, Arc::new(DenominationNoteAddCommand::new(service)));
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

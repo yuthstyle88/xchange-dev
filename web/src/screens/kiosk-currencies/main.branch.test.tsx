@@ -108,7 +108,7 @@ function currencyReads(): string[] {
 
 /** Ticks every switch on the page. */
 function tickAll(): number {
-  const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+  const boxes = [...document.querySelectorAll<HTMLInputElement>('input[type="radio"][value="SHOW"]')];
   for (const b of boxes) b.click();
   return boxes.length;
 }
