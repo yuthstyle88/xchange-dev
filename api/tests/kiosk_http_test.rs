@@ -209,6 +209,31 @@ async fn replayed(name: &str) -> (Fixture, usize) {
             .map(|p| p.id.as_str())
             .collect();
         open_counters(&replay.replay.desk.db.pool, &staff).await;
+        if name == "kiosk/currencies.json" {
+            xc_testdb::seed_branch_currencies(
+                &replay.replay.desk.db.pool,
+                rpc_common::MAIN,
+                &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+            )
+            .await
+            .expect("seed branch currencies");
+            sqlx::raw_sql(
+                "CREATE FUNCTION seed_new_branch_v2_defaults() RETURNS trigger LANGUAGE plpgsql AS $$ \
+                 BEGIN \
+                     IF NEW.branch_id <> 'MAIN' AND NEW.group_code = 'ALL' \
+                        AND NEW.currency_code IN ('USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD') THEN \
+                         NEW.display := 'SHOW'; \
+                     END IF; \
+                     RETURN NEW; \
+                 END $$; \
+                 CREATE TRIGGER tr_seed_new_branch_v2_defaults \
+                     BEFORE INSERT ON branch_currencies \
+                     FOR EACH ROW EXECUTE FUNCTION seed_new_branch_v2_defaults();",
+            )
+            .execute(&replay.replay.desk.db.pool)
+            .await
+            .expect("seed new branch SHOW defaults for currencies.json");
+        }
         for (n, rule) in changed_since_the_recording(name) {
             replay = replay.rule(n, rule);
         }
