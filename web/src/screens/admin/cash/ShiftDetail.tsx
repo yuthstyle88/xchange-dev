@@ -11,6 +11,23 @@ import * as table from './i18n';
 
 const t = screenT('admin.cash', table);
 
+export function shiftLabel(
+  shiftName: string | null | undefined,
+  businessDate?: string | null,
+): string | null {
+  if (!shiftName) return null;
+  if (!businessDate) return shiftName;
+  const parts = businessDate.split('T')[0].split('-');
+  if (parts.length === 3) {
+    const day = parts[2].replace(/^0/, '');
+    const month = parts[1].replace(/^0/, '');
+    if (day && month) {
+      return `${shiftName} · ${day}/${month}`;
+    }
+  }
+  return `${shiftName} · ${businessDate}`;
+}
+
 export function openShiftDetail(row: AdminShiftRow, branch: string): void {
   const api = new ApiClient();
   const isClosed = row.status === 'CLOSED';
@@ -20,6 +37,9 @@ export function openShiftDetail(row: AdminShiftRow, branch: string): void {
     <div class="shift-detail-dialog">
       <p class="shift-detail-meta">
         {row.id} · {row.staff}
+        <Show when={shiftLabel(row.shiftName, row.businessDate)}>
+          {(label) => <> <span class="pill neutral shift-label">{label()}</span></>}
+        </Show>
       </p>
 
       <table class="shift-detail-table">
