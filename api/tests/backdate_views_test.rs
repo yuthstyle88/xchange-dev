@@ -13,8 +13,8 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use actix_web::http::{header, StatusCode};
-use actix_web::{test as atest, web, App, HttpRequest};
+use actix_web::http::{StatusCode, header};
+use actix_web::{App, HttpRequest, test as atest, web};
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use rust_decimal::Decimal;
 use serde_json::Value;
