@@ -375,8 +375,10 @@ async fn another_branchs_tag_answers_200() {
     xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["USD"])
         .await
         .expect("seed branch currencies");
-    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='b-north' AND display='ASK'")
-        .await;
+    db.exec(
+        "UPDATE branch_currencies SET display='HIDE' WHERE branch_id='b-north' AND display='ASK'",
+    )
+    .await;
     xc_testdb::seed_branch_currencies(&db.pool, "b-north", &["USD"])
         .await
         .expect("seed branch currencies");
