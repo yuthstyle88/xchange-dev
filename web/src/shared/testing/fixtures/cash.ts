@@ -46,6 +46,7 @@ export function makeCountSubmitInput(o: Partial<CountSubmitInput> = {}): CountSu
     branch: null,
     kind: 'kind',
     shiftId: null,
+    shiftTemplateId: null,
     lines: [],
     note: null,
     ...o,
