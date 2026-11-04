@@ -160,6 +160,9 @@ fn branch_id(prefix: &str) -> String {
 async fn branch_with_usd(db: &TestDb, prefix: &str) -> String {
     let branch = branch_id(prefix);
     db.branch(&branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, &branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(&branch, &[USD]).await;
     branch
 }
@@ -508,6 +511,9 @@ async fn be4_row10_a_stale_line_its_policy_refuses_refuses_the_preview_as_today(
     let db = TestDb::start().await;
     let branch = branch_id("be4r10r");
     db.branch(&branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, &branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     let stop = db.policy(&branch, Some("STOP"), None).await;
     db.publish(
         &branch,
@@ -544,6 +550,9 @@ async fn be4_row10_a_stale_line_its_policy_admits_is_estimated_and_marked_stale(
     let db = TestDb::start().await;
     let branch = branch_id("be4r10a");
     db.branch(&branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, &branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     let open = db.policy(&branch, None, None).await;
     db.publish(
         &branch,
