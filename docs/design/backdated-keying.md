@@ -316,6 +316,11 @@ same key with another body, as every v3 command does).
 - `[required]` With `backdated = Some(m)` the receipt's banner slot (the `{{DEMO_BANNER}}` placeholder, `receipt.rs:13-18`)
   prints `ย้อนหลัง · บันทึกเมื่อ <m.entered_at, Asia/Bangkok, dd/MM/yyyy HH:mm>`. A DEMO receipt is never backdated.
 
+- Audit (decided 2026-11-04, owner review input on PR 6169): a backdated sale writes **one** audit event,
+  `transaction.backdated` (§5), and no `transaction.created` / `transaction.confirmed`. The draft and its confirmation
+  happen inside the same call by the same keyer, with no approval in between (§11 Q2 = A), so separate events would
+  add no fact. `transaction.backdated` carries the deal time, the business date, the rate and the real entry.
+
 ## 9. Reads and reports (R4)
 
 - `[required]` `TransactionDto` gains `backdate: Option<BackdateMarkDto>` (`#[ts(optional = nullable)]`,
