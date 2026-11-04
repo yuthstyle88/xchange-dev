@@ -622,6 +622,7 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
     // switched on (`xc-kiosk` `DEFAULT_CODES`)
     room.switch(MAIN, "JPY", false).await;
     room.switch(MAIN, "KRW", true).await;
+    room.switch(B9, "JPY", true).await;
     room.switch(B9, "SGD", true).await;
     room.set_rate_with_partner(B9, "SGD", "25.9", "26.6", "SuperRich", Some("25.5"))
         .await;

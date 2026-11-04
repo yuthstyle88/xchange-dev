@@ -181,6 +181,11 @@ fn headings_of_tops() -> Value {
 #[tokio::test]
 async fn existing_fields_lines_and_etag_are_unchanged_on_a_tiered_publication() {
     let db = TestDb::start().await;
+    db.exec("UPDATE branch_currencies SET display='HIDE' WHERE branch_id='MAIN' AND display='ASK'")
+        .await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["JPY", "USD"])
+        .await
+        .expect("seed branch currencies");
     let policy = db.policy("MAIN", None, None).await;
     tiers_on(&db, &policy, TOPS).await;
     let published = db

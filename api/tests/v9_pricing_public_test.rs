@@ -104,6 +104,7 @@ async fn a_followed_line_is_hidden_blocked_when_mains_latest_plan_is_blocked() {
     let room = Room::start().await;
     let now = whole_second_now();
     room.create_branch(BR_B).await;
+    room.kiosk_switch(BR_B, "USD", true).await;
     room.policy(BR_B).await;
     b_follows_and_main_blocks(&room, BR_B, now).await;
 
@@ -133,6 +134,7 @@ async fn a_replan_whose_publish_fails_hides_main_and_the_followed_branch_as_mism
     let room = Room::start().await;
     let now = whole_second_now();
     room.create_branch(BR_B).await;
+    room.kiosk_switch(BR_B, "USD", true).await;
     room.policy(BR_B).await;
     room.policy(MAIN).await;
     room.bot(&[("USD", USD_BOT.0, USD_BOT.1), ("EUR", "38.00", "38.60")])
@@ -222,11 +224,13 @@ async fn rate_display_save_changing_featured_changes_the_public_etag() {
     room.finish().await;
 }
 
-/// PV-15d: a new Super Rich batch with another currency list (KHR added) changes the public feed's ETag: the old tag
-/// gets `200`, and with `allMarket` (the default) KHR, which MAIN has no price for, is in `display.more`.
+/// PV-15d: an `ASK` row added on MAIN (KHR) changes the public feed's ETag: the old tag gets `200`, and with
+/// `allMarket` (the default) KHR, which MAIN has no price for, is in `display.more`.
 #[tokio::test]
-async fn a_new_super_rich_currency_list_changes_the_public_etag() {
+async fn an_ask_row_added_changes_the_public_etag() {
     let room = Room::start().await;
+    room.exec("UPDATE branch_currencies SET display = 'HIDE' WHERE branch_id = 'MAIN' AND display = 'ASK'")
+        .await;
     let now = whole_second_now();
     room.publish_manual(MAIN, &[("USD", "1", "35.10", "35.50")])
         .await;
@@ -236,9 +240,10 @@ async fn a_new_super_rich_currency_list_changes_the_public_etag() {
     assert_eq!(first.status, StatusCode::OK, "{}", first.text);
     let old = first.etag.clone().expect("an ETag");
 
-    room.sr(
-        now - minutes(1),
-        &[("USD", "33.30", "33.40"), ("KHR", "0.0080", "0.0090")],
+    room.exec(
+        "INSERT INTO branch_currencies (branch_id, currency_code, group_code, display, updated_by) \
+         VALUES ('MAIN', 'KHR', 'ALL', 'ASK', 'test') \
+         ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE SET display = 'ASK'",
     )
     .await;
     let after = public_rates(&room, MAIN, Some(&old)).await;

@@ -326,6 +326,11 @@ async fn row_5_untiered_line_with_decimal_max_returns_some() {
 #[tokio::test]
 async fn row_6_base_rates_and_gaps_are_not_read_and_a_null_tier_1_side_returns_none() {
     let db = TestDb::start().await;
+    db.exec(
+        "INSERT INTO branch_currencies (branch_id, currency_code, group_code, display) \
+         VALUES ('MAIN', 'USD', 'MISSING', 'SHOW'), ('MAIN', 'USD', 'GAP', 'SHOW')",
+    )
+    .await;
     let p = db.publish("MAIN", &[USD]).await;
 
     // Group "MISSING": base_sell is missing on T2, base_buy disagrees between T1 and T2.
