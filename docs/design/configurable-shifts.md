@@ -93,10 +93,15 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 
 ### 2.3 Opening a shift (brief rule 3)
 
-- `[required]` The OPEN count (`POST /api/cash-counts`, kind `OPEN`) carries `shiftTemplateId`. The server refuses:
-  - `shiftTemplateId` missing: `422 shiftNotChosen`;
+- `[required]` The OPEN count (`POST /api/cash-counts`, kind `OPEN`) carries `shiftTemplateId`. The server decides:
   - a template that does not cover `counted_at` (T6) or is not live: `409 outsideShiftWindow`;
-  - nothing covers now at all: `409 outsideShiftWindow` (the done line's 05:00 case).
+  - nothing covers now at all: `409 outsideShiftWindow`;
+  - `shiftTemplateId` missing and **exactly one** template covers now: that one (the server-side twin of the preselect);
+  - `shiftTemplateId` missing and two or more cover now: `422 shiftNotChosen`.
+- `[required]` Entry point: `CashCountService::submit_chosen_in(tx, actor, cmd, shift_template_id: Option<&str>, now)`;
+  the existing `submit_in(tx, actor, cmd, now)` keeps its signature and calls it with `None`. The command handler
+  (`commands/cash.rs`) passes the client's choice. Reason: 40 test files build `SubmitCount` and many open shifts; under
+  the 24-hour defaults exactly one shift covers any moment, so they keep working unchanged.
 - `[required]` The count stores `shift_template_id` and the instance's `business_date`. The verify (`verify_count_in`) copies
   both, plus the template's **name at that moment**, into the new `shifts` row. A verify later than the window's end still
   opens the shift: the teller's choice was checked when they counted.
@@ -157,7 +162,7 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 ### 2.8 Defaults
 
 - `[required]` The migration inserts A, B, C (the second, 24-hour table in §0) for every existing branch.
-- `[required]` A branch created afterwards gets the same three: `adminCreateBranch` (`compat/rpc.rs:257-270`) calls `ShiftPlanService::seed_defaults` after `create_in`. Seeding is idempotent (no-op when the branch already has a live template).
+- `[required]` A branch created afterwards gets the same three from an `AFTER INSERT ON branches` trigger in the migration, whichever path inserts the branch (`adminCreateBranch` in `compat/rpc.rs:257-270`, a test fixture). So no branch is ever without a plan, and every test branch has the 24-hour defaults. This replaces CS-13 (owner Q10). `ShiftPlanService::seed_defaults` stays for a later "reset to defaults" action; nothing calls it yet.
 - The defaults live once, in `ShiftPlan::defaults()`; the migration's `INSERT` repeats them as data and a test compares the two.
 
 ### 2.9 Editing the plan
@@ -508,11 +513,11 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | C1 | OPEN count at 05:00 | `409 outsideShiftWindow`; no count row |
 | C2 | OPEN count at 15:30 choosing B | stored with B and 4 Nov |
 | C3 | OPEN count at 11:00 choosing B | `409 outsideShiftWindow` |
-| C4 | OPEN count with no `shiftTemplateId` | `422 shiftNotChosen` |
+| C4 | OPEN count with no `shiftTemplateId` at 15:30 (A and B cover) | `422 shiftNotChosen`; at 11:00 (only A) it opens as A |
 | C5 | verify C2's count at 19:30 (after A's end, inside B) | shift opens as B, 4 Nov |
 | C6 | verify at 5 Nov 01:00 a count made 4 Nov 23:50 for C | shift opens as C, 4 Nov |
 | C7 | HANDOVER_OUT, CLOSE, SAFE counts | unchanged: no template needed |
-| C8 | an OPEN count made before this feature (no template) is verified | refused `shiftNotChosen`; the teller recounts (migration §5 measures that none are pending) |
+| C8 | an OPEN count made before this feature (no template) is verified | the shift opens untemplated; the trigger dates it (migration §5 measures that none are pending) |
 | D1 | LIVE sale at 5 Nov 02:00 in a C@4 Nov shift, client sends `valueDate 2026-11-05` | stored `value_date = 2026-11-04` |
 | D2 | DEMO sale | client's `valueDate` kept |
 | K1 | CLOSE count of a C@4 Nov shift at 5 Nov 04:10 | count `business_date` = 4 Nov |
@@ -595,6 +600,20 @@ SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.position
        ('C', time '22:00', time '06:00', 2)
      ) AS d (name, starts_at, ends_at, position);
 
+-- Every branch created later gets the same defaults, whichever path inserts it (the admin command, a test fixture).
+-- The Owner edits the list afterwards; a branch never starts without a plan.
+CREATE FUNCTION branches_default_shift_templates() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position)
+    VALUES (NEW.organization_id, NEW.id, 'A', time '06:00', time '14:00', 0),
+           (NEW.organization_id, NEW.id, 'B', time '14:00', time '22:00', 1),
+           (NEW.organization_id, NEW.id, 'C', time '22:00', time '06:00', 2);
+    RETURN NEW;
+END $$;
+CREATE TRIGGER branches_default_shift_templates
+    AFTER INSERT ON branches
+    FOR EACH ROW EXECUTE FUNCTION branches_default_shift_templates();
+
 -- A teller's shift records the template, its name at opening, and the business date.
 ALTER TABLE shifts
     ADD COLUMN template_id   uuid REFERENCES shift_templates (id),
@@ -669,7 +688,11 @@ SELECT count(*) AS counts_to_date FROM cash_counts;
 SELECT count(*) AS open_counts_pending FROM cash_counts WHERE kind = 'OPEN' AND verified_at IS NULL AND rejected_at IS NULL;  -- should be 0 at deploy
 ```
 
-**Why triggers.** 115 files insert into `shifts` directly (`grep -rln "INSERT INTO shifts" api` at `6334e748`, nearly all test
+**Why the branch trigger (Q10).** Test fixtures create branches with plain `INSERT INTO branches` (`TestDb::branch`,
+`Db::branch`, `seed_branch`, …). Without a plan such a branch could not open a shift or sell once CS-4/CS-7 land. The trigger
+gives every new branch the defaults, so the fixture change is limited to tests that set `opening_hours` to shape a window.
+
+**Why the date triggers.** 115 files insert into `shifts` directly (`grep -rln "INSERT INTO shifts" api` at `6334e748`, nearly all test
 fixtures; the review on this PR counted 110 under `tests/` plus four in-crate writers), and `cash_counts` likewise. A bare
 `NOT NULL` would break every one of them. Each trigger applies the backfill's own rule to an insert that does not name a date,
 so the column stays `NOT NULL` and no reader falls back. Every production writer that knows the shift writes the date itself:
@@ -702,7 +725,7 @@ DROP TABLE shift_templates;
 
 ## 7. Owner questions
 
-Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q1–Q9 = A**. No question is open.
+Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q1–Q9 = A**. Q10 is open.
 
 | # | Question | Decided |
 |---|---|---|
@@ -715,6 +738,7 @@ Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q
 | Q7 | Keep the 10-minute pause before the cutover on a 24-hour plan? | **A**: no pause; consecutive spans join (T10). |
 | Q8 | Re-approve the migration with the 06/14/22 seed and the two triggers? | **A**: approved at `b661f613`. |
 | Q9 | Run the queue/kiosk day close at the cutover on a 24-hour branch? | **A**: *"Yes, at cutover"* (§2.12). |
+| Q10 | Seed the defaults on every new branch with a migration trigger (replacing the code call in `adminCreateBranch`)? | pending (sent 2026-11-04 22:00 ICT); recommendation A |
 
 ## 8. Tickets and waves
 
@@ -730,7 +754,6 @@ Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q
 | CS-9 save command + view | mechanical | Flash | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs`, `xc-auth/.../areas/branch_shifts.rs` | 2 (after CS-3) |
 | CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs`, `dto/v3/open_shift_choices.rs`, `xc-auth/.../areas/open_shift_choices.rs` | 2 (after CS-3) |
 | CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + their DTOs | 1 |
-| CS-13 seed on create | mechanical | Flash | `api/src/application/compat/rpc.rs` | 2 (after CS-3) |
 | CS-19 handover accept | guarded | Argon | `xc-cash/src/application/handover/handover_service.rs`, `api/src/presentation/http/v3/commands/cash/handovers.rs` | 2 (after CS-3) |
 | CS-21 reconciliation by business date | logic | Argon | `api/src/application/finance/reconciliation.rs`, `api/src/application/finance/sheet_parts.rs` | 1 |
 | CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 3 (after CS-9) |
