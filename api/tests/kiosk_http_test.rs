@@ -586,7 +586,7 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
     assert_eq!(answer.status, 500, "{}", answer.text);
     assert_eq!(answer.json(), json!({ "error": SERVER_ERROR }));
 
-    let switches: (i64,) = sqlx::query_as("SELECT count(*) FROM kiosk_currencies")
+    let switches: (i64,) = sqlx::query_as("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
         .fetch_one(&counter.desk.db.pool)
         .await
         .expect("read kiosk_currencies");

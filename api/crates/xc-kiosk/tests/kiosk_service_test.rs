@@ -668,7 +668,7 @@ async fn a_command_whose_audit_line_fails_stores_nothing() {
             .is_err()
     );
     assert_eq!(
-        db.count("kiosk_currencies").await,
+        db.switch_count().await,
         0,
         "the switch is not stored"
     );

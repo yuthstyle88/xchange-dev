@@ -322,7 +322,9 @@ impl PgKioskRepository {
 }
 
 const SELECT_SWITCHES: &str =
-    "SELECT code::text, enabled FROM kiosk_currencies WHERE branch_id = $1 ORDER BY code";
+    // SKELETON (board-currencies BC-0): a row `configure` never wrote is ignored, so the seed changes no kiosk yet. BC-3 replaces this.
+    "SELECT currency_code::text, display <> 'HIDE' FROM branch_currencies \
+     WHERE branch_id = $1 AND group_code = 'ALL' AND updated_by IS NOT NULL ORDER BY currency_code";
 
 impl KioskRepository for PgKioskRepository {
     async fn find(&self, branch: &BranchId, id: &str) -> AppResult<Option<KioskRequest>> {
@@ -803,6 +805,32 @@ impl KioskRepository for PgKioskRepository {
         into_switches(rows)
     }
 
+    async fn set_display_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        code: CurrencyCode,
+        group: &str,
+        display: &str,
+        actor: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO branch_currencies \
+             (branch_id, organization_id, currency_code, group_code, display, updated_by, updated_at) \
+             SELECT b.id, b.organization_id, $2, $3, $4, $5, now() FROM branches b WHERE b.id = $1 \
+             ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE \
+             SET display = excluded.display, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
+        )
+        .bind(branch.as_str())
+        .bind(code.as_str())
+        .bind(group)
+        .bind(display)
+        .bind(actor)
+        .execute(&mut **tx)
+        .await?;
+        Ok(())
+    }
+
     async fn set_switch_in(
         &self,
         tx: Tx<'_, '_>,
@@ -811,8 +839,10 @@ impl KioskRepository for PgKioskRepository {
         enabled: bool,
     ) -> AppResult<()> {
         sqlx::query(
-            "INSERT INTO kiosk_currencies (branch_id, code, enabled) VALUES ($1, $2, $3) \
-             ON CONFLICT (branch_id, code) DO UPDATE SET enabled = excluded.enabled",
+            "INSERT INTO branch_currencies (branch_id, currency_code, display, updated_by, updated_at) \
+             VALUES ($1, $2, CASE WHEN $3 THEN 'SHOW' ELSE 'HIDE' END, 'kiosk', now()) \
+             ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE \
+             SET display = excluded.display, updated_by = excluded.updated_by, updated_at = excluded.updated_at",
         )
         .bind(branch.as_str())
         .bind(code.as_str())

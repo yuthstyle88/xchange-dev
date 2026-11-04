@@ -747,10 +747,19 @@ impl TestDb {
             .expect("read kiosk_requests")
     }
 
+    /// How many rows `configure` wrote (`branch_currencies`; the migration's seed is not counted).
+    pub async fn switch_count(&self) -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
+            .fetch_one(&self.pool)
+            .await
+            .expect("count branch_currencies")
+    }
+
     /// Every stored switch, as the fixture writes `switches`.
     pub async fn switches(&self) -> Value {
         let rows = sqlx::query(
-            "SELECT branch_id, code::text, enabled FROM kiosk_currencies ORDER BY branch_id, code",
+            "SELECT branch_id, currency_code::text AS code, display <> 'HIDE' AS enabled FROM branch_currencies \
+             WHERE updated_by IS NOT NULL ORDER BY branch_id, currency_code",
         )
         .fetch_all(&self.pool)
         .await

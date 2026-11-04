@@ -1,0 +1,434 @@
+[
+ {
+  "period": "2026-11-03",
+  "currency_id": "USD",
+  "currency_name_th": "สหรัฐอเมริกา : ดอลลาร์ (USD)",
+  "currency_name_eng": "USA : DOLLAR (USD) ",
+  "buying_sight": "33.5029",
+  "buying_transfer": "33.5726",
+  "selling": "33.8963"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "GBP",
+  "currency_name_th": "อังกฤษ : ปอนด์สเตอร์ลิง (GBP)",
+  "currency_name_eng": "UNITED KINGDOM : POUND STERING (GBP)",
+  "buying_sight": "44.7966",
+  "buying_transfer": "44.8935",
+  "selling": "45.6680"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "EUR",
+  "currency_name_th": "ยูโรโซน : ยูโร (EUR)",
+  "currency_name_eng": "EURO ZONE : EURO (EUR)",
+  "buying_sight": "37.3645",
+  "buying_transfer": "37.4438",
+  "selling": "38.0920"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "JPY",
+  "currency_name_th": "ญี่ปุ่น : เยน (100 เยน) (JPY)",
+  "currency_name_eng": "JAPAN : YEN (100 YEN) (JPY) ",
+  "buying_sight": "21.0141",
+  "buying_transfer": "21.0847",
+  "selling": "21.6713"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "HKD",
+  "currency_name_th": "ฮ่องกง : ดอลลาร์ (HKD) ",
+  "currency_name_eng": "HONG KONG : DOLLAR (HKD)",
+  "buying_sight": "4.2534",
+  "buying_transfer": "4.2684",
+  "selling": "4.3326"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "MYR",
+  "currency_name_th": "มาเลเซีย : ริงกิต (MYR)",
+  "currency_name_eng": "MALAYSIA : RINGGIT (MYR)",
+  "buying_sight": "8.1632",
+  "buying_transfer": "8.1829",
+  "selling": "8.3905"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "SGD",
+  "currency_name_th": "สิงคโปร์ : ดอลลาร์ (SGD) ",
+  "currency_name_eng": "SINGAPORE : DOLLAR (SGD)",
+  "buying_sight": "26.0408",
+  "buying_transfer": "26.0817",
+  "selling": "26.6337"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "BND",
+  "currency_name_th": "บรูไนดารุสซาลาม : ดอลลาร์ (BND)",
+  "currency_name_eng": "BRUNEI : DOLLAR (BND) ",
+  "buying_sight": "25.8999",
+  "buying_transfer": "25.9899",
+  "selling": "26.7376"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "PHP",
+  "currency_name_th": "ฟิลิปปินส์ : เปโซ (PHP) ",
+  "currency_name_eng": "PHILIPPINES : PESO (PHP) ",
+  "buying_sight": "0.5056",
+  "buying_transfer": "0.5170",
+  "selling": "0.5466"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "IDR",
+  "currency_name_th": "อินโดนิเซีย : รูเปีย (1,000 รูเปีย) (IDR)",
+  "currency_name_eng": "INDONESIA : RUPIAH (1,000 RUPIAH) (IDR)",
+  "buying_sight": "1.6683",
+  "buying_transfer": "1.7662",
+  "selling": "1.9557"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "INR",
+  "currency_name_th": "อินเดีย : รูปี (INR) ",
+  "currency_name_eng": "INDIA : RUPEE (INR)",
+  "buying_sight": "0.3296",
+  "buying_transfer": "0.3333",
+  "selling": "0.3819"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "CHF",
+  "currency_name_th": "สวิสเซอร์แลนด์ : ฟรังก์ (CHF)",
+  "currency_name_eng": "SWITZERLAND : FRANC (CHF) ",
+  "buying_sight": "40.8179",
+  "buying_transfer": "40.8762",
+  "selling": "41.4394"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "AUD",
+  "currency_name_th": "ออสเตรเลีย : ดอลลาร์ (AUD)",
+  "currency_name_eng": "AUSTRALIA : DOLLAR (AUD) ",
+  "buying_sight": "23.2495",
+  "buying_transfer": "23.2968",
+  "selling": "24.0016"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "NZD",
+  "currency_name_th": "นิวซีแลนด์ : ดอลลาร์ (NZD)",
+  "currency_name_eng": "NEW ZEALAND : DOLLAR (NZD)",
+  "buying_sight": "18.6127",
+  "buying_transfer": "18.6745",
+  "selling": "19.2516"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "CAD",
+  "currency_name_th": "แคนาดา : ดอลลาร์ (CAD)",
+  "currency_name_eng": "CANADA : DOLLAR (CAD)",
+  "buying_sight": "23.8900",
+  "buying_transfer": "23.9537",
+  "selling": "24.3145"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "SEK",
+  "currency_name_th": "สวีเดน : โครนา (SEK)",
+  "currency_name_eng": "SWEDEN : KRONA (SEK)",
+  "buying_sight": "3.4086",
+  "buying_transfer": "3.4218",
+  "selling": "3.4775"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "DKK",
+  "currency_name_th": "เดนมาร์ก : โครน (DKK)",
+  "currency_name_eng": "DENMARK : KRONE (DKK) ",
+  "buying_sight": "5.0111",
+  "buying_transfer": "5.0230",
+  "selling": "5.0871"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "NOK",
+  "currency_name_th": "นอร์เวย์ : โครน (NOK) ",
+  "currency_name_eng": "NORWAY : KRONE (NOK)",
+  "buying_sight": "3.5864",
+  "buying_transfer": "3.5981",
+  "selling": "3.6557"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "CNY",
+  "currency_name_th": "จีน : หยวน เรนมินบิ (CNY)",
+  "currency_name_eng": "CHINA : YUAN RENMINBI (CNY)",
+  "buying_sight": "5.0073",
+  "buying_transfer": "5.0243",
+  "selling": "5.1140"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "MXN",
+  "currency_name_th": "เม็กซิโก : เปโซ (MXN)",
+  "currency_name_eng": "MEXICO : PESO (MXN)",
+  "buying_sight": "-",
+  "buying_transfer": "1.8072",
+  "selling": "1.8246"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "ZAR",
+  "currency_name_th": "แอฟริกาใต้ : แรนด์ (ZAR)",
+  "currency_name_eng": "SOUTH AFRICA : RAND (ZAR)",
+  "buying_sight": "-",
+  "buying_transfer": "2.0217",
+  "selling": "2.0412"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "KRW",
+  "currency_name_th": "เกาหลีใต้ : วอน (KRW) ",
+  "currency_name_eng": "SOUTH KOREA : WON (KRW) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.0249",
+  "selling": "0.0252"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "TWD",
+  "currency_name_th": "ไต้หวัน : ดอลลาร์ (TWD) ",
+  "currency_name_eng": "TAIWAN : DOLLAR (TWD)",
+  "buying_sight": "-",
+  "buying_transfer": "1.0293",
+  "selling": "1.0392"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "KWD",
+  "currency_name_th": "คูเวต : ดีนาร์ (KWD)",
+  "currency_name_eng": "KUWAIT : DINAR (KWD) ",
+  "buying_sight": "-",
+  "buying_transfer": "108.9312",
+  "selling": "109.9815"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "SAR",
+  "currency_name_th": "ซาอุดีอาระเบีย : ริยาล (SAR)",
+  "currency_name_eng": "SAUDI ARABIA : RIYAL (SAR)",
+  "buying_sight": "-",
+  "buying_transfer": "8.9455",
+  "selling": "9.0318"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "AED",
+  "currency_name_th": "สหรัฐอาหรับเอมิเรตส์ : ดีแรห์ม (AED) ",
+  "currency_name_eng": "UNITED ARAB EMIRATES : DIRHAM (AED)",
+  "buying_sight": "-",
+  "buying_transfer": "9.1404",
+  "selling": "9.2285"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "MMK",
+  "currency_name_th": "พม่า : จัต (MMK)",
+  "currency_name_eng": "MYANMAR : KYAT (MMK) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.0160",
+  "selling": "0.0161"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "BDT",
+  "currency_name_th": "บังกลาเทศ : ตากา (BDT)",
+  "currency_name_eng": "BANGLADESH : TAKA (BDT)",
+  "buying_sight": "-",
+  "buying_transfer": "0.2699",
+  "selling": "0.2725"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "CZK",
+  "currency_name_th": "สาธารณรัฐเช็ก : คราวน์ (CZK)",
+  "currency_name_eng": "CZECH REPUBLIC : KORUNA (CZK)",
+  "buying_sight": "-",
+  "buying_transfer": "1.5440",
+  "selling": "1.5589"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "KHR",
+  "currency_name_th": "กัมพูชา : เรียล(KHR)",
+  "currency_name_eng": "CAMBODIA : RIEL(KHR) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.8219",
+  "selling": "0.8298"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "KES",
+  "currency_name_th": "เคนยา : ชิลลิ่ง (KES)",
+  "currency_name_eng": "KENYA : SHILLING (KES) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.2583",
+  "selling": "0.2607"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "LAK",
+  "currency_name_th": "ลาว : กีบ(LAK)",
+  "currency_name_eng": "LAO PEOPLE'S DEMOCRATIC REPUBLIC : KIP(LAK)",
+  "buying_sight": "-",
+  "buying_transfer": "0.1491",
+  "selling": "0.1505"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "RUB",
+  "currency_name_th": "รัสเซีย : รูเบิล (RUB)",
+  "currency_name_eng": "RUSSIAN FEDERATION : RUBLE (RUB) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.4149",
+  "selling": "0.4189"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "VND",
+  "currency_name_th": "เวียดนาม : ดอง (VND)",
+  "currency_name_eng": "VIET NAM : DONG(VND) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.1303",
+  "selling": "0.1316"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "EGP",
+  "currency_name_th": "อียิปต์ : ปอนด์ อียิปต์ (EGP)",
+  "currency_name_eng": "EGYPT : EGYPTIAN POUND (EGP) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.6066",
+  "selling": "0.6124"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "PLN",
+  "currency_name_th": "โปแลนด์ : สล็อตตี (PLN)",
+  "currency_name_eng": "POLAND : ZLOTY (PLN) ",
+  "buying_sight": "-",
+  "buying_transfer": "8.5043",
+  "selling": "8.5863"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "LKR",
+  "currency_name_th": "ศรีลังกา : รูปี ศรีลังกา (LKR)",
+  "currency_name_eng": "SRI LANKA : SRI LANKA RUPEE (LKR) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.1010",
+  "selling": "0.1020"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "IQD",
+  "currency_name_th": "อิรัก : ดีนาร์ อิรัก (IQD)",
+  "currency_name_eng": "IRAQ : IRAQI DINAR (IQD) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.0221",
+  "selling": "0.0224"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "BHD",
+  "currency_name_th": "บาห์เรน : ดีนาร์ บาห์เรน (BHD)",
+  "currency_name_eng": "BAHRAIN : BAHRAIN DINAR (BHD) ",
+  "buying_sight": "-",
+  "buying_transfer": "88.9812",
+  "selling": "89.8391"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "OMR",
+  "currency_name_th": "โอมาน : เรียล โอมาน (OMR)",
+  "currency_name_eng": "OMAN : RIAL OMANI (OMR) ",
+  "buying_sight": "-",
+  "buying_transfer": "87.2016",
+  "selling": "88.0423"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "JOD",
+  "currency_name_th": "จอร์แดน : ดอลลาร์ จอร์แดน (JOD)",
+  "currency_name_eng": "JORDAN : JORDANIAN DINAR (JOD) ",
+  "buying_sight": "-",
+  "buying_transfer": "47.3520",
+  "selling": "47.8086"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "QAR",
+  "currency_name_th": "กาตาร์ : เรียล กาตาร์ (QAR)",
+  "currency_name_eng": "QATAR : QATARI RIAL (QAR) ",
+  "buying_sight": "-",
+  "buying_transfer": "9.2106",
+  "selling": "9.2994"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "MVR",
+  "currency_name_th": "มัลดีฟส์ : รูฟียา (MVR)",
+  "currency_name_eng": "MALDIVES : RUFIYAA (MVR) ",
+  "buying_sight": "-",
+  "buying_transfer": "2.1716",
+  "selling": "2.1925"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "NPR",
+  "currency_name_th": "เนปาล : รูปี เนปาล (NPR)",
+  "currency_name_eng": "NEPAL : NEPALESE RUPEE (NPR) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.2211",
+  "selling": "0.2232"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "PGK",
+  "currency_name_th": "ปาปัวนิวกินี : คีนา (PGK)",
+  "currency_name_eng": "PAPUA NEW GUINEA : KINA (PGK) ",
+  "buying_sight": "-",
+  "buying_transfer": "7.4934",
+  "selling": "7.5657"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "ILS",
+  "currency_name_th": "อิสราเอล : เชคเกิล อิสราเอล (ILS)",
+  "currency_name_eng": "ISRAEL : NEW ISRAELI SHEKEL (ILS) ",
+  "buying_sight": "-",
+  "buying_transfer": "10.6722",
+  "selling": "10.7751"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "HUF",
+  "currency_name_th": "ฮังการี : ฟอรินท์ (HUF)",
+  "currency_name_eng": "HUNGARY : FORINT (HUF) ",
+  "buying_sight": "-",
+  "buying_transfer": "0.1031",
+  "selling": "0.1041"
+ },
+ {
+  "period": "2026-11-03",
+  "currency_id": "PKR",
+  "currency_name_th": "ปากีสถาน : รูปี (PKR) ",
+  "currency_name_eng": "PAKISTAN : RUPEE (PKR)",
+  "buying_sight": "-",
+  "buying_transfer": "0.1214",
+  "selling": "0.1225"
+ }
+]

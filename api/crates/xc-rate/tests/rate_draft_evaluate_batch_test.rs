@@ -305,6 +305,14 @@ async fn line_without_currencies_row_falls_back_to_unit_size_1_and_minor_unit_2(
     .execute(&db.pool)
     .await
     .expect("drop rate_reference_lines currency_code fk");
+    sqlx::query("DELETE FROM branch_currency_notes WHERE currency_code = 'CHF'")
+        .execute(&db.pool)
+        .await
+        .expect("delete CHF note links");
+    sqlx::query("DELETE FROM branch_currencies WHERE currency_code = 'CHF'")
+        .execute(&db.pool)
+        .await
+        .expect("delete CHF rows");
     sqlx::query("DELETE FROM denominations WHERE currency_code = 'CHF'")
         .execute(&db.pool)
         .await

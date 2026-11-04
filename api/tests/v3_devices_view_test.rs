@@ -547,7 +547,7 @@ impl Room {
             "shifts",
             "transaction_files",
             "transactions",
-            "kiosk_currencies",
+            "branch_currencies",
         ] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
                 "ALTER TABLE {table} RENAME TO hidden_{table}"

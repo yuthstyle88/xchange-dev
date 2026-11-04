@@ -415,8 +415,10 @@ impl Room {
     /// A kiosk switch behind the routes.
     async fn switch(&self, branch: &str, code: &str, enabled: bool) {
         sqlx::query(
-            "INSERT INTO kiosk_currencies (branch_id, code, enabled) VALUES ($1, $2, $3) \
-             ON CONFLICT (branch_id, code) DO UPDATE SET enabled = excluded.enabled",
+            "INSERT INTO branch_currencies (branch_id, currency_code, display, updated_by) \
+             VALUES ($1, $2, CASE WHEN $3 THEN 'SHOW' ELSE 'HIDE' END, 'test') \
+             ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE \
+             SET display = excluded.display, updated_by = excluded.updated_by",
         )
         .bind(branch)
         .bind(code)
@@ -433,7 +435,7 @@ impl Room {
         for table in [
             "published_rate_lines",
             "rate_publications",
-            "kiosk_currencies",
+            "branch_currencies",
             "currencies",
         ] {
             sqlx::query(sqlx::AssertSqlSafe(format!(

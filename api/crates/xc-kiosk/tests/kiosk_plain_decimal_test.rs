@@ -69,7 +69,7 @@ async fn nothing_is_saved_for(cases: &[(&str, &str)]) {
             "buy {buy:?} / sell {sell:?}: an audit line was written"
         );
         assert_eq!(
-            db.count("kiosk_currencies").await,
+            db.switch_count().await,
             0,
             "buy {buy:?} / sell {sell:?}: a switch was stored"
         );
@@ -105,6 +105,6 @@ async fn plain_texts_are_saved_as_they_came() {
         .await
         .expect("a plain buy and sell are accepted");
     assert_eq!(db.count("test_audit").await, 1);
-    assert_eq!(db.count("kiosk_currencies").await, 1);
+    assert_eq!(db.switch_count().await, 1);
     db.finish().await;
 }
