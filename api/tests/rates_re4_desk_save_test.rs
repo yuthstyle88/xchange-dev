@@ -116,6 +116,9 @@ fn exchange(
 /// `MAIN` with an open shift holding `opening`, the customer of `person()` and a passport file
 /// of the owner. No rate is set: each test publishes its own. Answers (customer id, passport).
 async fn counter(shop: &Shop, opening: &[(&str, &str)]) -> (String, String) {
+    xc_testdb::seed_branch_currencies(&shop.pool, MAIN, &["KRW", "USD", "JPY"])
+        .await
+        .expect("seed branch currencies");
     shop.open_shift(MAIN, opening).await;
     let customer = shop.reserve(MAIN, person()).await;
     let passport = shop.upload(MAIN, OWNER, "image/jpeg", JPEG).await;
