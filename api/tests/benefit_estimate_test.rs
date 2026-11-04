@@ -67,6 +67,9 @@ impl World {
     async fn start(branch: &str) -> Self {
         let db = TestDb::start().await;
         db.branch(branch).await;
+        xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+            .await
+            .expect("seed branch currencies");
         db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
             .await;
         let user = Uuid::new_v4();
