@@ -12,6 +12,10 @@ export const th = {
   keyRequired: 'กรุณาระบุคีย์ป้ายเรท',
   providerRequired: 'กรุณาระบุผู้ให้บริการป้ายเรท',
   remove: 'ลบ',
+  noteGroup: 'กลุ่มของธนบัตร',
+  faceValue: 'มูลค่าธนบัตร',
+  addNote: 'เพิ่มธนบัตร',
+  faceValueInvalid: 'มูลค่าธนบัตรไม่ถูกต้อง',
 };
 
 export const en = {
@@ -28,4 +32,8 @@ export const en = {
   keyRequired: 'Rate board key is required',
   providerRequired: 'Rate board provider is required',
   remove: 'Remove',
+  noteGroup: 'Note Group',
+  faceValue: 'Face Value',
+  addNote: 'Add Note',
+  faceValueInvalid: 'Invalid face value',
 };
