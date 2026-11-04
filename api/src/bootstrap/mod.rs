@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 use xc_auth::infrastructure::attempts::PgAttemptCounter;
 
+use crate::application::workflows::business_day_close::BusinessDayCloser;
 use xc_booking::application::sweeper::BookingSweeper;
 use xc_kernel::document_store::{DocumentStore, DocumentStoreError};
 use xc_kernel::pii::PiiCipher;
@@ -409,6 +410,7 @@ pub struct Application {
     rate_feed_stop: tokio::sync::watch::Sender<bool>,
     rate_feed: tokio::task::JoinHandle<()>,
     booking_sweep: tokio::task::JoinHandle<()>,
+    business_day_close_sweep: tokio::task::JoinHandle<()>,
     verification_sweep: tokio::task::JoinHandle<()>,
 }
 
@@ -420,6 +422,7 @@ impl Drop for Application {
         self.outbox.abort();
         self.rate_feed.abort();
         self.booking_sweep.abort();
+        self.business_day_close_sweep.abort();
         self.verification_sweep.abort();
     }
 }
@@ -480,6 +483,18 @@ impl Application {
                 rounds.tick().await;
                 if let Err(error) = sweeper.run(Utc::now()).await {
                     tracing::error!(%error, "the booking sweeper failed; the next round will try again");
+                }
+            }
+        });
+
+        let closer = BusinessDayCloser::new(pool.clone());
+        let business_day_close_sweep = tokio::spawn(async move {
+            let mut rounds = tokio::time::interval(Duration::from_secs(60));
+            rounds.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                rounds.tick().await;
+                if let Err(error) = closer.sweep_at(Utc::now()).await {
+                    tracing::error!(%error, "the business day close sweeper failed; the next round will try again");
                 }
             }
         });
@@ -560,6 +575,7 @@ impl Application {
             rate_feed_stop,
             rate_feed,
             booking_sweep,
+            business_day_close_sweep,
             verification_sweep,
         })
     }
