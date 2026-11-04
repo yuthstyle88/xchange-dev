@@ -53,9 +53,25 @@ pub struct Line {
     pub unit_size: Decimal,
 }
 
+async fn ensure_branch_currencies(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) {
+    for (code, _, _) in lines {
+        sqlx::query(
+            "INSERT INTO branch_currencies (branch_id, organization_id, currency_code, display) \
+             SELECT b.id, b.organization_id, $2, 'SHOW' FROM branches b WHERE b.id = $1 \
+             ON CONFLICT (branch_id, currency_code, group_code) DO NOTHING",
+        )
+        .bind(branch)
+        .bind(*code)
+        .execute(pool)
+        .await
+        .expect("ensure branch currency row");
+    }
+}
+
 /// Publish `lines` (`(currency, buy, sell)`, each rate per the currency's `unit_size`) as the
 /// next publication of `branch`, as the owner. Answers the new publication.
 pub async fn publish(pool: &PgPool, branch: &str, lines: &[(&str, &str, &str)]) -> Published {
+    ensure_branch_currencies(pool, branch, lines).await;
     // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = xc_auth::domain::access::Actor::new(
         "owner",

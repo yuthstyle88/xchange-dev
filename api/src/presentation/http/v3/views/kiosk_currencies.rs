@@ -128,6 +128,17 @@ impl BranchView for KioskCurrenciesView {
                 .map(|s| (s.code.as_str().to_string(), s.enabled))
                 .collect();
 
+            let display_map: HashMap<String, String> = sqlx::query_as::<_, (String, String)>(
+                "SELECT trim(currency_code) AS code, display FROM branch_currencies \
+                 WHERE branch_id = $1 AND group_code = 'ALL'",
+            )
+            .bind(branch.as_str())
+            .fetch_all(&pool)
+            .await
+            .map_err(pos_error::AppError::Database)?
+            .into_iter()
+            .collect();
+
             let register_units: HashMap<String, Decimal> = sqlx::query_as::<_, (String, Decimal)>(
                 "SELECT trim(code) AS code, unit_size FROM currencies",
             )
@@ -237,6 +248,10 @@ impl BranchView for KioskCurrenciesView {
             for entry in currencies_table {
                 let line = line_map.get(&entry.code);
                 let enabled = switch_map.get(&entry.code).copied().unwrap_or(false);
+                let display = display_map
+                    .get(&entry.code)
+                    .cloned()
+                    .unwrap_or_else(|| "HIDE".to_string());
 
                 let countries: Vec<KioskCountry> =
                     serde_json::from_value(entry.countries.clone()).unwrap_or_default();
@@ -415,6 +430,7 @@ impl BranchView for KioskCurrenciesView {
                     updated,
                     partner_name,
                     partner_cost,
+                    display,
                     enabled,
                     kbank: kbank_comparisons,
                     quote_enabled: enabled && !hidden_codes.contains(&entry.code),

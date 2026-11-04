@@ -82,7 +82,7 @@ const DATA_KEYS: [&str; 3] = ["currencies", "freshness", "kbank"];
 /// The keys of one currency (§7.3) — none of `manage`'s `symbol`, `requestId`, `botReference`;
 /// plus `unitSize` (#603 item 3).
 // pricing-tiers.md §15.8a adds `quoteEnabled` (XC-V9-PRICING skeleton, restated by the sub-controller).
-const CURRENCY_KEYS: [&str; 13] = [
+const CURRENCY_KEYS: [&str; 14] = [
     "code",
     "name",
     "nameEn",
@@ -93,6 +93,7 @@ const CURRENCY_KEYS: [&str; 13] = [
     "updated",
     "partnerName",
     "partnerCost",
+    "display",
     "enabled",
     "kbank",
     "quoteEnabled",
@@ -415,8 +416,10 @@ impl Room {
     /// A kiosk switch behind the routes.
     async fn switch(&self, branch: &str, code: &str, enabled: bool) {
         sqlx::query(
-            "INSERT INTO kiosk_currencies (branch_id, code, enabled) VALUES ($1, $2, $3) \
-             ON CONFLICT (branch_id, code) DO UPDATE SET enabled = excluded.enabled",
+            "INSERT INTO branch_currencies (branch_id, currency_code, display, updated_by) \
+             VALUES ($1, $2, CASE WHEN $3 THEN 'SHOW' ELSE 'HIDE' END, 'test') \
+             ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE \
+             SET display = excluded.display, updated_by = excluded.updated_by",
         )
         .bind(branch)
         .bind(code)
@@ -433,7 +436,7 @@ impl Room {
         for table in [
             "published_rate_lines",
             "rate_publications",
-            "kiosk_currencies",
+            "branch_currencies",
             "currencies",
         ] {
             sqlx::query(sqlx::AssertSqlSafe(format!(
@@ -619,6 +622,7 @@ async fn a_rates_employee_naming_another_branch_is_answered_for_their_own() {
     // switched on (`xc-kiosk` `DEFAULT_CODES`)
     room.switch(MAIN, "JPY", false).await;
     room.switch(MAIN, "KRW", true).await;
+    room.switch(B9, "JPY", true).await;
     room.switch(B9, "SGD", true).await;
     room.set_rate_with_partner(B9, "SGD", "25.9", "26.6", "SuperRich", Some("25.5"))
         .await;

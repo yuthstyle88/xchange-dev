@@ -9,6 +9,7 @@ import type {
 import type { RateDraftsData } from '../../../shared/api/generated/rate_drafts';
 import type { RatePolicyData } from '../../../shared/api/generated/rate_policy';
 import type { RatePolicySaveInput, RatePolicySaveOutput } from '../../../shared/api/generated/rate_policy_save';
+import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
 import type {
   RatesReferenceData,
   RatesReferenceFilter,
@@ -57,6 +58,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
 
   const [pubData, setPubData] = createSignal<PublishedRatesData | null>(null);
   const [pubError, setPubError] = createSignal<string | null>(null);
+  const [draftableData, setDraftableData] = createSignal<RatesDraftableData | null>(null);
   const [, setDraftsData] = createSignal<RateDraftsData | null>(null);
   const [draftsError, setDraftsError] = createSignal<string | null>(null);
   const [draftDetail, setDraftDetail] = createSignal<RateDraftDetailData | null>(null);
@@ -136,6 +138,19 @@ export function Rates(props: AdminMenuProps): JSX.Element {
       if (gen !== readGen) return;
       setPubData(null);
       setPubError(wordedError(err));
+    }
+  };
+
+  const readDraftable = async (branch: string, gen: number) => {
+    try {
+      const res = await client.view<RatesDraftableData>('rates_draftable', { branch });
+      if (gen !== readGen) return;
+      if (res.changed && res.data) {
+        setDraftableData(res.data);
+      }
+    } catch {
+      if (gen !== readGen) return;
+      setDraftableData(null);
     }
   };
 
@@ -239,7 +254,13 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     const gen = ++readGen;
     setSimulateResult(null);
     void fetchReference({ since: undefined });
-    await Promise.all([readMe(gen), readPublished(branch, gen), readDrafts(branch, gen), readPolicy(branch, gen)]);
+    await Promise.all([
+      readMe(gen),
+      readPublished(branch, gen),
+      readDraftable(branch, gen),
+      readDrafts(branch, gen),
+      readPolicy(branch, gen),
+    ]);
   };
 
   let lastShown = false;
@@ -264,6 +285,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
     if (branch !== lastBranch) {
       lastBranch = branch;
       setPubData(null);
+      setDraftableData(null);
       setDraftsData(null);
       setDraftDetail(null);
       setPolicyData(null);
@@ -376,6 +398,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
         policyError={policyError}
         policyData={policyData}
         pubData={pubData}
+        draftableData={draftableData}
         refData={refData}
         adjustBuyPct={adjustBuyPct}
         setAdjustBuyPct={setAdjustBuyPct}

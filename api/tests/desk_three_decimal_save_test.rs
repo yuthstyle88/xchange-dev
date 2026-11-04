@@ -52,6 +52,9 @@ fn exchange(
 /// publication of KWD (100 / 101 per 1), USD (35 / 36 per 1) and JPY (23 / 24 per 100). Answers (customer, passport).
 async fn counter(shop: &Shop) -> (String, String) {
     shop.open_shift(MAIN, &[("THB", "100000")]).await;
+    xc_testdb::seed_branch_currencies(&shop.pool, MAIN, &["KWD", "USD", "JPY"])
+        .await
+        .expect("seed branch currencies");
     publish(
         &shop.pool,
         MAIN,

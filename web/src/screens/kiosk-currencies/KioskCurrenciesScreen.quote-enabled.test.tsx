@@ -105,8 +105,10 @@ describe('KioskCurrenciesScreen quoteEnabled (ticket #5203)', () => {
     await Promise.resolve();
 
     expect(host.querySelector('h3')?.textContent).toContain('AFN');
-    const checkbox = host.querySelector<HTMLInputElement>('input[type="checkbox"]');
-    expect(checkbox?.checked).toBe(false);
+    const showRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="SHOW"]');
+    expect(showRadio?.checked).toBe(false);
+    const hideRadio = host.querySelector<HTMLInputElement>('input[type="radio"][value="HIDE"]');
+    expect(hideRadio?.checked).toBe(true);
 
     const note = host.querySelector<HTMLElement>('p.kiosk-quote-off[data-quote="off"]');
     expect(note).not.toBeNull();

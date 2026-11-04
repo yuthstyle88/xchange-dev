@@ -357,10 +357,41 @@ describe('KioskCurrenciesScreen reading (#399)', () => {
     await loaded();
     const usd = cardOf(USD);
     expect(byText(usd, 'อเมริกันซามัว, เอกวาดอร์')).toHaveLength(1);
-    const enabled = usd.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const enabled = usd.querySelector<HTMLInputElement>('input[type="radio"][value="SHOW"]');
     expect(enabled?.checked).toBe(true);
     expect([...usd.querySelectorAll('label')].some((l) => textOf(l) === th.enabled)).toBe(true);
-    expect(cardOf(JPY).querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
+    expect(cardOf(JPY).querySelector<HTMLInputElement>('input[type="radio"][value="SHOW"]')?.checked).toBe(false);
+    expect(cardOf(JPY).querySelector<HTMLInputElement>('input[type="radio"][value="HIDE"]')?.checked).toBe(true);
+  });
+
+  it('the three-way control and add control send configure with { branchId, code, group, display } (BC-12)', async () => {
+    const f = fake([
+      answer(),
+      answer([AFN, { ...JPY, display: 'ASK', enabled: true }, NOK, USD], undefined, 8),
+      answer([{ ...AFN, display: 'ASK', enabled: true }, { ...JPY, display: 'ASK', enabled: true }, NOK, USD], undefined, 9),
+    ]);
+    mount(f.api, 'B9');
+    await loaded();
+
+    cardOf(JPY).querySelector<HTMLInputElement>('input[type="radio"][value="ASK"]')!.click();
+    await vi.waitFor(() => expect(f.posts).toHaveLength(1));
+    expect(f.posts[0]).toEqual({
+      path: '/api/kiosk',
+      body: { action: 'configure', payload: { branchId: 'B9', code: 'JPY', group: 'ALL', display: 'ASK' } },
+    });
+    await vi.waitFor(() =>
+      expect(cardOf(JPY).querySelector<HTMLInputElement>('input[type="radio"][value="ASK"]')?.checked).toBe(true),
+    );
+
+    const select = host.querySelector<HTMLSelectElement>('select[name="add_currency_code"]')!;
+    select.value = 'AFN';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    host.querySelector<HTMLButtonElement>('button[name="add_currency"]')!.click();
+    await vi.waitFor(() => expect(f.posts).toHaveLength(2));
+    expect(f.posts[1]).toEqual({
+      path: '/api/kiosk',
+      body: { action: 'configure', payload: { branchId: 'B9', code: 'AFN', group: 'ALL', display: 'ASK' } },
+    });
   });
 
   it('the search filters the cards and the count on every keystroke (C4, C5, C6)', async () => {

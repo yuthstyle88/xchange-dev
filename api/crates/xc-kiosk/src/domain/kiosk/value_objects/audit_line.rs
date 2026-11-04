@@ -27,6 +27,12 @@ pub enum KioskAudit {
         buy: String,
         sell: String,
     },
+    /// `branch_currencies.display` was set for a currency and group (`docs/design/board-currencies.md` §3).
+    CurrencyDisplaySet {
+        group: String,
+        display: String,
+        from: String,
+    },
     Cancelled {
         from: KioskStatus,
         reason: CancelReason,
@@ -47,7 +53,9 @@ impl KioskAudit {
             Self::Accepted => KioskEventKind::Accepted.as_str(),
             Self::IdChecked => KioskEventKind::IdChecked.as_str(),
             Self::Completed { .. } => KioskEventKind::Completed.as_str(),
-            Self::CurrencyConfigured { .. } => "KIOSK_CURRENCY_CONFIGURED",
+            Self::CurrencyConfigured { .. } | Self::CurrencyDisplaySet { .. } => {
+                "KIOSK_CURRENCY_CONFIGURED"
+            }
             Self::Cancelled { .. } => "KIOSK_CANCELLED",
             Self::CustomerDiffers { .. } => "KIOSK_CUSTOMER_DIFFERS",
         }

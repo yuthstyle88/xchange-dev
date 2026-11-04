@@ -123,6 +123,12 @@ async fn add_tiers(
     tiers: &[Tier],
     drop_all: bool,
 ) -> Vec<(String, String)> {
+    db.exec(&format!(
+        "INSERT INTO branch_currencies (branch_id, organization_id, currency_code, group_code, display) \
+         SELECT b.id, b.organization_id, '{currency}', '{grp}', 'SHOW' FROM branches b WHERE b.id = 'MAIN' \
+         ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE SET display = 'SHOW'"
+    ))
+    .await;
     let mut ids = Vec::new();
     for (tier, lo, hi, base_buy, base_sell, buy, sell) in tiers {
         let id = uuid::Uuid::new_v4().to_string();

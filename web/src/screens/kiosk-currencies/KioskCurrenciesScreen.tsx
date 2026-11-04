@@ -19,7 +19,7 @@ import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
 import { matches } from './filter';
 import * as screenI18n from './i18n';
-import { configure } from './kiosk-api';
+import { configure, type CurrencyDisplay } from './kiosk-api';
 import './kiosk-currencies.css';
 
 type CardStatusState =
@@ -27,13 +27,20 @@ type CardStatusState =
   | { kind: 'savedOff' }
   | { kind: 'message'; text: string };
 
+function displayOf(c: KioskCurrency): CurrencyDisplay {
+  if (c.display === 'SHOW' || c.display === 'ASK' || c.display === 'HIDE') {
+    return c.display;
+  }
+  return c.enabled ? 'SHOW' : 'HIDE';
+}
+
 interface CardProps {
   currency: KioskCurrency;
   status: () => string;
   saving: () => boolean;
   kbankRef: () => KbankReference | null;
   t: ReturnType<typeof screenT<typeof screenI18n>>;
-  onToggle: (code: string, isEnabled: boolean) => Promise<void>;
+  onToggle: (code: string, display: CurrencyDisplay) => Promise<void>;
 }
 
 function formatTime(iso: string): string {
@@ -41,21 +48,23 @@ function formatTime(iso: string): string {
 }
 
 function CurrencyCard(props: CardProps): JSX.Element {
-  let checkboxRef: HTMLInputElement | undefined;
+  let showRef: HTMLInputElement | undefined;
+  let askRef: HTMLInputElement | undefined;
+  let hideRef: HTMLInputElement | undefined;
+
+  const syncRadios = (d: CurrencyDisplay) => {
+    if (showRef) showRef.checked = d === 'SHOW';
+    if (askRef) askRef.checked = d === 'ASK';
+    if (hideRef) hideRef.checked = d === 'HIDE';
+  };
 
   createEffect(() => {
-    if (checkboxRef) {
-      checkboxRef.checked = props.currency.enabled;
-    }
+    syncRadios(displayOf(props.currency));
   });
 
-  const handleToggle = async (e: Event) => {
-    const target = e.currentTarget as HTMLInputElement;
-    const isEnabled = target.checked;
-    await props.onToggle(props.currency.code, isEnabled);
-    if (checkboxRef) {
-      checkboxRef.checked = props.currency.enabled;
-    }
+  const handleSelect = async (display: CurrencyDisplay) => {
+    await props.onToggle(props.currency.code, display);
+    syncRadios(displayOf(props.currency));
   };
 
   return (
@@ -69,17 +78,46 @@ function CurrencyCard(props: CardProps): JSX.Element {
           {props.t('contactStaff')}
         </p>
       </Show>
-      <div>
-        <label for={`enabled-${props.currency.code}`}>
+      <div role="radiogroup" aria-label={props.t('enabled')}>
+        <label>{props.t('enabled')}</label>
+        <label for={`display-show-${props.currency.code}`}>
           <input
-            id={`enabled-${props.currency.code}`}
-            type="checkbox"
-            ref={checkboxRef}
-            checked={props.currency.enabled}
+            id={`display-show-${props.currency.code}`}
+            type="radio"
+            name={`display-${props.currency.code}`}
+            value="SHOW"
+            ref={showRef}
+            checked={displayOf(props.currency) === 'SHOW'}
             disabled={props.saving()}
-            onChange={handleToggle}
+            onChange={() => void handleSelect('SHOW')}
           />
-          {props.t('enabled')}
+          SHOW
+        </label>
+        <label for={`display-ask-${props.currency.code}`}>
+          <input
+            id={`display-ask-${props.currency.code}`}
+            type="radio"
+            name={`display-${props.currency.code}`}
+            value="ASK"
+            ref={askRef}
+            checked={displayOf(props.currency) === 'ASK'}
+            disabled={props.saving()}
+            onChange={() => void handleSelect('ASK')}
+          />
+          ASK
+        </label>
+        <label for={`display-hide-${props.currency.code}`}>
+          <input
+            id={`display-hide-${props.currency.code}`}
+            type="radio"
+            name={`display-${props.currency.code}`}
+            value="HIDE"
+            ref={hideRef}
+            checked={displayOf(props.currency) === 'HIDE'}
+            disabled={props.saving()}
+            onChange={() => void handleSelect('HIDE')}
+          />
+          HIDE
         </label>
       </div>
 
@@ -165,6 +203,7 @@ export function KioskCurrenciesScreen(props: {
     Record<string, CardStatusState | undefined>
   >({});
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
+  const [addCode, setAddCode] = createSignal('');
 
   let readingBranch = '';
   // Bumped by every list read (first read and toggle re-read); a list read
@@ -240,9 +279,13 @@ export function KioskCurrenciesScreen(props: {
     return t('found', { n: filteredCurrencies().length });
   });
 
-  const handleToggle = async (code: string, isEnabled: boolean) => {
+  const handleToggle = async (
+    code: string,
+    display: CurrencyDisplay,
+    group = 'ALL',
+  ) => {
     const branchId = props.branch;
-    if (!branchId) return;
+    if (!branchId || !code) return;
     setSavingCodes((prev) => ({ ...prev, [code]: true }));
     setCardStatuses((prev) => ({ ...prev, [code]: undefined }));
 
@@ -250,7 +293,8 @@ export function KioskCurrenciesScreen(props: {
       await configure(props.api, {
         branchId,
         code,
-        enabled: isEnabled,
+        group,
+        display,
       });
     } catch (err: unknown) {
       if (props.branch === branchId) {
@@ -285,7 +329,9 @@ export function KioskCurrenciesScreen(props: {
           setFreshness(res.data.freshness);
         }
         const thisCurrency = res.data.currencies.find((c) => c.code === code);
-        const active = thisCurrency ? thisCurrency.enabled : isEnabled;
+        const active = thisCurrency
+          ? displayOf(thisCurrency) !== 'HIDE'
+          : display !== 'HIDE';
         setCardStatuses((prev) => ({
           ...prev,
           [code]: active ? { kind: 'savedOn' } : { kind: 'savedOff' },
@@ -297,13 +343,17 @@ export function KioskCurrenciesScreen(props: {
       if (props.branch !== branchId) return;
       if (seq === listReadSeq) {
         setCurrencies((prev) =>
-          prev.map((c) => (c.code === code ? { ...c, enabled: isEnabled } : c)),
+          prev.map((c) =>
+            c.code === code
+              ? { ...c, display, enabled: display !== 'HIDE' }
+              : c,
+          ),
         );
         setLoadError(wordedError(err));
       }
       setCardStatuses((prev) => ({
         ...prev,
-        [code]: isEnabled ? { kind: 'savedOn' } : { kind: 'savedOff' },
+        [code]: display !== 'HIDE' ? { kind: 'savedOn' } : { kind: 'savedOff' },
       }));
     } finally {
       if (props.branch === branchId) {
@@ -545,6 +595,32 @@ export function KioskCurrenciesScreen(props: {
           value={searchQuery()}
           onInput={(e) => setSearchQuery(e.currentTarget.value)}
         />
+      </div>
+
+      <div>
+        <select
+          id="add-currency-code"
+          name="add_currency_code"
+          aria-label={t('addCurrency')}
+          value={addCode()}
+          onChange={(e) => setAddCode(e.currentTarget.value)}
+        >
+          <option value="">{t('addCurrency')}</option>
+          <For each={currencies().filter((c) => displayOf(c) === 'HIDE')}>
+            {(c) => <option value={c.code}>{c.code}</option>}
+          </For>
+        </select>
+        <button
+          type="button"
+          name="add_currency"
+          disabled={!addCode() || Boolean(savingCodes()[addCode()])}
+          onClick={() => {
+            const code = addCode();
+            if (code) void handleToggle(code, 'ASK', 'ALL');
+          }}
+        >
+          {t('addCurrency')}
+        </button>
       </div>
 
       <div role="status">{pageMessage()}</div>

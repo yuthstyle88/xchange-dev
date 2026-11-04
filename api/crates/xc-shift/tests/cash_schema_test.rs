@@ -650,8 +650,8 @@ async fn the_face_values_are_exactly_the_current_series_the_owner_settled() {
              AND currency_code NOT IN ('THB','USD','EUR','GBP','JPY','CNY','KRW')"
         )
         .await,
-        0,
-        "only the seven seeded currencies get face values"
+        190,
+        "the board seed adds the other currencies' notes (board-currencies.md §7)"
     );
 }
 

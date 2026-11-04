@@ -174,6 +174,10 @@ async fn seed_coupon_campaign_in_group(
     let rule_id = Uuid::new_v4();
     let budget = Decimal::from_str_exact(budget_thb).expect("budget decimal");
 
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
+
     sqlx::query(
         "INSERT INTO campaigns (id, organization_id, name, created_by, created_at) \
          VALUES ($1, $2::uuid, $3, $4, now())",

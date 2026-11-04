@@ -158,8 +158,8 @@ function cardOf(c: KioskCurrency): HTMLElement {
   return h.closest('form')!;
 }
 
-function switchOf(card: HTMLElement): HTMLInputElement {
-  return card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+function switchOf(card: HTMLElement, value: 'SHOW' | 'ASK' | 'HIDE' = 'SHOW'): HTMLInputElement {
+  return card.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)!;
 }
 
 function cardStatus(card: HTMLElement): string {
@@ -204,11 +204,11 @@ describe('KioskCurrenciesScreen toggle re-read order and branch (#2453)', () => 
     expect(textOf(host.querySelector('#bank-reference'))).toContain('11');
 
     // The next toggle on B sends B with a code from B's list.
-    switchOf(cardOf(GBP)).click();
+    switchOf(cardOf(GBP), 'HIDE').click();
     await vi.waitFor(() => expect(cardStatus(cardOf(GBP))).toBe(th.savedOff));
     expect(f.posts[1]!.body).toEqual({
       action: 'configure',
-      payload: { branchId: 'B', code: 'GBP', enabled: false },
+      payload: { branchId: 'B', code: 'GBP', group: 'ALL', display: 'HIDE' },
     });
   });
 
