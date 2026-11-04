@@ -66,10 +66,28 @@ UPDATE shifts s
  WHERE b.id = s.branch_id;
 ALTER TABLE shifts ALTER COLUMN business_date SET NOT NULL;
 
--- The teller's choice is made on the OPEN count and copied to the shift on verify.
+-- The teller's choice is made on the OPEN count and copied to the shift on verify. Every count carries a business date
+-- (design §2.3); a count written without one is dated by the local day it was counted, like the backfill.
 ALTER TABLE cash_counts
     ADD COLUMN shift_template_id uuid REFERENCES shift_templates (id),
     ADD COLUMN business_date     date;
 ALTER TABLE cash_counts
-    ADD CONSTRAINT cash_counts_template_dated CHECK ((shift_template_id IS NULL) = (business_date IS NULL)),
     ADD CONSTRAINT cash_counts_template_only_open CHECK (shift_template_id IS NULL OR kind = 'OPEN');
+CREATE FUNCTION cash_counts_business_date_default() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.business_date IS NULL THEN
+        SELECT (NEW.counted_at AT TIME ZONE b.timezone)::date
+          INTO NEW.business_date
+          FROM branches b
+         WHERE b.id = NEW.branch_id;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER cash_counts_business_date_default
+    BEFORE INSERT ON cash_counts
+    FOR EACH ROW EXECUTE FUNCTION cash_counts_business_date_default();
+UPDATE cash_counts c
+   SET business_date = (c.counted_at AT TIME ZONE b.timezone)::date
+  FROM branches b
+ WHERE b.id = c.branch_id;
+ALTER TABLE cash_counts ALTER COLUMN business_date SET NOT NULL;
