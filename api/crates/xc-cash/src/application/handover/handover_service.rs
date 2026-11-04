@@ -499,6 +499,9 @@ impl HandoverService {
             created_at: now,
             updated_at: now,
             rejection: None,
+            // CS-19 sets the business date to the handing-over shift's.
+            shift_template_id: None,
+            business_date: None,
         };
 
         self.counts
@@ -542,6 +545,22 @@ impl HandoverService {
             HandoverAccepted::Accepted(h) => Ok(*h),
             HandoverAccepted::AwaitingFinance(id) => Err(CashError::AwaitingFinance(id).into()),
         }
+    }
+
+    /// Accepts as `accept_or_await_in` does, opening the receiver's shift under the template the receiver chose
+    /// (CS-19, docs/design/configurable-shifts.md §2.3 "Handover", row H1): checked against `now` with the OPEN count's
+    /// rules (`OutsideShiftWindow`, `ShiftNotChosen`; `None` takes the only covering template), and the new shift gets
+    /// that instance's template, name and business date. `accept_or_await_in` becomes this with `None`.
+    pub async fn accept_chosen_or_await_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        id: &str,
+        shift_template_id: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> AppResult<HandoverAccepted> {
+        let _ = (tx, actor, id, shift_template_id, now);
+        todo!("CS-19")
     }
 
     pub async fn accept_or_await_in(

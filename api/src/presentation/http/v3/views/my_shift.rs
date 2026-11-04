@@ -24,6 +24,9 @@ use crate::presentation::http::v3::cash_transfer_rows::{
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
+/// `id, status, opened_at, template_name, business_date` of the caller's open shift.
+type MyShiftRow = (String, String, DateTime<Utc>, Option<String>, NaiveDate);
+
 struct MyShiftView {
     pool: PgPool,
     shift_balances: Arc<dyn ShiftBalances>,
@@ -47,7 +50,7 @@ impl BranchView for MyShiftView {
         let branch = branch.as_str().to_owned();
         let me = who.user_id.clone();
         async move {
-            let shift: Option<(String, String, DateTime<Utc>, Option<String>, NaiveDate)> = sqlx::query_as(
+            let shift: Option<MyShiftRow> = sqlx::query_as(
                 "SELECT id, status, opened_at, template_name, business_date FROM shifts \
                  WHERE branch_id = $1 AND teller_id::text = $2 AND status = 'OPEN' \
                  ORDER BY opened_at DESC LIMIT 1",

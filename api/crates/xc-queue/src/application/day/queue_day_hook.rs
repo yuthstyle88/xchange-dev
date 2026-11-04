@@ -52,6 +52,23 @@ impl QueueDayHook {
         self
     }
 
+    /// The business-day close at the cutover (CS-22a, docs/design/configurable-shifts.md §2.12, rows Q1–Q5b): inside
+    /// the caller's transaction, ends the WAITING tickets issued before `cutover` and the CALLED tickets issued before
+    /// `held_before` (the previous cutover) with the branch-day close's per-row effect (`CANCELLED dayClosed`, one
+    /// CANCEL event, the booking notice); plain SERVING tickets are never ended. Refreshes the status only when it
+    /// ended something. Answers how many tickets and kiosk requests it ended.
+    pub async fn on_business_day_end(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        cutover: DateTime<Utc>,
+        held_before: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> AppResult<usize> {
+        let _ = (tx, branch, cutover, held_before, now);
+        todo!("CS-22a")
+    }
+
     /// Cancels the branch's WAITING and CALLED tickets (`dayClosed`), one CANCEL event each, and
     /// refreshes the status, inside the caller's transaction. Answers the tickets it cancelled.
     pub async fn on_day_closed(

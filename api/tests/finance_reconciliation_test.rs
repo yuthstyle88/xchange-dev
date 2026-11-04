@@ -1319,3 +1319,52 @@ async fn a_count_after_local_midnight_belongs_to_the_local_day_not_the_utc_one()
     assert_eq!(room.certifications().await, 1);
     room.finish().await;
 }
+
+/// CS-21 row Y2 (design `configurable-shifts.md` §2.11): a night shift's CLOSE counted at 04:10 local on `next_day`
+/// with stored `business_date = DAY` blocks its verifier on `DAY` (`409 samePerson`), and lets that verifier certify
+/// `next_day` (`200 OK`).
+#[actix_web::test]
+async fn cs21_y2_verifier_of_night_shift_close_count_may_certify_next_day_not_business_date() {
+    let room = Room::start().await;
+    let next_day = "2026-10-06";
+    room.verified_count(VERIFIER, bangkok(next_day, 4, 10), bangkok(next_day, 4, 20))
+        .await;
+    sqlx::query("UPDATE cash_counts SET business_date = $1")
+        .bind(date(DAY))
+        .execute(&room.pool)
+        .await
+        .expect("date the count by its shift (as CS-7 writes it)");
+
+    let hash_day = hash_of(&sheet(&room, VERIFIER, B1, DAY).await);
+    let refused = certify(
+        &room,
+        VERIFIER,
+        certify_body(B1, DAY, &hash_day, ""),
+        &unique("key"),
+    )
+    .await;
+    assert_refused(
+        &refused,
+        StatusCode::CONFLICT,
+        "samePerson",
+        "verifier of DAY's night CLOSE cannot certify DAY",
+    );
+    assert_eq!(room.certifications().await, 0);
+
+    let hash_next = hash_of(&sheet(&room, VERIFIER, B1, next_day).await);
+    let ok = certify(
+        &room,
+        VERIFIER,
+        certify_body(B1, next_day, &hash_next, ""),
+        &unique("key"),
+    )
+    .await;
+    assert_eq!(
+        ok.status,
+        StatusCode::OK,
+        "verifier of DAY's night CLOSE may certify next_day: {}",
+        ok.text
+    );
+    assert_eq!(room.certifications().await, 1);
+    room.finish().await;
+}

@@ -1026,6 +1026,9 @@ impl CashCountService {
             created_at: now,
             updated_at: now,
             rejection: None,
+            // CS-7 sets both.
+            shift_template_id: None,
+            business_date: None,
         };
 
         self.repo

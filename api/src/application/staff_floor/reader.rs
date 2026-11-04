@@ -156,6 +156,19 @@ impl StaffFloorReader {
         })
     }
 
+    /// The floor as of `now` (CS-5, docs/design/configurable-shifts.md §2.5, §2.7, rows F1–F2): `hours` is the
+    /// shift plan's business day holding `now` (`opening_hours` no longer read), and `myShift` also carries
+    /// `shiftName`, `businessDate` and `onBreak`. `floor` becomes this at `Utc::now()`.
+    pub async fn floor_at(
+        &self,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<StaffFloor> {
+        let _ = (actor, branch, now);
+        todo!("CS-5")
+    }
+
     pub async fn holds(
         &self,
         _actor: &Actor,

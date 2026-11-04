@@ -485,7 +485,7 @@ async fn a_handover_count_is_400_only_through_handover() {
     let manager = room.person(Role::BranchManager, Some(B01)).await;
     let count = waiting(&room, &teller).await;
     room.scalar(&format!(
-        "WITH u AS (UPDATE cash_counts SET kind = 'HANDOVER_OUT' WHERE id = '{count}'::uuid RETURNING 1) SELECT count(*) FROM u"
+        "WITH u AS (UPDATE cash_counts SET kind = 'HANDOVER_OUT', shift_template_id = NULL WHERE id = '{count}'::uuid RETURNING 1) SELECT count(*) FROM u"
     ))
     .await;
     let a = reject(&room, &manager, &count, "why").await;
