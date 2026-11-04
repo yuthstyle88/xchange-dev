@@ -17,12 +17,14 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Side};
+use xc_rate::domain::currency::branch_currencies::{BranchCurrencies, BranchCurrency, Display};
 use xc_rate::domain::pricing::display_settings::DisplaySettingsStore;
 use xc_rate::domain::pricing::follow_plan::{FollowResultStore, SourceFreshness};
 use xc_rate::domain::pricing::follow_visibility::{FollowVisibility, VisibilityInput};
 use xc_rate::domain::pricing::market_quote::MarketSource;
 use xc_rate::domain::pricing::tier_set::{PricingSource, TierSetSource, TierSetStore};
 use xc_rate::domain::publication::freshness::Freshness;
+use xc_rate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
 use xc_rate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
 use xc_rate::infrastructure::pricing::display_settings_store::PgDisplaySettingsStore;
 use xc_rate::infrastructure::pricing::follow_result_store::PgFollowResultStore;
@@ -88,10 +90,17 @@ pub async fn published_rates_data(
         None => None,
     };
 
+    let mut tx = pool.begin().await.map_err(pos_error::AppError::Database)?;
+    let branch_rows = PgBranchCurrencies
+        .rows_in(&mut tx, branch)
+        .await
+        .map_err(|e| pos_error::AppError::Internal(e.to_string()))?;
+    tx.commit().await.map_err(pos_error::AppError::Database)?;
+
     let pub_id = match current_pub_id {
         Some(id) => id,
         None => {
-            let display = load_display(pool, branch_id, &[]).await?;
+            let display = load_display(pool, branch_id, &[], &branch_rows).await?;
             return Ok(PublishedRatesData {
                 publication: None,
                 source_date: None,
@@ -217,7 +226,14 @@ pub async fn published_rates_data(
             .map(TierSetSource::pricing_source)
             .unwrap_or(PricingSource::Auto);
 
-        let hidden_reason = if line_source == PricingSource::Follow {
+        let row_display = branch_rows
+            .iter()
+            .find(|row| row.code.as_str() == currency && row.group.as_str() == group)
+            .map(|row| row.display);
+
+        let hidden_reason = if matches!(row_display, Some(Display::Ask | Display::Hide)) {
+            Some("DISPLAY")
+        } else if line_source == PricingSource::Follow {
             follow_hidden_reason(pool, branch_id, &currency, &snapshot, now).await?
         } else {
             None
@@ -238,7 +254,7 @@ pub async fn published_rates_data(
     }
 
     let pub_freshness = Freshness::of_publication(freshnesses);
-    let display = load_display(pool, branch_id, &lines).await?;
+    let display = load_display(pool, branch_id, &lines, &branch_rows).await?;
 
     Ok(PublishedRatesData {
         publication: Some(PublishedPublicationDto {
@@ -413,6 +429,7 @@ async fn load_display(
     pool: &PgPool,
     branch_id: &str,
     lines: &[PublishedLineDto],
+    branch_rows: &[BranchCurrency],
 ) -> AppResult<PublishedDisplayDto> {
     let mut conn = pool
         .acquire()
@@ -447,11 +464,24 @@ async fn load_display(
         }
     }
     let ordered = settings.order(&priced, &sr_order);
+    // `more` stays empty unless the branch lists the whole market (`allMarket`), as `DisplaySettings::order` did.
+    let mut more: Vec<String> = Vec::new();
+    if settings.all_market {
+        for row in branch_rows {
+            if row.display == Display::Ask {
+                let code = row.code.as_str();
+                let has_shown = lines.iter().any(|l| l.currency == code && !l.hidden);
+                if !has_shown && !more.iter().any(|c| c == code) {
+                    more.push(code.to_string());
+                }
+            }
+        }
+    }
     Ok(PublishedDisplayDto {
         tiers: settings.tiers,
         featured: settings.featured,
         highlight: settings.highlight,
         order: ordered.ordered,
-        more: ordered.more,
+        more,
     })
 }
