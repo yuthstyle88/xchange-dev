@@ -204,20 +204,34 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
   (`xc-shift/src/application/shift/service/day_close.rs:33-42`). On the 24-hour defaults a shift is always open, so the
   queue's WAITING/CALLED tickets and the kiosk's unfinished requests (`xc-queue/src/application/day/queue_day_hook.rs:46-60`,
   `xc-kiosk/src/application/kiosk/day_close.rs:47-80`) would never be ended.
-- `[required]` **The cutover ends the previous business day's queue and kiosk work.** For each branch with a plan, the
-  cutover is the start of the span holding now (`ShiftPlan::span_for(now).0`, when `now` is inside it). Everything issued
-  before it that is still unfinished is ended exactly as the branch-day close ends it today (`dayClosed` /
-  `kioskCancelled:DAY_CLOSED`). Work issued after the cutover is untouched.
+- `[required]` **The cutover ends the previous business day's waiting work; work a teller holds gets one more day.** For each
+  branch with a plan, the cutover is the start of the span holding now (`ShiftPlan::span_for(now).0`, when `now` is inside it).
+  - **Waiting work** issued before the cutover is ended exactly as the branch-day close ends it today: queue tickets in
+    `WAITING` (`dayClosed`) and kiosk requests in `WAITING` (`DAY_CLOSED`).
+  - **Work in progress** (`CALLED` tickets; `ACCEPTED`/`ID_CHECKED` kiosk requests and their SERVING tickets) is a teller
+    serving a customer across the cutover (a C teller who called someone at 05:58). It is **not** ended at that cutover; it is
+    ended at the next one, i.e. when it was issued before the **previous** cutover (more than one business day old). Normal
+    service finishes it long before; the rule only clears what was abandoned.
+  - Today's branch-day close knew no teller held anything (it runs after the last CLOSE is verified). The cutover has no
+    such guarantee, hence the grace. This is the sub-controller's reading of *"Yes, at cutover"*, sent to the owner as
+    information (he may object).
+  - Work issued after the cutover is untouched.
 - `[required]` **Stateless and idempotent, no migration.** The rule is "issued before the cutover", so running it again finds
   nothing. A sweeper runs it every 60 s, like `BookingSweeper` (`api/src/bootstrap/mod.rs:475-485`), one branch transaction per
-  branch.
+  branch. A branch whose plan fails to load or whose sweep errors is logged and skipped; the round goes on.
+- `[required]` **A sweep that ends nothing changes nothing.** `on_day_closed` ends with `status.refresh_in`, which bumps
+  `branch_service_status.queue_version` (`xc-queue/src/application/status/status_service.rs:141-200`). The cutover method calls
+  `refresh_in` only when it ended at least one ticket or kiosk request; otherwise every polled queue client would refetch
+  every minute (fleet rule: polled endpoints send only what changed).
 - `[required]` The branch-day close keeps calling `on_day_closed` unchanged (a branch with a gap still closes its day as today).
 - Files and tickets:
   - **CS-22a** (logic, Argon): `QueueDayHook::on_business_day_end(tx, branch, cutover)` in
     `xc-queue/src/application/day/queue_day_hook.rs` (tickets with `issued_at < cutover`), and
-    `KioskDayClose::close_before_in(tx, branch, cutover, now)` in `xc-kernel/src/kiosk_day_close.rs` + its implementation in
-    `xc-kiosk/src/application/kiosk/day_close.rs` (requests with `created_at < cutover`). Both share their body with the
-    existing day close; the existing methods keep their behaviour.
+    `KioskDayClose::close_before_in(tx, branch, waiting_before, held_before, now)` in `xc-kernel/src/kiosk_day_close.rs` +
+    its implementation in `xc-kiosk/src/application/kiosk/day_close.rs` (`WAITING` requests created before `waiting_before`;
+    `ACCEPTED`/`ID_CHECKED` before `held_before`). They reuse the existing per-row cancel paths; the existing methods keep
+    their behaviour. The test fake `api/crates/xc-queue/tests/queue_day_kiosk_test.rs:43` implements the trait, so it is in
+    CS-22a's File scope (no default body: a silent no-op would hide a missing implementation).
   - **CS-22b** (logic, Argon): `BusinessDayCloser` in `api/src/application/workflows/business_day_close.rs` (new): lists
     branches, loads each plan (`ShiftPlanService::plan_in`), and runs CS-22a for the branch's current cutover; one `tokio::spawn`
     in `api/src/bootstrap/mod.rs`. Waits for CS-3 and CS-22a.
@@ -226,8 +240,10 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
 |---|---|---|
 | Q1 | defaults; a WAITING ticket issued 4 Nov 23:00, sweep at 5 Nov 06:01 | CANCELLED `dayClosed` |
 | Q2 | a WAITING ticket issued 5 Nov 06:00:30, same sweep | untouched |
-| Q3 | sweep again at 06:02 | nothing changes, no new events |
-| Q4 | an unfinished kiosk request created 5 Nov 05:50 | cancelled `DAY_CLOSED` at the 06:01 sweep |
+| Q3 | sweep again at 06:02 | nothing changes, no new events, `queue_version` unchanged |
+| Q4 | a WAITING kiosk request created 5 Nov 05:50 | cancelled `DAY_CLOSED` at the 06:01 sweep |
+| Q4b | a CALLED ticket issued 5 Nov 05:58; an `ID_CHECKED` kiosk request created 5 Nov 05:50 | untouched at the 5 Nov 06:01 sweep; ended at the 6 Nov 06:01 sweep if still open |
+| Q4c | a sweep where one branch's plan cannot load | that branch is logged and skipped; the others are swept |
 | Q5 | overlapping plan (gap 04:00–10:00), sweep at 5 Nov 05:00 | nothing (now is not inside a span); at 10:01 the tickets from before 10:00 end |
 | Q6 | branch-day close (cut-off, last shift closed) | unchanged: `on_day_closed` ends everything, as today |
 
@@ -762,7 +778,7 @@ Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q
 | CS-18 floor `onBreak` UI | mechanical | Flash | `FloorCard.tsx` | 3 (after CS-5) |
 | CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | after `feat/board-currencies` lands |
 | CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | after CS-12 |
-| CS-22a queue + kiosk end before the cutover | logic | Argon | `xc-queue/src/application/day/queue_day_hook.rs`, `xc-kernel/src/kiosk_day_close.rs`, `xc-kiosk/src/application/kiosk/day_close.rs` | 2 |
+| CS-22a queue + kiosk end before the cutover | logic | Argon | `xc-queue/src/application/day/queue_day_hook.rs`, `xc-kernel/src/kiosk_day_close.rs`, `xc-kiosk/src/application/kiosk/day_close.rs`, `xc-queue/tests/queue_day_kiosk_test.rs` | 2 |
 | CS-22b business-day closer | logic | Argon | `api/src/application/workflows/business_day_close.rs`, `api/src/bootstrap/mod.rs` | 3 (after CS-3, CS-22a) |
 | CS-20 reversal and loyalty deadline | guarded | Argon | `xc-exchange/src/domain/reversal/window.rs`, `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `api/src/infrastructure/loyalty/pg_facts_source.rs`, `complete.rs` (`branch_day_in` only) | after `feat/backdated-keying` lands |
 
