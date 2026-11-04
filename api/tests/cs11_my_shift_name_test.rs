@@ -248,6 +248,12 @@ async fn cs11_r1a_my_shift_templated() {
 #[actix_web::test]
 async fn cs11_r1c_my_shift_no_template() {
     let room = Room::start().await;
+    // Since CS-7 an opened shift takes the covering template, so make this one a pre-feature shift by hand.
+    sqlx::query("UPDATE shifts SET template_id = NULL, template_name = NULL WHERE id = $1")
+        .bind(&room.shift_id)
+        .execute(&room.db.pool)
+        .await
+        .expect("strip the shift's template");
     let data = room.my_shift(&room.teller).await;
     assert_eq!(data["shiftName"], Value::Null, "{data}");
     assert!(data["businessDate"].is_string(), "businessDate should be string: {data}");

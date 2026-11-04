@@ -91,7 +91,8 @@ impl BackdateSale {
     }
 
     /// `[required]` In this order, every refusal before the first write (§4, §5, §6, §7):
-    /// 1. `BackdateWindow::check(paid_at, value_date, now, <branch timezone>, ClosedDays::is_closed_in(..))`;
+    /// 1. `BackdateWindow::check(paid_at, value_date, now, <business date of paid_at>, <business date of now>,
+    ///    ClosedDays::is_closed_in(..))`;
     ///    a refusal answers `AppError::Domain("<code>:<field>: …")` as `transactions.rs::refusal` reads it
     ///    (`dayClosed: …` for a closed day).
     /// 2. The currency: not THB, in the branch's register (`PgCurrencyRegister`), for `unit_size`.
@@ -128,8 +129,17 @@ impl BackdateSale {
             .parse()
             .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
         let closed = ClosedDays::is_closed_in(tx, &req.branch_id, req.value_date).await?;
-        if let Err(r) = BackdateWindow::check(req.payment.paid_at, req.value_date, now, tz, closed)
-        {
+        // CS-20b replaces these calendar dates with `ShiftPlan::business_date_of` under the branch's plan.
+        let paid_day = req.payment.paid_at.with_timezone(&tz).date_naive();
+        let today = now.with_timezone(&tz).date_naive();
+        if let Err(r) = BackdateWindow::check(
+            req.payment.paid_at,
+            req.value_date,
+            now,
+            paid_day,
+            today,
+            closed,
+        ) {
             let msg = match r {
                 BackdateRefusal::PaidAtInFuture => format!(
                     "{}:{}: paidAt is in the future",
