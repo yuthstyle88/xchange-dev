@@ -21,13 +21,22 @@ pub enum BackdateRefusal {
 impl BackdateRefusal {
     /// `[required]` The v3 error code: `"dayClosed"` for [`Self::DayClosed`], `"validationFailed"` otherwise.
     pub fn code(self) -> &'static str {
-        todo!("BK-2: backdated-keying.md §4")
+        match self {
+            Self::DayClosed => "dayClosed",
+            Self::PaidAtInFuture | Self::ValueDateNotPaidDate | Self::ValueDateInFuture => {
+                "validationFailed"
+            }
+        }
     }
 
     /// `[required]` The input field the refusal names: `"payment.paidAt"` for [`Self::PaidAtInFuture`],
     /// `"valueDate"` for the two date refusals, `None` for [`Self::DayClosed`].
     pub fn field(self) -> Option<&'static str> {
-        todo!("BK-2: backdated-keying.md §4")
+        match self {
+            Self::PaidAtInFuture => Some("payment.paidAt"),
+            Self::ValueDateNotPaidDate | Self::ValueDateInFuture => Some("valueDate"),
+            Self::DayClosed => None,
+        }
     }
 }
 
@@ -44,7 +53,18 @@ impl BackdateWindow {
         tz: Tz,
         closed: bool,
     ) -> Result<(), BackdateRefusal> {
-        let _ = (paid_at, value_date, now, tz, closed);
-        todo!("BK-2: backdated-keying.md §5")
+        if paid_at > now {
+            return Err(BackdateRefusal::PaidAtInFuture);
+        }
+        if value_date != paid_at.with_timezone(&tz).date_naive() {
+            return Err(BackdateRefusal::ValueDateNotPaidDate);
+        }
+        if value_date > now.with_timezone(&tz).date_naive() {
+            return Err(BackdateRefusal::ValueDateInFuture);
+        }
+        if closed {
+            return Err(BackdateRefusal::DayClosed);
+        }
+        Ok(())
     }
 }
