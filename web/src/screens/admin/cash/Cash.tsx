@@ -21,7 +21,7 @@ import { Card, CardHead, CardBody, CardGrid } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
 import { toast } from '../parts/toast';
 import { CashFlows } from './CashFlows';
-import { openShiftDetail } from './ShiftDetail';
+import { openShiftDetail, shiftLabel } from './ShiftDetail';
 import * as table from './i18n';
 import './cash.css';
 
@@ -513,7 +513,12 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                           </button>
                         </td>
                         <td>{when(s.openedAt)}</td>
-                        <td>{s.staff}</td>
+                        <td>
+                          {s.staff}
+                          <Show when={shiftLabel(s.shiftName, s.businessDate)}>
+                            {(label) => <> <span class="pill neutral shift-label">{label()}</span></>}
+                          </Show>
+                        </td>
                         <td>
                           <span class={s.status === 'CLOSED' ? 'pill neutral' : 'pill'}>
                             {s.status === 'OPEN' ? t('statusOpen') : t('statusClosed')}
