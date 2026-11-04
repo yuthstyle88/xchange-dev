@@ -346,7 +346,7 @@ impl CreateTransaction {
         let nationality = custom_nationality.unwrap_or(customer.nationality);
 
         // 2. LIVE needs the saver's open shift at this branch; DEMO has none
-        let shift_id = match mode {
+        let (shift_id, value_date) = match mode {
             Mode::Live => {
                 let teller = teller_user_id.or_else(|| Uuid::parse_str(&who.id).ok());
                 let shift = match teller {
@@ -355,15 +355,15 @@ impl CreateTransaction {
                         .open_of_teller_in(tx, &teller_id.to_string())
                         .await?
                         .filter(|s| s.branch_id == req.branch_id)
-                        .map(|s| s.id),
+                        .map(|s| (s.id, s.business_date)),
                     None => None,
                 };
                 match shift {
-                    Some(id) => Some(id),
+                    Some((id, business_date)) => (Some(id), business_date),
                     None => return Err(ShiftError::NoOpenShift.into()),
                 }
             }
-            Mode::Demo => None,
+            Mode::Demo => (None, req.value_date),
         };
 
         // 3. The passport and slip files, as today
@@ -404,7 +404,7 @@ impl CreateTransaction {
             staff_id: who.username.clone(),
             booking_no: req.booking_id.clone().unwrap_or_else(|| WALK_IN.to_owned()),
             notes: req.notes.clone(),
-            value_date: req.value_date,
+            value_date,
             recorded_at: now,
             recorded_by: who.id.clone(),
             completed_at: None,
