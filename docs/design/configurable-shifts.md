@@ -125,7 +125,7 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 
 `[proposed]` **Display only.** During a template's break window the staff floor marks the tellers whose open shift is that
 template as `onBreak`; nothing is refused and the counter stays open. Reason: shifts overlap, so another shift covers the counter during every
-default break (A's 15–16 by B, B's 18–19 by A, C's 23–00 by B), and a gate would block a teller who covers for a colleague. Alternatives in Q1.
+break of the first table (A's 15–16 by B, B's 18–19 by A, C's 23–00 by B; the 24-hour defaults have no breaks), and a gate would block a teller who covers for a colleague. Alternatives in Q1.
 
 ### 2.6 Reports (brief rule 5)
 
@@ -153,7 +153,7 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 
 ### 2.8 Defaults
 
-- `[required]` The migration inserts A, B, C (table in §0) for every existing branch.
+- `[required]` The migration inserts A, B, C (the second, 24-hour table in §0) for every existing branch.
 - `[required]` A branch created afterwards gets the same three: `adminCreateBranch` (`compat/rpc.rs:257-270`) calls `ShiftPlanService::seed_defaults` after `create_in`. Seeding is idempotent (no-op when the branch already has a live template).
 - The defaults live once, in `ShiftPlan::defaults()`; the migration's `INSERT` repeats them as data and a test compares the two.
 
@@ -168,13 +168,13 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 
 - Today `branch_day_in` (`api/src/application/workflows/exchange/complete.rs:147-172`) sets `reversible_until` to local midnight
   after `value_date`; it goes to loyalty as `reversibleUntil` (`xc-loyalty/src/domain/wire_body.rs:67`,
-  `infrastructure/loyalty/pg_facts_source.rs:95`). After CS-8 a 02:00 sale in C@4 Nov would get 5 Nov 00:00, before it completed.
+  `api/src/infrastructure/loyalty/pg_facts_source.rs:95`, which computes it again with its own `end_of_business_day`). After CS-8 a 02:00 sale in C@4 Nov would get 5 Nov 00:00, before it completed.
 - `ReversalWindow` (`xc-exchange/src/domain/reversal/window.rs:11-17`) dates the sale by the calendar date of `completed_at` and
   closes at local midnight; it is read by `reversal_request.rs:97`, `reversal_post.rs:286` and `dto/v3/reversal.rs:187`.
 - `[required]` Both use T9: the deadline is `business_day_end(value_date)`. `ReversalWindow` takes the deadline instant instead of a
   timezone (`is_open(deadline, now) -> bool`; xc-exchange does not depend on xc-shift, so the caller computes it), and the
   reversal's `business_date` is the original's `value_date`. Ticket **CS-20** (guarded, Argon): `window.rs`,
-  `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, and `branch_day_in` in `complete.rs`. `complete.rs` is held by
+  `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `api/src/infrastructure/loyalty/pg_facts_source.rs`, and `branch_day_in` in `complete.rs`. `complete.rs` is held by
   `feat/backdated-keying` (BK-7), so CS-20 waits for that branch to land; order posted on #564.
 
 ### 2.11 The reconciliation sheet
@@ -330,7 +330,7 @@ Files under `xc-shift/` are `api/crates/xc-shift/`; `xc-cash/` is `api/crates/xc
 | span from the plan | `api/src/infrastructure/custody/custody_ports.rs` | **CS-4** | — |
 | hours + `onBreak` on the floor | `api/src/application/staff_floor/reader.rs` (+ `StaffFloorTeller.onBreak` DTO field, skeleton) | **CS-5** | web |
 | `open_on_verified(..., &OpenedAs, ..)` writing the three columns, `insert_shift` likewise | `xc-shift/src/application/shift/service.rs`, `shift_repository.rs` | **skeleton** (whole; it must write the columns for today's tests to stay green) | CS-7, CS-19 |
-| handover accept carries the receiver's template | `xc-cash/src/application/handover/handover_service.rs` + its command input | **CS-19** | — |
+| handover accept carries the receiver's template | `xc-cash/src/application/handover/handover_service.rs` + `HandoverAccept`'s input in `api/src/presentation/http/v3/commands/cash/handovers.rs` (registered at `cash.rs:613`; not `cash.rs`, which is CS-7's) | **CS-19** | — |
 | OPEN count carries the template | `xc-cash/src/application/count/count_service.rs` + input field in `api/src/presentation/http/v3/commands/cash.rs` | **CS-7** | — |
 | LIVE `value_date` | `api/src/application/workflows/exchange/create.rs` | **CS-8** | reports |
 | `branchShiftsSave` + `branch_shifts` view + DTO + policy rows | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs` (new), `xc-auth/src/domain/policy/areas/branch_shifts.rs` (new) | DTO + policy: skeleton · handlers: **CS-9** | web CS-14 |
@@ -358,7 +358,7 @@ impl ShiftPlan {
     /// T5. Trims names; returns the inputs in the given order.
     pub fn validate(inputs: Vec<ShiftTemplateInput>) -> Result<Vec<ShiftTemplateInput>, PlanRefusal>;
     pub fn new(templates: Vec<ShiftTemplate>, tz: chrono_tz::Tz) -> Self;
-    /// A 10:00–19:00 (15–16), B 15:00–00:00 (18–19), C 19:00–04:00 (23–00), positions 0..=2.
+    /// A 06:00–14:00, B 14:00–22:00, C 22:00–06:00, no breaks, positions 0..=2 (owner, ~21:4x ICT).
     pub fn defaults() -> Vec<ShiftTemplateInput>;
     pub fn templates(&self) -> &[ShiftTemplate];
     pub fn instance(&self, template: &ShiftTemplate, date: NaiveDate) -> ShiftInstance;      // T3
@@ -695,7 +695,7 @@ Open (sent to the lane controller with my recommendation):
 | CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs`, `dto/v3/open_shift_choices.rs`, `xc-auth/.../areas/open_shift_choices.rs` | 2 (after CS-3) |
 | CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + their DTOs | 1 |
 | CS-13 seed on create | mechanical | Flash | `api/src/application/compat/rpc.rs` | 2 (after CS-3) |
-| CS-19 handover accept | guarded | Argon | `xc-cash/src/application/handover/handover_service.rs` + the accept command input | 2 (after CS-3) |
+| CS-19 handover accept | guarded | Argon | `xc-cash/src/application/handover/handover_service.rs`, `api/src/presentation/http/v3/commands/cash/handovers.rs` | 2 (after CS-3) |
 | CS-21 reconciliation by business date | logic | Argon | `api/src/application/finance/reconciliation.rs`, `api/src/application/finance/sheet_parts.rs` | 1 |
 | CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 3 (after CS-9) |
 | CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 3 (after CS-10) |
@@ -703,7 +703,7 @@ Open (sent to the lane controller with my recommendation):
 | CS-18 floor `onBreak` UI | mechanical | Flash | `FloorCard.tsx` | 3 (after CS-5) |
 | CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | after `feat/board-currencies` lands |
 | CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | after CS-12 |
-| CS-20 reversal and loyalty deadline | guarded | Argon | `xc-exchange/src/domain/reversal/window.rs`, `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `complete.rs` (`branch_day_in` only) | after `feat/backdated-keying` lands |
+| CS-20 reversal and loyalty deadline | guarded | Argon | `xc-exchange/src/domain/reversal/window.rs`, `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `api/src/infrastructure/loyalty/pg_facts_source.rs`, `complete.rs` (`branch_day_in` only) | after `feat/backdated-keying` lands |
 
 CS-6 is folded into the skeleton (it had to write the new columns for today's tests to stay green). Waves follow the
 providers: a consumer whose provider is a `todo!()` cannot pass its tests, so it is released when the provider merges into
