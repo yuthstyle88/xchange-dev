@@ -58,4 +58,11 @@ pub trait BranchRepository: Send + Sync {
         created_by: &str,
         request_id: &str,
     ) -> impl Future<Output = AppResult<()>> + Send;
+
+    fn copy_currency_set_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        from: &str,
+        to: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send;
 }
