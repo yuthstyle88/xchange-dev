@@ -716,6 +716,10 @@ async fn no_current_line_for_the_branch_currency_and_side_is_refused() {
     )
     .await;
 
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["GBP"])
+        .await
+        .expect("seed branch currencies");
+
     db.publish(
         "MAIN",
         &[

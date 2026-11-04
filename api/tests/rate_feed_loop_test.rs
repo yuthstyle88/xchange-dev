@@ -132,6 +132,9 @@ async fn owner_publishes_auto_usd(db: &TestDb, branch: &str) {
         LineSide::Auto,
         None,
     );
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     let mut tx = db.pool.begin().await.expect("begin");
     let draft = svc
         .create(&mut tx, &b, &owner_user, vec![line])
