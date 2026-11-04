@@ -317,6 +317,22 @@ impl CompleteExchange {
                 .finish_for_sale_in(tx, &t.branch_id, ticket, now)
                 .await?;
         }
+        if let Some(booking_id) = &t.booking_id {
+            let ticket: Option<String> = sqlx::query_scalar(
+                "SELECT id::text FROM queue_tickets \
+                 WHERE branch_id = $1 AND booking_id = $2 AND status = 'SERVING'",
+            )
+            .bind(t.branch_id.as_str())
+            .bind(booking_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(AppError::Database)?;
+            if let Some(ticket) = ticket {
+                self.walk_in
+                    .finish_for_sale_in(tx, &t.branch_id, &ticket, now)
+                    .await?;
+            }
+        }
 
         // 8. Every step's after_in, unchanged (D-7), told the exchange as the save steps know it
         let Some((saved, _)) = self
