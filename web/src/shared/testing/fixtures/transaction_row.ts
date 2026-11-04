@@ -33,6 +33,7 @@ export function makeTransactionRow(o: Partial<TransactionRow> = {}): Transaction
     referencePercent: null,
     paymentRef: null,
     slipUrl: null,
+    backdated: false,
     ...o,
   };
 }
