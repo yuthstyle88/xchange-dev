@@ -1,12 +1,13 @@
 // BC-6 (xchange#6085): the currencies a rate draft can add come from the rates_draftable view.
 // Design: docs/design/board-currencies.md § BC-6.
 import { describe, expect, it } from 'vitest';
-import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
+import { makeDraftableCurrency, makeRatesDraftableData } from '../../../shared/testing/fixtures';
 import { draftableCurrencies } from './draftable-currencies';
 
-const draftable = (...codes: string[]): RatesDraftableData => ({
-  rows: codes.map((code) => ({ code, group: 'ALL', unitSize: '1', hasReference: true })),
-});
+const draftable = (...codes: string[]) =>
+  makeRatesDraftableData({
+    rows: codes.map((code) => makeDraftableCurrency({ code, group: 'ALL', unitSize: '1', hasReference: true })),
+  });
 
 describe('draftableCurrencies(data, inDraft)', () => {
   it('D1: the draftable codes not yet in the draft, A to Z', () => {

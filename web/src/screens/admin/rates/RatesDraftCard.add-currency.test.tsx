@@ -8,11 +8,12 @@ import {
   makeRateDraftDetailData,
   makeRateDraftDetailItemDto,
   makeRateDraftLineDto,
+  makeDraftableCurrency,
+  makeRatesDraftableData,
   makeRatesReferenceData,
   makeRatesReferenceRow,
 } from '../../../shared/testing/fixtures';
 import type { ApiClient } from '../../../shared/api/client';
-import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
 import { RatesDraftCard } from './RatesDraftCard';
 import * as ratesTable from './i18n';
 
@@ -23,6 +24,7 @@ const WORDING = {
 
 type Detail = ReturnType<typeof makeRateDraftDetailData>;
 type Reference = ReturnType<typeof makeRatesReferenceData>;
+type Draftable = ReturnType<typeof makeRatesDraftableData>;
 
 function detail(status: string): Detail {
   return makeRateDraftDetailData({
@@ -31,14 +33,14 @@ function detail(status: string): Detail {
   });
 }
 
-const DRAFTABLE: RatesDraftableData = {
+const DRAFTABLE = makeRatesDraftableData({
   rows: [
-    { code: 'USD', group: 'ALL', unitSize: '1', hasReference: true },
-    { code: 'EUR', group: 'ALL', unitSize: '1', hasReference: true },
-    { code: 'JPY', group: 'ALL', unitSize: '100', hasReference: true },
-    { code: 'CNY', group: 'ALL', unitSize: '1', hasReference: true },
+    makeDraftableCurrency({ code: 'USD', group: 'ALL', unitSize: '1', hasReference: true }),
+    makeDraftableCurrency({ code: 'EUR', group: 'ALL', unitSize: '1', hasReference: true }),
+    makeDraftableCurrency({ code: 'JPY', group: 'ALL', unitSize: '100', hasReference: true }),
+    makeDraftableCurrency({ code: 'CNY', group: 'ALL', unitSize: '1', hasReference: true }),
   ],
-};
+});
 
 const REFERENCE = makeRatesReferenceData({
   rows: ['USD', 'EUR', 'JPY', 'CNY', 'KRW'].map((code) =>
@@ -65,7 +67,7 @@ describe('BC-6: an editable draft adds a currency from rates_draftable', () => {
     vi.restoreAllMocks();
   });
 
-  function mount(status: string, draftableData: RatesDraftableData | null, refData: Reference | null = REFERENCE): void {
+  function mount(status: string, draftableData: Draftable | null, refData: Reference | null = REFERENCE): void {
     const [draftDetail, setDraftDetail] = createSignal<Detail | null>(detail(status));
     dispose = render(
       () => (
