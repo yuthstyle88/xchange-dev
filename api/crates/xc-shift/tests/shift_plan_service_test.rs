@@ -201,6 +201,14 @@ async fn v6_seed_defaults_is_idempotent_and_save_returns_the_stored_plan() {
     let db = TestDb::start().await;
     let svc = service(&db);
     let branch = db.branch("CS3").await;
+    // The `branches_default_shift_templates` trigger already seeded it: seeding again is a no-op.
+    assert!(!svc.seed_defaults(&branch, ORG).await.unwrap(), "a seeded branch is left alone");
+    assert_eq!(live_names(&db, &branch).await, vec!["A", "B", "C"]);
+    sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1")
+        .bind(branch.as_str())
+        .execute(&db.pool)
+        .await
+        .unwrap();
     assert!(svc.seed_defaults(&branch, ORG).await.unwrap(), "first seed inserts");
     assert!(!svc.seed_defaults(&branch, ORG).await.unwrap(), "second seed is a no-op");
     assert_eq!(live_names(&db, &branch).await, vec!["A", "B", "C"]);
