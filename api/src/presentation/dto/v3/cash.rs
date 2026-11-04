@@ -40,7 +40,10 @@ pub struct CountSubmitInput {
     pub kind: String,
     #[serde(default)]
     pub shift_id: Option<String>,
+    /// The shift the teller opens as (OPEN only; configurable-shifts.md §2.3). Optional on the wire: the server takes
+    /// the only covering shift when it is absent.
     #[serde(default)]
+    #[ts(optional)]
     pub shift_template_id: Option<String>,
     pub lines: Vec<CashLineInput>,
     #[serde(default)]

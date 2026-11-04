@@ -24,7 +24,12 @@ export type CashRecordOutput = { id: string, status: string, approvalRequestId: 
 /**
  * `countSubmit` `POST /api/cash-counts`. `shiftId` is required for a CLOSE count.
  */
-export type CountSubmitInput = { branch: string | null, kind: string, shiftId: string | null, shiftTemplateId: string | null, lines: Array<CashLineInput>, note: string | null, };
+export type CountSubmitInput = { branch: string | null, kind: string, shiftId: string | null, 
+/**
+ * The shift the teller opens as (OPEN only; configurable-shifts.md §2.3). Optional on the wire: the server takes
+ * the only covering shift when it is absent.
+ */
+shiftTemplateId?: string, lines: Array<CashLineInput>, note: string | null, };
 
 /**
  * The answer of `countSubmit`: the count's id (a count has no status column, D:179).
