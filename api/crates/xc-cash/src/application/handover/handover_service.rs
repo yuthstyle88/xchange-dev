@@ -499,6 +499,9 @@ impl HandoverService {
             created_at: now,
             updated_at: now,
             rejection: None,
+            // CS-19 sets the business date to the handing-over shift's.
+            shift_template_id: None,
+            business_date: None,
         };
 
         self.counts

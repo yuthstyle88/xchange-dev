@@ -70,6 +70,9 @@ impl CashCountDbRow {
                 }),
                 _ => None,
             },
+            // CS-7 reads `shift_template_id` and `business_date` here.
+            shift_template_id: None,
+            business_date: None,
         }
     }
 }

@@ -183,6 +183,8 @@ async fn count(pool: &PgPool, counter: &str, totals: &[(&str, &str)]) -> CashCou
         created_at: now,
         updated_at: now,
         rejection: None,
+        shift_template_id: None,
+        business_date: None,
     }
 }
 
