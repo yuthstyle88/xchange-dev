@@ -2214,3 +2214,86 @@ async fn v2_admin_write_in(
         }
     }
 }
+
+// ── F6 (#6095): a kiosk request's queue label once it has a ticket ───────────
+
+/// v2's queue label of a kiosk request: `K-` and the first eight characters of its id, upper-cased.
+pub fn v2_queue_label(id: &str) -> String {
+    let first_eight: String = id.chars().take(8).collect();
+    format!("K-{}", first_eight.to_uppercase())
+}
+
+/// Added by the ticket author of #6095 (F6, claude/01TxaRJG; lane controller's ruling
+/// issuecomment-6627017842, `docs/design/blueprint/queue-tickets.md:40-43` Q1/Q3/Q4): once a kiosk
+/// request has its queue ticket, its `queue` is the ticket's `display_number`, where v2 recorded
+/// `K-<first eight>`. A recorded answer is held to that: every object whose `queue` is exactly v2's
+/// label of its own `id`, for a request that has a ticket in `pool`, expects the ticket's number.
+/// Nothing else in the answer changes, and a request with no ticket keeps v2's label.
+pub async fn with_ticket_numbers(pool: &PgPool, recorded: &mut Value) {
+    let mut ids = Vec::new();
+    labelled_ids(recorded, &mut ids);
+    if ids.is_empty() {
+        return;
+    }
+    ids.sort();
+    ids.dedup();
+    let numbers: BTreeMap<String, String> = sqlx::query_as::<_, (String, String)>(
+        "SELECT kiosk_request_id, display_number FROM queue_tickets WHERE kiosk_request_id = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await
+    .expect("read the requests' ticket numbers")
+    .into_iter()
+    .collect();
+    renumbered(recorded, &numbers);
+}
+
+fn labelled_ids(value: &Value, ids: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            if let (Some(Value::String(id)), Some(Value::String(queue))) =
+                (map.get("id"), map.get("queue"))
+                && *queue == v2_queue_label(id)
+            {
+                ids.push(id.clone());
+            }
+            for v in map.values() {
+                labelled_ids(v, ids);
+            }
+        }
+        Value::Array(items) => {
+            for v in items {
+                labelled_ids(v, ids);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn renumbered(value: &mut Value, numbers: &BTreeMap<String, String>) {
+    match value {
+        Value::Object(map) => {
+            let number = match (map.get("id"), map.get("queue")) {
+                (Some(Value::String(id)), Some(Value::String(queue)))
+                    if *queue == v2_queue_label(id) =>
+                {
+                    numbers.get(id).cloned()
+                }
+                _ => None,
+            };
+            if let Some(number) = number {
+                map.insert("queue".to_owned(), Value::String(number));
+            }
+            for v in map.values_mut() {
+                renumbered(v, numbers);
+            }
+        }
+        Value::Array(items) => {
+            for v in items {
+                renumbered(v, numbers);
+            }
+        }
+        _ => {}
+    }
+}

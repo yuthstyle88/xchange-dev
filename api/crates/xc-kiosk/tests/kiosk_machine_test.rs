@@ -186,6 +186,7 @@ fn a_quote_buys_the_amount_named_and_records_what_it_was_given() {
                 payment_method: PaymentMethod::Cash,
             },
             transaction: None,
+            ticket_number: None,
         }
     );
 }
