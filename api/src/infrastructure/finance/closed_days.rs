@@ -2,7 +2,7 @@
 //! certified that branch-day (`reconciliation_certifications`, append-only), the only per-date close record.
 
 use chrono::NaiveDate;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use xc_kernel::ids::BranchId;
 
 pub struct ClosedDays;
@@ -15,7 +15,14 @@ impl ClosedDays {
         branch: &BranchId,
         date: NaiveDate,
     ) -> AppResult<bool> {
-        let _ = (tx, branch, date);
-        todo!("BK-5: backdated-keying.md §5")
+        let is_closed: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM reconciliation_certifications WHERE branch_id = $1 AND business_date = $2)",
+        )
+        .bind(branch.as_str())
+        .bind(date)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+        Ok(is_closed)
     }
 }
