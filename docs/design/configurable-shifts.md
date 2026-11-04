@@ -18,11 +18,26 @@ defaults below and *"default ตามนี้"*.
 A and B overlap 15:00–19:00; B and C overlap 19:00–00:00. These are **staff working shifts**: several tellers work at the
 same time, each in one named shift.
 
-Done line (from the lane controller's brief). On MAIN with the A/B/C defaults:
-1. tellers can open at 10:00, 15:00 and 19:00;
+**The defaults changed the same evening.** Owner, ~21:4x ICT (lane controller's comment on this PR), verbatim:
+*"ปกติ 3 กะมันไม่พักนะ"* · *"มัน 24 ชม"* · *"มาตรฐานการทำงาน 24 ชม ไม่มีพัก"*, then he chose 3 × 8 h:
+
+| Shift | Working hours | Break |
+|---|---|---|
+| A | 06:00–14:00 | none |
+| B | 14:00–22:00 | none |
+| C | 22:00–06:00 next day | none |
+
+24-hour operation is the standard; the business day cuts over at 06:00, the end of C; a break stays optional per shift.
+The model below handles both tables: the first one (overlaps, breaks, a 04:00–10:00 gap) is kept as the main test fixture.
+
+**Owner decisions** (lane controller's comment on this PR, 2026-11-04 ~21:2x ICT, *"Approve all"*): Q1–Q6 = A (§7), and the
+migration as first written. The seed and the triggers changed after that approval, so §5 goes back to the owner (§7 Q8).
+
+Done line, restated for the new defaults (proposed to the lane controller). On MAIN with the defaults:
+1. tellers can open A at 06:00, B at 14:00 and C at 22:00;
 2. a 02:00 sale counts on the previous business date;
-3. opening at 05:00 is refused;
-4. service hours run 10:00–04:00;
+3. opening a shift that does not cover now is refused (A at 15:00);
+4. service runs 24 hours with the business day cutting over at 06:00, with no daily pause (§2.7, Q7);
 5. the reports group by A, B and C.
 
 ## 1. What exists today (survey)
@@ -71,7 +86,10 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 | T5 | **Plan validity.** `max endOffset <= 24 h` (only reachable when no stretch is uncovered, e.g. A 08–20 + B 20–09), names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively, `start != end`, and a break lies inside its shift, measured on the same offsets. 1 to 12 templates. A break with only one end is refused by the command when it parses the body (`breakIncomplete`), before `validate`. |
 | T6 | **Covering now.** Template `t` covers instant `now` when `start(t, d) <= now < end(t, d)` for `d` = local today or local yesterday. Each covering instance carries its own `d`. |
 | T7 | **Business date of an instant.** `d` such that `now` lies in the service span of `d`. Outside every span there is none. |
-| T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4). |
+| T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4 = A). |
+| T9 | **End of a business day.** `ShiftPlan::business_day_end(d)` = the end of `service_span(d)`: 06:00 on `d+1` with the defaults. Every deadline that today means "midnight after the sale's date" uses it (§2.10). |
+| T10 | **Continuous spans.** When the span of `d+1` starts where the span of `d` ends (a 24-hour plan), `span_for` still answers one day's span; the custody window joins the two (§2.7), so no daily pause appears. |
+| T11 | **The branch day is not the business date.** `ops_state` holds one undated phase per branch (§1). It keeps its own lifecycle (start, cut-off, day close); nothing in this design reads it to date a row. With 24-hour operation a day close may never fire (a shift is always open); that is unchanged behaviour of `day_close.rs:33-42`. |
 
 ### 2.3 Opening a shift (brief rule 3)
 
@@ -82,15 +100,24 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 - `[required]` The count stores `shift_template_id` and the instance's `business_date`. The verify (`verify_count_in`) copies
   both, plus the template's **name at that moment**, into the new `shifts` row. A verify later than the window's end still
   opens the shift: the teller's choice was checked when they counted.
+- `[required]` **Every count carries a business date** (reconciliation dates counts by it, §2.11), written at submit:
+  OPEN = the chosen instance's date; CLOSE and HANDOVER_OUT = their shift's `business_date`; SAFE and SAFE_OPEN =
+  `ShiftPlan::business_date_of(counted_at)`, else the date of `span_for(counted_at)` (a count in a gap belongs to the next span).
+  The writer is `PgCashCountRepository`'s insert (`xc-cash/src/infrastructure/repository.rs:160`) and `CashCount`
+  (`xc-cash/src/domain/count/cash_count.rs:40`) gains `shift_template_id` and `business_date`: both in CS-7's File scope.
 - `[required]` `GET /api/v3/views/open_shift_choices?branch=` returns the covering instances: `{templateId, name, businessDate, startsAt, endsAt, breakStartsAt?, breakEndsAt?}[]`, plus `preselect: templateId | null`, set when exactly one covers now. The count form shows a picker; one choice is preselected; none shows "outside shift hours" and disables Save.
 - `[proposed]` No grace before the start (Q3).
-- `[required]` **Handover.** Accepting a handover opens the receiver's drawer (`HandoverService`, `xc-cash/src/application/handover/handover_service.rs:738`), so it follows the same rule: the accept carries the receiver's `shiftTemplateId`, checked against the accept time, with the same refusals. Ticket CS-19.
+- `[required]` **Handover.** Accepting a handover opens the receiver's drawer (`HandoverService::accept…`, `xc-cash/src/application/handover/handover_service.rs:738`), so it follows rule 3: the accept carries the **receiver's** `shiftTemplateId`, checked against the accept time (not the giver's template: a handover at 14:00 is A → B), with the same refusals; the receiver's shift gets that instance's name and business date. The skeleton passes `OpenedAs::untemplated()` there until CS-19 lands. The three test files that call `open_on_verified` were updated by the skeleton.
 
 ### 2.4 Selling and the business date
 
 - `[required]` A LIVE sale's `value_date` is **set by the server** to the business date of the keyer's open shift (`create.rs:349-362`, where the shift is already looked up). The client's `valueDate` is ignored for LIVE sales. This is the root-cause fix: the writer of the wrong date is the client, which uses the calendar date.
   - DEMO sales keep the client's date, as today.
-  - The backdated path (`feat/backdated-keying`, `backdate.rs`) is a different command and keeps its own rule.
+  - The backdated path (`feat/backdated-keying`, `backdate.rs`) must follow the same rule, or a backdated 02:00 deal lands on
+    the next date while the same live sale lands on the previous one. Today its design requires `value_date` = the calendar
+    date of `paid_at` (`backdated-keying.md` §5 `ValueDateNotPaidDate`, B6). Proposed on #564 to claude/6bb512ce:
+    `BackdateWindow` checks `value_date == ShiftPlan::business_date_of(paid_at)` (a `paid_at` in a gap is refused), and B6 is
+    restated (`paidAt` 4 Nov 00:30 with `valueDate` 3 Nov is **accepted** under the defaults). That change is theirs to make.
 - Every report that filters on `value_date` (§1 row "Reports") is then right with no change: a 02:00 sale in shift C of 4 Nov reads 4 Nov.
 - `[proposed]` A teller may keep selling after their own shift's end, while the branch span is open. No per-shift sales gate (Q2 records the alternative).
 
@@ -113,6 +140,15 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 ### 2.7 Service hours (brief rule 4)
 
 - `[required]` `PgCustodyPorts::service_window` and `read_hours` compute the span (T4) from the plan, for the business date containing now, else the next one. `opening_hours` no longer gates custody.
+- `[required]` **No daily pause on a 24-hour plan (T10, Q7).** `ServiceWindow` refuses to begin a sale in the last 10 minutes
+  (`service_window.rs:18-24`). On a 24-hour plan that would stop selling every day 05:50–06:00. When the next day's span starts
+  exactly at this span's end, `service_window` answers `Open { this span's start, next span's end }`, so the cut-off falls a day
+  later and keeps moving. A plan with a gap keeps the 10-minute cut-off before its gap.
+- **Fixtures.** About 25 api test files drive the custody window by writing `branches.opening_hours`
+  (`grep -rln opening_hours api --include='*.rs' | grep tests` → 30 files at `6334e748`, a few of them booking-only). After CS-4
+  they must seed a plan instead. Ticket **CS-4s** (mechanical sweep, Flash) adds a shared helper that writes one template
+  `[open, close)` for a branch (retiring its others) and calls it next to every custody `opening_hours` write; it is additive,
+  so it lands **before** CS-4.
 - `[proposed]` `opening_hours` stays as the **customer-facing** hours (booking slots, public branch API, customer screens) and is still edited in the branch profile. Whether it should follow the shifts is Q5.
 
 ### 2.8 Defaults
@@ -127,6 +163,27 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 - Refusals: `422 shiftPlanInvalid` with `{reason: emptyName|nameTooLong|duplicateName|zeroLength|spanOver24h|breakOutsideShift|breakIncomplete|tooMany|none}` and `index`.
 - `[required]` Editing does not touch open shifts: they keep the name and business date they opened with.
 - `[required]` `GET /api/v3/views/branch_shifts?branch=` returns the live plan plus the derived span, for the editor.
+
+### 2.10 Deadlines that mean "the end of the sale's day"
+
+- Today `branch_day_in` (`api/src/application/workflows/exchange/complete.rs:147-172`) sets `reversible_until` to local midnight
+  after `value_date`; it goes to loyalty as `reversibleUntil` (`xc-loyalty/src/domain/wire_body.rs:67`,
+  `infrastructure/loyalty/pg_facts_source.rs:95`). After CS-8 a 02:00 sale in C@4 Nov would get 5 Nov 00:00, before it completed.
+- `ReversalWindow` (`xc-exchange/src/domain/reversal/window.rs:11-17`) dates the sale by the calendar date of `completed_at` and
+  closes at local midnight; it is read by `reversal_request.rs:97`, `reversal_post.rs:286` and `dto/v3/reversal.rs:187`.
+- `[required]` Both use T9: the deadline is `business_day_end(value_date)`. `ReversalWindow` takes the deadline instant instead of a
+  timezone (`is_open(deadline, now) -> bool`; xc-exchange does not depend on xc-shift, so the caller computes it), and the
+  reversal's `business_date` is the original's `value_date`. Ticket **CS-20** (guarded, Argon): `window.rs`,
+  `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, and `branch_day_in` in `complete.rs`. `complete.rs` is held by
+  `feat/backdated-keying` (BK-7), so CS-20 waits for that branch to land; order posted on #564.
+
+### 2.11 The reconciliation sheet
+
+- FINANCE's sheet dates counts, and who may certify, by the local calendar date of `counted_at`
+  (`api/src/application/finance/reconciliation.rs:8` ruling Q3, `:344`; `sheet_parts.rs:66`), while its sales come from
+  `value_date`. After CS-8 the 4 Nov sheet holds the 02:00 sales but C's 06:00 CLOSE lands on 5 Nov, so it no longer balances.
+- `[required]` Both read `cash_counts.business_date` (§2.3) instead. Ticket **CS-21** (logic, Argon): `reconciliation.rs`, `sheet_parts.rs`.
+  This restates ruling Q3 of #1068 ("a count's `counted_at` business date") with the plan's business date; recorded here.
 
 ## 3. Class diagram
 
@@ -343,7 +400,7 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 
 ## 4. Behaviour tables (up-front tests)
 
-### CS-1 `ShiftPlan` (defaults, tz Asia/Bangkok; "4 Nov" = 2026-11-04 local)
+### CS-1 `ShiftPlan` (tz Asia/Bangkok; "4 Nov" = 2026-11-04 local). P1–P12 and P14–P17 use the owner's first, overlapping table as a fixture; P13 and P18–P20 the defaults
 
 | # | Case | Required |
 |---|---|---|
@@ -359,7 +416,10 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | P10 | `on_break(B, 4 Nov 18:30)` true; `on_break(B, 4 Nov 19:00)` false; `on_break(C, 4 Nov 23:30)` true |
 | P11 | `instance(C, 4 Nov)` | `starts 4 Nov 19:00, ends 5 Nov 04:00, break 4 Nov 23:00–5 Nov 00:00` |
 | P12 | `validate` on: empty list / 13 rows / blank name / 41-char name / "A" and " a " / start = end / break 05:00–06:00 in A / A 08–20 + B 20–09 (no gap, 25 h) | `None` / `TooMany` / `EmptyName(1)` / `NameTooLong(0)` / `DuplicateName(1)` / `ZeroLength(1)` / `BreakOutsideShift(0)` / `SpanOver24h`; a 40-character name and an exact 24 h plan (08–20 + 20–08) are accepted; names come back trimmed, in order |
-| P13 | `validate(defaults())` | `Ok`, unchanged |
+| P13 | `defaults()` | A 06–14, B 14–22, C 22–06, no breaks; valid |
+| P18 | defaults at 06:00, 14:00, 22:00 | covering = A, B, C of that date |
+| P19 | defaults at 5 Nov 02:00 / 05:59 / 06:00 | C@4 Nov; business date 4 Nov / 4 Nov / 5 Nov |
+| P20 | defaults `service_span(4 Nov)` | 4 Nov 06:00 – 5 Nov 06:00 |
 | P14 | a plan whose only template is 02:00–08:00 | anchor 02:00; `business_date_of(3 Nov 03:00)` = 3 Nov |
 | P15 | A 10–19, C 19–04, D 00:30–06:00 | anchor 10:00; at 5 Nov 01:00 covering = `[C@4 Nov, D@4 Nov]`; span of 4 Nov = 10:00–5 Nov 06:00 |
 | P16 | the defaults in `Asia/Tokyo` | 10:00 Tokyo = 08:00 Bangkok opens A |
@@ -384,7 +444,7 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | V4 | `choices_in` at 05:00 | `[]`, `None` |
 | V5 | `plan_in` reads the branch's timezone | a branch in `Asia/Tokyo` shifts every instant by −2 h relative to Bangkok |
 
-### CS-4 custody window · CS-5 floor
+### CS-4 custody window · CS-5 floor (overlapping fixture plan unless the row says defaults)
 
 | # | Case | Required |
 |---|---|---|
@@ -393,10 +453,11 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | W3 | at 5 Nov 05:00 | `Open { 5 Nov 10:00, 6 Nov 04:00 }` (the next span; `allows_start` false) |
 | W4 | branch with no live template | `NotSet` |
 | W5 | `opening_hours` set to 12:00–18:00 | ignored by `service_window` |
+| W6 | defaults, at 5 Nov 05:55 | `Open { 4 Nov 06:00, 6 Nov 06:00 }` (joined, T10): `allows_begin` true |
 | F1 | `read_hours` at 5 Nov 02:00 | the 4 Nov span |
 | F2 | teller in B at 18:30 | `onBreak = true`; teller in A at 18:30 `false` |
 
-### CS-6 `open_on_verified` · CS-7 counts · CS-8 sale date
+### Skeleton `open_on_verified` · CS-7 counts · CS-19 handover · CS-8 sale date (overlapping fixture plan)
 
 | # | Case | Required |
 |---|---|---|
@@ -413,6 +474,17 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | C8 | an OPEN count made before this feature (no template) is verified | refused `shiftNotChosen`; the teller recounts (migration §5 measures that none are pending) |
 | D1 | LIVE sale at 5 Nov 02:00 in a C@4 Nov shift, client sends `valueDate 2026-11-05` | stored `value_date = 2026-11-04` |
 | D2 | DEMO sale | client's `valueDate` kept |
+| K1 | CLOSE count of a C@4 Nov shift at 5 Nov 04:10 | count `business_date` = 4 Nov |
+| K2 | SAFE count at 5 Nov 05:00 (in the gap) | `business_date` = 5 Nov (next span) |
+
+### CS-20 deadline · CS-21 sheet (overlapping fixture plan)
+
+| # | Case | Required |
+|---|---|---|
+| X1 | sale in C@4 Nov completed 5 Nov 02:00 | `reversible_until` = 5 Nov 04:00 (end of the 4 Nov span); a reversal request at 5 Nov 03:59 is in the window, at 04:00 it is not |
+| X2 | reversal of that sale | its `business_date` = 4 Nov |
+| Y1 | CLOSE of C@4 Nov counted 5 Nov 04:10 | on the 4 Nov sheet, not 5 Nov |
+| Y2 | certifier verified only that count | may certify 4 Nov |
 
 ### CS-9 save command · CS-10 choices view · CS-11 shift views · CS-12 staff report
 
@@ -447,6 +519,7 @@ hour. It is renumbered with `scripts/migration-slot.sh renumber` right before th
 
 ```sql
 -- Configurable shifts (docs/design/configurable-shifts.md §5).
+-- Owner 2026-11-04: "ระบบให้ รองรับ กะ สามารถ config ได้ ว่ามีกี่กะ"; defaults "มาตรฐานการทำงาน 24 ชม ไม่มีพัก".
 
 CREATE TABLE shift_templates (
     id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -470,16 +543,16 @@ CREATE UNIQUE INDEX shift_templates_live_name
 CREATE INDEX shift_templates_live_branch
     ON shift_templates (branch_id, position) WHERE retired_at IS NULL;
 
--- The owner's defaults (2026-11-04, "default ตามนี้") for every existing branch.
-INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, break_starts_at, break_ends_at, position)
-SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.break_starts_at, d.break_ends_at, d.position
+-- The owner's defaults for every branch (2026-11-04 ~21:4x ICT: 3 x 8 h, 24-hour operation, no breaks, cutover 06:00).
+-- ShiftPlan::defaults() holds the same rows (test S4).
+INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position)
+SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.position
   FROM branches b
  CROSS JOIN (VALUES
-       ('A', time '10:00', time '19:00', time '15:00', time '16:00', 0),
-       ('B', time '15:00', time '00:00', time '18:00', time '19:00', 1),
-       ('C', time '19:00', time '04:00', time '23:00', time '00:00', 2)
-     ) AS d (name, starts_at, ends_at, break_starts_at, break_ends_at, position)
- WHERE b.organization_id IS NOT NULL;
+       ('A', time '06:00', time '14:00', 0),
+       ('B', time '14:00', time '22:00', 1),
+       ('C', time '22:00', time '06:00', 2)
+     ) AS d (name, starts_at, ends_at, position);
 
 -- A teller's shift records the template, its name at opening, and the business date.
 ALTER TABLE shifts
@@ -489,8 +562,8 @@ ALTER TABLE shifts
 ALTER TABLE shifts
     ADD CONSTRAINT shifts_template_named CHECK ((template_id IS NULL) = (template_name IS NULL));
 
--- A shift written without a business date (one opened with no template) is dated by the local day it opened on.
--- Templated shifts always write it (ShiftService::open_on_verified).
+-- A shift written without a business date (one opened with no template) is dated by the local day it opened on,
+-- the same rule as the backfill below. Templated shifts always write it (ShiftService::open_on_verified).
 CREATE FUNCTION shifts_business_date_default() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF NEW.business_date IS NULL THEN
@@ -505,39 +578,62 @@ CREATE TRIGGER shifts_business_date_default
     BEFORE INSERT ON shifts
     FOR EACH ROW EXECUTE FUNCTION shifts_business_date_default();
 
+-- Shifts opened before this feature: the local calendar date they opened on. A pre-feature shift opened at 00:30
+-- therefore keeps the calendar date, matching the calendar value_date its sales kept (owner Q6 = A: no re-dating).
 UPDATE shifts s
    SET business_date = (s.opened_at AT TIME ZONE b.timezone)::date
   FROM branches b
  WHERE b.id = s.branch_id;
 ALTER TABLE shifts ALTER COLUMN business_date SET NOT NULL;
 
--- The teller's choice is made on the OPEN count and copied to the shift on verify.
+-- The teller's choice is made on the OPEN count and copied to the shift on verify. Every count carries a business date
+-- (design §2.3); a count written without one is dated by the local day it was counted, like the backfill.
 ALTER TABLE cash_counts
     ADD COLUMN shift_template_id uuid REFERENCES shift_templates (id),
     ADD COLUMN business_date     date;
 ALTER TABLE cash_counts
-    ADD CONSTRAINT cash_counts_template_dated CHECK ((shift_template_id IS NULL) = (business_date IS NULL)),
     ADD CONSTRAINT cash_counts_template_only_open CHECK (shift_template_id IS NULL OR kind = 'OPEN');
+CREATE FUNCTION cash_counts_business_date_default() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.business_date IS NULL THEN
+        SELECT (NEW.counted_at AT TIME ZONE b.timezone)::date
+          INTO NEW.business_date
+          FROM branches b
+         WHERE b.id = NEW.branch_id;
+    END IF;
+    RETURN NEW;
+END $$;
+CREATE TRIGGER cash_counts_business_date_default
+    BEFORE INSERT ON cash_counts
+    FOR EACH ROW EXECUTE FUNCTION cash_counts_business_date_default();
+UPDATE cash_counts c
+   SET business_date = (c.counted_at AT TIME ZONE b.timezone)::date
+  FROM branches b
+ WHERE b.id = c.branch_id;
+ALTER TABLE cash_counts ALTER COLUMN business_date SET NOT NULL;
 ```
 
 **(1) Existing rows after the migration**
-- `branches`: each branch with an organization gets A, B, C. A branch with `organization_id IS NULL` gets none (the FK needs the org) and reads `NotSet`, so it cannot start service; measured below.
+- `branches`: every branch gets A, B, C (`branches.organization_id` is `NOT NULL` with a default, `20261011100000_organizations.sql:13`). MAIN's selling hours move from its `opening_hours` (12:00–18:00) to 24 hours; `opening_hours` stays as the customer-facing hours (Q5 = A).
 - `shifts`: every row gets `business_date` = its local opening date; `template_id`/`template_name` stay NULL and report as the `null` group ("before shifts"). OPEN shifts at deploy keep working: closing never reads the template.
-- `cash_counts`: all rows keep NULL. An **unverified OPEN** count made before deploy is refused at verify (C8); measured below so it is zero at deploy.
+- `cash_counts`: `shift_template_id` stays NULL; `business_date` is backfilled from the local date of `counted_at` (the rule reconciliation used until now, so old sheets do not move). An **unverified OPEN** count made before deploy is refused at verify (C8); measured below so it is zero at deploy.
+- **Why the backfill uses the calendar date.** A pre-feature shift or count at 00:30 keeps its calendar date, matching the calendar `value_date` its sales kept (Q6 = A). Re-dating them alone would split old days; leave it.
 - `transactions`: unchanged. Past 00:00–04:00 sales keep the calendar date the client sent (no backfill, Q6).
 
-**(2) Backfill:** one, `shifts.business_date`, inside the migration (it must exist before `SET NOT NULL`). It is not lazy because the staff report groups by it. Measure before deploy (on do-sgp1, read-only):
+**(2) Backfill:** two, `shifts.business_date` and `cash_counts.business_date`, inside the migration (they must exist before `SET NOT NULL`). Not lazy, because the staff report and the reconciliation sheet group by them. Measure before deploy (on do-sgp1, read-only):
 ```sql
 SELECT count(*) AS shifts_to_date FROM shifts;
 SELECT count(*) AS shifts_without_branch FROM shifts s LEFT JOIN branches b ON b.id = s.branch_id WHERE b.id IS NULL;  -- must be 0, else SET NOT NULL fails
-SELECT count(*) AS branches_without_org FROM branches WHERE organization_id IS NULL;                                     -- these get no shifts
+SELECT count(*) AS counts_to_date FROM cash_counts;
 SELECT count(*) AS open_counts_pending FROM cash_counts WHERE kind = 'OPEN' AND verified_at IS NULL AND rejected_at IS NULL;  -- should be 0 at deploy
 ```
 
-**Why a trigger.** 115 files insert into `shifts` directly (`grep -rln "INSERT INTO shifts" api` at `6334e748`, nearly all test
-fixtures). A bare `NOT NULL` would break every one of them. The trigger applies the backfill's own rule to any insert that
-does not name a date, so the column stays `NOT NULL` and the reader never falls back. Every production insert that knows the
-template writes the date itself.
+**Why triggers.** 115 files insert into `shifts` directly (`grep -rln "INSERT INTO shifts" api` at `6334e748`, nearly all test
+fixtures; the review on this PR counted 110 under `tests/` plus four in-crate writers), and `cash_counts` likewise. A bare
+`NOT NULL` would break every one of them. Each trigger applies the backfill's own rule to an insert that does not name a date,
+so the column stays `NOT NULL` and no reader falls back. Every production writer that knows the shift writes the date itself:
+`open_on_verified` and `insert_shift` (skeleton), the count insert (CS-7). The owner approved the migration before the triggers
+existed, so this goes back to him (Q8); the alternative is a 110-file fixture sweep plus four production writers.
 
 **(3) Deploy order:** migrations run at boot with the new binary (`sqlx::migrate!`). The old binary on the new schema still
 works: its `INSERT INTO shifts` gets its date from the trigger, and it ignores the new table and columns. A rollback needs no SQL.
@@ -547,8 +643,10 @@ each pending count's choice. Shifts and counts themselves survive.
 
 ```sql
 -- down (by hand, not shipped)
-ALTER TABLE cash_counts DROP CONSTRAINT cash_counts_template_only_open, DROP CONSTRAINT cash_counts_template_dated,
+ALTER TABLE cash_counts DROP CONSTRAINT cash_counts_template_only_open,
     DROP COLUMN business_date, DROP COLUMN shift_template_id;
+DROP TRIGGER cash_counts_business_date_default ON cash_counts;
+DROP FUNCTION cash_counts_business_date_default();
 DROP TRIGGER shifts_business_date_default ON shifts;
 DROP FUNCTION shifts_business_date_default();
 ALTER TABLE shifts DROP CONSTRAINT shifts_template_named,
@@ -561,46 +659,60 @@ DROP TABLE shift_templates;
 - `feat/board-currencies` (claude/94389a6b) holds `views/staff_daily_report.rs` and `web/src/screens/staff/shift/CountForm.tsx` (`docs/design/board-currencies.md`). CS-12 and CS-15's mount line wait until that branch is on main; CS-15's `ShiftPicker.tsx` is written first in its own file. Agreed on #564.
 - `feat/backdated-keying` (claude/6bb512ce) holds `complete.rs`, `admin_transactions.rs`, `dto/v3/transaction.rs`, `views/transaction.rs`, `role_grants.rs`. This branch touches none of them. It does touch `create.rs` (CS-8), which backdated keying does not list. Migration numbers: §5.
 
-## 7. Owner questions (asked through the lane controller)
+## 7. Owner questions
+
+Decided (lane controller's comments on this PR, 2026-11-04 ~21:2x and ~21:4x ICT): **Q1–Q6 = A**.
+
+| # | Question | Decided |
+|---|---|---|
+| Q1 | What does a break do? | **A**: display only; the floor shows "on break"; nothing is refused. Breaks are optional per shift; the defaults have none. |
+| Q2 | May a teller sell after their own shift ends while the branch is open? | **A**: yes. |
+| Q3 | May a teller open before the shift starts? | **A**: no, exact. |
+| Q4 | Different shifts per weekday? | **A**: no, one plan every day. |
+| Q5 | Do customer-facing hours follow the shifts? | **A**: no; `opening_hours` stays customer hours; selling follows the shifts. |
+| Q6 | Re-date past night sales? | **A**: no backfill of `value_date`. |
+
+Open (sent to the lane controller with my recommendation):
 
 | # | Question | Options | Recommendation |
 |---|---|---|---|
-| Q1 | What does a break do? | A. Display only: the floor shows "on break" for tellers in that shift; nothing is refused. B. The teller's own sales are refused during their break. C. Nothing at all; the break is information on the shift. | **A**: shifts overlap, so the counter is always covered, and B would block a teller covering for a colleague. |
-| Q2 | May a teller sell after their own shift ends (e.g. A at 19:30) while the branch is open? | A. Yes; the shift report shows when they closed. B. No: sales refused after the shift's end until they close. | **A**: closing takes time and the drawer is still theirs; B can be added later as one rule in `CreateTransaction`. |
-| Q3 | May a teller open a little before the shift starts (count the drawer at 09:50 for A)? | A. No, exact (the done line). B. Up to 30 min early. | **A** for now; B is one constant in `ShiftPlan::covering`. |
-| Q4 | Different shifts on different weekdays? | A. No: one plan every day. B. Per weekday. | **A**: the owner's table has no weekdays. |
-| Q5 | Should customer-facing hours (booking slots, branch page) follow the shifts (10:00–04:00)? | A. No: keep `opening_hours` as customer hours, edited separately. B. Yes: derive them from the shifts too. | **A**: night shifts sell to walk-ins; offering 02:00 booking slots is a separate decision. |
-| Q6 | Re-date past 00:00–04:00 LIVE sales to the previous business date? | A. No backfill. B. Backfill `value_date` from the shift's business date. | **A**: no app is in production (`STATE.md`), and B is a data change on money rows. |
+| Q7 | On a 24-hour plan, keep the 10-minute "no new sale" cut-off before the 06:00 cutover? | A. No pause: the window joins consecutive spans (T10, §2.7). B. Keep it: no new sale 05:50–06:00 every day. | **A**: the owner said 24 hours is the standard; B stops the counter daily for nothing the day close needs (the day close is the branch day, T11). |
+| Q8 | Re-approve the migration with two changes since "Approve all": the 06/14/22 seed without breaks, and two `BEFORE INSERT` triggers that date a `shifts`/`cash_counts` row written without a business date (same rule as the backfill), plus `cash_counts.business_date` on every count. | A. Approve. B. No triggers: every writer, including ~110 test files, names the date. | **A**: the column stays `NOT NULL`; B is a 110-file fixture sweep and four production writers for no behaviour difference. |
 
 ## 8. Tickets and waves
 
 | Ticket | Class | Model | Files (File scope) | Wave |
 |---|---|---|---|---|
-| CS-1 `ShiftPlan` | logic | Argon | `shift_plan.rs` | 1 |
-| CS-2 `PgShiftTemplateStore` | mechanical | Flash | `infrastructure/shift_plan/pg_store.rs` | 1 |
-| CS-3 `ShiftPlanService` | logic | Argon | `application/shift_plan/service.rs` | 1 |
-| CS-4 custody window | logic | Argon | `custody_ports.rs` | 1 |
-| CS-5 floor hours + onBreak | logic | Argon | `staff_floor/reader.rs` | 1 (onBreak part after Q1) |
-| CS-7 OPEN count | guarded | Argon | `count_service.rs`, `commands/cash.rs` | 1 |
-| CS-8 LIVE `value_date` | guarded | Argon | `create.rs` | 1 |
-| CS-9 save command + view | mechanical | Flash | `branch_shifts_save.rs`, `views/branch_shifts.rs` | 1 |
-| CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs` | 1 |
-| CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + DTOs | 1 |
-| CS-13 seed on create | mechanical | Flash | `compat/rpc.rs` | 1 |
-| CS-19 handover accept | guarded | Argon | `handover_service.rs` + accept command input | 1 |
-| CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 2 (after CS-9) |
-| CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 2 (after CS-10) |
-| CS-16 admin cash UI | mechanical | Flash | `Cash.tsx`, `ShiftDetail.tsx` | 2 (after CS-11) |
-| CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | 3 (after board-currencies) |
-| CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | 3 (after CS-12) |
-| CS-18 floor onBreak UI | mechanical | Flash | `FloorCard.tsx` | after Q1 |
+| CS-1 `ShiftPlan` | logic | Argon | `xc-shift/src/domain/shift_plan/shift_plan.rs` | 1 |
+| CS-2 `PgShiftTemplateStore` | mechanical | Flash | `xc-shift/src/infrastructure/shift_plan/pg_store.rs` + its test | 1 |
+| CS-3 `ShiftPlanService` | logic | Argon | `xc-shift/src/application/shift_plan/service.rs` | 1 |
+| CS-4s fixture sweep: plan helper next to custody `opening_hours` writes | mechanical | Flash | the custody test files and their common modules (listed in the ticket) | 1 |
+| CS-4 custody window from the plan | logic | Argon | `api/src/infrastructure/custody/custody_ports.rs` | 2 (after CS-1, CS-3, CS-4s) |
+| CS-5 floor hours + `onBreak` | logic | Argon | `api/src/application/staff_floor/reader.rs`, `dto/v3/staff_floor.rs` | 2 (after CS-1, CS-3) |
+| CS-7 counts carry template and business date | guarded | Argon | `xc-cash/src/application/count/count_service.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-cash/src/domain/count/cash_count.rs`, `commands/cash.rs` | 2 (after CS-3) |
+| CS-8 LIVE `value_date` from the shift | guarded | Argon | `api/src/application/workflows/exchange/create.rs` | 1 |
+| CS-9 save command + view | mechanical | Flash | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs`, `xc-auth/.../areas/branch_shifts.rs` | 2 (after CS-3) |
+| CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs`, `dto/v3/open_shift_choices.rs`, `xc-auth/.../areas/open_shift_choices.rs` | 2 (after CS-3) |
+| CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + their DTOs | 1 |
+| CS-13 seed on create | mechanical | Flash | `api/src/application/compat/rpc.rs` | 2 (after CS-3) |
+| CS-19 handover accept | guarded | Argon | `xc-cash/src/application/handover/handover_service.rs` + the accept command input | 2 (after CS-3) |
+| CS-21 reconciliation by business date | logic | Argon | `api/src/application/finance/reconciliation.rs`, `api/src/application/finance/sheet_parts.rs` | 1 |
+| CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 3 (after CS-9) |
+| CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 3 (after CS-10) |
+| CS-16 admin cash UI | mechanical | Flash | `Cash.tsx`, `ShiftDetail.tsx` | 3 (after CS-11) |
+| CS-18 floor `onBreak` UI | mechanical | Flash | `FloorCard.tsx` | 3 (after CS-5) |
+| CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | after `feat/board-currencies` lands |
+| CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | after CS-12 |
+| CS-20 reversal and loyalty deadline | guarded | Argon | `xc-exchange/src/domain/reversal/window.rs`, `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `complete.rs` (`branch_day_in` only) | after `feat/backdated-keying` lands |
 
-Wave 1 is twelve disjoint File scopes (CS-6 folded into the skeleton), released together. Up-front tests for every `logic`/`guarded` ticket are written on the
-skeleton; `mechanical` tickets carry the behaviour table and the reviewer checks each row has a test that fails when reverted.
+CS-6 is folded into the skeleton (it had to write the new columns for today's tests to stay green). Waves follow the
+providers: a consumer whose provider is a `todo!()` cannot pass its tests, so it is released when the provider merges into
+the feat branch. Wave 1 is seven disjoint File scopes released together. Up-front tests for every `logic`/`guarded` ticket are
+on the feat branch before release; `mechanical` tickets carry the behaviour table and the reviewer checks each row has a test
+that fails when reverted.
 
 ## 9. Out of scope (found, not fixed here)
 
 - The receipt number's date is the Bangkok date of `now` (`document_ref.rs:12-30`), so a 02:00 receipt carries the next day's date.
-- A reversal closes at local midnight (`xc-exchange/src/domain/reversal/window.rs:11-17`), so a 23:30 sale in shift C can be reversed for 30 minutes only.
 - The queue's `service_date` (`xc-queue/.../ticket_issuer.rs:221`) and booking check-in (`bookings/check_in.rs:140`) use the calendar date.
-- Loyalty/receipt `business_date` comes from `value_date` (`complete.rs:261,270`); it becomes right once CS-8 lands, with no change there.
+- (moved into scope: the reversal and loyalty deadline is §2.10, CS-20.)
