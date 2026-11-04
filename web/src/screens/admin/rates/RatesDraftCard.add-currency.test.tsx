@@ -1,6 +1,5 @@
-// DC-1 (xchange#564 D-a gap): an editable rate draft can add a currency the branch has never published, picked from
-// the reference source. Up-front tests by the FE sub-controller claude/01TxaRJG. Do not edit, delete or weaken.
-// Design: docs/design/rates-draftable-currencies.md §2-§3.
+// DC-1 (xchange#564 D-a gap) & BC-6 (xchange#6085): an editable rate draft adds a currency from rates_draftable.
+// Design: docs/design/board-currencies.md § BC-6.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -13,6 +12,7 @@ import {
   makeRatesReferenceRow,
 } from '../../../shared/testing/fixtures';
 import type { ApiClient } from '../../../shared/api/client';
+import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
 import { RatesDraftCard } from './RatesDraftCard';
 import * as ratesTable from './i18n';
 
@@ -31,11 +31,22 @@ function detail(status: string): Detail {
   });
 }
 
+const DRAFTABLE: RatesDraftableData = {
+  rows: [
+    { code: 'USD', group: 'ALL', unitSize: '1', hasReference: true },
+    { code: 'EUR', group: 'ALL', unitSize: '1', hasReference: true },
+    { code: 'JPY', group: 'ALL', unitSize: '100', hasReference: true },
+    { code: 'CNY', group: 'ALL', unitSize: '1', hasReference: true },
+  ],
+};
+
 const REFERENCE = makeRatesReferenceData({
-  rows: ['USD', 'EUR', 'JPY', 'CNY'].map((code) => makeRatesReferenceRow({ code, unit: code === 'JPY' ? 100 : 1 })),
+  rows: ['USD', 'EUR', 'JPY', 'CNY', 'KRW'].map((code) =>
+    makeRatesReferenceRow({ code, unit: code === 'JPY' ? 100 : 1 }),
+  ),
 });
 
-describe('DC-1: an editable draft adds a currency from the reference', () => {
+describe('BC-6: an editable draft adds a currency from rates_draftable', () => {
   let host: HTMLDivElement;
   let dispose: (() => void) | undefined;
   let puts: { path: string; body: { lines?: { currency: string; buyMode: string; sellMode: string }[] } }[];
@@ -54,7 +65,7 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
     vi.restoreAllMocks();
   });
 
-  function mount(status: string, refData: Reference | null): void {
+  function mount(status: string, draftableData: RatesDraftableData | null, refData: Reference | null = REFERENCE): void {
     const [draftDetail, setDraftDetail] = createSignal<Detail | null>(detail(status));
     dispose = render(
       () => (
@@ -69,6 +80,7 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
           policyError={() => null}
           policyData={() => null}
           pubData={() => null}
+          draftableData={() => draftableData}
           refData={() => refData}
           adjustBuyPct={() => '0'}
           setAdjustBuyPct={() => {}}
@@ -109,8 +121,8 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
     }
   });
 
-  it('A1: the picker offers the reference codes not in the draft, A to Z', async () => {
-    mount('DRAFT', REFERENCE);
+  it('A1: the picker offers the draftable codes not in the draft, A to Z', async () => {
+    mount('DRAFT', DRAFTABLE);
     await settle();
     expect(picker(), 'add-currency picker').not.toBeNull();
     expect(options()).toEqual(['CNY', 'EUR', 'JPY']);
@@ -118,7 +130,7 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
   });
 
   it('A2: adding EUR shows an EUR draft line and drops EUR from the picker', async () => {
-    mount('DRAFT', REFERENCE);
+    mount('DRAFT', DRAFTABLE);
     await settle();
     picker()!.value = 'EUR';
     picker()!.dispatchEvent(new Event('change', { bubbles: true }));
@@ -130,7 +142,7 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
   });
 
   it('A3: saving sends the added currency as an AUTO/AUTO line after the existing ones', async () => {
-    mount('DRAFT', REFERENCE);
+    mount('DRAFT', DRAFTABLE);
     await settle();
     picker()!.value = 'JPY';
     picker()!.dispatchEvent(new Event('change', { bubbles: true }));
@@ -151,7 +163,7 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
     });
   });
 
-  it('A4: with no reference the picker is absent and a hint says nothing can be added', async () => {
+  it('A4: when rates_draftable is unreadable, nothing can be added and the existing hint is shown', async () => {
     mount('DRAFT', null);
     await settle();
     expect(picker()).toBeNull();
@@ -162,10 +174,59 @@ describe('DC-1: an editable draft adds a currency from the reference', () => {
   });
 
   it('A5: a draft that is not editable (PENDING_APPROVAL) shows neither the picker nor the hint', async () => {
-    mount('PENDING_APPROVAL', REFERENCE);
+    mount('PENDING_APPROVAL', DRAFTABLE);
     await settle();
     expect(picker()).toBeNull();
     expect(addButton()).toBeNull();
     expect(host.querySelector('[data-hint="no-currency-to-add"]')).toBeNull();
+  });
+
+  it('A6: adding TRY (hasReference: false) starts the line as MANUAL/MANUAL', async () => {
+    mount('DRAFT', {
+      rows: [
+        ...DRAFTABLE.rows,
+        { code: 'TRY', group: 'ALL', unitSize: '1', hasReference: false },
+      ],
+    });
+    await settle();
+    picker()!.value = 'TRY';
+    picker()!.dispatchEvent(new Event('change', { bubbles: true }));
+    addButton()!.click();
+    await settle();
+    const line = host.querySelector<HTMLElement>('[data-draft-line="TRY"]');
+    expect(line, 'TRY line').not.toBeNull();
+    expect(line!.querySelector<HTMLSelectElement>('select[name="buyMode"]')?.value).toBe('MANUAL');
+    expect(line!.querySelector<HTMLSelectElement>('select[name="sellMode"]')?.value).toBe('MANUAL');
+    expect(line!.querySelector<HTMLInputElement>('input[name="manualBuy"]')).not.toBeNull();
+    expect(line!.querySelector<HTMLInputElement>('input[name="manualSell"]')).not.toBeNull();
+  });
+
+  it('A7: adding KRW starts the line as AUTO/AUTO and formats per 1000 from rates_draftable', async () => {
+    mount('DRAFT', {
+      rows: [
+        ...DRAFTABLE.rows,
+        { code: 'KRW', group: 'ALL', unitSize: '1000', hasReference: true },
+      ],
+    });
+    await settle();
+    picker()!.value = 'KRW';
+    picker()!.dispatchEvent(new Event('change', { bubbles: true }));
+    addButton()!.click();
+    await settle();
+    const line = host.querySelector<HTMLElement>('[data-draft-line="KRW"]');
+    expect(line, 'KRW line').not.toBeNull();
+    const buyMode = line!.querySelector<HTMLSelectElement>('select[name="buyMode"]')!;
+    const sellMode = line!.querySelector<HTMLSelectElement>('select[name="sellMode"]')!;
+    expect(buyMode.value).toBe('AUTO');
+    expect(sellMode.value).toBe('AUTO');
+
+    buyMode.value = 'MANUAL';
+    buyMode.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    const manualBuy = line!.querySelector<HTMLInputElement>('input[name="manualBuy"]')!;
+    manualBuy.value = '25.1';
+    manualBuy.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    expect(line!.textContent).toContain('25.10 / 1000 KRW');
   });
 });
