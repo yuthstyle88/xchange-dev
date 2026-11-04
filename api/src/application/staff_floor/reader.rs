@@ -3,18 +3,22 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
 use xc_auth::domain::access::{Actor, Authorizer, Permission, Target};
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
-use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
+use xc_shift::application::shift_plan::service::ShiftPlanService;
 use xc_shift::domain::custody::branch_day::BranchDay;
 use xc_shift::domain::custody::entities::customer_hold::HoldStatus;
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::day::local_day_start;
 use super::directory::StaffDirectory;
@@ -23,6 +27,14 @@ use crate::presentation::dto::v3::staff_floor::{
     StaffFloor, StaffFloorCutoff, StaffFloorHours, StaffFloorMyShift, StaffFloorTarget,
 };
 use crate::presentation::dto::v3::staff_holds::StaffHoldRow;
+
+type OpenShiftRow = (
+    String,
+    DateTime<Utc>,
+    Option<String>,
+    Option<String>,
+    NaiveDate,
+);
 
 pub struct StaffFloorReader {
     pool: PgPool,
@@ -54,8 +66,19 @@ impl StaffFloorReader {
     }
 
     pub async fn floor(&self, actor: &Actor, branch: &BranchId) -> AppResult<StaffFloor> {
+        self.floor_at(actor, branch, Utc::now()).await
+    }
+
+    /// The floor as of `now` (CS-5, docs/design/configurable-shifts.md §2.5, §2.7, rows F1–F2): `hours` is the
+    /// shift plan's business day holding `now` (`opening_hours` no longer read), and `myShift` also carries
+    /// `shiftName`, `businessDate` and `onBreak`. `floor` becomes this at `Utc::now()`.
+    pub async fn floor_at(
+        &self,
+        actor: &Actor,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<StaffFloor> {
         let facts = self.pages.floor(branch, &actor.user_id).await?;
-        let now = Utc::now();
         let target = Target::new(&actor.organization_id, Some(branch.clone()), None);
 
         let phase = facts
@@ -68,7 +91,8 @@ impl StaffFloorReader {
             })
             .unwrap_or_else(|| "CLOSED".to_string());
 
-        let hours = self.read_hours(branch, now).await?;
+        let plan = self.load_plan(branch).await?;
+        let hours = Self::read_hours(&plan, now);
 
         let my_clock_in = facts.my_open_attendance.as_ref().map(|a| {
             Utc.timestamp_millis_opt(a.clock_in.epoch_millis())
@@ -77,7 +101,9 @@ impl StaffFloorReader {
                 .to_rfc3339()
         });
 
-        let my_shift = self.read_my_shift(branch, &actor.user_id).await?;
+        let my_shift = self
+            .read_my_shift(branch, &actor.user_id, &plan, now)
+            .await?;
 
         let cutoff = facts
             .ops
@@ -154,19 +180,6 @@ impl StaffFloorReader {
             target: target_dto,
             safe: safe_dto,
         })
-    }
-
-    /// The floor as of `now` (CS-5, docs/design/configurable-shifts.md §2.5, §2.7, rows F1–F2): `hours` is the
-    /// shift plan's business day holding `now` (`opening_hours` no longer read), and `myShift` also carries
-    /// `shiftName`, `businessDate` and `onBreak`. `floor` becomes this at `Utc::now()`.
-    pub async fn floor_at(
-        &self,
-        actor: &Actor,
-        branch: &BranchId,
-        now: DateTime<Utc>,
-    ) -> AppResult<StaffFloor> {
-        let _ = (actor, branch, now);
-        todo!("CS-5")
     }
 
     pub async fn holds(
@@ -257,53 +270,36 @@ impl StaffFloorReader {
         Ok(rows)
     }
 
-    async fn read_hours(
-        &self,
-        branch: &BranchId,
-        now: DateTime<Utc>,
-    ) -> AppResult<Option<StaffFloorHours>> {
-        let row: Option<(String, Option<serde_json::Value>)> =
-            sqlx::query_as("SELECT timezone, opening_hours FROM branches WHERE id = $1")
-                .bind(branch.as_str())
-                .fetch_optional(&self.pool)
-                .await
-                .map_err(AppError::Database)?;
+    async fn load_plan(&self, branch: &BranchId) -> AppResult<ShiftPlan> {
+        let branch_tx = BranchTx::new(Transactor::new(self.pool.clone()));
+        let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+        let plan = ShiftPlanService::new(Arc::new(PgShiftTemplateStore), branch_tx)
+            .plan_in(&mut tx, branch)
+            .await?;
+        tx.commit().await.map_err(AppError::Database)?;
+        Ok(plan)
+    }
 
-        let (timezone, opening_hours) = match row {
-            Some((tz, Some(h))) if !h.is_null() => (tz, h),
-            _ => return Ok(None),
-        };
-
-        let hours = match BranchHours::new(&timezone, Some(&opening_hours)) {
-            Ok(h) => h,
-            Err(_) => return Ok(None),
-        };
-
-        let tz: Tz = match timezone.parse() {
-            Ok(t) => t,
-            Err(_) => return Ok(None),
-        };
-
-        let today = now.with_timezone(&tz).date_naive();
-        match hours.window(today) {
-            HoursWindow::Open { open, close } => Ok(Some(StaffFloorHours {
-                open: open.to_rfc3339(),
-                close: close.to_rfc3339(),
-            })),
-            _ => Ok(None),
-        }
+    fn read_hours(plan: &ShiftPlan, now: DateTime<Utc>) -> Option<StaffFloorHours> {
+        plan.span_for(now).map(|(open, close)| StaffFloorHours {
+            open: open.to_rfc3339(),
+            close: close.to_rfc3339(),
+        })
     }
 
     async fn read_my_shift(
         &self,
         branch: &BranchId,
         user_id: &str,
+        plan: &ShiftPlan,
+        now: DateTime<Utc>,
     ) -> AppResult<Option<StaffFloorMyShift>> {
         let Ok(uuid) = sqlx::types::Uuid::parse_str(user_id) else {
             return Ok(None);
         };
-        let row: Option<(String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT id, opened_at FROM shifts WHERE branch_id = $1 AND teller_id = $2 AND status = 'OPEN'",
+        let row: Option<OpenShiftRow> = sqlx::query_as(
+            "SELECT id, opened_at, template_id::text, template_name, business_date \
+               FROM shifts WHERE branch_id = $1 AND teller_id = $2 AND status = 'OPEN'",
         )
         .bind(branch.as_str())
         .bind(uuid)
@@ -311,9 +307,18 @@ impl StaffFloorReader {
         .await
         .map_err(AppError::Database)?;
 
-        Ok(row.map(|(id, opened_at)| StaffFloorMyShift {
-            id,
-            opened_at: opened_at.to_rfc3339(),
-        }))
+        Ok(row.map(
+            |(id, opened_at, template_id, template_name, business_date)| StaffFloorMyShift {
+                id,
+                opened_at: opened_at.to_rfc3339(),
+                shift_name: template_name,
+                business_date: Some(business_date.to_string()),
+                on_break: Some(
+                    template_id
+                        .as_deref()
+                        .is_some_and(|tid| plan.on_break(tid, now)),
+                ),
+            },
+        ))
     }
 }
