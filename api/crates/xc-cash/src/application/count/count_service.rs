@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
@@ -19,6 +19,7 @@ use xc_kernel::money::{CurrencyCode, QuantityDelta};
 use xc_kernel::notifications::Notifications;
 use xc_kernel::shift_hook::ShiftLifecycleHook;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::application::shift_plan::service::ShiftPlanService;
 use xc_shift::domain::custody::entities::cash_exception::{CashException, ExceptionStatus};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
@@ -27,6 +28,7 @@ use xc_shift::infrastructure::custody::custody_repository::{
     append_cash_exception_in, day_ready_on_open_count_in,
 };
 use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use crate::application::count::close_notices::CloseNotices;
 use crate::application::denominations::face_values_in;
@@ -838,17 +840,6 @@ impl CashCountService {
         shift_template_id: Option<&str>,
         now: DateTime<Utc>,
     ) -> AppResult<CashCount> {
-        let _ = (tx, actor, cmd, shift_template_id, now);
-        todo!("CS-7")
-    }
-
-    pub async fn submit_in(
-        &self,
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        actor: &Actor,
-        cmd: SubmitCount,
-        now: DateTime<Utc>,
-    ) -> AppResult<CashCount> {
         let permission = match cmd.kind {
             CountKind::Open | CountKind::HandoverOut | CountKind::Close => Permission::ShiftOperate,
             CountKind::SafeOpen | CountKind::Safe => Permission::CashManage,
@@ -869,17 +860,19 @@ impl CashCountService {
 
         // After the replay lookup, as in handover start: a retry of a CLOSE count whose verification has
         // since closed the shift answers the original count, not NoOpenShift.
+        let mut shift_business_date: Option<NaiveDate> = None;
         if let Some(ref s_id) = cmd.shift_id {
-            let shift_teller: Option<String> = sqlx::query_scalar(
-                "SELECT teller_id::text FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
+            let shift_row: Option<(String, NaiveDate)> = sqlx::query_as(
+                "SELECT teller_id::text, business_date FROM shifts WHERE id = $1 AND status = 'OPEN' AND branch_id = $2",
             )
             .bind(s_id)
             .bind(cmd.branch.as_str())
             .fetch_optional(&mut **tx)
             .await?;
-            let teller_id = shift_teller.ok_or(ShiftError::NoOpenShift)?;
+            let (teller_id, b_date) = shift_row.ok_or(ShiftError::NoOpenShift)?;
             PersonRules::teller_owns_shift(&teller_id, actor)
                 .map_err(|e| AppError::Domain(e.to_string()))?;
+            shift_business_date = Some(b_date);
         }
 
         let mut totals_map: std::collections::BTreeMap<String, Decimal> =
@@ -1010,6 +1003,54 @@ impl CashCountService {
             });
         }
 
+        let plan = ShiftPlanService::new(
+            Arc::new(PgShiftTemplateStore),
+            BranchTx::new(Transactor::new(self.pool.clone())),
+        )
+        .plan_in(tx, &cmd.branch)
+        .await?;
+
+        let (chosen_template_id, business_date) = match cmd.kind {
+            CountKind::Open => {
+                let covering = plan.covering(now);
+                let inst = match shift_template_id {
+                    Some(tid) => covering
+                        .into_iter()
+                        .find(|i| i.template_id == tid)
+                        .ok_or(ShiftError::OutsideShiftWindow)?,
+                    None => match covering.len() {
+                        0 => return Err(ShiftError::OutsideShiftWindow.into()),
+                        1 => covering.into_iter().next().expect("one covering shift"),
+                        _ => return Err(ShiftError::ShiftNotChosen.into()),
+                    },
+                };
+                (Some(inst.template_id), inst.business_date)
+            }
+            CountKind::Close | CountKind::HandoverOut => {
+                let b_date = match shift_business_date {
+                    Some(d) => d,
+                    None => plan
+                        .business_date_of(now)
+                        .or_else(|| {
+                            plan.span_for(now)
+                                .map(|(s, _)| s.with_timezone(&plan.timezone()).date_naive())
+                        })
+                        .unwrap_or_else(|| now.with_timezone(&plan.timezone()).date_naive()),
+                };
+                (None, b_date)
+            }
+            CountKind::Safe | CountKind::SafeOpen => {
+                let b_date = plan
+                    .business_date_of(now)
+                    .or_else(|| {
+                        plan.span_for(now)
+                            .map(|(s, _)| s.with_timezone(&plan.timezone()).date_naive())
+                    })
+                    .unwrap_or_else(|| now.with_timezone(&plan.timezone()).date_naive());
+                (None, b_date)
+            }
+        };
+
         let count_id = uuid::Uuid::new_v4().to_string();
         let cash_count = CashCount {
             id: count_id,
@@ -1026,9 +1067,8 @@ impl CashCountService {
             created_at: now,
             updated_at: now,
             rejection: None,
-            // CS-7 sets both.
-            shift_template_id: None,
-            business_date: None,
+            shift_template_id: chosen_template_id,
+            business_date: Some(business_date),
         };
 
         self.repo
@@ -1044,6 +1084,16 @@ impl CashCountService {
         }
 
         Ok(cash_count)
+    }
+
+    pub async fn submit_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        cmd: SubmitCount,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashCount> {
+        self.submit_chosen_in(tx, actor, cmd, None, now).await
     }
 
     /// Staff-corrections §4 B (SC-B1): a verifier rejects a waiting count with a reason. The row keeps the
@@ -1198,6 +1248,21 @@ impl CashCountService {
                 }
             }
             day_ready_on_open_count_in(&mut *tx, &count.branch_id).await?;
+            let opened_as = match count.shift_template_id.as_deref() {
+                Some(tid) => {
+                    let name: String =
+                        sqlx::query_scalar("SELECT name FROM shift_templates WHERE id = $1::uuid")
+                            .bind(tid)
+                            .fetch_one(&mut **tx)
+                            .await?;
+                    xc_shift::domain::shift::value_objects::opened_as::OpenedAs {
+                        template_id: Some(tid.to_owned()),
+                        template_name: Some(name),
+                        business_date: count.business_date,
+                    }
+                }
+                None => xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
+            };
             let shift = self
                 .shifts
                 .open_on_verified(
@@ -1206,8 +1271,7 @@ impl CashCountService {
                     &count.counted_by,
                     count_id,
                     &opening_pairs,
-                    // CS-7 replaces this with the template the teller chose on the count.
-                    &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
+                    &opened_as,
                     now,
                 )
                 .await?;
