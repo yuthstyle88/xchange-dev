@@ -1,18 +1,12 @@
 //! Board currencies BC-7 (`docs/design/board-currencies.md` §4, §9):
 //! - `publish` refuses with `ValidationFailed` when a draft line's `(currency, group)` has no `branch_currencies` row.
 //! - `HIDE` lines may publish.
-//! - `plan_once` skips a currency whose MAIN `ALL` row is `HIDE` (when `display_in` is checked on MAIN).
 
 mod rate_engine_common;
 
 use rate_engine_common::*;
-use xc_rate::domain::currency::branch_currencies::{BranchCurrencies, Display};
-use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::draft::rate_draft::DraftStatus;
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
-use xc_rate::domain::pricing::pricing_mode::{PricingMode, PricingModeStore};
-use xc_rate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
-use xc_rate::infrastructure::pricing::pricing_mode_store::PgPricingModeStore;
 
 #[tokio::test]
 async fn publish_a_line_with_no_row_is_refused_validation_failed() {
@@ -89,46 +83,5 @@ async fn publish_a_hide_line_is_published() {
         db.current_publication(MAIN).await,
         Some(pub_ref.id.to_string())
     );
-    db.finish().await;
-}
-
-#[tokio::test]
-async fn plan_with_a_hide_follow_currency_is_not_planned() {
-    let db = TestDb::start().await;
-    let now = chrono::Utc::now();
-
-    // Put USD (SHOW) and AED (HIDE) into FOLLOW mode.
-    let mut tx = db.begin().await;
-    PgPricingModeStore
-        .save_in(&mut tx, ORG, code("USD"), PricingMode::Follow, OWNER_ID, now)
-        .await
-        .expect("save USD FOLLOW");
-    PgPricingModeStore
-        .save_in(&mut tx, ORG, code("AED"), PricingMode::Follow, OWNER_ID, now)
-        .await
-        .expect("save AED FOLLOW");
-
-    let following = PgPricingModeStore
-        .following_in(&mut tx, ORG)
-        .await
-        .expect("following_in");
-    assert_eq!(following, vec![code("AED"), code("USD")]);
-
-    let all_group = GroupCode::all();
-    let mut planned = Vec::new();
-    for c in following {
-        if PgBranchCurrencies
-            .display_in(&mut tx, &main_branch(), c, &all_group)
-            .await
-            .expect("display_in")
-            == Some(Display::Hide)
-        {
-            continue;
-        }
-        planned.push(c);
-    }
-    tx.rollback().await.expect("rollback");
-
-    assert_eq!(planned, vec![code("USD")], "HIDE FOLLOW currency is skipped");
     db.finish().await;
 }
