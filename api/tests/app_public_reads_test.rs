@@ -335,6 +335,8 @@ async fn a_branch_that_leaves_the_list_changes_the_etag_and_the_list_shrinks() {
     let etag = etag_of(&before);
 
     // not the newest branch, and one with no version row: only the count can tell
+    db.exec("DELETE FROM shift_templates WHERE branch_id = 'b-alpha'")
+        .await;
     db.exec("DELETE FROM branches WHERE id = 'b-alpha'").await;
     let after = list_since(&db, XC, &etag).await;
     assert_eq!(
@@ -354,6 +356,8 @@ async fn one_branch_out_and_one_in_still_changes_the_etag() {
     let etag = etag_of(&list(&db, XC).await);
 
     // the count and every version are as they were; only the set of branches differs
+    db.exec("DELETE FROM shift_templates WHERE branch_id = 'b-zulu'")
+        .await;
     db.exec("DELETE FROM branches WHERE id = 'b-zulu'").await;
     xc_branch(&db, "b-yank", "YANK").await;
     let after = list_since(&db, XC, &etag).await;
