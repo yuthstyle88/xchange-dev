@@ -77,8 +77,13 @@ impl TransactionDto {
         self,
         mark: Option<xc_exchange::domain::transaction::backdate_mark::BackdateMark>,
     ) -> Self {
-        let _ = mark;
-        todo!("BK-10: backdated-keying.md §9")
+        Self {
+            backdate: mark.map(|m| BackdateMarkDto {
+                entered_at: m.entered_at.to_rfc3339(),
+                entered_by: m.entered_by,
+            }),
+            ..self
+        }
     }
 
     pub fn from_domain(t: &ExchangeTransaction) -> Self {
