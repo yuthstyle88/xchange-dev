@@ -23,9 +23,16 @@ type OcrStatus =
   | { kind: 'cancelled' }
   | { kind: 'timeout' }
   | { kind: 'failed' }
+  | { kind: 'notConfigured' }
   | { kind: 'imageTooLarge' }
   | { kind: 'pdfNotSupported' }
   | { kind: 'filled'; count: number; partial: boolean; kept: boolean };
+
+let readerNotConfigured = false;
+
+export function resetPassportReaderNotConfigured(): void {
+  readerNotConfigured = false;
+}
 
 function isPdf(file: File): boolean {
   return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
@@ -68,6 +75,10 @@ export function PassportOcr(props: { store: DeskStore }): JSX.Element {
 
   async function runRead(file: File): Promise<void> {
     abortCurrent();
+    if (readerNotConfigured) {
+      setStatus({ kind: 'notConfigured' });
+      return;
+    }
     if (isPdf(file)) {
       setStatus({ kind: 'pdfNotSupported' });
       return;
@@ -132,11 +143,16 @@ export function PassportOcr(props: { store: DeskStore }): JSX.Element {
         setStatus({ kind: 'timeout' });
         return;
       }
+      if (err instanceof PassportReadError && err.kind === 'notConfigured') {
+        readerNotConfigured = true;
+        setStatus({ kind: 'notConfigured' });
+        return;
+      }
       if (err instanceof PassportReadError && err.kind === 'imageTooLarge') {
         setStatus({ kind: 'imageTooLarge' });
         return;
       }
-      // shortcut: O-1 open error kinds (busy, notConfigured, imageInvalid, notAllowed) use failed text until ruled
+      // shortcut: O-1 open error kinds (busy, imageInvalid, notAllowed) use failed text until ruled
       setStatus({ kind: 'failed' });
     } finally {
       if (activeCtl === ctl) {
@@ -182,6 +198,8 @@ export function PassportOcr(props: { store: DeskStore }): JSX.Element {
         return t('timeout');
       case 'failed':
         return t('failed');
+      case 'notConfigured':
+        return t('notConfigured');
       case 'imageTooLarge':
         return t('imageTooLarge');
       case 'pdfNotSupported':
