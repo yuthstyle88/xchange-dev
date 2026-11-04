@@ -27,7 +27,8 @@ pub struct BackdateRequest {
     /// `payment.paid_at` is the deal's real time (R2).
     pub payment: CreatePayment,
     pub value_date: NaiveDate,
-    /// The passport scan's upload key; `None` is refused until the owner answers §11 Q1.
+    /// The passport scan's upload key. Optional for a backdated sale (owner, §11 Q1 = B, 2026-11-04): `None` writes
+    /// no PASSPORT row; `Some` is checked as `CreateTransaction` checks it.
     pub passport_key: Option<String>,
     pub notes: String,
 }

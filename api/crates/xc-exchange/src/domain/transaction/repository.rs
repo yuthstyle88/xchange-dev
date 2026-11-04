@@ -85,7 +85,8 @@ pub trait TransactionStore: Send + Sync {
 
     /// Backdated keying (`docs/design/backdated-keying.md` §2.1, §10): `insert_draft_in`'s checks and rows, with
     /// `transactions.backdated = true`. The draft is LIVE with no shift (`shift_id = None`); a DEMO draft or one
-    /// naming a shift is refused `validationFailed` before any write.
+    /// naming a shift is refused `validationFailed` before any write. An empty `passport_file_key` writes no
+    /// `transaction_files` PASSPORT row (owner, §11 Q1 = B: the passport is optional for a backdated sale only).
     fn insert_backdated_draft_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,

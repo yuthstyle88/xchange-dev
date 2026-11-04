@@ -390,3 +390,15 @@ async fn b14_a_repeat_with_the_same_key_replays() {
     assert_eq!(desk.db.count("SELECT count(*) FROM transactions").await, 1);
     finish(desk, scratch).await;
 }
+
+/// B1b (owner, design §11 Q1 = B): the passport scan is optional for a backdated sale.
+#[actix_web::test]
+async fn b1b_a_backdated_sale_needs_no_passport() {
+    let (desk, scratch) = start("100000.00").await;
+    let mut b = body(OWNER);
+    b.as_object_mut().unwrap().remove("passport");
+    let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(a.body["status"], "COMPLETED", "{}", a.text);
+    finish(desk, scratch).await;
+}
