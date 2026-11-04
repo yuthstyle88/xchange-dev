@@ -93,10 +93,17 @@ impl ShiftPlanService {
     }
 
     /// Seeds the defaults for a new branch in its own branch transaction; idempotent.
+    ///
+    /// `BranchTx::run` holds the branch lock, so two concurrent seeds run one after the other and the second answers
+    /// `false` instead of hitting `shift_templates_live_name`; it also raises the branch version.
     pub async fn seed_defaults(&self, branch: &BranchId, org: &str) -> AppResult<bool> {
-        let mut tx = self.branch_tx.pool().begin().await?;
-        let inserted = self.store.seed_defaults_in(&mut tx, branch, org).await?;
-        tx.commit().await?;
-        Ok(inserted)
+        let store = self.store.clone();
+        let branch_id = branch.clone();
+        let org = org.to_owned();
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { store.seed_defaults_in(tx, &branch_id, &org).await })
+            })
+            .await
     }
 }
