@@ -167,7 +167,8 @@ Every class that two tickets touch sits in its own file.
 
 | Item | File | Provided by | Used by |
 |---|---|---|---|
-| `Permission::ExchangeBackdate` + seed v11 | `xc-auth/src/domain/access/permission.rs`, `permission_module.rs`, `role_grants.rs` | BK-1 | policy row (skeleton) |
+| `Permission::ExchangeBackdate` variant | `xc-auth/src/domain/access/permission.rs`, `permission_module.rs` | skeleton (the policy row does not compile without it) | policy row |
+| seed v11 on EXECUTIVE and BRANCH_MANAGER | `xc-auth/src/domain/access/role_grants.rs` | BK-1 | — |
 | policy row `(Rpc, "transactionBackdate") → ExchangeBackdate` | `xc-auth/src/domain/policy/areas/backdated_keying.rs` (new) | skeleton | command |
 | `BackdateWindow`, `BackdateRefusal` | `xc-exchange/src/domain/transaction/backdate_window.rs` (new) | BK-2 | `BackdateSale` |
 | `BackdatePricing`, `PricedLine`, `PricingRefusal` | `xc-exchange/src/domain/transaction/backdate_pricing.rs` (new) | BK-3 | `BackdateSale` |
@@ -179,6 +180,8 @@ Every class that two tickets touch sits in its own file.
 | `BackdateSale`, `BackdateRequest` | `api/src/application/workflows/exchange/backdate.rs` (new) | BK-8 | command |
 | `TransactionBackdateCommand` + input | `api/src/presentation/http/v3/commands/transaction_backdate.rs` (new) | BK-9 | web |
 | `TransactionDto.backdate` + `with_backdate` | `api/src/presentation/dto/v3/transaction.rs` | BK-10 | command, `views/transaction.rs` |
+| desk detail sets `backdate` from `backdate_mark_in` | `api/src/presentation/http/v3/views/transaction.rs` | BK-10 | web |
+| `backdated: bool` per report row | `api/src/presentation/http/v3/views/admin_transactions.rs` | BK-12 | web |
 | migration | `api/migrations/20261226210000_transactions_backdated.sql` | BK-M (owner approval) | store |
 | web screen + page | `web/pages/desk-backdated.html`, `web/src/screens/desk-backdated/` (new) | BK-11 | — |
 
@@ -263,6 +266,10 @@ same key with another body, as every v3 command does).
   and it is append-only, so "closed" can never be undone by an edit. A new certification after a backdate makes that
   date closed for the next backdate. (The sheet the backdate changed was certified after it, so its hash already
   includes the row.)
+- ⚠️ This is **not** xc-shift's "day closed". There, a day reads `Phase::Closed` when `ops_state.phase` is `CUT_OFF`
+  and no shift is OPEN (`BranchDay::read_phase`, `xc-shift/src/domain/custody/branch_day.rs:58`), and only today's
+  phase is held. Under that meaning, a backdate into today is refused once the last shift's CLOSE is verified.
+  This design uses the certification instead; the owner confirms it (§11 Q4).
 - `[required]` An audit event `transaction.backdated` is appended (same writer as `create.rs:448-466`) with
   `after: { paidAt, valueDate, rate, enteredAt, enteredBy }`.
 
@@ -373,9 +380,10 @@ CREATE INDEX transactions_backdated_day_idx ON transactions (branch_id, value_da
 | Q1 | Does a backdated sale need a passport file? Today every sale writes a `transaction_files` PASSPORT row (`store.rs` `insert_draft_in`), and the Telegram orders may have no scans. | **A.** Required as today: the replay must upload one image per row. **B.** Optional for backdated only: no PASSPORT row; the customer record is still required. Readers that join the PASSPORT row must allow it to be missing (an extra ticket). | **B**: the deal already happened, and the customer record still names the person. A also blocks tonight's replay unless scans exist. |
 | Q2 | Do the exchange approval rules (`ApproveExchangeTransaction`) apply to a backdated sale? | **A.** No: the keyer is an Owner or Manager, who decides those approvals anyway, and the audit event records the keyer. **B.** Yes: a backdate above a threshold waits for approval, and the replay stalls row by row. | **A** |
 | Q3 | Should an org-wide EXECUTIVE who is not the Owner also be allowed (§3)? | **A.** Yes (EXECUTIVE + BRANCH_MANAGER seeded). **B.** Owner standing + BRANCH_MANAGER only (policy row by standing). | **A**: today only the Owner holds EXECUTIVE org-wide. |
+| Q4 | Which "closed day" refuses a backdate (§5)? | **A.** A FINANCE-certified day (`reconciliation_certifications`). **B.** Also today once xc-shift reads it `CLOSED` (cut-off, no OPEN shift), which refuses a same-day replay after closing. | **A**: B blocks keying tonight's orders after the shop closes. |
 
-**If no answer comes:** the skeleton and the function tickets go ahead on A/B/A. Q1 only changes BK-8 and one
-store reader, and the migration does not depend on any of the three.
+**If no answer comes:** the skeleton and the function tickets go ahead on A/B/A/A. Q1 only changes BK-8 and one
+store reader, Q4 only changes BK-5, and the migration does not depend on any of the four.
 
 ## 12. Out of scope (stated so nobody assumes it)
 
