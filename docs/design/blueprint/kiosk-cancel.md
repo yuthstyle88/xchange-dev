@@ -39,6 +39,7 @@
 | Code | Thai label | Text |
 |---|---|---|
 | `CUSTOMER_LEFT` | ลูกค้าไม่อยู่ / เดินออกไปแล้ว | optional |
+| `STOCK_SHORT` | เงินสดในลิ้นชักไม่พอ | optional (offered to staff right after `CUSTOMER_LEFT`; #6094) |
 | `CUSTOMER_CANCELLED` | ลูกค้ายกเลิกเองที่ตู้ | — (set only by the kiosk's own cancel; not offered to staff) |
 | `DAY_CLOSED` | ปิดวันทำการ | — (set only by the day-close path, §3.7; not offered to staff) |
 | `CUSTOMER_CHANGED_MIND` | ลูกค้าเปลี่ยนใจ | optional |
@@ -78,7 +79,7 @@ The default selection is `CUSTOMER_LEFT` (KC-3). An empty reason, an unknown cod
      - it refuses (`RAISE EXCEPTION`) while any row is `CANCELLED`, because no older state means "cancelled". Such rows are settled by hand first, an owner decision at that time;
      - it then drops the five columns and the three new CHECKs, and restores the two original CHECKs under their old names;
      - it loses every cancel record (when, who, reason, note) and every cancel token. A customer waiting at the kiosk then can't cancel there.
-- `CancelReason` value object in `xc-kiosk` (the six codes; `parse`/`as_str`; `OTHER` requires a note; `CUSTOMER_CANCELLED` and `DAY_CLOSED` are refused when a staff member sends them, and only their own paths build them). `cancelled_by` is the username, or `CUSTOMER-KIOSK` (the actor the kiosk's audit lines already use, `audit_line.rs:7`).
+- `CancelReason` value object in `xc-kiosk` (the seven codes, `STOCK_SHORT` added by #6094; `parse`/`as_str`; `OTHER` requires a note; `CUSTOMER_CANCELLED` and `DAY_CLOSED` are refused when a staff member sends them, and only their own paths build them). `cancelled_by` is the username, or `CUSTOMER-KIOSK` (the actor the kiosk's audit lines already use, `audit_line.rs:7`).
 
 ### 3.2 Queue ticket
 
@@ -238,7 +239,7 @@ write only `queue_tickets` and a `QueueEvent`, so a request whose ticket staff s
   | Queue action | Request's `cancel_reason` | `cancel_note` |
   |---|---|---|
   | `skip` (CALLED → `NO_SHOW`) | `CUSTOMER_LEFT` (§2: `NO_SHOW` ⇔ `CUSTOMER_LEFT`) | none |
-  | `ticketCancel` with `reason` = `CUSTOMER_LEFT`, `CUSTOMER_CHANGED_MIND` or `DUPLICATE` | that code | none |
+  | `ticketCancel` with `reason` = `CUSTOMER_LEFT`, `STOCK_SHORT`, `CUSTOMER_CHANGED_MIND` or `DUPLICATE` | that code | none |
   | `ticketCancel` with any other `reason` (free text, `OTHER`, and the two codes staff may not send, `CUSTOMER_CANCELLED`, `DAY_CLOSED`) | `OTHER` | the reason, trimmed (`ticketCancel` bounds it 1–200, `queue.rs:380`) |
 
 ## 4. Class diagram
@@ -252,7 +253,7 @@ classDiagram
   }
   class CancelReason {
     <<xc-kiosk value_objects/cancel_reason.rs · new>>
-    CustomerLeft · CustomerCancelled · CustomerChangedMind · Duplicate · Other(note) · DayClosed
+    CustomerLeft · StockShort · CustomerCancelled · CustomerChangedMind · Duplicate · Other(note) · DayClosed
     +parse(code, note) Result~CancelReason~
     +as_str() &str
     +is_no_show() bool
