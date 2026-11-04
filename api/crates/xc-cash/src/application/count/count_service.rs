@@ -826,6 +826,22 @@ pub enum CountVerified {
 /// The CA-7c forms (design §4.9): all their work, reads included, on the caller's transaction. They open no
 /// transaction and take no lock; the caller (the CM-1 seam, or the wrapper above) holds both.
 impl CashCountService {
+    /// Submits a count; for an OPEN count `shift_template_id` is the shift the teller chose (design
+    /// configurable-shifts.md §2.3): a chosen template must cover `now`; none chosen takes the only covering template,
+    /// refuses `ShiftNotChosen` when two or more cover, and `OutsideShiftWindow` when none does. Every count stores its
+    /// business date. `submit_in` is this with `None` (CS-7).
+    pub async fn submit_chosen_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        actor: &Actor,
+        cmd: SubmitCount,
+        shift_template_id: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> AppResult<CashCount> {
+        let _ = (tx, actor, cmd, shift_template_id, now);
+        todo!("CS-7")
+    }
+
     pub async fn submit_in(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
