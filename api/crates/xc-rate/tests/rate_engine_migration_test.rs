@@ -134,8 +134,8 @@ async fn the_backfill_builds_version_one_from_the_newest_row_per_code_times_unit
         .await
         .expect("apply the migrations before migration 4");
 
-    db.seed_branch("XC-B02").await;
-    db.seed_branch("XC-B03").await;
+    db.seed_branch_row("XC-B02").await;
+    db.seed_branch_row("XC-B03").await;
     // MAIN: USD twice (the newer wins), JPY and KRW per 1 (× 100 and × 1000 on the way in)
     save(&db, MAIN, "USD", "32", "32.3", at(0), "owner").await;
     let usd = save(&db, MAIN, "USD", "32.1", "32.45", at(10), "owner").await;
