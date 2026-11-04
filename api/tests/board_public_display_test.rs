@@ -157,3 +157,20 @@ async fn more_is_exactly_the_ask_rows_with_no_shown_line() {
     );
     room.finish().await;
 }
+
+#[tokio::test]
+async fn all_market_off_empties_more() {
+    let room = Room::start().await;
+    room.publish_manual(MAIN, &[("USD", "1", "35.10", "35.50")])
+        .await;
+    room.display_row(MAIN, &[1, 2, 3, 4], &["USD"], true, false)
+        .await;
+
+    let data = projection(&room, MAIN).await;
+    assert_eq!(
+        data["display"]["more"],
+        json!([]),
+        "allMarket off lists no ASK row in more: {data}"
+    );
+    room.finish().await;
+}

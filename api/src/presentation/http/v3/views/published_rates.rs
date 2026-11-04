@@ -464,13 +464,16 @@ async fn load_display(
         }
     }
     let ordered = settings.order(&priced, &sr_order);
+    // `more` stays empty unless the branch lists the whole market (`allMarket`), as `DisplaySettings::order` did.
     let mut more: Vec<String> = Vec::new();
-    for row in branch_rows {
-        if row.display == Display::Ask {
-            let code = row.code.as_str();
-            let has_shown = lines.iter().any(|l| l.currency == code && !l.hidden);
-            if !has_shown && !more.iter().any(|c| c == code) {
-                more.push(code.to_string());
+    if settings.all_market {
+        for row in branch_rows {
+            if row.display == Display::Ask {
+                let code = row.code.as_str();
+                let has_shown = lines.iter().any(|l| l.currency == code && !l.hidden);
+                if !has_shown && !more.iter().any(|c| c == code) {
+                    more.push(code.to_string());
+                }
             }
         }
     }
