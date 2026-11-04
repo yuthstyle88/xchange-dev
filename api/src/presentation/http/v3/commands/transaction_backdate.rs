@@ -134,11 +134,12 @@ impl CommandAction for TransactionBackdateCommand {
         };
         let currency = CurrencyCode::parse(&input.currency)
             .map_err(|_| invalid("currency", "invalid currency"))?;
-        let quantity = ForeignAmount::from_decimal(input::decimal(
+        let quantity = ForeignAmount::checked_from_decimal(input::decimal(
             "quantity",
             &input.quantity,
             Bound::numeric(20, 4, Sign::Positive).at_most(Money::MAX_INPUT_UNITS),
-        )?);
+        )?)
+        .map_err(|_| invalid("quantity", "invalid quantity"))?;
         let rate = Rate::parse(&input.rate).map_err(|_| invalid("rate", "invalid rate"))?;
         let fee_thb = match input.fee_thb.as_deref() {
             Some(s) => Money::parse(s).map_err(|_| invalid("feeThb", "invalid fee"))?,
