@@ -1,0 +1,577 @@
+# Configurable shifts: as many named shifts per branch as the Owner sets
+
+> designed-by: claude/35271802 (sub-controller "AG controller configurable shifts", under the xchange lane controller claude/022a7453), 2026-11-04 ICT.
+> Notice issue: #564 issuecomment-6632472703. Measured on `origin/main` `6334e748`.
+> Branch: `feat/configurable-shifts`.
+
+## 0. What the owner asked for
+
+Owner, 2026-11-04 (lane controller's session), verbatim: *"ระบบให้ รองรับ กะ สามารถ config ได้ ว่ามีกี่กะ"*, then the
+defaults below and *"default ตามนี้"*.
+
+| Shift | Working hours | Break |
+|---|---|---|
+| A | 10:00–19:00 | 15:00–16:00 |
+| B | 15:00–00:00 | 18:00–19:00 |
+| C | 19:00–04:00 next day | 23:00–00:00 |
+
+A and B overlap 15:00–19:00; B and C overlap 19:00–00:00. These are **staff working shifts**: several tellers work at the
+same time, each in one named shift.
+
+Done line (from the lane controller's brief). On MAIN with the A/B/C defaults:
+1. tellers can open at 10:00, 15:00 and 19:00;
+2. a 02:00 sale counts on the previous business date;
+3. opening at 05:00 is refused;
+4. service hours run 10:00–04:00;
+5. the reports group by A, B and C.
+
+## 1. What exists today (survey)
+
+| Topic | Where (`6334e748`) | What it does |
+|---|---|---|
+| One shift row per teller | `api/migrations/20261218110000_retire_custody_requests.sql:37` | `shifts_one_open_per_teller ON shifts (teller_id) WHERE status='OPEN'`. The per-branch index of `20261007110000_shifts.sql:16` was dropped (`:31-32`). **Several tellers already sell at once**, each in their own shift row. |
+| `shifts` columns | `20261007110000_shifts.sql:1-16`, `20261012100000_cash.sql` (`teller_id`) | No name, no template, no time window, no date. |
+| Opening a shift | `POST /api/cash-counts` (`commands/cash.rs:330`) → `submit_in` (`xc-cash/src/application/count/count_service.rs:829`); verify `POST /api/cash-counts/{id}/verify` (`cash.rs:390`) → `verify_count_in` (`count_service.rs:1156-1219`) → `ShiftService::open_on_verified` (`xc-shift/src/application/shift/service.rs:143-216`) | The shift row is created when someone else **verifies** the teller's OPEN count. |
+| Closing a shift | CLOSE count verify (`count_service.rs:1222-1410`) → `close_on_verified` (`shift/service.rs:218-246`) → `close_day_if_last_in` (`count_service.rs:1401`) | Writes `cash_count_totals` per shift id. |
+| Branch service window | `PgCustodyPorts::service_window` (`api/src/infrastructure/custody/custody_ports.rs:148-205`) reads `branches.opening_hours` through `BranchHours::window` (`xc-rate/src/domain/branch/branch_hours.rs:107-180`) | Per weekday, first window only (`:137`); `close <= open` rolls to the next day (`:160-173`). It already searches local today −2..+1, so a window crossing midnight works. |
+| Gates on the window | `BranchDayService::start_service` (`xc-shift/src/application/branch_day/service.rs:168-187`) and `begin_draft` (`:556-566`) | Start needs `[open, close−10 min)`; begin needs the same; a save needs `[open, close)` (`service_window.rs:18-52`). Selling needs phase OPEN (`:556`). |
+| Staff floor hours | `PgStaffFloorReader::read_hours` (`api/src/application/staff_floor/reader.rs:247-290`) | Reads **today's** window only, so at 02:00 it shows the wrong day. |
+| Branch day | `ops_state` (`20261007140000_custody.sql:1`), one row per branch | CLOSED→READY on the first verified OPEN count, READY→OPEN by start, OPEN→CUT_OFF by cut-off; CLOSED is derived as CUT_OFF with no OPEN shift (`xc-shift/src/domain/custody/branch_day.rs:57-63`). No row per date. |
+| Sale date | `transactions.value_date` (`20261007190000_transactions.sql:30`) | **The client sends it.** The desk fills it with `bangkokToday()` (`web/src/screens/desk/desk-store.ts:163,231`, sent at `save.ts:218`); the server only parses it (`commands/transactions.rs:360`). At 02:00 the desk sends the new calendar date. |
+| Reports | `views/admin_reports.rs:191,225,250`, `admin_overview.rs:131`, `admin_transactions.rs:136`, `ledger_cash_facts.rs:255` filter on `value_date`; `views/staff_daily_report.rs:77-89,124-137` uses `[local 00:00, +1 day)` on `completed_at`, close counts by `s.opened_at` (`:179,250`) | Every report day is a calendar day. None groups by shift; the staff report is one branch-day aggregate. |
+| Day close | `xc-shift/src/application/shift/service/day_close.rs:19-47` | Fires `on_day_closed` when the last shift closes after cut-off. It produces no report. |
+| Opening hours editor | `POST /api/branches/profile` → `branch_save.rs:73` (`BranchesManage`, `xc-auth/.../areas/org_admin.rs:30`); web `admin/branches/BranchesScreen.tsx:206-219` | Also read by booking slots (`xc-booking/src/application/slot_service.rs:526`), the public branch API (`public/branches.rs:76,103`) and customer screens (`shared/ui/openingHours.ts`). |
+| Branch creation | `adminCreateBranch` in `api/src/application/compat/rpc.rs:257-270` → `BranchService::create_in` (`xc-rate/src/application/branch/service.rs:65`) | |
+
+Searched for an existing shift definition: `grep -rniE "shift_(template|definition|plan)|shifts_per_day"` over `api/`, `web/src`, `docs/` → nothing.
+
+**Correction to the brief:** the brief said `shifts` allows one open shift per branch. That index was replaced; today it is one
+open shift per **teller** (row 1 above). So overlapping shifts need no change to how a teller's drawer works. What is missing is
+the name, the time window and the business date.
+
+## 2. The model
+
+### 2.1 Words
+
+- **Shift template** (`ShiftTemplate`): one row the Owner configures: name, start, end, optional break. The number of shifts is the number of live templates.
+- **Shift plan** (`ShiftPlan`): a branch's live templates, ordered. It answers every time question.
+- **Shift instance** (`ShiftInstance`): one template on one business date, with real start, end and break instants.
+- **Shift** (existing `shifts` row): one teller's drawer session. It now records the template it was opened under, the template's name at that moment, and the business date.
+
+### 2.2 Time rules
+
+All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no DST; `local_to_utc` in `branch_hours.rs:50-56` is reused for any zone that has).
+
+| # | Rule |
+|---|---|
+| T1 | **Anchor.** The plan's anchor `S0` is the earliest template start. With the defaults `S0 = 10:00`. |
+| T2 | **Offsets.** A template's start offset is `(start − S0) mod 24 h`; its duration is `end − start`, plus 24 h when `end <= start` (crosses midnight). End offset = start offset + duration. |
+| T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the defaults: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight (e.g. 02:00 with `S0 = 10:00`) still belongs to the date before. |
+| T4 | **Service span.** The branch's service window on business date `d` is `[d + S0, d + S0 + max endOffset)`. Defaults: 10:00–04:00 next day. This **replaces** `opening_hours` as the gate for start, begin and save (§5). |
+| T5 | **Plan validity.** `max endOffset <= 24 h` (the span fits in one day), names are non-empty, ≤ 40 characters and unique case-insensitively, `start != end`, and a break (both ends or neither) lies inside its shift, measured on the same offsets. 1 to 12 templates. |
+| T6 | **Covering now.** Template `t` covers instant `now` when `start(t, d) <= now < end(t, d)` for `d` = local today or local yesterday. Each covering instance carries its own `d`. |
+| T7 | **Business date of an instant.** `d` such that `now` lies in the service span of `d`. Outside every span there is none. |
+| T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4). |
+
+### 2.3 Opening a shift (brief rule 3)
+
+- `[required]` The OPEN count (`POST /api/cash-counts`, kind `OPEN`) carries `shiftTemplateId`. The server refuses:
+  - `shiftTemplateId` missing: `422 shiftNotChosen`;
+  - a template that does not cover `counted_at` (T6) or is not live: `409 outsideShiftWindow`;
+  - nothing covers now at all: `409 outsideShiftWindow` (the done line's 05:00 case).
+- `[required]` The count stores `shift_template_id` and the instance's `business_date`. The verify (`verify_count_in`) copies
+  both, plus the template's **name at that moment**, into the new `shifts` row. A verify later than the window's end still
+  opens the shift: the teller's choice was checked when they counted.
+- `[required]` `GET /api/v3/views/open_shift_choices?branch=` returns the covering instances: `{templateId, name, businessDate, startsAt, endsAt, breakStartsAt?, breakEndsAt?}[]`, plus `preselect: templateId | null`, set when exactly one covers now. The count form shows a picker; one choice is preselected; none shows "outside shift hours" and disables Save.
+- `[proposed]` No grace before the start (Q3).
+
+### 2.4 Selling and the business date
+
+- `[required]` A LIVE sale's `value_date` is **set by the server** to the business date of the keyer's open shift (`create.rs:349-362`, where the shift is already looked up). The client's `valueDate` is ignored for LIVE sales. This is the root-cause fix: the writer of the wrong date is the client, which uses the calendar date.
+  - DEMO sales keep the client's date, as today.
+  - The backdated path (`feat/backdated-keying`, `backdate.rs`) is a different command and keeps its own rule.
+- Every report that filters on `value_date` (§1 row "Reports") is then right with no change: a 02:00 sale in shift C of 4 Nov reads 4 Nov.
+- `[proposed]` A teller may keep selling after their own shift's end, while the branch span is open. No per-shift sales gate (Q2 records the alternative).
+
+### 2.5 Break (brief rule 3, owner question Q1)
+
+`[proposed]` **Display only.** During a template's break window the staff floor marks the tellers whose open shift is that
+template as `onBreak`; nothing is refused and the counter stays open. Reason: shifts overlap, so another shift covers the counter during every
+default break (A's 15–16 by B, B's 18–19 by A, C's 23–00 by B), and a gate would block a teller who covers for a colleague. Alternatives in Q1.
+
+### 2.6 Reports (brief rule 5)
+
+| Report | Today | After |
+|---|---|---|
+| Shift close (`my_shift`, `admin_shifts`, `ShiftDetail`) | per shift id | each shift row also shows `shiftName` and `businessDate`. |
+| Staff report / day close (`staff_daily_report`) | one aggregate per calendar day | `day` means business date: sales by `value_date`, close counts by `shifts.business_date`. New `byShift: ShiftReportRow[]`, one row per shift name used that day, in plan order, then `null` (shifts opened before this feature). Each row: `shiftName`, tellers, sales count and THB total, CLOSE counted/expected/difference per currency. Totals unchanged. |
+| Admin reports (`admin_reports`) | per `staff_id` | `[proposed]` unchanged in this branch; per-shift columns are a follow-up if the owner wants them. |
+
+Day close produces no report (`day_close.rs`); "the day close grouped by shift" is the staff report's `byShift` for that business date.
+
+### 2.7 Service hours (brief rule 4)
+
+- `[required]` `PgCustodyPorts::service_window` and `read_hours` compute the span (T4) from the plan, for the business date containing now, else the next one. `opening_hours` no longer gates custody.
+- `[proposed]` `opening_hours` stays as the **customer-facing** hours (booking slots, public branch API, customer screens) and is still edited in the branch profile. Whether it should follow the shifts is Q5.
+
+### 2.8 Defaults
+
+- `[required]` The migration inserts A, B, C (table in §0) for every existing branch.
+- `[required]` A branch created afterwards gets the same three: `adminCreateBranch` (`compat/rpc.rs:257-270`) calls `ShiftPlanService::seed_defaults` after `create_in`. Seeding is idempotent (no-op when the branch already has a live template).
+- The defaults live once, in `ShiftPlan::defaults()`; the migration's `INSERT` repeats them as data and a test compares the two.
+
+### 2.9 Editing the plan
+
+- `[required]` `POST /api/shift-templates` command `branchShiftsSave`, permission `BranchesManage` (the Owner standing holds it; same as `branchSave`). Body: `{branch, templates: [{id?, name, startsAt "HH:MM", endsAt, breakStartsAt?, breakEndsAt?}]}` in display order. It replaces the whole list: rows with an `id` are updated, rows without are inserted, live rows missing from the list are retired (`retired_at = now`), never deleted, because `shifts.template_id` points at them.
+- Refusals: `422 shiftPlanInvalid` with `{reason: emptyName|nameTooLong|duplicateName|zeroLength|spanOver24h|breakOutsideShift|breakIncomplete|tooMany|none}` and `index`.
+- `[required]` Editing does not touch open shifts: they keep the name and business date they opened with.
+- `[required]` `GET /api/v3/views/branch_shifts?branch=` returns the live plan plus the derived span, for the editor.
+
+## 3. Class diagram
+
+```mermaid
+classDiagram
+    class ShiftTemplate {
+        <<xc-shift/src/domain/shift_plan/shift_template.rs · skeleton>>
+        +id: String
+        +name: String
+        +starts_at: NaiveTime
+        +ends_at: NaiveTime
+        +break_window: Option~(NaiveTime, NaiveTime)~
+        +position: i16
+    }
+    class ShiftTemplateInput {
+        <<same file · skeleton>>
+        +id: Option~String~
+        +name: String
+        +starts_at: NaiveTime
+        +ends_at: NaiveTime
+        +break_window: Option~(NaiveTime, NaiveTime)~
+    }
+    class ShiftInstance {
+        <<xc-shift/src/domain/shift_plan/shift_instance.rs · skeleton>>
+        +template_id: String
+        +name: String
+        +business_date: NaiveDate
+        +starts_at: DateTime~Utc~
+        +ends_at: DateTime~Utc~
+        +break_window: Option~(DateTime~Utc~, DateTime~Utc~)~
+    }
+    class PlanRefusal {
+        <<xc-shift/src/domain/shift_plan/plan_refusal.rs · skeleton>>
+        None | TooMany | EmptyName(i) | NameTooLong(i) | DuplicateName(i) | ZeroLength(i) | SpanOver24h | BreakIncomplete(i) | BreakOutsideShift(i)
+    }
+    class ShiftPlan {
+        <<xc-shift/src/domain/shift_plan/shift_plan.rs · CS-1>>
+        +validate(inputs) Result~Vec~ShiftTemplateInput~, PlanRefusal~
+        +new(templates, tz) ShiftPlan
+        +defaults() Vec~ShiftTemplateInput~
+        +instance(template, date) ShiftInstance
+        +covering(now) Vec~ShiftInstance~
+        +business_date_of(now) Option~NaiveDate~
+        +service_span(date) Option~(DateTime~Utc~, DateTime~Utc~)~
+        +span_for(now) Option~(DateTime~Utc~, DateTime~Utc~)~
+        +on_break(template_id, now) bool
+    }
+    class ShiftTemplateStore {
+        <<trait xc-shift/src/domain/shift_plan/repository.rs · skeleton>>
+        +live_in(tx, branch) Vec~ShiftTemplate~
+        +replace_in(tx, branch, org, inputs, now) Vec~ShiftTemplate~
+        +seed_defaults_in(tx, branch, org) bool
+    }
+    class PgShiftTemplateStore {
+        <<xc-shift/src/infrastructure/shift_plan/pg_store.rs · CS-2>>
+    }
+    class ShiftPlanService {
+        <<xc-shift/src/application/shift_plan/service.rs · CS-3>>
+        +plan_in(tx, branch) ShiftPlan
+        +save_in(tx, branch, org, inputs, now) Result~ShiftPlan~
+        +choices_in(tx, branch, now) ShiftChoices
+        +seed_defaults(branch, org) bool
+    }
+    class ShiftChoice {
+        <<xc-shift/src/application/shift_plan/service.rs · skeleton>>
+        ShiftChoices: choices Vec~ShiftInstance~, preselect Option~String~
+    }
+    class PgCustodyPorts {
+        <<api/src/infrastructure/custody/custody_ports.rs · CS-4>>
+        service_window(tx, branch, now)
+    }
+    class PgStaffFloorReader {
+        <<api/src/application/staff_floor/reader.rs · CS-5>>
+        read_hours(branch, now)
+        onBreak per teller
+    }
+    class ShiftService {
+        <<xc-shift/src/application/shift/service.rs · CS-6>>
+        +open_on_verified(tx, branch, teller, count_id, opening, opened_as: &OpenedAs, now)
+    }
+    class OpenedAs {
+        <<xc-shift/src/domain/shift/value_objects/opened_as.rs · skeleton>>
+        +template_id: Option~String~
+        +template_name: Option~String~
+        +business_date: NaiveDate
+    }
+    class Shift {
+        <<xc-shift/src/domain/shift/entities/shift.rs · skeleton adds fields; CS-6 reads them>>
+        +template_name: Option~String~
+        +business_date: NaiveDate
+    }
+    class CountService {
+        <<xc-cash/src/application/count/count_service.rs · CS-7>>
+        submit_in: OPEN needs a covering template
+        verify_count_in: passes OpenedAs
+    }
+    class CreateTransaction {
+        <<api/src/application/workflows/exchange/create.rs · CS-8>>
+        LIVE value_date = shift.business_date
+    }
+    class BranchShiftsSaveCommand {
+        <<api/src/presentation/http/v3/commands/branch_shifts_save.rs · CS-9>>
+    }
+    class BranchShiftsView {
+        <<api/src/presentation/http/v3/views/branch_shifts.rs · CS-9>>
+    }
+    class OpenShiftChoicesView {
+        <<api/src/presentation/http/v3/views/open_shift_choices.rs · CS-10>>
+    }
+    ShiftPlan --> ShiftTemplate
+    ShiftPlan --> ShiftInstance : makes
+    ShiftPlan ..> PlanRefusal
+    PgShiftTemplateStore ..|> ShiftTemplateStore
+    ShiftPlanService --> ShiftTemplateStore
+    ShiftPlanService --> ShiftPlan
+    PgCustodyPorts --> ShiftPlanService : span_for
+    PgStaffFloorReader --> ShiftPlanService : span_for, on_break
+    CountService --> ShiftPlanService : covering at counted_at
+    CountService --> ShiftService : open_on_verified(OpenedAs)
+    ShiftService --> OpenedAs
+    CreateTransaction --> Shift : business_date
+    BranchShiftsSaveCommand --> ShiftPlanService : save_in
+    BranchShiftsView --> ShiftPlanService : plan_in
+    OpenShiftChoicesView --> ShiftPlanService : choices_in
+```
+
+### 3.1 Who provides, who uses, and the file each lives in
+
+Files under `xc-shift/` are `api/crates/xc-shift/`; `xc-cash/` is `api/crates/xc-cash/`.
+
+| Item | File | Provided by | Used by |
+|---|---|---|---|
+| migration | `api/migrations/20261226220000_shift_templates.sql` | skeleton (owner approval before main) | everything |
+| `ShiftTemplate`, `ShiftTemplateInput` | `xc-shift/src/domain/shift_plan/shift_template.rs` (new) | skeleton | all |
+| `ShiftInstance` | `xc-shift/src/domain/shift_plan/shift_instance.rs` (new) | skeleton | all |
+| `PlanRefusal` (+ `Display` = the wire `reason`) | `xc-shift/src/domain/shift_plan/plan_refusal.rs` (new) | skeleton | CS-1, CS-3, CS-9 |
+| `ShiftPlan` | `xc-shift/src/domain/shift_plan/shift_plan.rs` (new) | signatures: skeleton · bodies: **CS-1** | CS-3 |
+| `ShiftTemplateStore` | `xc-shift/src/domain/shift_plan/repository.rs` (new) | skeleton | CS-2, CS-3 |
+| `PgShiftTemplateStore` | `xc-shift/src/infrastructure/shift_plan/pg_store.rs` (new) | **CS-2** | CS-3 |
+| `ShiftPlanService`, `ShiftChoices` | `xc-shift/src/application/shift_plan/service.rs` (new) | signatures: skeleton · bodies: **CS-3** | CS-4, 5, 7, 9, 10, 13 |
+| `OpenedAs` | `xc-shift/src/domain/shift/value_objects/opened_as.rs` (new) | skeleton | CS-6, CS-7 |
+| `Shift.template_name`, `Shift.business_date` + reads in `shift_repository.rs` | `xc-shift/src/domain/shift/entities/shift.rs`, `xc-shift/src/infrastructure/shift/shift_repository.rs` | skeleton (fields + `SELECT` columns) | CS-8, CS-11, CS-12 |
+| `ShiftError::{OutsideShiftWindow, ShiftNotChosen}` | `xc-shift/src/domain/shift/value_objects/shift_error.rs` | skeleton | CS-7 |
+| span from the plan | `api/src/infrastructure/custody/custody_ports.rs` | **CS-4** | — |
+| hours + `onBreak` on the floor | `api/src/application/staff_floor/reader.rs` (+ `StaffFloorTeller.onBreak` DTO field, skeleton) | **CS-5** | web |
+| `open_on_verified(..., &OpenedAs, ..)` | `xc-shift/src/application/shift/service.rs` | signature: skeleton · body: **CS-6** | CS-7 |
+| OPEN count carries the template | `xc-cash/src/application/count/count_service.rs` + input field in `api/src/presentation/http/v3/commands/cash.rs` | **CS-7** | — |
+| LIVE `value_date` | `api/src/application/workflows/exchange/create.rs` | **CS-8** | reports |
+| `branchShiftsSave` + `branch_shifts` view + DTO + policy rows | `commands/branch_shifts_save.rs`, `views/branch_shifts.rs`, `dto/v3/branch_shifts.rs` (new), `xc-auth/src/domain/policy/areas/branch_shifts.rs` (new) | DTO + policy: skeleton · handlers: **CS-9** | web CS-14 |
+| `open_shift_choices` view | `views/open_shift_choices.rs` (new), DTO in `dto/v3/branch_shifts.rs` | **CS-10** | web CS-15 |
+| defaults on branch create | `api/src/application/compat/rpc.rs` (one call after `create_in`) | **CS-13** | — |
+| `shiftName`, `businessDate` on shift views | `views/my_shift.rs`, `views/admin_shifts.rs` and their DTOs | **CS-11** | web CS-16 |
+| `byShift` + business-date day | `views/staff_daily_report.rs`, `dto/v3/staff_daily_report.rs` | **CS-12** (after `feat/board-currencies` lands, §6) | web CS-17 |
+| Owner's shift editor | `web/src/screens/admin/branches/ShiftsEditor.tsx` (new) + mount in `BranchesScreen.tsx` + i18n | **CS-14** | — |
+| teller's shift picker | `web/src/screens/staff/shift/ShiftPicker.tsx` (new) + mount in `CountForm.tsx` | **CS-15** (mount after `feat/board-currencies`, §6) | `/staff`, `/desk` |
+| shift name on admin cash screens | `web/src/screens/admin/cash/Cash.tsx`, `ShiftDetail.tsx` | **CS-16** | — |
+| `byShift` on the staff report | `web/src/screens/staff-report/StaffReport.tsx` | **CS-17** | — |
+| floor `onBreak` badge | `web/src/screens/staff/floor/FloorCard.tsx` | **CS-18** (after Q1) | — |
+
+Fallback while a provider has not landed: a consumer ticket calls the skeleton signature, whose body is `todo!()`; its own
+tests use a fake `ShiftTemplateStore` or a fixed `ShiftPlan` built with `ShiftPlan::new`. No ticket edits another ticket's file.
+
+### 3.2 Signatures (`[required]`; tickets copy them)
+
+```rust
+// xc-shift/src/domain/shift_plan/shift_plan.rs
+pub struct ShiftPlan { /* templates sorted by position; tz */ }
+impl ShiftPlan {
+    pub const MAX_TEMPLATES: usize = 12;
+    pub const MAX_NAME_CHARS: usize = 40;
+    /// T5. Trims names; returns the inputs in the given order.
+    pub fn validate(inputs: Vec<ShiftTemplateInput>) -> Result<Vec<ShiftTemplateInput>, PlanRefusal>;
+    pub fn new(templates: Vec<ShiftTemplate>, tz: chrono_tz::Tz) -> Self;
+    /// A 10:00–19:00 (15–16), B 15:00–00:00 (18–19), C 19:00–04:00 (23–00), positions 0..=2.
+    pub fn defaults() -> Vec<ShiftTemplateInput>;
+    pub fn templates(&self) -> &[ShiftTemplate];
+    pub fn instance(&self, template: &ShiftTemplate, date: NaiveDate) -> ShiftInstance;      // T3
+    pub fn covering(&self, now: DateTime<Utc>) -> Vec<ShiftInstance>;                        // T6, plan order, then earlier date first
+    pub fn business_date_of(&self, now: DateTime<Utc>) -> Option<NaiveDate>;                 // T7
+    pub fn service_span(&self, date: NaiveDate) -> Option<(DateTime<Utc>, DateTime<Utc>)>;   // T4; None for an empty plan
+    /// The span containing `now`, else the next span to start (today's or tomorrow's).
+    pub fn span_for(&self, now: DateTime<Utc>) -> Option<(DateTime<Utc>, DateTime<Utc>)>;
+    pub fn on_break(&self, template_id: &str, now: DateTime<Utc>) -> bool;
+}
+
+// xc-shift/src/domain/shift_plan/repository.rs
+pub trait ShiftTemplateStore: Send + Sync + 'static {
+    fn live_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, branch: &'a BranchId)
+        -> BoxFuture<'a, AppResult<Vec<ShiftTemplate>>>;
+    /// Update rows with an id, insert rows without, retire live rows not listed. Positions = list order.
+    fn replace_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, branch: &'a BranchId, org: &'a str,
+        inputs: &'a [ShiftTemplateInput], now: DateTime<Utc>) -> BoxFuture<'a, AppResult<Vec<ShiftTemplate>>>;
+    /// Inserts `ShiftPlan::defaults()` when the branch has no live template; returns whether it inserted.
+    fn seed_defaults_in<'a>(&'a self, tx: &'a mut Transaction<'_, Postgres>, branch: &'a BranchId, org: &'a str)
+        -> BoxFuture<'a, AppResult<bool>>;
+}
+
+// xc-shift/src/application/shift_plan/service.rs
+pub struct ShiftChoices { pub choices: Vec<ShiftInstance>, pub preselect: Option<String> }
+impl ShiftPlanService {
+    pub fn new(store: Arc<dyn ShiftTemplateStore>, branch_tx: BranchTx) -> Self;
+    pub async fn plan_in(&self, tx: &mut Transaction<'_, Postgres>, branch: &BranchId) -> AppResult<ShiftPlan>; // reads branches.timezone
+    pub async fn save_in(&self, tx: &mut Transaction<'_, Postgres>, branch: &BranchId, org: &str,
+        inputs: Vec<ShiftTemplateInput>, now: DateTime<Utc>) -> AppResult<ShiftPlan>; // PlanRefusal → 422 shiftPlanInvalid
+    pub async fn choices_in(&self, tx: &mut Transaction<'_, Postgres>, branch: &BranchId, now: DateTime<Utc>) -> AppResult<ShiftChoices>;
+    pub async fn seed_defaults(&self, branch: &BranchId, org: &str) -> AppResult<bool>;
+}
+
+// xc-shift/src/domain/shift/value_objects/opened_as.rs
+pub struct OpenedAs { pub template_id: Option<String>, pub template_name: Option<String>, pub business_date: NaiveDate }
+```
+
+## 4. Behaviour tables (up-front tests)
+
+### CS-1 `ShiftPlan` (defaults, tz Asia/Bangkok; "4 Nov" = 2026-11-04 local)
+
+| # | Case | Required |
+|---|---|---|
+| P1 | `covering(4 Nov 10:00)` | `[A@4 Nov]` |
+| P2 | `covering(4 Nov 15:00)` | `[A@4 Nov, B@4 Nov]` |
+| P3 | `covering(4 Nov 19:00)` | `[B@4 Nov, C@4 Nov]` (A ended at 19:00, exclusive) |
+| P4 | `covering(5 Nov 02:00)` | `[C@4 Nov]` |
+| P5 | `covering(5 Nov 05:00)` | `[]` |
+| P6 | `covering(4 Nov 09:59)` | `[]` |
+| P7 | `business_date_of(5 Nov 02:00)` | `Some(4 Nov)`; `business_date_of(5 Nov 05:00)` = `None` |
+| P8 | `service_span(4 Nov)` | `(4 Nov 10:00, 5 Nov 04:00)` as UTC (03:00Z, 21:00Z) |
+| P9 | `span_for(5 Nov 05:00)` | the 5 Nov span `(5 Nov 10:00, 6 Nov 04:00)` |
+| P10 | `on_break(B, 4 Nov 18:30)` true; `on_break(B, 4 Nov 19:00)` false; `on_break(C, 4 Nov 23:30)` true |
+| P11 | `instance(C, 4 Nov)` | `starts 4 Nov 19:00, ends 5 Nov 04:00, break 4 Nov 23:00–5 Nov 00:00` |
+| P12 | `validate` on: empty list / 13 rows / blank name / 41-char name / "a" and "A" / start = end / break with one end / break 05:00–06:00 in A / A 10–19 + D 09:00–10:30 (span 24 h 30) | `None` / `TooMany` / `EmptyName(i)` / `NameTooLong(i)` / `DuplicateName(1)` / `ZeroLength(i)` / `BreakIncomplete(i)` / `BreakOutsideShift(0)` / `SpanOver24h` |
+| P13 | `validate(defaults())` | `Ok`, unchanged |
+| P14 | a plan whose earliest start is 02:00 (one template 02:00–08:00) | anchor 02:00; `business_date_of(3 Nov 03:00)` = 3 Nov |
+
+### CS-2 `PgShiftTemplateStore` (DB test, `TEST_DATABASE_URL`)
+
+| # | Case | Required |
+|---|---|---|
+| S1 | `seed_defaults_in` on a branch with no row | inserts A, B, C at positions 0–2, returns true; a second call returns false and inserts nothing |
+| S2 | `replace_in` with `[A(id), D(new)]` over A, B, C | A updated, D inserted at position 1, B and C get `retired_at`; `live_in` returns `[A, D]` |
+| S3 | `replace_in` renaming B to `A` while A stays | the unique index refuses; the service validates first, so this is a storage guard only |
+| S4 | the migration's seeded rows equal `ShiftPlan::defaults()` | test reads MAIN's rows after migrating |
+
+### CS-3 `ShiftPlanService`
+
+| # | Case | Required |
+|---|---|---|
+| V1 | `save_in` with an invalid list | `AppError` mapped to `422 shiftPlanInvalid` carrying `PlanRefusal`'s reason and index; nothing written |
+| V2 | `choices_in` at 15:30 | two choices, `preselect = None` |
+| V3 | `choices_in` at 11:00 | one choice A, `preselect = Some(A.id)` |
+| V4 | `choices_in` at 05:00 | `[]`, `None` |
+| V5 | `plan_in` reads the branch's timezone | a branch in `Asia/Tokyo` shifts every instant by −2 h relative to Bangkok |
+
+### CS-4 custody window · CS-5 floor
+
+| # | Case | Required |
+|---|---|---|
+| W1 | `service_window` at 4 Nov 11:00 | `Open { 4 Nov 10:00, 5 Nov 04:00 }` |
+| W2 | at 5 Nov 02:00 | the same window (4 Nov's) |
+| W3 | at 5 Nov 05:00 | `Open { 5 Nov 10:00, 6 Nov 04:00 }` (the next span; `allows_start` false) |
+| W4 | branch with no live template | `NotSet` |
+| W5 | `opening_hours` set to 12:00–18:00 | ignored by `service_window` |
+| F1 | `read_hours` at 5 Nov 02:00 | the 4 Nov span |
+| F2 | teller in B at 18:30 | `onBreak = true`; teller in A at 18:30 `false` |
+
+### CS-6 `open_on_verified` · CS-7 counts · CS-8 sale date
+
+| # | Case | Required |
+|---|---|---|
+| O1 | `open_on_verified` with `OpenedAs{A, "A", 4 Nov}` | the row has `template_id`, `template_name = 'A'`, `business_date = 2026-11-04`; `Shift` returned with the same |
+| C1 | OPEN count at 05:00 | `409 outsideShiftWindow`; no count row |
+| C2 | OPEN count at 15:30 choosing B | stored with B and 4 Nov |
+| C3 | OPEN count at 11:00 choosing B | `409 outsideShiftWindow` |
+| C4 | OPEN count with no `shiftTemplateId` | `422 shiftNotChosen` |
+| C5 | verify C2's count at 19:30 (after A's end, inside B) | shift opens as B, 4 Nov |
+| C6 | verify at 5 Nov 01:00 a count made 4 Nov 23:50 for C | shift opens as C, 4 Nov |
+| C7 | HANDOVER_OUT, CLOSE, SAFE counts | unchanged: no template needed |
+| C8 | an OPEN count made before this feature (no template) is verified | refused `shiftNotChosen`; the teller recounts (migration §5 measures that none are pending) |
+| D1 | LIVE sale at 5 Nov 02:00 in a C@4 Nov shift, client sends `valueDate 2026-11-05` | stored `value_date = 2026-11-04` |
+| D2 | DEMO sale | client's `valueDate` kept |
+
+### CS-9 save command · CS-10 choices view · CS-11 shift views · CS-12 staff report
+
+| # | Case | Required |
+|---|---|---|
+| E1 | `branchShiftsSave` by a holder of `BranchesManage` | 200, the stored plan |
+| E2 | by a teller | 403 |
+| E3 | invalid plan | 422 `shiftPlanInvalid` `{reason, index}` |
+| E4 | `branch_shifts` view | live templates in order + `span {startsAt, endsAt}` as `HH:MM` |
+| E5 | `open_shift_choices` at 15:30 | A and B with `businessDate`, `preselect: null` |
+| R1 | `my_shift` / `admin_shifts` row | `shiftName`, `businessDate` |
+| R2 | `staff_daily_report?day=2026-11-04` | sales with `value_date = 4 Nov` (including 5 Nov 02:00) and close counts of shifts with `business_date = 4 Nov` |
+| R3 | `byShift` | rows `A`, `B`, `C` in plan order, then `null` for pre-feature shifts; per-row sums add up to the existing totals |
+
+### Web (CS-14 … CS-18)
+
+| # | Case | Required |
+|---|---|---|
+| U1 | editor | rows with name / start / end / break; add, remove, reorder; Save sends the whole list; the refusal reason shows on its row |
+| U2 | picker, one choice | preselected, Save enabled |
+| U3 | picker, two choices | none selected, Save disabled until one is picked |
+| U4 | picker, none | "นอกเวลากะ / Outside shift hours", Save disabled |
+| U5 | staff report | one section per `byShift` row |
+| U6 | admin cash / shift detail | the shift name next to the teller |
+
+## 5. Data migration
+
+`api/migrations/20261226220000_shift_templates.sql`. Slot: `scripts/migration-slot.sh next --name shift_templates` printed
+`20261226210000` at 2026-11-04 21:00 ICT, but `feat/backdated-keying` reserved that number for
+`20261226210000_transactions_backdated.sql` (`docs/design/backdated-keying.md` §10) and has no PR yet, so this takes the next
+hour. It is renumbered with `scripts/migration-slot.sh renumber` right before the feat → main merge.
+
+```sql
+-- Configurable shifts (docs/design/configurable-shifts.md §5).
+
+CREATE TABLE shift_templates (
+    id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id uuid        NOT NULL,
+    branch_id       text        NOT NULL,
+    name            text        NOT NULL CHECK (btrim(name) <> '' AND char_length(name) <= 40),
+    starts_at       time        NOT NULL,
+    ends_at         time        NOT NULL,
+    break_starts_at time,
+    break_ends_at   time,
+    position        smallint    NOT NULL CHECK (position >= 0),
+    retired_at      timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    updated_at      timestamptz NOT NULL DEFAULT now(),
+    FOREIGN KEY (organization_id, branch_id) REFERENCES branches (organization_id, id),
+    CHECK (starts_at <> ends_at),
+    CHECK ((break_starts_at IS NULL) = (break_ends_at IS NULL))
+);
+CREATE UNIQUE INDEX shift_templates_live_name
+    ON shift_templates (branch_id, lower(btrim(name))) WHERE retired_at IS NULL;
+CREATE INDEX shift_templates_live_branch
+    ON shift_templates (branch_id, position) WHERE retired_at IS NULL;
+
+-- The owner's defaults (2026-11-04, "default ตามนี้") for every existing branch.
+INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, break_starts_at, break_ends_at, position)
+SELECT b.organization_id, b.id, d.name, d.starts_at, d.ends_at, d.break_starts_at, d.break_ends_at, d.position
+  FROM branches b
+ CROSS JOIN (VALUES
+       ('A', time '10:00', time '19:00', time '15:00', time '16:00', 0),
+       ('B', time '15:00', time '00:00', time '18:00', time '19:00', 1),
+       ('C', time '19:00', time '04:00', time '23:00', time '00:00', 2)
+     ) AS d (name, starts_at, ends_at, break_starts_at, break_ends_at, position)
+ WHERE b.organization_id IS NOT NULL;
+
+-- A teller's shift records the template, its name at opening, and the business date.
+ALTER TABLE shifts
+    ADD COLUMN template_id   uuid REFERENCES shift_templates (id),
+    ADD COLUMN template_name text,
+    ADD COLUMN business_date date;
+ALTER TABLE shifts
+    ADD CONSTRAINT shifts_template_named CHECK ((template_id IS NULL) = (template_name IS NULL));
+
+-- Shifts opened before this feature: the business date is the local date they opened on.
+UPDATE shifts s
+   SET business_date = (s.opened_at AT TIME ZONE b.timezone)::date
+  FROM branches b
+ WHERE b.id = s.branch_id;
+ALTER TABLE shifts ALTER COLUMN business_date SET NOT NULL;
+
+-- The teller's choice is made on the OPEN count and copied to the shift on verify.
+ALTER TABLE cash_counts
+    ADD COLUMN shift_template_id uuid REFERENCES shift_templates (id),
+    ADD COLUMN business_date     date;
+ALTER TABLE cash_counts
+    ADD CONSTRAINT cash_counts_template_dated CHECK ((shift_template_id IS NULL) = (business_date IS NULL)),
+    ADD CONSTRAINT cash_counts_template_only_open CHECK (shift_template_id IS NULL OR kind = 'OPEN');
+```
+
+**(1) Existing rows after the migration**
+- `branches`: each branch with an organization gets A, B, C. A branch with `organization_id IS NULL` gets none (the FK needs the org) and reads `NotSet`, so it cannot start service; measured below.
+- `shifts`: every row gets `business_date` = its local opening date; `template_id`/`template_name` stay NULL and report as the `null` group ("before shifts"). OPEN shifts at deploy keep working: closing never reads the template.
+- `cash_counts`: all rows keep NULL. An **unverified OPEN** count made before deploy is refused at verify (C8); measured below so it is zero at deploy.
+- `transactions`: unchanged. Past 00:00–04:00 sales keep the calendar date the client sent (no backfill, Q6).
+
+**(2) Backfill:** one, `shifts.business_date`, inside the migration (it must exist before `SET NOT NULL`). It is not lazy because the staff report groups by it. Measure before deploy (on do-sgp1, read-only):
+```sql
+SELECT count(*) AS shifts_to_date FROM shifts;
+SELECT count(*) AS shifts_without_branch FROM shifts s LEFT JOIN branches b ON b.id = s.branch_id WHERE b.id IS NULL;  -- must be 0, else SET NOT NULL fails
+SELECT count(*) AS branches_without_org FROM branches WHERE organization_id IS NULL;                                     -- these get no shifts
+SELECT count(*) AS open_counts_pending FROM cash_counts WHERE kind = 'OPEN' AND verified_at IS NULL AND rejected_at IS NULL;  -- should be 0 at deploy
+```
+
+**(3) Deploy order:** migrations run at boot with the new binary (`sqlx::migrate!`). The old binary on the new schema:
+`INSERT INTO shifts` without `business_date` fails `NOT NULL`, so **a rollback to the old binary needs
+`ALTER TABLE shifts ALTER COLUMN business_date DROP NOT NULL` first**. Everything else the old binary ignores.
+
+**(4) What `down` loses:** dropping the table and columns loses the configured plans, each shift's name and business date, and
+each pending count's choice. Shifts and counts themselves survive.
+
+```sql
+-- down (by hand, not shipped)
+ALTER TABLE cash_counts DROP CONSTRAINT cash_counts_template_only_open, DROP CONSTRAINT cash_counts_template_dated,
+    DROP COLUMN business_date, DROP COLUMN shift_template_id;
+ALTER TABLE shifts DROP CONSTRAINT shifts_template_named,
+    DROP COLUMN business_date, DROP COLUMN template_name, DROP COLUMN template_id;
+DROP TABLE shift_templates;
+```
+
+## 6. Order with the other feature branches
+
+- `feat/board-currencies` (claude/94389a6b) holds `views/staff_daily_report.rs` and `web/src/screens/staff/shift/CountForm.tsx` (`docs/design/board-currencies.md`). CS-12 and CS-15's mount line wait until that branch is on main; CS-15's `ShiftPicker.tsx` is written first in its own file. Agreed on #564.
+- `feat/backdated-keying` (claude/6bb512ce) holds `complete.rs`, `admin_transactions.rs`, `dto/v3/transaction.rs`, `views/transaction.rs`, `role_grants.rs`. This branch touches none of them. It does touch `create.rs` (CS-8), which backdated keying does not list. Migration numbers: §5.
+
+## 7. Owner questions (asked through the lane controller)
+
+| # | Question | Options | Recommendation |
+|---|---|---|---|
+| Q1 | What does a break do? | A. Display only: the floor shows "on break" for tellers in that shift; nothing is refused. B. The teller's own sales are refused during their break. C. Nothing at all; the break is information on the shift. | **A**: shifts overlap, so the counter is always covered, and B would block a teller covering for a colleague. |
+| Q2 | May a teller sell after their own shift ends (e.g. A at 19:30) while the branch is open? | A. Yes; the shift report shows when they closed. B. No: sales refused after the shift's end until they close. | **A**: closing takes time and the drawer is still theirs; B can be added later as one rule in `CreateTransaction`. |
+| Q3 | May a teller open a little before the shift starts (count the drawer at 09:50 for A)? | A. No, exact (the done line). B. Up to 30 min early. | **A** for now; B is one constant in `ShiftPlan::covering`. |
+| Q4 | Different shifts on different weekdays? | A. No: one plan every day. B. Per weekday. | **A**: the owner's table has no weekdays. |
+| Q5 | Should customer-facing hours (booking slots, branch page) follow the shifts (10:00–04:00)? | A. No: keep `opening_hours` as customer hours, edited separately. B. Yes: derive them from the shifts too. | **A**: night shifts sell to walk-ins; offering 02:00 booking slots is a separate decision. |
+| Q6 | Re-date past 00:00–04:00 LIVE sales to the previous business date? | A. No backfill. B. Backfill `value_date` from the shift's business date. | **A**: no app is in production (`STATE.md`), and B is a data change on money rows. |
+
+## 8. Tickets and waves
+
+| Ticket | Class | Model | Files (File scope) | Wave |
+|---|---|---|---|---|
+| CS-1 `ShiftPlan` | logic | Argon | `shift_plan.rs` | 1 |
+| CS-2 `PgShiftTemplateStore` | mechanical | Flash | `infrastructure/shift_plan/pg_store.rs` | 1 |
+| CS-3 `ShiftPlanService` | logic | Argon | `application/shift_plan/service.rs` | 1 |
+| CS-4 custody window | logic | Argon | `custody_ports.rs` | 1 |
+| CS-5 floor hours + onBreak | logic | Argon | `staff_floor/reader.rs` | 1 (onBreak part after Q1) |
+| CS-6 `open_on_verified` | mechanical | Flash | `shift/service.rs` | 1 |
+| CS-7 OPEN count | guarded | Argon | `count_service.rs`, `commands/cash.rs` | 1 |
+| CS-8 LIVE `value_date` | guarded | Argon | `create.rs` | 1 |
+| CS-9 save command + view | mechanical | Flash | `branch_shifts_save.rs`, `views/branch_shifts.rs` | 1 |
+| CS-10 choices view | mechanical | Flash | `views/open_shift_choices.rs` | 1 |
+| CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + DTOs | 1 |
+| CS-13 seed on create | mechanical | Flash | `compat/rpc.rs` | 1 |
+| CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 2 (after CS-9) |
+| CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 2 (after CS-10) |
+| CS-16 admin cash UI | mechanical | Flash | `Cash.tsx`, `ShiftDetail.tsx` | 2 (after CS-11) |
+| CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | 3 (after board-currencies) |
+| CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | 3 (after CS-12) |
+| CS-18 floor onBreak UI | mechanical | Flash | `FloorCard.tsx` | after Q1 |
+
+Wave 1 is twelve disjoint File scopes, released together. Up-front tests for every `logic`/`guarded` ticket are written on the
+skeleton; `mechanical` tickets carry the behaviour table and the reviewer checks each row has a test that fails when reverted.
+
+## 9. Out of scope (found, not fixed here)
+
+- The receipt number's date is the Bangkok date of `now` (`document_ref.rs:12-30`), so a 02:00 receipt carries the next day's date.
+- A reversal closes at local midnight (`xc-exchange/src/domain/reversal/window.rs:11-17`), so a 23:30 sale in shift C can be reversed for 30 minutes only.
+- The queue's `service_date` (`xc-queue/.../ticket_issuer.rs:221`) and booking check-in (`bookings/check_in.rs:140`) use the calendar date.
+- Loyalty/receipt `business_date` comes from `value_date` (`complete.rs:261,270`); it becomes right once CS-8 lands, with no change there.
