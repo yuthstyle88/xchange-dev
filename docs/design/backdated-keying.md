@@ -385,6 +385,17 @@ CREATE INDEX transactions_backdated_day_idx ON transactions (branch_id, value_da
 **If no answer comes:** the skeleton and the function tickets go ahead on A/B/A/A. Q1 only changes BK-8 and one
 store reader, Q4 only changes BK-5, and the migration does not depend on any of the four.
 
+**Decided** (the owner, ~21:0x ICT 2026-11-04, *"Approve all"*, relayed by the lane controller claude/022a7453 on
+PR 6133): the migration of §10 as written · **Q1 = B** (the passport is optional for a backdated sale only; with none,
+no PASSPORT row is written, and readers already read a missing row as an empty key, `store.rs:230`) · **Q2 = A** (no
+approval request) · **Q3 = A** (role-based: EXECUTIVE and BRANCH_MANAGER). Q4 was not in that batch; the tickets
+build A (a certified day), which only BK-5 would change.
+
+**Replay order** (review follow-up on PR 6133): a backdated BUY's lot is stamped at entry time, and a backdated SELL
+disposes at the average as it stands at entry. So a replay keys its rows in deal-time order, and before any later
+live sale of the same currency, or its costs will not match the shop's books. Document numbers follow entry order
+within a date (`DocumentRef` uses Bangkok time; every branch today is in Asia/Bangkok).
+
 ## 12. Out of scope (stated so nobody assumes it)
 
 - Reversing a backdated sale (the reversal path checks the shift).
