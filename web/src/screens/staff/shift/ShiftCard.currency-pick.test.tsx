@@ -6,7 +6,7 @@
 //   OPEN   THB only (there is no shift yet, so nothing else is known for the teller);
 //   CLOSE  THB, plus every `my_shift` balance whose `expected` is numerically non-zero, in balance order.
 // A currency that is not on the form sends no lines (= 0), as a blank field does today.
-// The handover form is not part of this ticket: it keeps listing every denomination.
+// The handover form follows the same rule since the cash-forms CurrencyCount ticket (see ShiftCard.handover-currency.test.tsx).
 //
 // DOM contract (#5114 §4): rows keep `[data-denomination-row]` / `input[data-denomination-id]`; new hooks are
 // `currency-search`, `currency-option[data-currency]`, `currency-notfound`, `currency-group[data-currency]`,
@@ -341,13 +341,13 @@ describe('#5114 shift count form: search and add currencies, pre-add what the sh
     expect(posts[0]?.lines).toEqual([{ currency: 'THB', denominationId: 12, qty: '4' }]);
   });
 
-  it('row 10: the handover form is unchanged and lists every denomination with no search step', async () => {
+  it('row 10: the handover form now uses the same search and pre-adds THB plus non-zero balances (restated: cash forms reuse CurrencyCount)', async () => {
     stubViews();
     await mount(true);
 
     must<HTMLButtonElement>(tid('shift-handover')).click();
-    await vi.waitFor(() => expect(q(qty(31))).not.toBeNull());
-    for (const d of DENOMS) expect(q(qty(d.id)), `handover input ${d.id}`).not.toBeNull();
-    expect(q(tid('currency-search')), 'no search box on the handover form').toBeNull();
+    await vi.waitFor(() => expect(q(group('USD')), 'USD pre-added from my_shift').not.toBeNull());
+    must<HTMLInputElement>(tid('currency-search'));
+    expect(q(qty(31)), 'EUR (expected 0) not on the handover form until added').toBeNull();
   });
 });
