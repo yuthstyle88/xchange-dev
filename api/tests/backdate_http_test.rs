@@ -215,9 +215,10 @@ async fn b1_owner_keys_a_past_buy_with_no_shift_into_the_safe() {
     let row = desk
         .db
         .text(&format!(
-            "SELECT concat_ws('|', backdated, shift_id IS NULL, quote_id IS NULL, recorded_by, value_date, \
-                 paid_at = '{PAID_AT}'::timestamptz, completed_at = '{PAID_AT}'::timestamptz, \
-                 document_ref LIKE 'XC-20261104-%', recorded_at > now() - interval '10 minutes') \
+            "SELECT concat_ws('|', t.backdated::text, (t.shift_id IS NULL)::text, (t.quote_id IS NULL)::text, \
+                 t.recorded_by, t.value_date, (p.paid_at = '{PAID_AT}'::timestamptz)::text, \
+                 (t.completed_at = '{PAID_AT}'::timestamptz)::text, (t.document_ref LIKE 'XC-20261104-%')::text, \
+                 (t.recorded_at > now() - interval '10 minutes')::text) \
              FROM transactions t JOIN transaction_payments p ON p.transaction_id = t.id WHERE t.id = '{id}'"
         ))
         .await;

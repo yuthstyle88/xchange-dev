@@ -202,6 +202,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::BindingQuoteIssue,
             P::AttendanceCloseFor, // staff corrections SC-D2
             P::SettingsRead,       // #6004 (§11.11)
+            P::ExchangeBackdate,   // backdated keying (backdated-keying.md §3)
         ],
     ),
     (

@@ -136,7 +136,7 @@ async fn s1_a_backdated_draft_is_stored_marked_with_no_shift() {
     assert_eq!(
         desk.db
             .text(&format!(
-                "SELECT concat_ws('|', status, mode, backdated, shift_id IS NULL, recorded_by) \
+                "SELECT concat_ws('|', status, mode, backdated::text, (shift_id IS NULL)::text, recorded_by) \
                  FROM transactions WHERE id = '{}'",
                 t.id.0
             ))
@@ -223,7 +223,12 @@ async fn s5_a_backdated_draft_without_a_passport_writes_no_passport_row() {
         .insert_backdated_draft_in(&mut tx, &t)
         .await
         .expect("a backdated draft needs no passport");
-    let read = desk.store.find_in(&mut tx, t.id).await.unwrap().expect("it reads back");
+    let read = desk
+        .store
+        .find_in(&mut tx, t.id)
+        .await
+        .unwrap()
+        .expect("it reads back");
     assert_eq!(read.passport_file_key, "");
     tx.commit().await.unwrap();
     assert_eq!(
