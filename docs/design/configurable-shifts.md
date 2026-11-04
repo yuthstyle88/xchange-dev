@@ -727,7 +727,7 @@ ALTER TABLE cash_counts ALTER COLUMN business_date SET NOT NULL;
 - `shifts`: every row gets `business_date` = its local opening date; `template_id`/`template_name` stay NULL and report as the `null` group ("before shifts"). OPEN shifts at deploy keep working: closing never reads the template.
 - `cash_counts`: `shift_template_id` stays NULL; `business_date` is backfilled from the local date of `counted_at` (the rule reconciliation used until now, so old sheets do not move). An **unverified OPEN** count made before deploy opens an untemplated shift at verify (C8); measured below so it is zero at deploy.
 - **Why the backfill uses the calendar date.** A pre-feature shift or count at 00:30 keeps its calendar date, matching the calendar `value_date` its sales kept (Q6 = A). Re-dating them alone would split old days; leave it.
-- `transactions`: unchanged. Past 00:00–04:00 sales keep the calendar date the client sent (no backfill, Q6).
+- `transactions`: unchanged. Past sales made between midnight and the cutover keep the calendar date the client sent (no backfill, Q6).
 
 **(2) Backfill:** two, `shifts.business_date` and `cash_counts.business_date`, inside the migration (they must exist before `SET NOT NULL`). Not lazy, because the staff report and the reconciliation sheet group by them. Measure before deploy (on do-sgp1, read-only):
 ```sql
