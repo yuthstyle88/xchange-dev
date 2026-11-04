@@ -1,7 +1,7 @@
 //! Backdated keying (`docs/design/backdated-keying.md` §6; owner rule R4): one line priced at the rate the shop
 //! really used, as typed, never the published rate. Pure.
 
-use xc_kernel::money::{ForeignAmount, Money, Rate, Side, UnitSize};
+use xc_kernel::money::{ExchangeArithmetic, ForeignAmount, Money, Rate, Side, UnitSize};
 
 /// `[required]` The line's THB figures (`transaction_lines.thb_amount`, `fee_thb`, `settle_thb`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,13 +26,23 @@ impl PricingRefusal {
     /// `[required]` The input field it names: `"quantity"` for `Overflow`, `"feeThb"` for `SettleNotPositive`,
     /// `"expectedSettleThb"` for `SettleMismatch`.
     pub fn field(self) -> &'static str {
-        todo!("BK-3: backdated-keying.md §6")
+        match self {
+            Self::Overflow => "quantity",
+            Self::SettleNotPositive => "feeThb",
+            Self::SettleMismatch { .. } => "expectedSettleThb",
+        }
     }
 
     /// `[required]` The sentence: for `SettleMismatch` it contains the computed figure as `Money` prints it
     /// (e.g. `16075.00`).
     pub fn message(self) -> String {
-        todo!("BK-3: backdated-keying.md §6")
+        match self {
+            Self::Overflow => "amount overflows".to_string(),
+            Self::SettleNotPositive => "settle amount must be positive".to_string(),
+            Self::SettleMismatch { computed } => {
+                format!("expected settle does not match computed {computed}")
+            }
+        }
     }
 }
 
@@ -51,14 +61,34 @@ impl BackdatePricing {
         fee_thb: Money,
         expected_settle_thb: Option<Money>,
     ) -> Result<PricedLine, PricingRefusal> {
-        let _ = (
-            side,
-            quantity,
-            rate,
-            unit_size,
+        let thb_amount = ExchangeArithmetic::try_thb(quantity, rate, unit_size)
+            .map_err(|_| PricingRefusal::Overflow)?;
+        let settle_minor = match side {
+            Side::Buy => thb_amount
+                .minor_i128()
+                .checked_sub(fee_thb.minor_i128())
+                .ok_or(PricingRefusal::Overflow)?,
+            Side::Sell => thb_amount
+                .minor_i128()
+                .checked_add(fee_thb.minor_i128())
+                .ok_or(PricingRefusal::Overflow)?,
+        };
+        if settle_minor <= 0 {
+            return Err(PricingRefusal::SettleNotPositive);
+        }
+        let settle_thb =
+            Money::try_from_minor_i128(settle_minor).map_err(|_| PricingRefusal::Overflow)?;
+        if let Some(expected) = expected_settle_thb
+            && expected != settle_thb
+        {
+            return Err(PricingRefusal::SettleMismatch {
+                computed: settle_thb,
+            });
+        }
+        Ok(PricedLine {
+            thb_amount,
             fee_thb,
-            expected_settle_thb,
-        );
-        todo!("BK-3: backdated-keying.md §6")
+            settle_thb,
+        })
     }
 }
