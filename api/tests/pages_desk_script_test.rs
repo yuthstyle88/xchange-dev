@@ -280,7 +280,7 @@ async fn no_other_page_loads_the_desk_script() {
         ("/staff/report", "none"),
         ("/devices", "owner"),
         ("/login", "none"),
-        ("/kiosk", "none"),
+        ("/kiosk", "owner"),
         ("/kiosk-queue.html", "owner"),
         ("/kiosk-currencies.html", "owner"),
         ("/staff-guide", "owner"),

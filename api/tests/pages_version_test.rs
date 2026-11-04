@@ -196,9 +196,9 @@ macro_rules! expected {
 async fn plain_page_shows_the_build_and_it_matches_health_ready() {
     let app = app!(&fixtures().join("web"), None);
     let want = expected!(&app);
-    // /kiosk is chosen from v2_page_cases.json: it is a plain, unauthenticated v2 page
+    // /kiosk is chosen from v2_page_cases.json: it is a plain v2 page
     // that no V1, V2 or V3 screen will take over (design §6: Flutter app, not in this phase).
-    let (status, body) = get!(&app, "/kiosk", "none");
+    let (status, body) = get!(&app, "/kiosk", "owner");
     assert_eq!(status, StatusCode::OK);
     assert_eq!(version_text(&body, "/kiosk"), want);
 }
@@ -246,9 +246,9 @@ async fn the_values_are_escaped() {
         built_at: "2001-02-03T04:05:06Z".to_string(),
     };
     let app = app!(&fixtures().join("web"), Some(build));
-    // /kiosk is chosen from v2_page_cases.json: it is a plain, unauthenticated v2 page
+    // /kiosk is chosen from v2_page_cases.json: it is a plain v2 page
     // that no V1, V2 or V3 screen will take over (design §6: Flutter app, not in this phase).
-    let (_, body) = get!(&app, "/kiosk", "none");
+    let (_, body) = get!(&app, "/kiosk", "owner");
     let text = version_text(&body, "/kiosk with an odd build");
     assert!(!text.contains('<'), "raw HTML in the version line: {text}");
     assert!(text.contains("&lt;b&gt;x&lt;"), "escaped build: {text}");
@@ -256,13 +256,13 @@ async fn the_values_are_escaped() {
 
 #[actix_web::test]
 async fn a_page_without_a_body_end_gets_the_line_at_the_end_once() {
-    // /kiosk is chosen from v2_page_cases.json: it is a plain, unauthenticated v2 page
+    // /kiosk is chosen from v2_page_cases.json: it is a plain v2 page
     // that no V1, V2 or V3 screen will take over (design §6: Flutter app, not in this phase).
     let dir = std::env::temp_dir().join(format!("xc-version-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("kiosk.html"), "<html><head></head><p>no end tags").unwrap();
     let app = app!(&dir, None);
-    let (status, body) = get!(&app, "/kiosk", "none");
+    let (status, body) = get!(&app, "/kiosk", "owner");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.matches(MARK).count(), 1, "{body}");
@@ -284,9 +284,9 @@ async fn a_release_server_says_release_on_every_page() {
         "expected! must end with ` · release`: {want}"
     );
 
-    // /kiosk is chosen from v2_page_cases.json: it is a plain, unauthenticated v2 page
+    // /kiosk is chosen from v2_page_cases.json: it is a plain v2 page
     // that no V1, V2 or V3 screen will take over (design §6: Flutter app, not in this phase).
-    let (status, body) = get!(&app, "/kiosk", "none");
+    let (status, body) = get!(&app, "/kiosk", "owner");
     assert_eq!(status, StatusCode::OK);
     let got = version_text(&body, "/kiosk");
     assert_eq!(got, want);
