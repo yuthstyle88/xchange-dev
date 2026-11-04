@@ -46,14 +46,23 @@ export class ApiError extends Error {
   readonly code: string;
   readonly field?: string;
   readonly reason?: string;
+  readonly details?: unknown;
   readonly status: number;
 
-  constructor(init: { code: string; field?: string; reason?: string; message: string; status: number }) {
+  constructor(init: {
+    code: string;
+    field?: string;
+    reason?: string;
+    details?: unknown;
+    message: string;
+    status: number;
+  }) {
     super(init.message);
     this.name = 'ApiError';
     this.code = init.code;
     this.field = init.field;
     this.reason = init.reason;
+    this.details = init.details;
     this.status = init.status;
   }
 }
@@ -83,6 +92,7 @@ export class ApiClient {
           code: json.error.code ?? 'unknown',
           field: json.error.field,
           reason,
+          details: json.error.details,
           message: json.error.message ?? text,
           status: res.status,
         });

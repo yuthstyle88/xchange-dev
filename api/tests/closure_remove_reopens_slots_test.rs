@@ -245,10 +245,12 @@ async fn r3_a_booked_slot_stays_open_throughout() {
     db.finish().await;
 }
 
-// R4: a rule change closes R (closed_by = 'RULE'); undoing the rule does not reopen it (out of scope),
-// and a closure added and removed on R's date leaves it CLOSED although R is planned again.
+// R4, restated for #6079 by its ticket author (claude/b091f5e0) on the xchange lane controller's ruling
+// (issuecomment-6624616081, 13:51 ICT 2026-11-04): a rule change closes R (closed_by = 'RULE'); undoing the rule
+// reopens it, because R is empty, future and planned again. A closure added and removed on R's date then closes and
+// reopens it as any other slot of the day. Was: undoing the rule reopens nothing.
 #[actix_web::test]
-async fn r4_a_rule_closed_slot_stays_closed_after_the_closure_is_removed() {
+async fn r4_a_rule_closed_slot_reopens_when_the_rule_is_undone() {
     let db = TestDb::start().await;
     let d = seed(&db).await;
     let ten = rows_on(&db, d).await[1].clone();
@@ -261,12 +263,12 @@ async fn r4_a_rule_closed_slot_stays_closed_after_the_closure_is_removed() {
         "rule change writes RULE"
     );
 
-    // Back to 60 minutes: 10:00 is planned again, still CLOSED by the rule.
+    // Back to 60 minutes: 10:00 is planned again and reopens.
     set_rule(&db, 60).await;
     assert_eq!(
         state(&row(&db, ten.0).await),
-        ("CLOSED", Some("RULE")),
-        "rule restore reopens nothing"
+        ("OPEN", None),
+        "rule restore reopens the slot the rule closed"
     );
     let nine = rows_on(&db, d).await[0].0;
     assert_eq!(
@@ -280,8 +282,8 @@ async fn r4_a_rule_closed_slot_stays_closed_after_the_closure_is_removed() {
 
     assert_eq!(
         state(&row(&db, ten.0).await),
-        ("CLOSED", Some("RULE")),
-        "R stays closed by the rule"
+        ("OPEN", None),
+        "R was closed by the closure and reopened by its removal"
     );
     assert_eq!(
         state(&row(&db, nine).await),

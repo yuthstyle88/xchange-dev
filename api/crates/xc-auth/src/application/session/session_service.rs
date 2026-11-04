@@ -1169,12 +1169,15 @@ impl SessionService {
         name: &str,
         phone: &str,
         password: &str,
+        host: &str,
         now: DateTime<Utc>,
     ) -> Result<String, String> {
         let identity = self
             .identity
             .as_ref()
             .ok_or_else(|| "Identity is not configured (IDENTITY_BASE_URL)".to_string())?;
+
+        let host = super::owner_host::OwnerHost::parse(host)?;
 
         let owners: Vec<(String, String, String)> = sqlx::query_as(
             "SELECT u.id::text, u.status, u.organization_id::text \
@@ -1214,11 +1217,16 @@ impl SessionService {
             }
             [(user_id, status, org_id)] => match status.as_str() {
                 "PENDING" => (org_id.clone(), Some(user_id.clone())),
-                "ACTIVE" => return Err("The owner user is already ACTIVE".to_string()),
+                "ACTIVE" => {
+                    host.record(&self.pool, org_id).await?;
+                    return Err("The owner user is already ACTIVE".to_string());
+                }
                 other => return Err(format!("Owner user has invalid status {other}")),
             },
             _ => return Err("More than one owner user exists".to_string()),
         };
+
+        host.record(&self.pool, &org_id).await?;
 
         // A PENDING owner (the users migration's mirror of the owner account, or an earlier run that
         // Identity refused) takes the name this command gives it.

@@ -266,7 +266,7 @@ const PAGES: [(&str, bool); 13] = [
     ("/staff/desk", false),
     ("/devices", true),
     ("/login", false),
-    ("/kiosk", false),
+    ("/kiosk", true),
     ("/kiosk-queue.html", true),
     ("/kiosk-currencies.html", true),
     ("/staff-guide", true),
@@ -466,8 +466,8 @@ async fn every_page_answers_as_v2_does() {
             }
         }
     }
-    // one /staff case moved 200 → 303 by S-3
-    assert_eq!(seen, [63, 15, 12, 7], "200 / 400 / 303 / 302");
+    // one /staff case moved 200 → 303 by S-3, /kiosk unsigned moved 200 → 303 by #6096
+    assert_eq!(seen, [62, 15, 13, 7], "200 / 400 / 303 / 302");
 }
 
 /// (X-Forwarded-Proto, Host, further headers, the origin a redirect must name)
@@ -1044,4 +1044,34 @@ async fn the_fallback_alone_serves_static_files_and_no_page() {
         .await
         .expect("read the body");
     assert_eq!(&body[..], b"body{color:#123}\n");
+}
+
+// ----------------------------------------------------------------- kiosk (#6096)
+
+#[actix_web::test]
+async fn k1_kiosk_with_no_session_redirects_to_login() {
+    let app = app!(&fixtures().join("web"));
+    let kiosk = ask(&app, get("/kiosk", "none").to_request()).await;
+    let devices = ask(&app, get("/devices", "none").to_request()).await;
+    assert_eq!(kiosk.status, StatusCode::SEE_OTHER);
+    assert_eq!(kiosk.status, devices.status);
+    assert_eq!(
+        kiosk.header("location"),
+        Some(format!("http://{HOST}/login?next=%2Fkiosk").as_str())
+    );
+}
+
+#[actix_web::test]
+async fn k2_kiosk_signed_in_serves_kiosk_html() {
+    let app = app!(&fixtures().join("web"));
+    let answer = ask(&app, get("/kiosk", "staff:FRONT:XC-B01").to_request()).await;
+    assert_eq!(answer.status, StatusCode::OK);
+    assert_eq!(
+        without_version_line(
+            std::str::from_utf8(&answer.body).expect("utf-8"),
+            true,
+            "GET /kiosk as staff"
+        ),
+        "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+    );
 }

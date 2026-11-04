@@ -154,6 +154,7 @@ export * from './staff_daily_report';
 export * from './staff_floor';
 export * from './staff_holds';
 export * from './staff_me';
+export * from './stock_shortfall';
 export * from './supersede_referral';
 export * from './ticket_still_serving';
 export * from './transaction';

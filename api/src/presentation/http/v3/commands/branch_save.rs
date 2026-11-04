@@ -8,6 +8,8 @@ use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::Utc;
+use chrono_tz::Tz;
 use pos_error::AppError;
 use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,8 @@ use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_booking::application::slot_service::SlotService;
+use xc_booking::infrastructure::slot_repository::PgSlotRepository;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::{BranchProfile, BranchService};
@@ -158,6 +162,24 @@ impl CommandAction for BranchSaveCommand {
                     server_error()
                 }
             })?;
+        let horizon_days: Option<i32> =
+            sqlx::query_scalar("SELECT horizon_days FROM booking_slot_rules WHERE branch_id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|_| server_error())?;
+        if let Some(horizon_days) = horizon_days {
+            let tz: Tz = saved.timezone.parse().unwrap_or(chrono_tz::Asia::Bangkok);
+            let today = Utc::now().with_timezone(&tz).date_naive();
+            let slots = SlotService::new(
+                self.0.clone(),
+                Arc::new(PgSlotRepository::new(self.0.clone())),
+            );
+            slots
+                .generate_in(tx, branch, today, horizon_days as u32)
+                .await
+                .map_err(V3Error::from)?;
+        }
         Ok(AdminBranchProfileData {
             branch: saved.id.as_str().to_owned(),
             name: saved.name,

@@ -33,8 +33,11 @@ async fn main() -> Result<(), anyhow::Error> {
 
             Ok(())
         }
-        [_, cmd, name_flag, name, phone_flag, phone]
-            if cmd == "create-owner" && name_flag == "--name" && phone_flag == "--phone" =>
+        [_, cmd, name_flag, name, phone_flag, phone, host_flag, host]
+            if cmd == "create-owner"
+                && name_flag == "--name"
+                && phone_flag == "--phone"
+                && host_flag == "--host" =>
         {
             // The password is one line on standard input, never an argument: it stays off the
             // command line and out of the shell history (deploy/README.md, "First owner account").
@@ -55,12 +58,12 @@ async fn main() -> Result<(), anyhow::Error> {
             let now = chrono::Utc::now();
 
             match session_service
-                .create_owner(name, phone, &password, now)
+                .create_owner(name, phone, &password, host, now)
                 .await
             {
                 Ok(user_id) => {
                     println!(
-                        "Owner {name} created (user {user_id}); sign in on /login with the phone"
+                        "Owner {name} created (user {user_id}); host {host} linked; sign in on /login with the phone"
                     );
                     Ok(())
                 }

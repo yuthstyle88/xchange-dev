@@ -239,17 +239,13 @@
    "body": "<!doctype html><html><head><title>login (fixture)</title></head><body><form></form></body></html>\n"
   },
   {
-   "label": "nobody is signed in, and need not be",
+   "label": "nobody is signed in",
    "dir": "web",
    "path": "/kiosk",
    "query": "",
    "visitor": "none",
-   "status": 200,
-   "headers": {
-    "cache-control": "no-store",
-    "content-type": "text/html; charset=utf-8"
-   },
-   "body": "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+   "status": 303,
+   "location": "/login"
   },
   {
    "label": "nobody is signed in",

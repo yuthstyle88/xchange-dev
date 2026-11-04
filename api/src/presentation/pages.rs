@@ -151,7 +151,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         path: "/kiosk",
         file: "kiosk.html",
         kind: PageKind::Plain,
-        who_signed_in: false,
+        who_signed_in: true,
         scripts: &[],
     },
     PageSpec {

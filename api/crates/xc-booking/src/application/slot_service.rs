@@ -48,6 +48,7 @@ type ExistingSlotRow = (
     i32,
     i32,
     String,
+    Option<String>,
 );
 
 struct ExistingSlotInfo {
@@ -57,6 +58,7 @@ struct ExistingSlotInfo {
     capacity: i32,
     reserved: i32,
     status: String,
+    closed_by: Option<String>,
 }
 
 struct BranchSchedule {
@@ -604,7 +606,7 @@ impl SlotService {
         let to_date = from + chrono::Duration::days(days as i64);
 
         let existing_rows: Vec<ExistingSlotRow> = sqlx::query_as(
-            "SELECT id, service_date, start_at, end_at, capacity, reserved, status \
+            "SELECT id, service_date, start_at, end_at, capacity, reserved, status, closed_by \
              FROM booking_slots \
              WHERE branch_id = $1 AND service_date >= $2 AND service_date < $3 \
              FOR UPDATE",
@@ -620,7 +622,16 @@ impl SlotService {
             existing_rows
                 .into_iter()
                 .map(
-                    |(id, service_date, start_at, end_at, capacity, reserved, status)| {
+                    |(
+                        id,
+                        service_date,
+                        start_at,
+                        end_at,
+                        capacity,
+                        reserved,
+                        status,
+                        closed_by,
+                    )| {
                         (
                             start_at,
                             ExistingSlotInfo {
@@ -630,6 +641,7 @@ impl SlotService {
                                 capacity,
                                 reserved,
                                 status,
+                                closed_by,
                             },
                         )
                     },
@@ -640,24 +652,41 @@ impl SlotService {
         let mut added = 0;
         for p in &planned {
             if let Some(info) = existing_by_start.get_mut(&p.start_at) {
-                if info.reserved == 0
-                    && p.start_at > now
-                    && (info.end_at != p.end_at || info.capacity != rule.capacity)
-                {
-                    sqlx::query(
-                        "UPDATE booking_slots \
-                         SET end_at = $2, capacity = $3, updated_at = now() \
-                         WHERE id = $1",
-                    )
-                    .bind(info.id)
-                    .bind(p.end_at)
-                    .bind(rule.capacity)
-                    .execute(&mut **tx)
-                    .await
-                    .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+                if info.reserved == 0 && p.start_at > now {
+                    if info.status == "CLOSED"
+                        && info.closed_by.as_deref() == Some(ClosedBy::Rule.as_str())
+                        && info.end_at == p.end_at
+                    {
+                        sqlx::query(
+                            "UPDATE booking_slots \
+                             SET status = 'OPEN', closed_by = NULL, capacity = $2, updated_at = now() \
+                             WHERE id = $1",
+                        )
+                        .bind(info.id)
+                        .bind(rule.capacity)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(|e| SlotError::Store(AppError::Database(e)))?;
 
-                    info.end_at = p.end_at;
-                    info.capacity = rule.capacity;
+                        info.status = "OPEN".to_string();
+                        info.closed_by = None;
+                        info.capacity = rule.capacity;
+                    } else if info.end_at != p.end_at || info.capacity != rule.capacity {
+                        sqlx::query(
+                            "UPDATE booking_slots \
+                             SET end_at = $2, capacity = $3, updated_at = now() \
+                             WHERE id = $1",
+                        )
+                        .bind(info.id)
+                        .bind(p.end_at)
+                        .bind(rule.capacity)
+                        .execute(&mut **tx)
+                        .await
+                        .map_err(|e| SlotError::Store(AppError::Database(e)))?;
+
+                        info.end_at = p.end_at;
+                        info.capacity = rule.capacity;
+                    }
                 }
             } else {
                 let slot_id = Uuid::new_v4();
@@ -690,6 +719,7 @@ impl SlotService {
                             capacity: rule.capacity,
                             reserved: 0,
                             status: "OPEN".to_string(),
+                            closed_by: None,
                         },
                     );
                 }

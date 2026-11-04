@@ -105,20 +105,21 @@ a real host in this form (the two scripts they were cleaned up from were, on
 The server starts on an empty database and has no sign-up page. The first owner
 is created once, on the host, with the `create-owner` sub-command; it reads the
 password as one line from standard input and refuses when an owner already
-exists.
+exists. The host is the name browsers open (for example `xc-v3.spacing.cloud`),
+without a scheme, path or `:80`/`:443`.
 
 ```bash
 read -rs -p 'Owner password: ' XC_OWNER_PW; echo
 printf '%s\n' "$XC_OWNER_PW" | sudo -u xc-v3 bash -c \
-  'set -a; . /etc/xc-v3/env; set +a; cd /opt/xc-v3 && exec ./xchange create-owner --name "$1" --phone "$2"' \
-  _ <name> <phone>
+  'set -a; . /etc/xc-v3/env; set +a; cd /opt/xc-v3 && exec ./xchange create-owner --name "$1" --phone "$2" --host "$3"' \
+  _ <name> <phone> <host>
 unset XC_OWNER_PW
 ```
 
 - `read -rs` does not echo the password, and `printf` is a shell builtin, so the
   password is never on a command line (`ps`) or in the shell history.
 - It runs as the service user with the same env file the service uses, so it
-  reaches the same database. Expected output: `Owner <name> created (user <id>); sign in on /login with the phone`.
+  reaches the same database. Expected output: `Owner <name> created (user <id>); host <host> linked; sign in on /login with the phone`.
 - Changing an owner's password later is not designed yet
   (`docs/design/xchange-v3.md`, "First owner").
 
