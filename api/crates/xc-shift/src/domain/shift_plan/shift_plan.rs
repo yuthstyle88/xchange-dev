@@ -40,20 +40,9 @@ fn duration_secs(start: NaiveTime, end: NaiveTime) -> i64 {
     if d <= 0 { d + DAY_SECS } else { d }
 }
 
-fn end_offset_secs(anchor: NaiveTime, start: NaiveTime, end: NaiveTime) -> i64 {
-    offset_secs(anchor, start) + duration_secs(start, end)
-}
-
-fn anchor(windows: impl Iterator<Item = (NaiveTime, NaiveTime)> + Clone) -> Option<NaiveTime> {
-    windows.clone().map(|(s, _)| s).min_by_key(|&s| {
-        let max_end = windows
-            .clone()
-            .map(|(start, end)| end_offset_secs(s, start, end))
-            .max()
-            .unwrap_or(0);
-        let gap = (DAY_SECS - max_end).max(0);
-        (-gap, s)
-    })
+fn time_at(anchor: NaiveTime, offset: i64) -> NaiveTime {
+    let total = (secs(anchor) + offset).rem_euclid(DAY_SECS) as u32;
+    NaiveTime::from_num_seconds_from_midnight_opt(total, 0).expect("a valid wall-clock time")
 }
 
 fn local_to_utc(tz: &Tz, naive: &NaiveDateTime) -> DateTime<Utc> {
@@ -69,7 +58,7 @@ impl ShiftPlan {
     pub const MAX_NAME_CHARS: usize = 40;
 
     /// T5. Trims names and returns the inputs in the given order, or the first refusal found
-    /// (row checks in row order, then `SpanOver24h`).
+    /// (row checks in row order, then 24-hour coverage from `S0`).
     pub fn validate(
         inputs: Vec<ShiftTemplateInput>,
     ) -> Result<Vec<ShiftTemplateInput>, PlanRefusal> {
@@ -107,15 +96,37 @@ impl ShiftPlan {
             trimmed.push(row);
         }
 
-        let s0 = anchor(trimmed.iter().map(|t| (t.starts_at, t.ends_at)))
-            .expect("non-empty validated inputs");
-        let max_end = trimmed
+        let s0 = trimmed
             .iter()
-            .map(|t| end_offset_secs(s0, t.starts_at, t.ends_at))
-            .max()
-            .unwrap_or(0);
-        if max_end > DAY_SECS {
-            return Err(PlanRefusal::SpanOver24h);
+            .map(|t| t.starts_at)
+            .min()
+            .expect("non-empty validated inputs");
+        let mut segments = Vec::with_capacity(trimmed.len() * 2);
+        for t in &trimmed {
+            let start = offset_secs(s0, t.starts_at);
+            let end = start + duration_secs(t.starts_at, t.ends_at);
+            segments.push((start, end.min(DAY_SECS)));
+            if end > DAY_SECS {
+                segments.push((0, end - DAY_SECS));
+            }
+        }
+        segments.sort_by_key(|&(start, _)| start);
+
+        let mut covered_until = 0;
+        for (start, end) in segments {
+            if start > covered_until {
+                return Err(PlanRefusal::Gap {
+                    from: time_at(s0, covered_until),
+                    to: time_at(s0, start),
+                });
+            }
+            covered_until = covered_until.max(end);
+        }
+        if covered_until < DAY_SECS {
+            return Err(PlanRefusal::Gap {
+                from: time_at(s0, covered_until),
+                to: s0,
+            });
         }
 
         Ok(trimmed)
@@ -154,7 +165,7 @@ impl ShiftPlan {
     }
 
     fn anchor(&self) -> Option<NaiveTime> {
-        anchor(self.templates.iter().map(|t| (t.starts_at, t.ends_at)))
+        self.templates.iter().map(|t| t.starts_at).min()
     }
 
     fn at_offset(&self, date: NaiveDate, s0: NaiveTime, offset: i64) -> DateTime<Utc> {
@@ -184,14 +195,15 @@ impl ShiftPlan {
         }
     }
 
-    /// T6: the instances whose `[starts_at, ends_at)` holds `now`, for business dates local today and local
-    /// yesterday; plan order, and for one template the earlier date first.
+    /// T6: the instances whose `[starts_at, ends_at)` holds `now`, for business dates local today,
+    /// yesterday and the day before; plan order, and for one template the earlier date first.
     pub fn covering(&self, now: DateTime<Utc>) -> Vec<ShiftInstance> {
         let today = now.with_timezone(&self.tz).date_naive();
         let yesterday = today.pred_opt().expect("valid predecessor date");
+        let two_days_ago = yesterday.pred_opt().expect("valid predecessor date");
         let mut out = Vec::new();
         for t in &self.templates {
-            for d in [yesterday, today] {
+            for d in [two_days_ago, yesterday, today] {
                 let inst = self.instance(t, d);
                 if inst.starts_at <= now && now < inst.ends_at {
                     out.push(inst);
@@ -211,28 +223,18 @@ impl ShiftPlan {
         })
     }
 
-    /// T4: `[date + S0, date + S0 + max endOffset)`; `None` for an empty plan.
+    /// T4: `[date + S0, date + S0 + 24 h)`; `None` for an empty plan.
     pub fn service_span(&self, date: NaiveDate) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
         let s0 = self.anchor()?;
-        let max_end = self
-            .templates
-            .iter()
-            .map(|t| end_offset_secs(s0, t.starts_at, t.ends_at))
-            .max()?;
         Some((
             self.at_offset(date, s0, 0),
-            self.at_offset(date, s0, max_end),
+            self.at_offset(date, s0, DAY_SECS),
         ))
     }
 
-    /// The span holding `now`, else the next span to start (today's or tomorrow's); `None` for an empty plan.
+    /// The span of `business_date_of(now)`; `None` for an empty plan.
     pub fn span_for(&self, now: DateTime<Utc>) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
-        let today = now.with_timezone(&self.tz).date_naive();
-        let dates = [today.pred_opt()?, today, today.succ_opt()?];
-        dates
-            .into_iter()
-            .filter_map(|d| self.service_span(d))
-            .find(|&(_, end)| end > now)
+        self.service_span(self.business_date_of(now)?)
     }
 
     /// True while `now` is inside the break of a covering instance of `template_id`.
