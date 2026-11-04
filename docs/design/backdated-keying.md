@@ -201,7 +201,7 @@ Nobody waits, and nobody edits another ticket's file.
   (`Need::Owner`-style), not a seed change (§11 Q3).
 - `[required]` The policy row lives in `areas/backdated_keying.rs`:
   `(EntryPath::Rpc, "transactionBackdate") → Need::Permission(Permission::ExchangeBackdate)`, `RowScope::Request`.
-  A teller is refused by the seam with `403 roleNotAllowedHere`, before any read.
+  A teller is refused by the seam with `400 roleNotAllowedHere`, before any read.
 - Seeding needs no SQL. `role_grant_store.rs` re-seeds built-in groups whose `seed_version < SEED_VERSION` at boot.
 
 ## 4. API (R2, R4)
@@ -234,7 +234,7 @@ same key with another body, as every v3 command does).
 
 | Case | Answer |
 |---|---|
-| Caller lacks `exchangeBackdate` (teller) | `403 roleNotAllowedHere`; nothing read or written |
+| Caller lacks `exchangeBackdate` (teller) | `400 roleNotAllowedHere` (the seam's status for that code across this API, `actor_role_5630_test.rs:373`); nothing read or written |
 | `paidAt` later than now | `400 validationFailed`, field `payment.paidAt` |
 | `valueDate` ≠ `paidAt`'s date in the branch timezone | `400 validationFailed`, field `valueDate` |
 | `valueDate` after today in the branch timezone | `400 validationFailed`, field `valueDate` |
@@ -293,6 +293,11 @@ same key with another body, as every v3 command does).
   `legs(&t, CashPlace::Safe(t.branch_id))`.
 - BUY cash: foreign `Customer → SAFE`, THB `SAFE → Customer`. BUY transfer: foreign `Customer → SAFE`, THB
   `Bank → Customer`. SELL is the mirror image. These are the same legs as today, with the drawer replaced by the SAFE.
+- `[required]` The foreign stock moves exactly as a desk BUY's does (lane controller, 2026-11-04). The SAFE is an
+  "inside" place (`ledger_postings.rs:532-536`), so `Customer → SAFE` takes the same acquire arm as
+  `Customer → Drawer`: one `inventory_lots` row, an `inventory_movements` row and the `inventory_positions` update in
+  the posting itself (`:745-777`, `:1094-1140`). A SELL disposes at the average. `backdate_http_test::b1` pins the
+  position and the lot.
 - `[required]` The posting keeps the ledger's never-below-zero rule. A backdated BUY in cash needs the THB in the SAFE
   at entry time, or it is refused `stockInsufficient`. A replay funds the SAFE first through the normal external-in
   transfer. No negative-stock approval is offered on this path.
@@ -310,6 +315,11 @@ same key with another body, as every v3 command does).
   `receipt_html_marked(…, ReceiptMarks::default())`, so every existing caller prints the same bytes.
 - `[required]` With `backdated = Some(m)` the receipt's banner slot (the `{{DEMO_BANNER}}` placeholder, `receipt.rs:13-18`)
   prints `ย้อนหลัง · บันทึกเมื่อ <m.entered_at, Asia/Bangkok, dd/MM/yyyy HH:mm>`. A DEMO receipt is never backdated.
+
+- Audit (decided 2026-11-04, owner review input on PR 6169): a backdated sale writes **one** audit event,
+  `transaction.backdated` (§5), and no `transaction.created` / `transaction.confirmed`. The draft and its confirmation
+  happen inside the same call by the same keyer, with no approval in between (§11 Q2 = A), so separate events would
+  add no fact. `transaction.backdated` carries the deal time, the business date, the rate and the real entry.
 
 ## 9. Reads and reports (R4)
 
@@ -385,6 +395,17 @@ CREATE INDEX transactions_backdated_day_idx ON transactions (branch_id, value_da
 **If no answer comes:** the skeleton and the function tickets go ahead on A/B/A/A. Q1 only changes BK-8 and one
 store reader, Q4 only changes BK-5, and the migration does not depend on any of the four.
 
+**Decided** (the owner, ~21:0x ICT 2026-11-04, *"Approve all"*, relayed by the lane controller claude/022a7453 on
+PR 6133): the migration of §10 as written · **Q1 = B** (the passport is optional for a backdated sale only; with none,
+no PASSPORT row is written, and readers already read a missing row as an empty key, `store.rs:230`) · **Q2 = A** (no
+approval request) · **Q3 = A** (role-based: EXECUTIVE and BRANCH_MANAGER). Q4 was not in that batch; the tickets
+build A (a certified day), which only BK-5 would change.
+
+**Replay order** (review follow-up on PR 6133): a backdated BUY's lot is stamped at entry time, and a backdated SELL
+disposes at the average as it stands at entry. So a replay keys its rows in deal-time order, and before any later
+live sale of the same currency, or its costs will not match the shop's books. Document numbers follow entry order
+within a date (`DocumentRef` uses Bangkok time; every branch today is in Asia/Bangkok).
+
 ## 12. Out of scope (stated so nobody assumes it)
 
 - Reversing a backdated sale (the reversal path checks the shift).
@@ -411,7 +432,7 @@ store reader, Q4 only changes BK-5, and the migration does not depend on any of 
 |---|---|---|
 | B1 | Owner, BUY 500 USD cash at `rate 32.15`, `paidAt` 2026-11-04 13:23 ICT, `valueDate` 2026-11-04, no shift open anywhere, SAFE funded | 200; COMPLETED; `backdated = true`; `shift_id IS NULL`; `paid_at` as sent; `recorded_at` within the request; `recorded_by` = Owner's id; `completed_at = paid_at`; `document_ref` starts `XC-20261104-`; SAFE USD +500, SAFE THB −16075.00 |
 | B2 | Branch Manager, same | 200, as B1 |
-| B3 | Teller, same | 403 `roleNotAllowedHere`; no row |
+| B3 | Teller, same | 400 `roleNotAllowedHere`; no row |
 | B4 | `valueDate` certified | 409 `dayClosed`; no row, no posting |
 | B5 | `paidAt` one minute in the future | 400 `validationFailed` `payment.paidAt` |
 | B6 | `paidAt` 2026-11-04 00:30 ICT, `valueDate` 2026-11-03 | 400 `validationFailed` `valueDate` |

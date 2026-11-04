@@ -11,6 +11,7 @@ use xc_kernel::money::{
 
 use crate::domain::exchange::value_objects::document_ref::DocumentRef;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+use crate::domain::transaction::backdate_mark::BackdateMark;
 use crate::domain::transaction::line::TransactionLine;
 use crate::domain::transaction::payment::TransactionPayment;
 use crate::domain::transaction::receipt_record::Receipt;
@@ -60,157 +61,7 @@ impl TransactionStore for PgTransactionStore {
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         t: &'a ExchangeTransaction,
     ) -> AppResult<()> {
-        if t.status != TransactionStatus::Draft {
-            return Err(AppError::Domain(
-                "validationFailed: status must be DRAFT".into(),
-            ));
-        }
-        if t.document_ref.is_some() {
-            return Err(AppError::Domain(
-                "validationFailed: draft cannot have a document_ref".into(),
-            ));
-        }
-        if !t.receipts.is_empty() {
-            return Err(AppError::Domain(
-                "validationFailed: draft cannot have receipts".into(),
-            ));
-        }
-        if t.lines.len() != 1 {
-            return Err(AppError::Domain(
-                "validationFailed: draft must have exactly one line".into(),
-            ));
-        }
-
-        let line = &t.lines[0];
-        let side_str = match line.shop_side {
-            Side::Buy => "BUY",
-            Side::Sell => "SELL",
-        };
-
-        sqlx::query(
-            "INSERT INTO transactions ( \
-                id, organization_id, branch_id, mode, status, document_ref, quote_id, \
-                booking_id, shift_id, submission_id, payload_hash, customer_id, customer_name, \
-                nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
-                recorded_by, kiosk_request_id, queue_ticket_id, staff_draft_id, count_confirmed \
-            ) VALUES ( \
-                $1, $2, $3, $4, 'DRAFT', NULL, $5, \
-                $6, $7, $8, $9, $10, $11, \
-                $12, $13, $14, $15, $16, $17, $18, \
-                $19, $20, $21::uuid, $22, $23 \
-            )",
-        )
-        .bind(t.id.0)
-        .bind(t.organization_id)
-        .bind(t.branch_id.as_str())
-        .bind(t.mode.as_str())
-        .bind(t.quote_id)
-        .bind(t.booking_id.as_deref())
-        .bind(t.shift_id.as_deref())
-        .bind(&t.submission_id)
-        .bind(&t.payload_hash)
-        .bind(&t.customer_id)
-        .bind(&t.customer_name)
-        .bind(&t.nationality)
-        .bind(&t.staff_id)
-        .bind(&t.booking_no)
-        .bind(&t.notes)
-        .bind(t.value_date)
-        .bind(t.payment.paid_at)
-        .bind(t.recorded_at)
-        .bind(&t.recorded_by)
-        .bind(t.kiosk_request_id.as_deref())
-        .bind(t.queue_ticket_id.as_deref())
-        .bind(t.staff_draft_id.as_deref())
-        .bind(t.count_confirmed)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| {
-            if let sqlx::Error::Database(db) = &e
-                && db.constraint() == Some("transactions_one_per_queue_ticket")
-            {
-                return AppError::Domain(format!(
-                    "staleVersion: queue ticket {} already has a sale",
-                    t.queue_ticket_id.as_deref().unwrap_or_default()
-                ));
-            }
-            AppError::Database(e)
-        })?;
-
-        sqlx::query(
-            "INSERT INTO transaction_lines ( \
-                id, organization_id, transaction_id, quote_line_id, shop_side, currency, \
-                denomination_id, quantity, unit_size, rate_snapshot, reference_rate, \
-                thb_amount, fee_thb, settle_thb, cost_basis_thb, realized_margin_thb, \
-                line_no, created_at, updated_at \
-            ) VALUES ( \
-                $1, $2, $3, $4, $5, $6, \
-                $7, $8::numeric, $9::numeric, $10::numeric, $11::numeric, \
-                $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, \
-                $17, $18, $19 \
-            )",
-        )
-        .bind(line.id)
-        .bind(t.organization_id)
-        .bind(t.id.0)
-        .bind(line.quote_line_id)
-        .bind(side_str)
-        .bind(line.currency.as_str())
-        .bind(None::<Uuid>)
-        .bind(line.quantity.value().to_string())
-        .bind(line.unit_size.value().to_string())
-        .bind(line.rate_snapshot.value().to_string())
-        .bind(line.reference_rate.map(|r| r.value().to_string()))
-        .bind(line.thb_amount.to_string())
-        .bind(line.fee_thb.to_string())
-        .bind(line.settle_thb.to_string())
-        .bind(line.cost_basis_thb.map(|m| m.to_string()))
-        .bind(line.realized_margin_thb.map(|m| m.to_string()))
-        .bind(line.line_no)
-        .bind(t.recorded_at)
-        .bind(t.recorded_at)
-        .execute(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        sqlx::query(
-            "INSERT INTO transaction_payments ( \
-                id, organization_id, transaction_id, payment_no, method, reference, \
-                account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
-                created_at, updated_at \
-            ) VALUES ( \
-                $1, $2, $3, $4, $5, $6, \
-                $7, $8, $9::numeric, $10::numeric, $11, \
-                $12, $13 \
-            )",
-        )
-        .bind(t.payment.id)
-        .bind(t.organization_id)
-        .bind(t.id.0)
-        .bind(t.payment.payment_no)
-        .bind(t.payment.method.as_str())
-        .bind(&t.payment.reference)
-        .bind(&t.payment.account)
-        .bind(t.payment.slip_file_key.as_deref())
-        .bind(t.payment.amount_thb.to_string())
-        .bind(t.payment.bank_fee_thb.to_string())
-        .bind(t.payment.paid_at)
-        .bind(t.recorded_at)
-        .bind(t.recorded_at)
-        .execute(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        sqlx::query(
-            "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, 'PASSPORT', $2)",
-        )
-        .bind(t.id.0)
-        .bind(&t.passport_file_key)
-        .execute(&mut **tx)
-        .await
-        .map_err(AppError::Database)?;
-
-        Ok(())
+        insert_draft_with(tx, t, false).await
     }
 
     async fn find_in<'a>(
@@ -628,6 +479,205 @@ impl TransactionStore for PgTransactionStore {
         }
         Ok(())
     }
+
+    async fn insert_backdated_draft_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        t: &'a ExchangeTransaction,
+    ) -> AppResult<()> {
+        if t.mode != Mode::Live || t.shift_id.is_some() {
+            return Err(AppError::Domain(
+                "validationFailed: a backdated draft is LIVE with no shift".into(),
+            ));
+        }
+        insert_draft_with(tx, t, true).await
+    }
+
+    async fn backdate_mark_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+    ) -> AppResult<Option<BackdateMark>> {
+        let row = sqlx::query(
+            "SELECT recorded_at, recorded_by FROM transactions WHERE id = $1 AND backdated",
+        )
+        .bind(id.0)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        let Some(row) = row else {
+            return Ok(None);
+        };
+
+        Ok(Some(BackdateMark {
+            entered_at: row.try_get("recorded_at").map_err(AppError::Database)?,
+            entered_by: row.try_get("recorded_by").map_err(AppError::Database)?,
+        }))
+    }
+}
+
+async fn insert_draft_with(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    t: &ExchangeTransaction,
+    backdated: bool,
+) -> AppResult<()> {
+    if t.status != TransactionStatus::Draft {
+        return Err(AppError::Domain(
+            "validationFailed: status must be DRAFT".into(),
+        ));
+    }
+    if t.document_ref.is_some() {
+        return Err(AppError::Domain(
+            "validationFailed: draft cannot have a document_ref".into(),
+        ));
+    }
+    if !t.receipts.is_empty() {
+        return Err(AppError::Domain(
+            "validationFailed: draft cannot have receipts".into(),
+        ));
+    }
+    if t.lines.len() != 1 {
+        return Err(AppError::Domain(
+            "validationFailed: draft must have exactly one line".into(),
+        ));
+    }
+
+    let line = &t.lines[0];
+    let side_str = match line.shop_side {
+        Side::Buy => "BUY",
+        Side::Sell => "SELL",
+    };
+
+    sqlx::query(
+        "INSERT INTO transactions ( \
+            id, organization_id, branch_id, mode, status, document_ref, quote_id, \
+            booking_id, shift_id, submission_id, payload_hash, customer_id, customer_name, \
+            nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
+            recorded_by, kiosk_request_id, queue_ticket_id, staff_draft_id, count_confirmed, \
+            backdated \
+        ) VALUES ( \
+            $1, $2, $3, $4, 'DRAFT', NULL, $5, \
+            $6, $7, $8, $9, $10, $11, \
+            $12, $13, $14, $15, $16, $17, $18, \
+            $19, $20, $21::uuid, $22, $23, \
+            $24 \
+        )",
+    )
+    .bind(t.id.0)
+    .bind(t.organization_id)
+    .bind(t.branch_id.as_str())
+    .bind(t.mode.as_str())
+    .bind(t.quote_id)
+    .bind(t.booking_id.as_deref())
+    .bind(t.shift_id.as_deref())
+    .bind(&t.submission_id)
+    .bind(&t.payload_hash)
+    .bind(&t.customer_id)
+    .bind(&t.customer_name)
+    .bind(&t.nationality)
+    .bind(&t.staff_id)
+    .bind(&t.booking_no)
+    .bind(&t.notes)
+    .bind(t.value_date)
+    .bind(t.payment.paid_at)
+    .bind(t.recorded_at)
+    .bind(&t.recorded_by)
+    .bind(t.kiosk_request_id.as_deref())
+    .bind(t.queue_ticket_id.as_deref())
+    .bind(t.staff_draft_id.as_deref())
+    .bind(t.count_confirmed)
+    .bind(backdated)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        if let sqlx::Error::Database(db) = &e
+            && db.constraint() == Some("transactions_one_per_queue_ticket")
+        {
+            return AppError::Domain(format!(
+                "staleVersion: queue ticket {} already has a sale",
+                t.queue_ticket_id.as_deref().unwrap_or_default()
+            ));
+        }
+        AppError::Database(e)
+    })?;
+
+    sqlx::query(
+        "INSERT INTO transaction_lines ( \
+            id, organization_id, transaction_id, quote_line_id, shop_side, currency, \
+            denomination_id, quantity, unit_size, rate_snapshot, reference_rate, \
+            thb_amount, fee_thb, settle_thb, cost_basis_thb, realized_margin_thb, \
+            line_no, created_at, updated_at \
+        ) VALUES ( \
+            $1, $2, $3, $4, $5, $6, \
+            $7, $8::numeric, $9::numeric, $10::numeric, $11::numeric, \
+            $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, \
+            $17, $18, $19 \
+        )",
+    )
+    .bind(line.id)
+    .bind(t.organization_id)
+    .bind(t.id.0)
+    .bind(line.quote_line_id)
+    .bind(side_str)
+    .bind(line.currency.as_str())
+    .bind(None::<Uuid>)
+    .bind(line.quantity.value().to_string())
+    .bind(line.unit_size.value().to_string())
+    .bind(line.rate_snapshot.value().to_string())
+    .bind(line.reference_rate.map(|r| r.value().to_string()))
+    .bind(line.thb_amount.to_string())
+    .bind(line.fee_thb.to_string())
+    .bind(line.settle_thb.to_string())
+    .bind(line.cost_basis_thb.map(|m| m.to_string()))
+    .bind(line.realized_margin_thb.map(|m| m.to_string()))
+    .bind(line.line_no)
+    .bind(t.recorded_at)
+    .bind(t.recorded_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    sqlx::query(
+        "INSERT INTO transaction_payments ( \
+            id, organization_id, transaction_id, payment_no, method, reference, \
+            account, slip_file_key, amount_thb, bank_fee_thb, paid_at, \
+            created_at, updated_at \
+        ) VALUES ( \
+            $1, $2, $3, $4, $5, $6, \
+            $7, $8, $9::numeric, $10::numeric, $11, \
+            $12, $13 \
+        )",
+    )
+    .bind(t.payment.id)
+    .bind(t.organization_id)
+    .bind(t.id.0)
+    .bind(t.payment.payment_no)
+    .bind(t.payment.method.as_str())
+    .bind(&t.payment.reference)
+    .bind(&t.payment.account)
+    .bind(t.payment.slip_file_key.as_deref())
+    .bind(t.payment.amount_thb.to_string())
+    .bind(t.payment.bank_fee_thb.to_string())
+    .bind(t.payment.paid_at)
+    .bind(t.recorded_at)
+    .bind(t.recorded_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(AppError::Database)?;
+
+    if !(backdated && t.passport_file_key.is_empty()) {
+        sqlx::query(
+            "INSERT INTO transaction_files (transaction_id, kind, file_key) VALUES ($1, 'PASSPORT', $2)",
+        )
+        .bind(t.id.0)
+        .bind(&t.passport_file_key)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+    }
+
+    Ok(())
 }
 
 /// The CONFIRMED exchange's organisation and mode, locked; any other status is `staleVersion`.

@@ -8,13 +8,35 @@ use xc_kernel::mode::Mode;
 
 const TEMPLATE: &str = include_str!("receipt_template.html");
 
-pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
+/// `[required]` Backdated keying (`docs/design/backdated-keying.md` §8): what the receipt's banner slot says besides
+/// DEMO. The default marks nothing, so `receipt_html` prints today's bytes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReceiptMarks {
+    /// `Some` for a backdated exchange: the banner prints `ย้อนหลัง · บันทึกเมื่อ <entered_at, Asia/Bangkok,
+    /// dd/MM/yyyy HH:mm>`.
+    pub backdated: Option<crate::domain::transaction::backdate_mark::BackdateMark>,
+}
+
+/// `[required]` `receipt_html` with `marks` (§8). `receipt_html(f, r, b)` must equal
+/// `receipt_html_marked(f, r, b, &ReceiptMarks::default())` byte for byte.
+pub fn receipt_html_marked(
+    form: &TransactionForm,
+    document_ref: &str,
+    branch_name: &str,
+    marks: &ReceiptMarks,
+) -> String {
     let title_val = escape_html(document_ref);
     let demo_banner_val = match form.customer.mode {
         Mode::Demo => {
-            "<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">SAMPLE / DEMO — NOT A VALID RECEIPT</p>"
+            "<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">SAMPLE / DEMO — NOT A VALID RECEIPT</p>".to_string()
         }
-        Mode::Live => "",
+        Mode::Live => match &marks.backdated {
+            Some(m) => {
+                let time = m.entered_at.with_timezone(&bangkok()).format("%d/%m/%Y %H:%M");
+                format!("<p style=\"font-size:8px;text-align:center;font-weight:bold;border:1px dashed;padding:3px\">ย้อนหลัง · บันทึกเมื่อ {time}</p>")
+            }
+            None => String::new(),
+        },
     };
     let currency_val = escape_html(&form.currency);
     let rows_val = build_rows(form, document_ref, branch_name);
@@ -37,7 +59,7 @@ pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &st
             let placeholder = &after_start[..end + 2];
             match placeholder {
                 "{{TITLE}}" => result.push_str(&title_val),
-                "{{DEMO_BANNER}}" => result.push_str(demo_banner_val),
+                "{{DEMO_BANNER}}" => result.push_str(&demo_banner_val),
                 "{{CURRENCY}}" => result.push_str(&currency_val),
                 "{{ROWS}}" => result.push_str(&rows_val),
                 "{{TOTAL}}" => result.push_str(&total_val),
@@ -52,6 +74,10 @@ pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &st
     }
     result.push_str(remaining);
     result
+}
+
+pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
+    receipt_html_marked(form, document_ref, branch_name, &ReceiptMarks::default())
 }
 
 fn build_rows(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {

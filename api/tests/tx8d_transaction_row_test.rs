@@ -1093,7 +1093,9 @@ async fn compat_saved_completed_row_json_matches_snapshot() {
         "referenceSpread": null,
         "referencePercent": null,
         "paymentRef": null,
-        "slipUrl": h.ids.compat_slip_url
+        "slipUrl": h.ids.compat_slip_url,
+        // Backdated keying (backdated-keying.md §9, BK-12 #6148): a desk sale is not backdated.
+        "backdated": false
     });
 
     // (a) in admin_transactions

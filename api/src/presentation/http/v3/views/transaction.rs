@@ -23,7 +23,7 @@ use crate::presentation::dto::v3::transaction_detail::{
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct TransactionView {
-    pool: PgPool,
+    pub pool: PgPool,
 }
 
 fn ts(v: Option<DateTime<Utc>>) -> Option<String> {
@@ -80,7 +80,8 @@ impl BranchView for TransactionView {
             let Some(r) = sqlx::query(
                 "SELECT t.id, t.status, t.document_ref, t.branch_id, t.customer_id, t.quote_id, \
                  q.expires_at, t.approval_request_id, a.status AS a_status, t.completed_at, \
-                 t.cancelled_at, t.cancel_reason, q.benefit_snapshot \
+                 t.cancelled_at, t.cancel_reason, q.benefit_snapshot, \
+                 t.backdated, t.recorded_at, t.recorded_by \
                  FROM transactions t LEFT JOIN quotes q ON q.id = t.quote_id \
                  LEFT JOIN approval_requests a ON a.id = t.approval_request_id \
                  WHERE t.id = $1 AND t.branch_id = $2",
@@ -175,6 +176,14 @@ impl BranchView for TransactionView {
                         id: b.get(0),
                         booking_no: b.get(1),
                     });
+            let backdate = if r.get::<bool, _>(13) {
+                Some(crate::presentation::dto::v3::transaction::BackdateMarkDto {
+                    entered_at: r.get::<DateTime<Utc>, _>(14).to_rfc3339(),
+                    entered_by: r.get::<String, _>(15),
+                })
+            } else {
+                None
+            };
             Ok(TransactionViewData {
                 transaction: Some(TransactionDetailDto {
                     id: r.get::<Uuid, _>(0).to_string(),
@@ -194,6 +203,7 @@ impl BranchView for TransactionView {
                     reversal,
                     benefits,
                     booking,
+                    backdate,
                 }),
             })
         }

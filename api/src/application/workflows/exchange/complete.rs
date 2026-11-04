@@ -16,7 +16,9 @@ use rust_decimal::Decimal;
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
 use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
-use xc_exchange::domain::exchange::entities::receipt::receipt_html;
+use xc_exchange::domain::exchange::entities::receipt::{
+    ReceiptMarks, receipt_html, receipt_html_marked,
+};
 use xc_exchange::domain::exchange::repositories::transaction_repository::TransactionRepository;
 use xc_exchange::domain::exchange::value_objects::transaction_form::TransactionForm;
 use xc_exchange::domain::quote::repository::QuoteRepository;
@@ -84,15 +86,14 @@ fn stale<T>(m: String) -> AppResult<T> {
 /// Ledger §4.3: one exchange line as its two legs. The foreign leg names the line; the THB leg carries the line's
 /// `settle_thb` (ruling Q6) at the drawer for cash and the bank otherwise. BUY: the foreign goes customer → drawer
 /// and the baht the other way; SELL: the reverse.
-fn legs(t: &ExchangeTransaction, shift: &str) -> AppResult<Vec<PostingRequest>> {
+fn legs(t: &ExchangeTransaction, place: CashPlace) -> AppResult<Vec<PostingRequest>> {
     let source = SourceRef {
         source_type: SourceType::Exchange,
         source_id: t.id.0.to_string(),
         source_key: "complete".to_owned(),
     };
-    let drawer = CashPlace::Drawer(shift.to_owned());
     let thb_place = if t.payment.method.is_cash() {
-        drawer.clone()
+        place.clone()
     } else {
         CashPlace::Bank
     };
@@ -101,12 +102,12 @@ fn legs(t: &ExchangeTransaction, shift: &str) -> AppResult<Vec<PostingRequest>> 
         let (foreign_from, foreign_to, thb_from, thb_to) = match line.shop_side {
             Side::Buy => (
                 CashPlace::Customer,
-                drawer.clone(),
+                place.clone(),
                 thb_place.clone(),
                 CashPlace::Customer,
             ),
             Side::Sell => (
-                drawer.clone(),
+                place.clone(),
                 CashPlace::Customer,
                 CashPlace::Customer,
                 thb_place.clone(),
@@ -202,6 +203,80 @@ impl CompleteExchange {
         }
     }
 
+    /// `[required]` Backdated keying (`docs/design/backdated-keying.md` §5, §7, §8): completes a CONFIRMED backdated
+    /// exchange (`backdated = true`, no shift). Both legs post at `CashPlace::Safe(branch)` instead of a drawer
+    /// (`legs(&t, CashPlace::Safe(..))`); `deal_at` stands in for `now` in the document number, `completed_at` and the
+    /// receipt's `issued_at`; the receipt is rendered with `ReceiptMarks { backdated: Some(mark) }`. Skipped against
+    /// `run_in`: the shift-open, quote and count-first checks, every `ExchangeEffects` phase, the queue/booking finish
+    /// and the save steps' `after_in`. A posting refusal (`stockInsufficient`) is the caller's to roll back.
+    pub async fn run_backdated_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: TransactionId,
+        who: &SaveActor,
+        deal_at: DateTime<Utc>,
+        mark: xc_exchange::domain::transaction::backdate_mark::BackdateMark,
+    ) -> AppResult<CompletedExchange> {
+        let Some(t) = self.store.find_in(tx, id).await? else {
+            return stale(format!("transaction {} does not exist", id.0));
+        };
+        if t.status != TransactionStatus::Confirmed {
+            return stale(format!("a {} exchange is not completed", t.status.as_str()));
+        }
+
+        let posted = self
+            .postings
+            .post_in(tx, &legs(&t, CashPlace::Safe(t.branch_id.clone()))?, None)
+            .await?;
+        let costs: Vec<LineCosts> = posted
+            .costs
+            .iter()
+            .map(|c| LineCosts {
+                line_id: c.line,
+                cost_basis_thb: c.cost_basis_thb,
+                realized_margin_thb: c.realized_margin_thb,
+            })
+            .collect();
+        self.store.record_line_costs_in(tx, id, &costs).await?;
+
+        let (branch_name, _) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
+        let names = xc_auth::application::user::directory::user_names(
+            &mut **tx,
+            std::slice::from_ref(&t.staff_id),
+        )
+        .await?;
+        let form = TransactionForm::from_transaction(&t)?
+            .with_staff_name(names.get(&t.staff_id).map(String::as_str));
+        let document_ref = self.store.next_document_ref_in(tx, id, deal_at).await?;
+        let html = receipt_html_marked(
+            &form,
+            &document_ref,
+            &branch_name,
+            &ReceiptMarks {
+                backdated: Some(mark.clone()),
+            },
+        );
+        let receipt_key = self
+            .files
+            .store_receipt_in(tx, &t.branch_id, &who.id, &html, mark.entered_at)
+            .await?;
+        let receipt = self
+            .store
+            .complete_numbered_in(tx, id, &document_ref, &receipt_key, deal_at)
+            .await?;
+
+        let Some(transaction) = self.store.find_in(tx, id).await? else {
+            return Err(AppError::Internal(format!(
+                "completed transaction {} does not read back",
+                id.0
+            )));
+        };
+        Ok(CompletedExchange {
+            transaction,
+            receipt,
+        })
+    }
+
     /// `[required]` (#873 §7): design §4.5's order, in the caller's transaction. Every refusal before the posting
     /// writes nothing; a refusal from the posting, an effect or a step is the caller's to roll back.
     pub async fn run_in(
@@ -276,7 +351,10 @@ impl CompleteExchange {
 
         // 5. Both legs in one posting (#873 §7; §5.1.2: never below zero)
         if let Some(shift) = &shift {
-            let posted = self.postings.post_in(tx, &legs(&t, shift)?, None).await?;
+            let posted = self
+                .postings
+                .post_in(tx, &legs(&t, CashPlace::Drawer(shift.clone()))?, None)
+                .await?;
             let costs: Vec<LineCosts> = posted
                 .costs
                 .iter()
