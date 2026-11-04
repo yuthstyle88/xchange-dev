@@ -79,6 +79,9 @@ fn guard(min: &str, max: &str) -> Value {
 async fn three_lines_sharing_one_policy_and_three_distinct_references_publish_each_at_its_own_reference()
  {
     let db = TestDb::start().await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["GBP"])
+        .await
+        .expect("seed gbp on main");
     let e = db.engine();
 
     let fetched_at = Utc::now() - Duration::minutes(30);
@@ -395,6 +398,9 @@ async fn three_lines_with_one_line_missing_reference_behaves_as_today() {
 #[tokio::test]
 async fn two_policy_versions_in_one_draft_publishes_each_line_under_its_own_policy() {
     let db = TestDb::start().await;
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["GBP"])
+        .await
+        .expect("seed gbp on main");
     let e = db.engine();
 
     let fetched_at = Utc::now() - Duration::minutes(30);
