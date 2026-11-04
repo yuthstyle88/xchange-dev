@@ -11,8 +11,9 @@
 | ~12:3x | the staff side will have many currencies: must they be linked? Controller's answer: yes, from one source | Feeds, quote, kiosk, staff count, transfer form and reports use one set. Stock held can always be counted out. A new currency gets its notes |
 | 12:30 | *"มันต้อง link กัน โดยใช้ database ดิ"* | The set is a **table**, with FKs to `currencies` and `denominations`. It holds variant rows and the ASK flag. The hard-coded lists go |
 | ~12:3x | *"มันต้องผูก จะให้คอนฟิกว่าจะแสดงหรือไม่แสดงได้"* | Each branch can set show or hide per currency in the admin UI, with no deploy and no SQL |
+| ~13:0x | *"อนุมัติ (แนะนำ)"*, *"HIDE ขายไม่ได้ (แนะนำ)"*, *"จองไม่ได้ (แนะนำ)"*, *"ใช้ seed ตามดีไซน์ (แนะนำ)"*, the labels the owner chose ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)) | The §6 migration is approved. `HIDE` refuses the desk. `ASK` cannot be booked or quoted from the app. The §7 note seed is used |
 
-The owner's relayed orders came through claude/608dff. **The migration in §6 waits for the owner's approval, taken by claude/608dff. No ticket is `ready` before it.**
+The owner's orders were relayed by claude/608dff and then claude/022a7453. **The §6 migration is approved. Deploy is a separate owner order.**
 
 The screenshot's figures are not targets: they match neither BOT nor SR, and only 9 of 29 priced rows equal TT (Q5 on #564).
 
@@ -75,7 +76,7 @@ The screenshot's figures are not targets: they match neither BOT nor SR, and onl
 
 **Hidden answers the controller's question:** hidden means no kiosk, board, app or booking shows it, and the desk cannot quote it. Count and transfer of held stock still work.
 
-`[proposed]`, the owner may overrule: the desk is refused on `HIDE` because a hidden currency is one the shop has stopped dealing in. A currency the desk should still sell while customers see nothing is `ASK`.
+**Decided by the owner** ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)): the desk is refused on `HIDE`, and `ASK` cannot be booked or quoted from the app. A currency the desk should still sell while customers see nothing is `ASK`.
 
 **Already issued:** a quote or booking made before a hide keeps its stored line (`line_by_id`), because the customer was told that price. `[proposed]`.
 
@@ -103,12 +104,14 @@ The screenshot's figures are not targets: they match neither BOT nor SR, and onl
 | Kiosk | literal 6 + switches | `KioskCurrencies` from rows: `SHOW` offers, `ASK` lists as contact staff, `HIDE` absent. `DEFAULT_CODES` goes | BC-3 |
 | Board `more` | SR's list | `ASK` rows | BC-9 |
 | Staff count | every note row | `branch_currencies` view (below) | BC-10 |
-| Transfer form | every note row | the same view. claude-16's CurrencyCount ticket for `CashFlows.tsx` should read it, so that ticket depends on this design | BC-10, claude-16 |
+| Transfer, receive and handover forms | every note row | the same view, through #6074 re-cut (§10) | #6074 |
 | Staff daily report | literal 7 | set ∪ holdings ∪ counted that day, by `sort_order` | BC-4 |
 | Other money reports | no currency literal found | sweep at skeleton | — |
 
 `[required]` A new v3 view `branch_currencies`, inheriting `cashCounts` as `denominations` does, returns the union of D-5:
-`{code, group, display, sortOrder, held: bool, notes: [{id, faceValue, group}]}`. It is the one reader for staff screens.
+`{code, group, display, sortOrder, held: bool}`. It says **which currencies** a staff form may list. The `denominations` view keeps saying **which notes** each has, so its readers and each form's submit code stay as they are.
+
+`[required]` `CurrencyCount` gains an optional prop `countable?: string[]`: its search lists only those codes that also have notes. Left out, it behaves as today. A currency held with no notes is listed with the hint to add its notes (§7).
 
 **`HomeScreen.tsx:204`** is a literal 9 used when a customer's branch has no lines. It goes in BC-9 and the existing `empty` state answers instead.
 
@@ -143,7 +146,7 @@ BOT is a shared source: one batch for all branches. So it keeps every row with a
 
 ## 6. Migration and data migration
 
-**This section needs the owner's approval.** Slot from `scripts/migration-slot.sh next`, `20261226200000` at 12:32 ICT; renumber before merge.
+**Approved by the owner** ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)). Slot from `scripts/migration-slot.sh next`, `20261226200000` at 13:05 ICT; renumber before merge.
 
 ```sql
 -- 1. Extend the switch. xc_v3 has 0 rows here.
@@ -205,7 +208,7 @@ CREATE TABLE branch_currency_notes (
 
 **Effect at the counter after deploy:** the same four currencies sell. The board's `more` list changes from SR's list to the 14 `ASK` rows. **A kiosk with no rows now offers nothing**, where the literal offered six: MAIN has rows, and the other branch has no publication anyway.
 
-**New branches:** `branch_save` copies the organisation's MAIN rows and note links with every row `HIDE`. `[proposed]`
+**New branches:** `BranchService::create_with_org` (`xc-rate/src/application/branch/service.rs`, reached through `create` and `create_in`) copies the rows and note links of `cmd.from_branch`, the branch creating it, with every row `HIDE`, in the same transaction (BC-13). A new branch can therefore count and add currencies at once, and sells nothing until someone publishes and shows. Copying from `from_branch`, not MAIN, keeps it inside the organisation, which `create_with_org` already checks.
 
 ## 7. How a currency gets its notes
 
@@ -215,7 +218,7 @@ CREATE TABLE branch_currency_notes (
 2. **Add afterwards:** a new command `denominationNoteAdd {currency, group, faceValue}`, on the existing `denomination-groups` screen, with the same permission and audit as `denominationGroupCreate`. It is add-only, and repeats are idempotent. Notes referenced by counts, transfers or lots stay, by FK.
 3. **Linked to a branch:** `configure` links a new row to all notes of that currency and group that no other group of the row's currency takes. **`SHOW` and `ASK` refuse a currency with no notes (`NotesFirst`)**, which tells staff why.
 
-**Proposed note seed — the owner must confirm.** These come from public note series, bounded by SR's bands where SR has them. They are not from a measured source.
+**Note seed, decided by the owner** ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)). These come from public note series, bounded by SR's bands where SR has them, not from a measured source. Further notes are added on the denomination-groups screen.
 
 | Code | Notes | Code | Notes |
 |---|---|---|---|
@@ -244,8 +247,10 @@ CREATE TABLE branch_currency_notes (
 | `(MYR,'MYRS')` | 5 10 20 | the board. `ALL` keeps 1 50 100 |
 | `(CNY,'CNYS')` | 5 10 20 | the board. `ALL` keeps the rest; existing rows stay |
 | `(INR,'INRS')` | 100 200 | the board |
-| `(KRW,'KRWS')` | **unknown**: the board gives no notes. SR's small band is 1000 | **owner** |
-| `(GBP,'SCP')` | 5 10 20 50 100, **new `denominations` rows with `group_code 'SCP'`** | Scottish notes are separate stock, so they need their own rows. **Owner to confirm** |
+| `(KRW,'KRWS')` | **open**: the board gives no notes. SR's small band is 1000 | **owner**. The row is seeded with no links |
+| `(GBP,'SCP')` | **open**, proposed 5 10 20 50 100 as new `denominations` rows with `group_code 'SCP'`, because Scottish notes are separate stock | **owner**. The row is seeded with no notes |
+
+Neither open row blocks the migration. Both are seeded `ASK` per the approved 45 rows, and the seed bypasses `NotesFirst`, which guards `configure`. Their notes come later through `denominationNoteAdd`, with no further migration.
 
 Variant rows share a note's stock: a 5-yuan note is one physical note whichever line prices it, so count lines are per note, and the screen shows each note once.
 
@@ -298,6 +303,10 @@ classDiagram
     class DenominationNoteAdd {
         <<v3/commands/denomination_note_add.rs, BC-11>>
     }
+    class BranchService {
+        <<xc-rate/application/branch/service.rs, BC-13>>
+        -create_with_org() copies from_branch's rows, HIDE
+    }
     BranchCurrencies <|.. PgBranchCurrencies
     BranchCurrencies *-- BranchCurrency
     BranchCurrency --> Display
@@ -305,13 +314,15 @@ classDiagram
     KioskCurrencies ..> BranchCurrency
     BranchCurrenciesView ..> BranchCurrencies
     RatesDraftableView ..> BranchCurrencies
+    BranchService ..> BranchCurrencies
 ```
 
 | Provider | Used by | If not landed |
 |---|---|---|
 | migration + `BranchCurrencies` trait + `Display` (BC-0) | every ticket but BC-1 and BC-2 | they wait for BC-0's skeleton on `feat/board-currencies` |
 | `BotTable` (skeleton) | BC-1, BC-2 | nothing waits |
-| `branch_currencies` view DTO (skeleton) | BC-10, claude-16's ticket | nothing waits |
+| `branch_currencies` view DTO (skeleton) | BC-10 | nothing waits |
+| `branch_currencies` view and `countable` (BC-10) | #6074 re-cut | #6074 stays on hold until BC-10 is on the feature branch |
 
 New v3 views, DTO modules and commands need no `mod.rs` edit (`api/build.rs:154,168`).
 
@@ -348,10 +359,14 @@ New v3 views, DTO modules and commands need no `mod.rs` edit (`api/build.rs:154,
 | `configure` | one audit row with `from` and `display`, same transaction | BC-12 |
 | user without `RatesDraft` | refused, as today | BC-12 |
 | `denominationNoteAdd` twice | one row, idempotent | BC-11 |
+| new branch from `B` | `B`'s rows and note links, every row `HIDE`; same transaction as the branch | BC-13 |
+| new branch, `B` has no rows | created, no rows | BC-13 |
+| `CurrencyCount` with `countable` | search lists only those codes with notes | BC-10 |
+| `CurrencyCount` without `countable` | as today | BC-10 |
 
 ## 10. Tickets
 
-BC-0 is the skeleton and the migration, on `feat/board-currencies`, **after the owner approves**. Then all release together, with disjoint scopes.
+BC-0 is the skeleton and the migration, on `feat/board-currencies`, once this doc merges. Then BC-1…BC-13 release together, with disjoint scopes.
 
 | # | Outcome | Files | Class | Fits |
 |---|---|---|---|---|
@@ -368,6 +383,12 @@ BC-0 is the skeleton and the migration, on `feat/board-currencies`, **after the 
 | BC-10 | `branch_currencies` view; count form reads it | `views/branch_currencies.rs`, `CountForm.tsx`, `CurrencyCount.tsx` | logic | any |
 | BC-11 | `denominationNoteAdd` and its screen | new command, `DenominationGroups.tsx` | logic | any |
 | BC-12 | `configure` extended; three-way screen | `currencies.rs`, `audit_line.rs`, `kiosk_ports.rs`, `KioskCurrenciesScreen.tsx`, `kiosk-api.ts` | guarded | Studio |
+| BC-13 | a new branch copies the set, all `HIDE` | `xc-rate/src/application/branch/service.rs`, `xc-rate/src/domain/branch/repositories/branch_repository.rs`, `xc-rate/src/infrastructure/branch/branch_repository.rs` | logic | any |
+
+**#6074 (`CurrencyCount` on the four cash forms) is re-cut against the view, not absorbed by BC-10.**
+- **Why not absorb:** #6074 already has 14 files in scope, its own provided tests on `test/cc-cash-forms` and 36 pinned tests. BC-10 would stop being one reviewable outcome. The scopes are disjoint today: #6074 forbids touching `CurrencyCount.tsx` and `CountForm.tsx`, which BC-10 owns.
+- **The re-cut, by its opener claude/01TxaRJG, after BC-10 is on `feat/board-currencies`:** base and PR target `feat/board-currencies`. Each of F1–F4 reads `branch_currencies` and passes `countable`. F1 reads it for the branch the form names. F3 (receive) also adds the transfer's line currencies, because a branch must be able to receive what another branch sends, even with no row. If the read fails, the form lists only its `locked` currencies, as #6074's F4 rule does. The provided tests gain the view's route.
+- **Unchanged:** #6074's `locked` rules, form submit code, and `denominations` reads.
 
 **Tests that pin today:** the kiosk tests (`kiosk_currencies_test.rs`, `kiosk_service_test.rs`, `kiosk_service_common/mod.rs`, `v3_kiosk_currencies_*`, `rate_feed_kiosk_tier_test.rs`, `v9_pricing_kiosk_test.rs`) and report tests. **Every test that publishes a line on its own branch and then quotes needs a row, because `line_for` refuses without one.** That is the biggest churn here. The exact list comes from a throwaway run of the touched crates before tickets are cut. A shared test helper seeds rows; it is in BC-0.
 
@@ -376,12 +397,15 @@ BC-0 is the skeleton and the migration, on `feat/board-currencies`, **after the 
 | Q | Status |
 |---|---|
 | Q1 price per new line | open; data entry, no code |
-| Q2 ASK | **answered by the ruling: a flag in the table.** Open: bookings refused on ASK, `[proposed]` in §3 |
+| Q2 ASK | **decided:** a flag in the table; `ASK` cannot be booked or quoted from the app ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)) |
 | Q3 variants | **answered: in the table.** Open: the desk picker for groups stays a second wave, so variant rows are ASK-only until then |
-| Q4 SCP | GBP group, `[proposed]`, §7 |
+| Q4 SCP | **open.** GBP group proposed, §7; the row is seeded and its notes wait for the owner |
 | Q5 reading | open |
-| New: note seed in §7 | owner confirms |
-| New: `HIDE` refuses the desk | owner may overrule, §3 |
+| Migration §6 | **approved** ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)) |
+| Note seed §7 | **decided:** used as designed ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)) |
+| `HIDE` refuses the desk | **decided** ([owner answers](https://github.com/108-Plaza/xchange/pull/6073#issuecomment-6623877354)) |
+| KRWS notes | **open**, §7 |
+| Issued quotes and bookings keep their line after a hide | `[proposed]` in §3; not asked yet |
 
 ## 12. Rollout
 
