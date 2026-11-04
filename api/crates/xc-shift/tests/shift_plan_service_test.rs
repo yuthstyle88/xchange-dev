@@ -1,4 +1,5 @@
-//! Up-front tests for ticket CS-3: `ShiftPlanService` (docs/design/configurable-shifts.md §2.3, §2.9, §4 rows V1–V6).
+//! Up-front tests for ticket CS-3: `ShiftPlanService` (docs/design/configurable-shifts.md §2.3, §2.9, §4 rows V1–V6),
+//! on the owner's 24-hour rule: every plan covers all 24 hours.
 //! Written by the ticket author claude/35271802 — the implementer must not edit, delete or weaken these.
 //! They need CS-1 (`ShiftPlan`) and CS-2 (`PgShiftTemplateStore`) merged into `feat/configurable-shifts`.
 
@@ -39,12 +40,12 @@ fn row(name: &str, start: NaiveTime, end: NaiveTime) -> ShiftTemplateInput {
     }
 }
 
-/// The owner's first, overlapping table (no breaks needed here).
+/// An overlapping 24-hour plan: A 06–15, B 14–23, C 22–07 (cutover 06:00).
 fn overlapping() -> Vec<ShiftTemplateInput> {
     vec![
-        row("A", hm(10, 0), hm(19, 0)),
-        row("B", hm(15, 0), hm(0, 0)),
-        row("C", hm(19, 0), hm(4, 0)),
+        row("A", hm(6, 0), hm(15, 0)),
+        row("B", hm(14, 0), hm(23, 0)),
+        row("C", hm(22, 0), hm(7, 0)),
     ]
 }
 
@@ -85,7 +86,7 @@ async fn v1_an_invalid_list_is_refused_with_its_reason_and_index_and_nothing_is_
             &mut tx,
             &branch,
             ORG,
-            vec![row("A", hm(10, 0), hm(19, 0)), row("  ", hm(1, 0), hm(2, 0))],
+            vec![row("A", hm(6, 0), hm(18, 0)), row("  ", hm(18, 0), hm(6, 0))],
             Utc::now(),
         )
         .await;
@@ -102,6 +103,23 @@ async fn v1_an_invalid_list_is_refused_with_its_reason_and_index_and_nothing_is_
         Err(AppError::Validation(msg)) => assert_eq!(msg, "shiftPlanInvalid:none:"),
         other => panic!("expected shiftPlanInvalid, got {other:?}"),
     }
+
+    // Owner: the plan must cover all 24 hours; the refusal names the uncovered window.
+    let mut tx = db.pool.begin().await.unwrap();
+    let got = svc
+        .save_in(
+            &mut tx,
+            &branch,
+            ORG,
+            vec![row("A", hm(6, 0), hm(14, 0)), row("B", hm(14, 0), hm(22, 0))],
+            Utc::now(),
+        )
+        .await;
+    drop(tx);
+    match got {
+        Err(AppError::Validation(msg)) => assert_eq!(msg, "shiftPlanInvalid:gap:22:00-06:00"),
+        other => panic!("expected shiftPlanInvalid, got {other:?}"),
+    }
     assert_eq!(live_names(&db, &branch).await, vec!["A", "B", "C"]);
     db.drop_schema().await;
 }
@@ -112,7 +130,7 @@ async fn v2_two_shifts_covering_now_preselect_nothing() {
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(4, 15, 30)).await.unwrap();
+    let got = svc.choices_in(&mut tx, &branch, bkk(4, 14, 30)).await.unwrap();
     assert_eq!(
         got.choices.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
         vec!["A", "B"]
@@ -128,7 +146,7 @@ async fn v3_one_shift_covering_now_is_preselected() {
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(4, 11, 0)).await.unwrap();
+    let got = svc.choices_in(&mut tx, &branch, bkk(4, 10, 0)).await.unwrap();
     assert_eq!(got.choices.len(), 1);
     assert_eq!(got.choices[0].name, "A");
     assert_eq!(got.preselect.as_deref(), Some(got.choices[0].template_id.as_str()));
@@ -137,14 +155,20 @@ async fn v3_one_shift_covering_now_is_preselected() {
 }
 
 #[tokio::test]
-async fn v4_nothing_covers_five_am() {
+async fn v4_two_am_offers_only_last_nights_shift() {
     let db = TestDb::start().await;
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(5, 5, 0)).await.unwrap();
-    assert!(got.choices.is_empty());
-    assert_eq!(got.preselect, None);
+    let got = svc.choices_in(&mut tx, &branch, bkk(5, 2, 0)).await.unwrap();
+    assert_eq!(
+        got.choices
+            .iter()
+            .map(|c| (c.name.as_str(), c.business_date))
+            .collect::<Vec<_>>(),
+        vec![("C", chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap())]
+    );
+    assert_eq!(got.preselect.as_deref(), Some(got.choices[0].template_id.as_str()));
     drop(tx);
     db.drop_schema().await;
 }
@@ -192,7 +216,7 @@ async fn v6_seed_defaults_is_idempotent_and_save_returns_the_stored_plan() {
             .iter()
             .map(|t| (t.name.as_str(), t.starts_at))
             .collect::<Vec<_>>(),
-        vec![("A", hm(10, 0)), ("B", hm(15, 0)), ("C", hm(19, 0))]
+        vec![("A", hm(6, 0)), ("B", hm(14, 0)), ("C", hm(22, 0))]
     );
     db.drop_schema().await;
 }

@@ -3,7 +3,8 @@
 //! shift with that template, its name and its business date. Written by the ticket author claude/35271802 — do not
 //! edit, delete or weaken. Needs CS-1, CS-2 and CS-3 merged into `feat/configurable-shifts`, and `TEST_DATABASE_URL`.
 //!
-//! Every branch here uses the owner's first, overlapping table: A 10–19, B 15–00, C 19–04 (gap 04:00–10:00), Bangkok.
+//! Every branch here uses an overlapping 24-hour plan (owner: every plan covers 24 hours): A 06–15, B 14–23, C 22–07,
+//! cutover 06:00, Bangkok.
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -101,7 +102,7 @@ async fn floor() -> Floor {
         .execute(&pool)
         .await
         .expect("retire the defaults");
-    for (i, (name, start, end)) in [("A", "10:00", "19:00"), ("B", "15:00", "00:00"), ("C", "19:00", "04:00")]
+    for (i, (name, start, end)) in [("A", "06:00", "15:00"), ("B", "14:00", "23:00"), ("C", "22:00", "07:00")]
         .iter()
         .enumerate()
     {
@@ -284,15 +285,16 @@ fn refused_with<T: std::fmt::Debug>(got: pos_error::AppResult<T>, why: ShiftErro
 }
 
 #[tokio::test]
-async fn c1_an_open_count_outside_every_shift_is_refused_and_nothing_is_written() {
+async fn c1_c3_a_chosen_shift_that_does_not_cover_now_is_refused_and_nothing_is_written() {
     let f = floor().await;
-    let a = f.template_id("A").await;
+    let b = f.template_id("B").await;
+    let c = f.template_id("C").await;
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, None, bkk(5, 5, 0)).await,
+        f.submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 10, 0)).await,
         ShiftError::OutsideShiftWindow,
     );
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, Some(&a), bkk(5, 5, 0)).await,
+        f.submit(&f.teller, CountKind::Open, None, Some(&c), bkk(4, 12, 0)).await,
         ShiftError::OutsideShiftWindow,
     );
     assert_eq!(f.counts().await, 0);
@@ -303,12 +305,12 @@ async fn c2_c5_a_chosen_covering_shift_is_stored_and_opens_the_shift_with_its_na
     let f = floor().await;
     let b = f.template_id("B").await;
     let count = f
-        .submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 15, 30))
+        .submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 14, 30))
         .await
-        .expect("an OPEN count as B at 15:30");
+        .expect("an OPEN count as B at 14:30");
     assert_eq!(f.count_row(&count.id).await, (Some(b.clone()), nov(4)));
-    // C5: verified after A has ended, still inside B
-    let shift = f.verify_open(&count.id, bkk(4, 19, 30)).await;
+    // C5: verified after A has ended (15:00), still inside B
+    let shift = f.verify_open(&count.id, bkk(4, 15, 30)).await;
     assert_eq!(
         f.shift_row(&shift).await,
         (Some(b), Some("B".to_owned()), nov(4))
@@ -316,28 +318,17 @@ async fn c2_c5_a_chosen_covering_shift_is_stored_and_opens_the_shift_with_its_na
 }
 
 #[tokio::test]
-async fn c3_a_chosen_shift_that_does_not_cover_now_is_refused() {
-    let f = floor().await;
-    let b = f.template_id("B").await;
-    refused_with(
-        f.submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 11, 0)).await,
-        ShiftError::OutsideShiftWindow,
-    );
-    assert_eq!(f.counts().await, 0);
-}
-
-#[tokio::test]
 async fn c4_no_choice_takes_the_only_covering_shift_and_refuses_when_two_cover() {
     let f = floor().await;
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, None, bkk(4, 15, 30)).await,
+        f.submit(&f.teller, CountKind::Open, None, None, bkk(4, 14, 30)).await,
         ShiftError::ShiftNotChosen,
     );
     let a = f.template_id("A").await;
     let count = f
-        .submit(&f.teller, CountKind::Open, None, None, bkk(4, 11, 0))
+        .submit(&f.teller, CountKind::Open, None, None, bkk(4, 10, 0))
         .await
-        .expect("only A covers 11:00");
+        .expect("only A covers 10:00");
     assert_eq!(f.count_row(&count.id).await, (Some(a), nov(4)));
 }
 
@@ -355,20 +346,25 @@ async fn c6_k1_the_night_shift_and_its_close_count_belong_to_the_day_it_started(
         (Some(c), Some("C".to_owned()), nov(4)),
         "C6: verified after midnight, still C of 4 Nov"
     );
-    // K1: the CLOSE count at 04:10, after C has ended, carries the shift's business date.
+    // K1: the CLOSE count at 07:10, after C has ended and after the 06:00 cutover, carries the shift's business date.
     let close = f
-        .submit(&f.teller, CountKind::Close, Some(shift), None, bkk(5, 4, 10))
+        .submit(&f.teller, CountKind::Close, Some(shift), None, bkk(5, 7, 10))
         .await
         .expect("a CLOSE count");
     assert_eq!(f.count_row(&close.id).await, (None, nov(4)));
 }
 
 #[tokio::test]
-async fn k2_a_safe_count_in_the_gap_belongs_to_the_next_business_day() {
+async fn k2_a_safe_count_takes_the_business_date_of_its_moment() {
     let f = floor().await;
-    let safe = f
+    let night = f
         .submit(&f.manager, CountKind::Safe, None, None, bkk(5, 5, 0))
         .await
         .expect("a SAFE count needs no shift");
-    assert_eq!(f.count_row(&safe.id).await, (None, nov(5)));
+    assert_eq!(f.count_row(&night.id).await, (None, nov(4)), "05:00 is before the 06:00 cutover");
+    let morning = f
+        .submit(&f.manager, CountKind::Safe, None, None, bkk(5, 6, 30))
+        .await
+        .expect("a SAFE count needs no shift");
+    assert_eq!(f.count_row(&morning.id).await, (None, nov(5)));
 }

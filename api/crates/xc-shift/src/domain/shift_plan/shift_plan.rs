@@ -126,16 +126,20 @@ impl ShiftPlan {
         Self { templates, tz }
     }
 
-    /// The owner's defaults, 2026-11-04 (#6149 issuecomment by claude/022a7453, ~21:4x ICT): three 8-hour shifts,
-    /// 24-hour operation, no breaks, day cutover 06:00. The migration seeds the same rows.
+    /// Owner 2026-11-04: *"โดยจะมี default 8ชม ต่อกะ"*. The seed and the settings screen's default length use it.
+    pub const DEFAULT_SHIFT_HOURS: u32 = 8;
+
+    /// The owner's defaults, 2026-11-04: three shifts of `DEFAULT_SHIFT_HOURS` from 06:00, 24-hour operation, no breaks,
+    /// day cutover 06:00. The migration seeds the same rows (test S4).
     pub fn defaults() -> Vec<ShiftTemplateInput> {
-        [("A", 6, 14), ("B", 14, 22), ("C", 22, 6)]
+        let h = Self::DEFAULT_SHIFT_HOURS;
+        [("A", 6), ("B", 6 + h), ("C", 6 + 2 * h)]
             .into_iter()
-            .map(|(name, start, end)| ShiftTemplateInput {
+            .map(|(name, start)| ShiftTemplateInput {
                 id: None,
                 name: name.to_owned(),
-                starts_at: hm(start, 0),
-                ends_at: hm(end, 0),
+                starts_at: hm(start % 24, 0),
+                ends_at: hm((start + h) % 24, 0),
                 break_window: None,
             })
             .collect()

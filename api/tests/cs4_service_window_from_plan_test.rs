@@ -1,4 +1,4 @@
-//! Up-front tests for ticket CS-4 (docs/design/configurable-shifts.md §2.7, T4, T10, §4 rows W1–W6): the custody
+//! Up-front tests for ticket CS-4 (docs/design/configurable-shifts.md §2.7, T4, T10, §4 rows W1, W2, W4–W6): the custody
 //! window comes from the branch's shift plan, not from `opening_hours`. Written by the ticket author claude/35271802 —
 //! do not edit, delete or weaken. Needs CS-1 and CS-3 merged into `feat/configurable-shifts`, and `TEST_DATABASE_URL`.
 //!
@@ -60,37 +60,25 @@ async fn set_plan(shop: &Shop, rows: &[(&str, &str, &str)]) {
     }
 }
 
-/// The owner's first, overlapping table: A 10–19, B 15–00, C 19–04 (gap 04:00–10:00).
+/// An overlapping 24-hour plan: A 06–15, B 14–23, C 22–07 (cutover 06:00).
 async fn overlapping(shop: &Shop) {
     set_plan(
         shop,
-        &[("A", "10:00", "19:00"), ("B", "15:00", "00:00"), ("C", "19:00", "04:00")],
+        &[("A", "06:00", "15:00"), ("B", "14:00", "23:00"), ("C", "22:00", "07:00")],
     )
     .await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn w1_w2_the_window_is_the_business_days_span_including_after_midnight() {
+async fn w1_w2_the_window_is_the_business_days_24_hours_joined_with_the_next() {
     let shop = Shop::start().await;
     overlapping(&shop).await;
-    let span = open("2026-11-04T03:00:00.000Z", "2026-11-04T21:00:00.000Z");
+    // 4 Nov 06:00 → 6 Nov 06:00 Bangkok: the 4 Nov business day joined with the 5 Nov one (T10).
+    let joined = open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z");
     // W1: 4 Nov 11:00 Bangkok
-    assert_eq!(window(&shop, "2026-11-04T04:00:00.000Z").await, span);
-    // W2: 5 Nov 02:00 Bangkok still belongs to the 4 Nov span (10:00 → 04:00)
-    assert_eq!(window(&shop, "2026-11-04T19:00:00.000Z").await, span);
-    shop.finish().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn w3_in_the_gap_the_window_is_the_next_span_and_nothing_may_start() {
-    let shop = Shop::start().await;
-    overlapping(&shop).await;
-    // 5 Nov 05:00 Bangkok
-    let now = "2026-11-04T22:00:00.000Z";
-    let w = window(&shop, now).await;
-    assert_eq!(w, open("2026-11-05T03:00:00.000Z", "2026-11-05T21:00:00.000Z"));
-    assert!(!w.allows_start(ct(now)));
-    assert!(!w.allows_begin(ct(now)));
+    assert_eq!(window(&shop, "2026-11-04T04:00:00.000Z").await, joined);
+    // W2: 5 Nov 02:00 Bangkok still belongs to the 4 Nov business day
+    assert_eq!(window(&shop, "2026-11-04T19:00:00.000Z").await, joined);
     shop.finish().await;
 }
 
@@ -116,10 +104,10 @@ async fn w5_opening_hours_no_longer_gate_custody() {
         .execute(&shop.pool)
         .await
         .unwrap();
-    // 4 Nov 20:00 Bangkok: outside 12–18, inside the plan's span
+    // 4 Nov 20:00 Bangkok: outside 12–18, inside the plan's business day
     let now = "2026-11-04T13:00:00.000Z";
     let w = window(&shop, now).await;
-    assert_eq!(w, open("2026-11-04T03:00:00.000Z", "2026-11-04T21:00:00.000Z"));
+    assert_eq!(w, open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z"));
     assert!(w.allows_begin(ct(now)));
     shop.finish().await;
 }
