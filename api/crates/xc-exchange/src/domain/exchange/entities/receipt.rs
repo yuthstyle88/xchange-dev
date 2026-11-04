@@ -8,6 +8,27 @@ use xc_kernel::mode::Mode;
 
 const TEMPLATE: &str = include_str!("receipt_template.html");
 
+/// `[required]` Backdated keying (`docs/design/backdated-keying.md` §8): what the receipt's banner slot says besides
+/// DEMO. The default marks nothing, so `receipt_html` prints today's bytes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReceiptMarks {
+    /// `Some` for a backdated exchange: the banner prints `ย้อนหลัง · บันทึกเมื่อ <entered_at, Asia/Bangkok,
+    /// dd/MM/yyyy HH:mm>`.
+    pub backdated: Option<crate::domain::transaction::backdate_mark::BackdateMark>,
+}
+
+/// `[required]` `receipt_html` with `marks` (§8). `receipt_html(f, r, b)` must equal
+/// `receipt_html_marked(f, r, b, &ReceiptMarks::default())` byte for byte.
+pub fn receipt_html_marked(
+    form: &TransactionForm,
+    document_ref: &str,
+    branch_name: &str,
+    marks: &ReceiptMarks,
+) -> String {
+    let _ = (form, document_ref, branch_name, marks);
+    todo!("BK-6: backdated-keying.md §8")
+}
+
 pub fn receipt_html(form: &TransactionForm, document_ref: &str, branch_name: &str) -> String {
     let title_val = escape_html(document_ref);
     let demo_banner_val = match form.customer.mode {

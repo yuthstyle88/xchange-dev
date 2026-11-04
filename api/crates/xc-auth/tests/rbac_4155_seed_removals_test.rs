@@ -130,7 +130,8 @@ fn seed_removals_holds_exactly_the_two_dashboard_permissions_at_version_3() {
     // #5095's seed fix (owner, 2026-10-25): ShiftCloseCertify enters at version 5; BQ-7: BindingQuoteIssue at 6;
     // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8; #5733: PricingFormulaSave at 9.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10 and SEED_REMOVALS adds the seven settings saves at version 10.
-    assert_eq!(RoleGrants::SEED_VERSION, 10);
+    // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
+    assert_eq!(RoleGrants::SEED_VERSION, 11);
     assert_eq!(
         RoleGrants::SEED_REMOVALS,
         &[

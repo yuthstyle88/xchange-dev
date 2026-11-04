@@ -5,6 +5,7 @@ use pos_error::AppResult;
 use uuid::Uuid;
 use xc_kernel::money::{Money, MoneyDelta};
 
+use super::backdate_mark::BackdateMark;
 use super::receipt_record::Receipt;
 use super::transaction::{ExchangeTransaction, TransactionId, TransactionStatus};
 
@@ -81,4 +82,21 @@ pub trait TransactionStore: Send + Sync {
         id: TransactionId,
         costs: &'a [LineCosts],
     ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
+
+    /// Backdated keying (`docs/design/backdated-keying.md` §2.1, §10): `insert_draft_in`'s checks and rows, with
+    /// `transactions.backdated = true`. The draft is LIVE with no shift (`shift_id = None`); a DEMO draft or one
+    /// naming a shift is refused `validationFailed` before any write.
+    fn insert_backdated_draft_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        transaction: &'a ExchangeTransaction,
+    ) -> impl std::future::Future<Output = AppResult<()>> + Send + 'a;
+
+    /// Backdated keying (§5, §9): the real entry (`recorded_at`, `recorded_by`) of a backdated exchange; `None` for
+    /// an exchange that is not backdated or does not exist.
+    fn backdate_mark_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+    ) -> impl std::future::Future<Output = AppResult<Option<BackdateMark>>> + Send + 'a;
 }

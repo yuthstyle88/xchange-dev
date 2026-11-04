@@ -11,6 +11,7 @@ use xc_kernel::money::{
 
 use crate::domain::exchange::value_objects::document_ref::DocumentRef;
 use crate::domain::exchange::value_objects::payment_method::PaymentMethod;
+use crate::domain::transaction::backdate_mark::BackdateMark;
 use crate::domain::transaction::line::TransactionLine;
 use crate::domain::transaction::payment::TransactionPayment;
 use crate::domain::transaction::receipt_record::Receipt;
@@ -627,6 +628,24 @@ impl TransactionStore for PgTransactionStore {
             }
         }
         Ok(())
+    }
+
+    async fn insert_backdated_draft_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        t: &'a ExchangeTransaction,
+    ) -> AppResult<()> {
+        let _ = (tx, t);
+        todo!("BK-4: backdated-keying.md §2.1, §10")
+    }
+
+    async fn backdate_mark_in<'a>(
+        &'a self,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: TransactionId,
+    ) -> AppResult<Option<BackdateMark>> {
+        let _ = (tx, id);
+        todo!("BK-4: backdated-keying.md §5, §9")
     }
 }
 

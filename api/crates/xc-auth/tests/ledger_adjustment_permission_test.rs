@@ -174,7 +174,8 @@ fn la_t3_it_enters_the_seed_in_version_8() {
     );
     // #5733 (PricingFormulaSave) raised it to 9 after LA-1 set 8; (8, ApproveLedgerAdjustment) is unchanged.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
-    assert_eq!(RoleGrants::SEED_VERSION, 10, "SEED_VERSION is 10");
+    // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
+    assert_eq!(RoleGrants::SEED_VERSION, 11, "SEED_VERSION is 11");
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, p)| p != KIND),
         "it is never removed"

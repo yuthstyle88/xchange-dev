@@ -202,6 +202,24 @@ impl CompleteExchange {
         }
     }
 
+    /// `[required]` Backdated keying (`docs/design/backdated-keying.md` §5, §7, §8): completes a CONFIRMED backdated
+    /// exchange (`backdated = true`, no shift). Both legs post at `CashPlace::Safe(branch)` instead of a drawer
+    /// (`legs(&t, CashPlace::Safe(..))`); `deal_at` stands in for `now` in the document number, `completed_at` and the
+    /// receipt's `issued_at`; the receipt is rendered with `ReceiptMarks { backdated: Some(mark) }`. Skipped against
+    /// `run_in`: the shift-open, quote and count-first checks, every `ExchangeEffects` phase, the queue/booking finish
+    /// and the save steps' `after_in`. A posting refusal (`stockInsufficient`) is the caller's to roll back.
+    pub async fn run_backdated_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: TransactionId,
+        who: &SaveActor,
+        deal_at: DateTime<Utc>,
+        mark: xc_exchange::domain::transaction::backdate_mark::BackdateMark,
+    ) -> AppResult<CompletedExchange> {
+        let _ = (tx, id, who, deal_at, mark);
+        todo!("BK-7: backdated-keying.md §7")
+    }
+
     /// `[required]` (#873 §7): design §4.5's order, in the caller's transaction. Every refusal before the posting
     /// writes nothing; a refusal from the posting, an effect or a step is the caller's to roll back.
     pub async fn run_in(
