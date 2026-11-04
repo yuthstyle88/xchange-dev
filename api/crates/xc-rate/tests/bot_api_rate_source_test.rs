@@ -397,13 +397,17 @@ async fn a_200_answer_gives_exactly_the_rows_the_scraper_gives_for_the_same_valu
 
     assert_eq!(bank.api_call_count(), 1, "one call");
     assert_eq!(got.rows, scraper_rows(of_period("2026-10-09")).await);
-    assert_eq!(got.rows.len(), 6);
+    assert_eq!(got.rows.len(), 7);
     let codes: Vec<&str> = got
         .rows
         .iter()
         .map(|r| r["code"].as_str().unwrap())
         .collect();
-    assert_eq!(codes, SIX, "the six, in the answer's order, SGD dropped");
+    assert_eq!(
+        codes,
+        ["USD", "EUR", "GBP", "JPY", "CNY", "AUD", "SGD"],
+        "the six then SGD, in the answer's order"
+    );
     assert_eq!(
         got.source,
         bank.api_base(),

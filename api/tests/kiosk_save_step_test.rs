@@ -454,6 +454,9 @@ async fn the_role_of_the_saver_plays_no_part() {
 async fn a_request_that_is_not_ready_or_not_the_savers_refuses_the_save() {
     let s = Scene::start().await;
     s.shop.seed_branch(B2, "Branch two").await;
+    xc_testdb::seed_branch_currencies(&s.shop.pool, B2, &["USD"])
+        .await
+        .expect("seed branch currencies");
     // A3 (kiosk) (TX-6 #674, lane controller's ruling R2): B2's kiosk quotes through the quote service too, which
     // prices from B2's own publication.
     s.shop.set_rate(B2, "USD", "32.1", "33").await;

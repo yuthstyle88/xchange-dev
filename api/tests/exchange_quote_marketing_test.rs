@@ -313,6 +313,9 @@ async fn quote_with_eligible_rule_updates_final_rate_reserves_and_populates_snap
     let db = TestDb::start().await;
     let branch = "B-MK5-1";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -384,6 +387,9 @@ async fn quote_with_no_rule_leaves_today_quote_unchanged() {
     let db = TestDb::start().await;
     let branch = "B-MK5-2";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
 
@@ -427,6 +433,9 @@ async fn anonymous_quote_evaluates_only_rules_with_no_customer_condition() {
     let db = TestDb::start().await;
     let branch = "B-MK5-3";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -491,6 +500,9 @@ async fn customer_withdrew_marketing_consent_skips_segment_rule() {
     ensure_m3_tables(&db).await;
     let branch = "B-MK5-4";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -647,6 +659,9 @@ async fn campaign_paused_with_live_reservations_honoured_at_completion_and_skips
     let db = TestDb::start().await;
     let branch = "B-MK5-5";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -742,6 +757,9 @@ async fn quote_expired_budget_used_up_completion_refuses_benefit_limit_reached_a
     let db = TestDb::start().await;
     let branch = "B-MK5-6";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -910,6 +928,9 @@ async fn completion_rollback_leaves_budget_as_before() {
     let db = TestDb::start().await;
     let branch = "B-MK5-7";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -1026,6 +1047,9 @@ async fn completion_through_exchange_effects_redeems_once() {
     let db = TestDb::start().await;
     let branch = "B-MK5-8";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -1097,6 +1121,9 @@ async fn same_completion_retried_with_same_key_redeems_once() {
     let db = TestDb::start().await;
     let branch = "B-MK5-9";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -1176,6 +1203,9 @@ async fn posted_reversal_marks_redemption_reversed_returns_budget_and_reissues_a
     let db = TestDb::start().await;
     let branch = "B-MK5-10";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -1510,6 +1540,9 @@ async fn demo_exchange_evaluated_without_touching_live_budget() {
     let db = TestDb::start().await;
     let branch = "B-MK5-11";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;
@@ -1764,6 +1797,9 @@ async fn simulator_line_equals_quote_in_line() {
     let db = TestDb::start().await;
     let branch = "B-MK5-PARITY";
     db.branch(branch).await;
+    xc_testdb::seed_branch_currencies(&db.pool, branch, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(branch, &[Line::manual("USD", "1", "32.00", "33.00")])
         .await;
     let user_id = seed_test_user(&db).await;

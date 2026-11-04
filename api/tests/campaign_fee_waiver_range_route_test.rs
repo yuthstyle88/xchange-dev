@@ -23,6 +23,9 @@ use serde_json::{Value, json};
 #[tokio::test]
 async fn test_q1_quote_stored_out_of_range_fee_waiver_refused_500() {
     let (db, _rule) = room_with_rule("FEE_WAIVER", json!({ "percent": "0" })).await;
+    xc_testdb::seed_branch_currencies(&db.pool, BRANCH, &["USD"])
+        .await
+        .expect("seed branch currencies");
 
     let ans = quote(&db, "100.00").await;
 

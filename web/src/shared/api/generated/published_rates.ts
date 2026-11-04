@@ -13,7 +13,7 @@ export type PublishedDisplayDto = { tiers: Array<number>, featured: Array<string
  */
 order: Array<string>, 
 /**
- * With `allMarket`: currencies Super Rich lists that the branch has no price for — "contact the counter",
+ * With `allMarket`: the branch's `ASK` rows that have no shown line, by `sort_order` — "contact the counter",
  * never a price.
  */
 more: Array<string>, };
@@ -30,7 +30,7 @@ pricingSource: string,
  */
 hidden: boolean, 
 /**
- * `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+ * `DISPLAY` · `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
  */
 hiddenReason: string | null, };
 

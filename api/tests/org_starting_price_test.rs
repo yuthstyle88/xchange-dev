@@ -639,6 +639,9 @@ async fn unpublished_branch_with_active_policy_gets_publication_with_priced_side
 
     // Branch XC-B01 has active policy version, but current_publication_id IS NULL
     db.insert_policy_version(B01, 1).await;
+    xc_testdb::seed_branch_currencies(&db.pool, B01, &["USD"])
+        .await
+        .expect("seed branch currencies");
     let initial_pub: Option<Uuid> =
         sqlx::query_scalar("SELECT current_publication_id FROM branches WHERE id = $1")
             .bind(B01)
@@ -904,6 +907,12 @@ async fn two_unpublished_branches_each_gets_full_currency_set() {
 
     db.insert_policy_version(B01, 1).await;
     db.insert_policy_version(B02, 1).await;
+    xc_testdb::seed_branch_currencies(&db.pool, B01, &["USD", "JPY"])
+        .await
+        .expect("seed branch currencies B01");
+    xc_testdb::seed_branch_currencies(&db.pool, B02, &["USD", "JPY"])
+        .await
+        .expect("seed branch currencies B02");
 
     let payload = save_payload(
         vec![
@@ -978,6 +987,9 @@ async fn currency_code_failing_parse_is_skipped() {
     .expect("seed unparsable currency code ZZZ");
 
     db.insert_policy_version(B01, 1).await;
+    xc_testdb::seed_branch_currencies(&db.pool, B01, &["USD", "JPY"])
+        .await
+        .expect("seed branch currencies B01");
 
     let payload = save_payload(
         vec![

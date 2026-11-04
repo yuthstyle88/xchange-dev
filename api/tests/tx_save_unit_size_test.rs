@@ -25,6 +25,9 @@ async fn publish_rate_direct(
     sell: &str,
     unit_size: Decimal,
 ) -> Uuid {
+    xc_testdb::seed_branch_currencies(pool, branch, &[code])
+        .await
+        .expect("seed branch currencies");
     let pub_id = Uuid::new_v4();
     let appr_id = Uuid::new_v4();
     let line_id = Uuid::new_v4();

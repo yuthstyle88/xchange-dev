@@ -159,8 +159,8 @@ function cardOf(c: KioskCurrency): HTMLElement {
   return h.closest('form')!;
 }
 
-function switchOf(card: HTMLElement): HTMLInputElement {
-  return card.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+function switchOf(card: HTMLElement, value: 'SHOW' | 'ASK' | 'HIDE' = 'HIDE'): HTMLInputElement {
+  return card.querySelector<HTMLInputElement>(`input[type="radio"][value="${value}"]`)!;
 }
 
 function cardStatus(card: HTMLElement): string {

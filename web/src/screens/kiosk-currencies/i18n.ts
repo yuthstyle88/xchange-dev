@@ -36,6 +36,7 @@ export const th = {
   kbLoading: 'KB · กำลังโหลดข้อมูลอ้างอิง…',
   resultSecondsRange: 'ระยะเวลาแสดงผลต้องเป็นจำนวนเต็มระหว่าง 3–120 วินาที',
   contactStaff: 'ติดต่อพนักงาน — ลูกค้าขอราคาสกุลนี้ที่ตู้ไม่ได้',
+  addCurrency: 'เพิ่มสกุลเงิน',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -76,4 +77,5 @@ export const en: Record<keyof typeof th, string> = {
   kbLoading: 'KB · Loading reference…',
   resultSecondsRange: 'Display duration must be a whole number between 3–120 seconds.',
   contactStaff: "Contact staff: customers can't get a quote for this currency at the kiosk",
+  addCurrency: 'Add currency',
 };

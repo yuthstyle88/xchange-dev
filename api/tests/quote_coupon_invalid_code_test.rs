@@ -134,6 +134,9 @@ async fn setup_shop() -> SeededShop {
     let db = TestDb::empty().await;
     db.migrate_through(None).await;
     db.branch(BRANCH).await;
+    xc_testdb::seed_branch_currencies(&db.pool, BRANCH, &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.publish(BRANCH, &[Line::manual("USD", "1", "32.0000", "33.0000")])
         .await;
     db.customer("cust-1", BRANCH).await;

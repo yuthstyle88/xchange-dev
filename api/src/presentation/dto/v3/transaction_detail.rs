@@ -5,6 +5,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::presentation::dto::v3::transaction::BackdateMarkDto;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "transaction.ts")]
@@ -117,6 +119,9 @@ pub struct TransactionDetailDto {
     pub reversal: Option<crate::presentation::dto::v3::reversal::ReversalSummaryDto>,
     pub benefits: Vec<TxBenefitDto>,
     pub booking: Option<TxBookingRefDto>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub backdate: Option<BackdateMarkDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -11,11 +11,10 @@ use tokio::sync::Mutex;
 use crate::domain::rate::entities::rate_source::{RateSource, ReferenceRates};
 use crate::infrastructure::rate::bot_rate_source::{BOT_UNAVAILABLE, Clock};
 use crate::infrastructure::reference_source::bot_rows::bot_rows;
+use crate::infrastructure::reference_source::bot_table::BOT_TABLE_SENTINELS;
 
 /// `[proposed]` How long one upstream answer is kept (design §8.6).
 pub const BOT_API_MIN_INTERVAL: Duration = Duration::from_secs(15 * 60);
-
-const ALLOWED_CURRENCIES: [&str; 6] = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
 
 /// Where and how to call the API. `Debug` must never print the token.
 #[derive(Clone)]
@@ -172,12 +171,12 @@ impl BotApiRateSource {
             let mut seen = HashSet::new();
             for r in &rows {
                 if let Some(code) = r.get("currency_id").and_then(|c| c.as_str()) {
-                    if ALLOWED_CURRENCIES.contains(&code) {
+                    if BOT_TABLE_SENTINELS.contains(&code) {
                         seen.insert(code);
                     }
                 }
             }
-            if seen.len() == 6 {
+            if seen.len() == BOT_TABLE_SENTINELS.len() {
                 chosen_period_rows = Some(rows);
                 break;
             }

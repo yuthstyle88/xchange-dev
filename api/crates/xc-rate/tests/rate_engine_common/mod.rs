@@ -283,12 +283,23 @@ impl TestDb {
         self.pool.begin().await.expect("begin a transaction")
     }
 
-    pub async fn seed_branch(&self, id: &str) {
+    pub async fn seed_branch_row(&self, id: &str) {
         sqlx::query("INSERT INTO branches (id, name) VALUES ($1, $1)")
             .bind(id)
             .execute(&self.pool)
             .await
             .expect("insert into branches");
+    }
+
+    pub async fn seed_branch(&self, id: &str) {
+        self.seed_branch_row(id).await;
+        xc_testdb::seed_branch_currencies(
+            &self.pool,
+            id,
+            &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+        )
+        .await
+        .expect("seed branch_currencies");
     }
 
     pub async fn count(&self, table: &str) -> i64 {

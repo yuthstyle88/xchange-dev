@@ -233,6 +233,17 @@ pub trait KioskRepository: Send + Sync {
         branch: &BranchId,
     ) -> impl Future<Output = AppResult<Vec<CurrencySwitch>>> + Send;
 
+    /// `branch_currencies.display` of one row, added if the branch has none (`docs/design/board-currencies.md` §3).
+    fn set_display_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        code: CurrencyCode,
+        group: &str,
+        display: &str,
+        actor: &str,
+    ) -> impl Future<Output = AppResult<()>> + Send;
+
     /// One row per branch and currency; a second call replaces the first.
     fn set_switch_in(
         &self,

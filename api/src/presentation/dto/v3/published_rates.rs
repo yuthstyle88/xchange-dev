@@ -47,7 +47,7 @@ pub struct PublishedLineDto {
     /// The board and the public feed drop a hidden line; the kiosk lists it `quoteEnabled: false`. `MANUAL` and
     /// `AUTO` are never hidden.
     pub hidden: bool,
-    /// `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
+    /// `DISPLAY` · `STALE` · `BLOCKED` · `MISMATCH`, or `null`.
     pub hidden_reason: Option<String>,
 }
 
@@ -61,7 +61,7 @@ pub struct PublishedDisplayDto {
     pub highlight: bool,
     /// The priced currencies: featured first in their set order, then Super Rich's market order, then by code.
     pub order: Vec<String>,
-    /// With `allMarket`: currencies Super Rich lists that the branch has no price for — "contact the counter",
+    /// With `allMarket`: the branch's `ASK` rows that have no shown line, by `sort_order` — "contact the counter",
     /// never a price.
     pub more: Vec<String>,
 }

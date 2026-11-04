@@ -318,8 +318,10 @@ fn want_in_bank_unit(want: &str, unit: u64) -> String {
     value.normalize().to_string()
 }
 
-/// Everything in which `got` is not the answer the fixture wants.
+/// Everything in which `got`'s sentinel rows are not the answer the fixture wants.
 fn differences(got: &ReferenceRates, want: &Expected) -> Vec<String> {
+    use xc_rate::infrastructure::reference_source::bot_table::BOT_TABLE_SENTINELS;
+
     let mut wrong = Vec::new();
     let mut check = |what: String, got: String, want: String| {
         if got != want {
@@ -333,12 +335,21 @@ fn differences(got: &ReferenceRates, want: &Expected) -> Vec<String> {
         want.fetched_at.clone(),
     );
     check("kind".into(), got.kind.clone(), want.kind.clone());
+    let sentinel_rows: Vec<&Value> = got
+        .rows
+        .iter()
+        .filter(|r| {
+            r.get("code")
+                .and_then(Value::as_str)
+                .is_some_and(|c| BOT_TABLE_SENTINELS.contains(&c))
+        })
+        .collect();
     check(
-        "number of rows".into(),
-        got.rows.len().to_string(),
+        "number of sentinel rows".into(),
+        sentinel_rows.len().to_string(),
         want.rows.len().to_string(),
     );
-    for (i, (row, w)) in got.rows.iter().zip(&want.rows).enumerate() {
+    for (i, (row, w)) in sentinel_rows.iter().zip(&want.rows).enumerate() {
         let Some(object) = row.as_object() else {
             check(format!("row {i}"), row.to_string(), "an object".into());
             continue;
@@ -575,6 +586,18 @@ async fn every_recorded_case_is_answered_as_v2_answered_it() {
                 for difference in differences(&got, want) {
                     wrong.push(format!("{}: {difference}", case.name));
                 }
+                let expected_len = match case.name.as_str() {
+                    "the six currencies and nothing else" => 6,
+                    "a bad date in a currency v2 does not keep is not looked at" => 8,
+                    _ => 9,
+                };
+                if got.rows.len() != expected_len {
+                    wrong.push(format!(
+                        "{}: expected {expected_len} rows kept, got {}",
+                        case.name,
+                        got.rows.len()
+                    ));
+                }
             }
             (None, Err(AppError::Domain(sentence))) => {
                 if sentence != fixture.sentence {
@@ -620,7 +643,7 @@ async fn two_gets_labels_first_then_the_one_level() {
         .iter()
         .filter_map(|r| r["code"].as_str())
         .collect();
-    assert_eq!(codes, ["USD", "GBP", "EUR", "JPY", "AUD", "CNY"]);
+    assert_eq!(codes, ["USD", "GBP", "EUR", "JPY", "HKD", "AUD", "CNY"]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -895,4 +918,28 @@ async fn a_rate_of_plain_digits_and_one_dot_is_read_as_written() {
             Value::String(text.to_owned()),
         );
     }
+}
+
+/// Board currencies D-4: one exotic row must not stop USD. Added by the reviewer (claude/94389a6b).
+#[test]
+fn a_non_sentinel_code_twice_keeps_the_first_row_and_the_table_stands() {
+    use xc_rate::infrastructure::reference_source::bot_rows::bot_rows;
+
+    let row = |code: &str, sell: &str| {
+        serde_json::json!({
+            "currency_id": code, "period": "2026-11-03",
+            "buying_sight": "1.0", "buying_transfer": "1.1", "selling": sell,
+        })
+    };
+    let mut detail: Vec<Value> = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"]
+        .iter()
+        .map(|c| row(c, "1.2"))
+        .collect();
+    detail.push(row("SGD", "2.5"));
+    detail.push(row("SGD", "9.9"));
+
+    let rows = bot_rows(&detail).expect("the table stands");
+    assert_eq!(rows.len(), 7);
+    let sgd = rows.iter().find(|r| r["code"] == "SGD").expect("SGD");
+    assert_eq!(sgd["selling"], serde_json::json!(2.5), "the first row");
 }

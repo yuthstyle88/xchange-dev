@@ -1,9 +1,13 @@
 import type { ApiClient } from '../../shared/api/client';
 
+export type CurrencyDisplay = 'SHOW' | 'ASK' | 'HIDE';
+
 export interface ConfigurePayload {
   branchId: string;
   code: string;
-  enabled: boolean;
+  group?: string;
+  display?: CurrencyDisplay;
+  enabled?: boolean;
   buy?: string;
   sell?: string;
   previousUpdated?: string;

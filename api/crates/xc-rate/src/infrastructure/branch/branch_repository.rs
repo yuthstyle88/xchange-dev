@@ -192,6 +192,39 @@ impl BranchRepository for PgBranchRepository {
 
         Ok(())
     }
+
+    async fn copy_currency_set_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        from: &str,
+        to: &str,
+    ) -> AppResult<()> {
+        sqlx::query(
+            "INSERT INTO branch_currencies (branch_id, organization_id, currency_code, group_code, display, sort_order) \
+             SELECT $2, organization_id, currency_code, group_code, 'HIDE', sort_order \
+             FROM branch_currencies \
+             WHERE branch_id = $1",
+        )
+        .bind(from)
+        .bind(to)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        sqlx::query(
+            "INSERT INTO branch_currency_notes (branch_id, currency_code, group_code, denomination_id) \
+             SELECT $2, currency_code, group_code, denomination_id \
+             FROM branch_currency_notes \
+             WHERE branch_id = $1",
+        )
+        .bind(from)
+        .bind(to)
+        .execute(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+
+        Ok(())
+    }
 }
 
 /// The profile writes of `branchSave` (OR-5a #945). Inherent, not on `BranchRepository`: they run

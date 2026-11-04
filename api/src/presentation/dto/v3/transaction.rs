@@ -55,9 +55,37 @@ pub struct TransactionDto {
     pub recorded_at: String,
     pub lines: Vec<TransactionLineDto>,
     pub payment: TransactionPaymentDto,
+    /// Backdated keying (`docs/design/backdated-keying.md` §9): the real entry of a backdated exchange; absent for
+    /// every other exchange.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub backdate: Option<BackdateMarkDto>,
+}
+
+/// `[required]` §9: who really keyed a backdated exchange, and when (RFC 3339).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "transactions.ts")]
+pub struct BackdateMarkDto {
+    pub entered_at: String,
+    pub entered_by: String,
 }
 
 impl TransactionDto {
+    /// `[required]` §9: the answer with `backdate` set from `mark` (`None` leaves it absent).
+    pub fn with_backdate(
+        self,
+        mark: Option<xc_exchange::domain::transaction::backdate_mark::BackdateMark>,
+    ) -> Self {
+        Self {
+            backdate: mark.map(|m| BackdateMarkDto {
+                entered_at: m.entered_at.to_rfc3339(),
+                entered_by: m.entered_by,
+            }),
+            ..self
+        }
+    }
+
     pub fn from_domain(t: &ExchangeTransaction) -> Self {
         Self {
             id: t.id.0.to_string(),
@@ -97,6 +125,7 @@ impl TransactionDto {
                 bank_fee_thb: t.payment.bank_fee_thb.to_string(),
                 paid_at: t.payment.paid_at.to_rfc3339(),
             },
+            backdate: None,
         }
     }
 }

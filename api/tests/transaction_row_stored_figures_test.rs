@@ -32,6 +32,7 @@ fn sql_row(side: &str, amount: &str, rate: &str, principal: &str, settlement: &s
         notes: "".into(),
         shift_id: None,
         slip_key: None,
+        backdated: false,
     }
 }
 

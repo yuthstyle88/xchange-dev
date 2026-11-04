@@ -42,6 +42,7 @@ fn sample_sql_row() -> TxSqlRow {
         notes: "".into(),
         shift_id: None,
         slip_key: None,
+        backdated: false,
     }
 }
 

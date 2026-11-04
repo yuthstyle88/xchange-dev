@@ -313,6 +313,9 @@ impl Shop {
     /// migration 4 converts a row) over the branch's current publication, with no `rates` row —
     /// the same rate set the newest rows published before.
     pub async fn set_rate(&self, branch_id: &str, currency: &str, buy: &str, sell: &str) {
+        xc_testdb::seed_branch_currencies(&self.pool, branch_id, &[currency])
+            .await
+            .expect("seed branch currencies");
         rates_re4c_common::set_counter_rate(&self.pool, branch_id, currency, buy, sell).await;
     }
 

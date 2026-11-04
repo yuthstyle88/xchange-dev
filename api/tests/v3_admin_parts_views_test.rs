@@ -84,7 +84,7 @@ const JPEG: &[u8] = &[
 const PDF: &[u8] = b"%PDF-1.7 a slip\n";
 
 /// `TransactionRow`'s fields (ticket §7, design §12.2).
-const ROW_FIELDS: [&str; 26] = [
+const ROW_FIELDS: [&str; 27] = [
     "id",
     "date",
     "created",
@@ -111,6 +111,8 @@ const ROW_FIELDS: [&str; 26] = [
     "referencePercent",
     "paymentRef",
     "slipUrl",
+    // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
+    "backdated",
 ];
 /// The fields v2 shows as `—` or not at all when the exchange has none: `null` on the wire.
 const ROW_NULLABLE: [&str; 9] = [
@@ -300,6 +302,9 @@ impl Room {
     }
 
     async fn set_rate(&self, branch: &str, code: &str, buy: &str, sell: &str) {
+        xc_testdb::seed_branch_currencies(&self.desk.db.pool, branch, &[code])
+            .await
+            .expect("seed branch currencies");
         // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
         // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
         rates_re4e_publish::set_counter_rate(&self.desk.db.pool, branch, code, buy, sell).await;
@@ -1166,8 +1171,10 @@ fn transaction_row_has_the_tickets_fields_as_strings() {
     for (name, ty) in &fields {
         let nullable = ROW_NULLABLE.contains(&name.as_str());
         let base = ty.strip_suffix(" | null").unwrap_or(ty);
+        // Backdated keying (backdated-keying.md §9, BK-12 #6148): `backdated` is the one boolean.
         assert!(
-            ["string", "Money", "Rate"].contains(&base),
+            ["string", "Money", "Rate"].contains(&base)
+                || (name == "backdated" && base == "boolean"),
             "{name}: a string on the wire (W7), got `{ty}`"
         );
         assert_eq!(

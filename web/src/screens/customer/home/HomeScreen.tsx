@@ -201,7 +201,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
 
   const availableCurrencies = createMemo(() => {
     const lines = ratesLines();
-    if (lines.length === 0) return ['USD', 'EUR', 'JPY', 'GBP', 'CNY', 'SGD', 'KRW', 'AUD', 'HKD'];
+    if (lines.length === 0) return [];
     return Array.from(new Set(lines.map((l) => l.currency)));
   });
 

@@ -164,7 +164,9 @@ impl PermissionModule {
             | P::SystemSettings
             | P::AlertSettingsSave
             | P::BranchSettingsSave
-            | P::SettingsRead => None,
+            | P::SettingsRead
+            // backdated-keying.md §3: seeded on EXECUTIVE and BRANCH_MANAGER only, so no module implies it.
+            | P::ExchangeBackdate => None,
         }
     }
 }

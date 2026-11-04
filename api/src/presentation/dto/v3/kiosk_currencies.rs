@@ -55,6 +55,7 @@ pub struct KioskCurrency {
     pub updated: String,
     pub partner_name: String,
     pub partner_cost: Option<Rate>,
+    pub display: String,
     pub enabled: bool,
     pub kbank: Vec<KbankComparison>,
     /// pricing-tiers.md §15.8a: true only when the currency is kiosk-enabled and its line is not `hidden`. A

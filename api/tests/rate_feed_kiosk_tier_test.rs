@@ -161,6 +161,9 @@ async fn add_eur_without_open_below_tier(pool: &PgPool, publication_id: &str) {
 /// - Round 4 (at T2 sell 40.00): 12000 / 40 = 300 GBP -> falls in T1!
 /// - Still moving after 4 rounds -> refuses AmountOrCurrencyInvalid.
 async fn add_oscillating_gbp_tiers(pool: &PgPool, publication_id: &str) {
+    xc_testdb::seed_branch_currencies(pool, MAIN, &["GBP"])
+        .await
+        .expect("seed branch currencies");
     let snapshot = json!({ "buy_mode": "MANUAL", "sell_mode": "MANUAL" });
     for (tier, lo, hi, buy, sell) in [
         ("T1", None, Some("10000.00"), "29.00", "30.00"),
@@ -708,7 +711,7 @@ async fn kiosk_currency_on_switch_refuses_rates_first_when_no_open_below_tier() 
     // 1. Refusal case: EUR has rates, but neither is open-below (no counter line)
     let mark_eur = audit_mark(&counter).await;
     let eur_before: Option<(bool,)> = sqlx::query_as(
-        "SELECT enabled FROM kiosk_currencies WHERE branch_id = 'MAIN' AND code = 'EUR'",
+        "SELECT display <> 'HIDE' FROM branch_currencies WHERE branch_id = 'MAIN' AND currency_code = 'EUR' AND updated_by IS NOT NULL",
     )
     .fetch_optional(&pool)
     .await
@@ -740,7 +743,7 @@ async fn kiosk_currency_on_switch_refuses_rates_first_when_no_open_below_tier() 
     );
 
     let eur_after: Option<(bool,)> = sqlx::query_as(
-        "SELECT enabled FROM kiosk_currencies WHERE branch_id = 'MAIN' AND code = 'EUR'",
+        "SELECT display <> 'HIDE' FROM branch_currencies WHERE branch_id = 'MAIN' AND currency_code = 'EUR' AND updated_by IS NOT NULL",
     )
     .fetch_optional(&pool)
     .await
@@ -779,7 +782,7 @@ async fn kiosk_currency_on_switch_refuses_rates_first_when_no_open_below_tier() 
     );
 
     let (usd_enabled,): (bool,) = sqlx::query_as(
-        "SELECT enabled FROM kiosk_currencies WHERE branch_id = 'MAIN' AND code = 'USD'",
+        "SELECT display <> 'HIDE' FROM branch_currencies WHERE branch_id = 'MAIN' AND currency_code = 'USD' AND updated_by IS NOT NULL",
     )
     .fetch_one(&pool)
     .await

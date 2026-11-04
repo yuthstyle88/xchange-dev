@@ -352,7 +352,8 @@ fn v2_the_seed_gives_the_saves_to_executive_and_the_read_to_every_staff_group() 
 /// version 9 or earlier are brought along at boot (§11.5 item 2); custom groups are not touched.
 #[test]
 fn v3_seed_version_10_records_the_removals_and_additions() {
-    assert_eq!(RoleGrants::SEED_VERSION, 10);
+    // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
+    assert_eq!(RoleGrants::SEED_VERSION, 11);
     for &(p, holders) in SAVE_PERMISSIONS {
         if holders.is_empty() {
             continue;

@@ -348,10 +348,12 @@ async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_
                     // Restated for #6004 (user-management-rbac.md §11.11): version 10 gives EXECUTIVE-based groups SettingsRead and BranchSettingsSave.
                     Permission::SettingsRead,
                     Permission::BranchSettingsSave,
+                    // Backdated keying (version 11): the same sync gives EXECUTIVE-based groups ExchangeBackdate.
+                    Permission::ExchangeBackdate,
                 ])
                 .collect::<Vec<_>>()
         ),
-        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor, PricingFormulaSave, SettingsRead and BranchSettingsSave"
+        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor, PricingFormulaSave, SettingsRead, BranchSettingsSave and ExchangeBackdate"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,
