@@ -266,7 +266,7 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
         .collect()
 }
 
-pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+pub(crate) fn queue_day_hook(pool: &PgPool) -> QueueDayHook {
     use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
     use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
     use xc_kiosk::application::kiosk::day_close::KioskDayCloser;
@@ -276,12 +276,7 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
 
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
-    let status = StatusService::new(branch_tx.clone(), queue.clone());
-    let counters: Arc<dyn ShiftLifecycleHook> = Arc::new(CounterService::new(
-        branch_tx,
-        queue.clone(),
-        status.clone(),
-    ));
+    let status = StatusService::new(branch_tx, queue.clone());
     let booking = pg_booking_lifecycle(pool.clone());
     let audit = Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(pool.clone())));
     let ports = Arc::new(PgKioskPorts::new(
@@ -301,11 +296,21 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
         ports,
         kiosk_queue,
     ));
-    let day: Arc<dyn ShiftLifecycleHook> = Arc::new(
-        QueueDayHook::new(queue, status)
-            .with_booking_events(booking)
-            .with_kiosk_day_close(kiosk),
-    );
+    QueueDayHook::new(queue, status)
+        .with_booking_events(booking)
+        .with_kiosk_day_close(kiosk)
+}
+
+pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(branch_tx.clone(), queue.clone());
+    let counters: Arc<dyn ShiftLifecycleHook> = Arc::new(CounterService::new(
+        branch_tx,
+        queue,
+        status,
+    ));
+    let day: Arc<dyn ShiftLifecycleHook> = Arc::new(queue_day_hook(pool));
     Arc::new(ShiftLifecycleHooks::new(vec![counters, day]))
 }
 
