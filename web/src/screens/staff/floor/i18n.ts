@@ -12,6 +12,8 @@ export const th = {
   cutoff: 'ตัดรายการ',
   targetSave: 'บันทึกเป้าหมาย',
   saved: 'บันทึกแล้ว',
+  shiftLabel: 'กะ {name}',
+  onBreak: 'พักเบรก',
 };
 
 export const en = {
@@ -27,4 +29,6 @@ export const en = {
   cutoff: 'Cut-off',
   targetSave: 'Save Target',
   saved: 'Saved',
+  shiftLabel: 'Shift {name}',
+  onBreak: 'On break',
 };
