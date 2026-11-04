@@ -80,7 +80,7 @@ const JPEG: &[u8] = &[
 ];
 
 /// The keys of a row as merged at `27db80f5`, plus `unitSize`.
-const ROW_KEYS: [&str; 26] = [
+const ROW_KEYS: [&str; 27] = [
     "id",
     "date",
     "created",
@@ -107,6 +107,8 @@ const ROW_KEYS: [&str; 26] = [
     "referencePercent",
     "paymentRef",
     "slipUrl",
+    // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
+    "backdated",
 ];
 
 // ── helpers ──────────────────────────────────────────────────────────────────

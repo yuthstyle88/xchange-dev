@@ -86,7 +86,7 @@ const JPEG: &[u8] = &[
 ];
 
 /// `TransactionRow`'s fields (V2-parts #476, design §12.2).
-const ROW_FIELDS: [&str; 26] = [
+const ROW_FIELDS: [&str; 27] = [
     "id",
     "date",
     "created",
@@ -113,6 +113,8 @@ const ROW_FIELDS: [&str; 26] = [
     "referencePercent",
     "paymentRef",
     "slipUrl",
+    // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
+    "backdated",
 ];
 
 const DATA_FIELDS: [&str; 4] = ["period", "totals", "latest", "status"];
