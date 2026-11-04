@@ -147,11 +147,11 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 
 ### 2.7 Service hours (brief rule 4)
 
-- `[required]` `PgCustodyPorts::service_window` and `read_hours` compute the span (T4) from the plan, for the business date containing now, else the next one. `opening_hours` no longer gates custody.
+- `[required]` `PgCustodyPorts::service_window` and `read_hours` compute the business day (T4) holding now from the plan; every plan covers 24 hours (T5), so there always is one. `opening_hours` no longer gates custody.
 - `[required]` **No daily pause on a 24-hour plan (T10, Q7).** `ServiceWindow` refuses to begin a sale in the last 10 minutes
   (`service_window.rs:18-24`). On a 24-hour plan that would stop selling every day 05:50–06:00. When the next day's span starts
   exactly at this span's end, `service_window` answers `Open { this span's start, next span's end }`, so the cut-off falls a day
-  later and keeps moving. A plan with a gap keeps the 10-minute cut-off before its gap.
+  later and keeps moving. Every plan covers 24 hours (T5), so the spans always join.
 - **Fixtures.** About 25 api test files drive the custody window by writing `branches.opening_hours`
   (`grep -rln opening_hours api --include='*.rs' | grep tests` → 30 files at `6334e748`, a few of them booking-only). After CS-4
   they must seed a plan instead. Which ones go red is measured, not guessed: the full suite on the feat branch runs right
@@ -226,7 +226,9 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
     confirm, `xc-kiosk/src/application/kiosk/customer.rs:284,404`), and `created_at` (the quote time) only for a request that
     has no ticket yet. So a quote at 05:58 confirmed at 06:02 belongs to the new day and is not swept.
   - **What survives the cutover:** `CALLED` and `SERVING` tickets, and `ACCEPTED`/`ID_CHECKED` kiosk requests (with their
-    tickets). That is a teller serving a customer across the cutover (a C teller who called someone at 05:58). None of it is
+    tickets). **Plain `SERVING` queue tickets are never ended by the sweep**, not even a day later: today's `on_day_closed`
+    does not end them either (it selects `WAITING`/`CALLED` only, `queue_day_hook.rs:89`), and a ticket being served is
+    finished by the teller. A kiosk request's own SERVING ticket ends with its request, as the kiosk day close does today. That is a teller serving a customer across the cutover (a C teller who called someone at 05:58). None of it is
     ended at that cutover; it is ended at the next one, i.e. only when it was issued before the **previous** cutover (more
     than one business day old). Normal service finishes it long before; the rule only clears what was abandoned.
   - Today's branch-day close knew no teller held anything (it runs after the last CLOSE is verified). The cutover has no
@@ -248,7 +250,7 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
   `branch_service_status.queue_version` (`xc-queue/src/application/status/status_service.rs:141-200`). The cutover method calls
   `refresh_in` only when it ended at least one ticket or kiosk request; otherwise every polled queue client would refetch
   every minute (fleet rule: polled endpoints send only what changed).
-- `[required]` The branch-day close keeps calling `on_day_closed` unchanged (a branch with a gap still closes its day as today).
+- `[required]` The branch-day close keeps calling `on_day_closed` unchanged (it fires only after a cut-off with no shift open, as today).
 - Files and tickets:
   - **CS-22a** (logic, Argon): `QueueDayHook::on_business_day_end(tx, branch, cutover)` in
     `xc-queue/src/application/day/queue_day_hook.rs` (tickets with `issued_at < cutover`), and
@@ -269,6 +271,7 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
 | Q4 | a WAITING kiosk request created 5 Nov 05:50 | cancelled `DAY_CLOSED` at the 06:01 sweep |
 | Q4b | a CALLED ticket issued 5 Nov 05:58; an `ID_CHECKED` kiosk request created 5 Nov 05:50 | untouched at the 5 Nov 06:01 sweep; ended at the 6 Nov 06:01 sweep if still open |
 | Q4c | a sweep where one branch's plan cannot load | that branch is logged and skipped; the others are swept |
+| Q4d | a plain `SERVING` ticket issued 3 Nov 23:00, sweep at 5 Nov 06:01 | untouched |
 | Q5 | a kiosk quote created 5 Nov 05:58, confirmed (ticket issued) 06:02; sweep at 06:03 | untouched |
 | Q5b | a WAITING ticket issued at exactly 5 Nov 06:00:00; sweep at 06:01 | untouched (at the cutover is the new day) |
 | Q5c | two sweepers on the same branch at once | one ends the rows; the other skips the branch (advisory lock), no second event |
@@ -489,30 +492,34 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 
 ## 4. Behaviour tables (up-front tests)
 
-### CS-1 `ShiftPlan` (tz Asia/Bangkok; "4 Nov" = 2026-11-04 local). P1–P12 and P14–P17 use the owner's first, overlapping table as a fixture; P13 and P18–P20 the defaults
+### CS-1 / CS-1b `ShiftPlan` (tz Asia/Bangkok; "4 Nov" = 2026-11-04 local)
+
+Fixture **overlap24**: A 06–15, B 14–23 (break 18–19), C 22–07; every hour covered, cutover 06:00. P13 and P18–P20 use
+the defaults (A 06–14, B 14–22, C 22–06). Source of truth: `api/crates/xc-shift/tests/shift_plan_test.rs`.
 
 | # | Case | Required |
 |---|---|---|
-| P1 | `covering(4 Nov 10:00)` | `[A@4 Nov]` |
-| P2 | `covering(4 Nov 15:00)` | `[A@4 Nov, B@4 Nov]` |
-| P3 | `covering(4 Nov 19:00)` | `[B@4 Nov, C@4 Nov]` (A ended at 19:00, exclusive) |
+| P1 | overlap24 `covering(4 Nov 06:30)` | `[A@4 Nov, C@3 Nov]` (last night's C still runs to 07:00) |
+| P2 | `covering(4 Nov 14:30)` | `[A@4 Nov, B@4 Nov]` |
+| P3 | `covering(4 Nov 22:30)` | `[B@4 Nov, C@4 Nov]` |
 | P4 | `covering(5 Nov 02:00)` | `[C@4 Nov]` |
-| P5 | `covering(5 Nov 05:00)` | `[]` |
-| P6 | `covering(4 Nov 09:59)` | `[]` |
-| P7 | `business_date_of(5 Nov 02:00)` | `Some(4 Nov)`; `business_date_of(5 Nov 05:00)` = `None` |
-| P8 | `service_span(4 Nov)` | `(4 Nov 10:00, 5 Nov 04:00)` as UTC (03:00Z, 21:00Z) |
-| P9 | `span_for(5 Nov 05:00)` | the 5 Nov span `(5 Nov 10:00, 6 Nov 04:00)` |
-| P10 | `on_break(B, 4 Nov 18:30)` true; `on_break(B, 4 Nov 19:00)` false; `on_break(C, 4 Nov 23:30)` true |
-| P11 | `instance(C, 4 Nov)` | `starts 4 Nov 19:00, ends 5 Nov 04:00, break 4 Nov 23:00–5 Nov 00:00` |
-| P12 | `validate` on: empty list / 13 rows / blank name / 41-char name / "A" and " a " / start = end / break 05:00–06:00 in A / A 08–20 + B 20–09 (no gap, 25 h) | `None` / `TooMany` / `EmptyName(1)` / `NameTooLong(0)` / `DuplicateName(1)` / `ZeroLength(1)` / `BreakOutsideShift(0)` / `SpanOver24h`; a 40-character name and an exact 24 h plan (08–20 + 20–08) are accepted; names come back trimmed, in order |
-| P13 | `defaults()` | A 06–14, B 14–22, C 22–06, no breaks; valid |
-| P18 | defaults at 06:00, 14:00, 22:00 | covering = A, B, C of that date |
-| P19 | defaults at 5 Nov 02:00 / 05:59 / 06:00 | C@4 Nov; business date 4 Nov / 4 Nov / 5 Nov |
-| P20 | defaults `service_span(4 Nov)` | 4 Nov 06:00 – 5 Nov 06:00 |
-| P14 | a plan whose only template is 02:00–08:00 | anchor 02:00; `business_date_of(3 Nov 03:00)` = 3 Nov |
-| P15 | A 10–19, C 19–04, D 00:30–06:00 | anchor 10:00; at 5 Nov 01:00 covering = `[C@4 Nov, D@4 Nov]`; span of 4 Nov = 10:00–5 Nov 06:00 |
-| P16 | the defaults in `Asia/Tokyo` | 10:00 Tokyo = 08:00 Bangkok opens A |
-| P17 | an empty plan | covers nothing, no span, no business date |
+| P5 | `covering(4 Nov 15:00)` | `[B@4 Nov]` (A ends exclusive) |
+| P6 | every 7th minute of 4 Nov | at least one shift covers |
+| P7 | `business_date_of` 5 Nov 02:00 / 05:59 / 06:00 / 06:30 | 4 Nov / 4 Nov / 5 Nov / 5 Nov (C@4 Nov still covers 06:30, but the day has moved on) |
+| P8 | `service_span(4 Nov)` | `(4 Nov 06:00, 5 Nov 06:00)` = (`2026-11-03T23:00Z`, `2026-11-04T23:00Z`) |
+| P9 | `span_for` 5 Nov 02:00 / 06:00 | the 4 Nov span / the 5 Nov span |
+| P10 | `on_break` B 18:30 / B 19:00 / A 14:30 / defaults C 02:00 | true / false / false (no break) / false (no breaks) |
+| P11 | `instance(C, 4 Nov)` | 4 Nov 22:00 → 5 Nov 07:00, business date 4 Nov (straddles the cutover), no break |
+| P12 | `validate`: empty / 13 rows / blank name / 41-char name / "A" and " a " / start = end / break 20–21 in A 06–18 | `None` / `TooMany` / `EmptyName(1)` / `NameTooLong(0)` / `DuplicateName(1)` / `ZeroLength(2)` / `BreakOutsideShift(0)` |
+| P12b | A 06–14 + B 14–22; the owner's first table (10–19, 15–00, 19–04); A 06–10 + B 12–20 + C 22–04 | `Gap 22:00–06:00`; `Gap 04:00–10:00`; `Gap 10:00–12:00` (the first from the cutover); `detail()` = `"04:00-06:00"` |
+| P12c | defaults; overlap24; 08–20 + 20–08; a 40-character name | accepted |
+| P12d | names | trimmed, order kept |
+| P13 | `DEFAULT_SHIFT_HOURS`, `defaults()` | 8; A 06–14, B 14–22, C 22–06, no breaks; valid |
+| P14 | overlap24 in `Asia/Tokyo` | 08:00 Bangkok (10:00 Tokyo) → `[A]`; the cutover is 04:00 Bangkok |
+| P15 | an empty plan | covers nothing, no span, no business date |
+| P18 | defaults at 06:00, 14:00, 22:00 | A, B, C of that date |
+| P19 | defaults at 5 Nov 02:00 / 05:59 / 06:00 | C@4 Nov; 4 Nov / 4 Nov / 5 Nov |
+| P20 | defaults | `service_span(4 Nov)` = 4 Nov 06:00 – 5 Nov 06:00; `span_for(5 Nov 02:00)` the same |
 
 ### CS-2 `PgShiftTemplateStore` (DB test, `TEST_DATABASE_URL`)
 
@@ -523,56 +530,55 @@ impl OpenedAs { pub fn untemplated() -> Self; } // all None: the trigger dates t
 | S3 | `replace_in` renaming B to `A` while A stays | the unique index refuses; the service validates first, so this is a storage guard only |
 | S4 | the migration's seeded rows equal `ShiftPlan::defaults()` | test reads MAIN's rows after migrating |
 
-### CS-3 `ShiftPlanService`
+### CS-3 `ShiftPlanService` (overlap24 saved through the service)
 
 | # | Case | Required |
 |---|---|---|
-| V1 | `save_in` with an invalid list | `AppError` mapped to `422 shiftPlanInvalid` carrying `PlanRefusal`'s reason and index; nothing written |
-| V2 | `choices_in` at 15:30 | two choices, `preselect = None` |
-| V3 | `choices_in` at 11:00 | one choice A, `preselect = Some(A.id)` |
-| V4 | `choices_in` at 05:00 | `[]`, `None` |
-| V5 | `plan_in` reads the branch's timezone | a branch in `Asia/Tokyo` shifts every instant by −2 h relative to Bangkok |
+| V1 | `save_in` with a blank second name / an empty list / A 06–14 + B 14–22 | `shiftPlanInvalid:emptyName:1` / `shiftPlanInvalid:none:` / `shiftPlanInvalid:gap:22:00-06:00`; nothing written |
+| V2 | `choices_in` at 14:30 | A and B, `preselect = None` |
+| V3 | `choices_in` at 10:00 | A only, preselected |
+| V4 | `choices_in` at 5 Nov 02:00 | C of 4 Nov only, preselected |
+| V5 | the branch in `Asia/Tokyo`, at 08:00 Bangkok | A only |
+| V6 | `seed_defaults` on a trigger-seeded branch / after retiring its rows; then `save_in(overlap24)` | false / true; the saved plan starts 06, 14, 22 |
 
-### CS-4 custody window · CS-5 floor (overlapping fixture plan unless the row says defaults)
+### CS-4 custody window · CS-5 floor (overlap24 stored by SQL; W6 the defaults)
 
 | # | Case | Required |
 |---|---|---|
-| W1 | `service_window` at 4 Nov 11:00 | `Open { 4 Nov 10:00, 5 Nov 04:00 }` |
-| W2 | at 5 Nov 02:00 | the same window (4 Nov's) |
-| W3 | at 5 Nov 05:00 | `Open { 5 Nov 10:00, 6 Nov 04:00 }` (the next span; `allows_start` false) |
+| W1 | `service_window` at 4 Nov 11:00 | `Open { 4 Nov 06:00, 6 Nov 06:00 }` (the 4 Nov day joined with the 5 Nov day, T10) |
+| W2 | at 5 Nov 02:00 | the same window |
 | W4 | branch with no live template | `NotSet` |
-| W5 | `opening_hours` set to 12:00–18:00 | ignored by `service_window` |
-| W6 | defaults, at 5 Nov 05:55 | `Open { 4 Nov 06:00, 6 Nov 06:00 }` (joined, T10): `allows_begin` true |
-| F1 | `read_hours` at 5 Nov 02:00 | the 4 Nov span |
-| F2 | teller in B at 18:30 | `onBreak = true`; teller in A at 18:30 `false` |
+| W5 | `opening_hours` set to 12:00–18:00, at 4 Nov 20:00 | the plan's joined window; `allows_begin` true |
+| W6 | defaults, at 5 Nov 05:55 / 06:00 | `Open { 4 Nov 06:00, 6 Nov 06:00 }`, `allows_begin` true (no pause, Q7) / `Open { 5 Nov 06:00, 7 Nov 06:00 }` |
+| F1 | `read_hours` at 5 Nov 02:00 | the 4 Nov business day |
+| F2 | a teller in B at 18:30 (B has a break 18–19) | `onBreak = true`; a teller in A `false` |
 
-### Skeleton `open_on_verified` · CS-7 counts · CS-19 handover · CS-8 sale date (overlapping fixture plan)
+### Skeleton `open_on_verified` · CS-7 counts · CS-19 handover · CS-8 sale date (overlap24 stored by SQL)
 
 | # | Case | Required |
 |---|---|---|
-| O1 | `open_on_verified` with `OpenedAs{A, "A", Some(4 Nov)}` | the row has `template_id`, `template_name = 'A'`, `business_date = 2026-11-04`; `Shift` returned with the same (skeleton) |
+| O1 | `open_on_verified` with `OpenedAs{A, "A", Some(4 Nov)}` | the row has `template_id`, `template_name = 'A'`, `business_date = 2026-11-04` (skeleton) |
 | O2 | `OpenedAs::untemplated()` at 5 Nov 02:00 Bangkok | the trigger dates the row 5 Nov (the calendar rule of the backfill) |
-| H1 | accept a handover at 19:10 choosing C | the receiver's shift opens as C, 4 Nov; choosing A refuses `outsideShiftWindow` |
-| C1 | OPEN count at 05:00 | `409 outsideShiftWindow`; no count row |
-| C2 | OPEN count at 15:30 choosing B | stored with B and 4 Nov |
-| C3 | OPEN count at 11:00 choosing B | `409 outsideShiftWindow` |
-| C4 | OPEN count with no `shiftTemplateId` at 15:30 (A and B cover) | `422 shiftNotChosen`; at 11:00 (only A) it opens as A |
-| C5 | verify C2's count at 19:30 (after A's end, inside B) | shift opens as B, 4 Nov |
-| C6 | verify at 5 Nov 01:00 a count made 4 Nov 23:50 for C | shift opens as C, 4 Nov |
-| C7 | HANDOVER_OUT, CLOSE, SAFE counts | unchanged: no template needed |
+| C1 | OPEN count choosing B at 10:00, or C at 12:00 | `outsideShiftWindow`; no count row |
+| C2 | OPEN count at 14:30 choosing B | stored with B and 4 Nov |
+| C4 | OPEN count with no choice at 14:30 (A and B cover) / at 10:00 (only A) | `shiftNotChosen` / opens as A |
+| C5 | verify C2's count at 15:30 (after A's end, inside B) | shift opens as B, 4 Nov |
+| C6 | OPEN count for C at 4 Nov 23:50, verified 5 Nov 01:00 | shift opens as C, 4 Nov |
+| C7 | HANDOVER_OUT, CLOSE, SAFE counts | no template needed |
 | C8 | an OPEN count made before this feature (no template) is verified | the shift opens untemplated; the trigger dates it (migration §5 measures that none are pending) |
+| H1 | accept a handover at 14:10 choosing B | the receiver's shift opens as B, 4 Nov; choosing C refuses `outsideShiftWindow` |
 | D1 | LIVE sale at 5 Nov 02:00 in a C@4 Nov shift, client sends `valueDate 2026-11-05` | stored `value_date = 2026-11-04` |
 | D2 | DEMO sale | client's `valueDate` kept |
-| K1 | CLOSE count of a C@4 Nov shift at 5 Nov 04:10 | count `business_date` = 4 Nov |
-| K2 | SAFE count at 5 Nov 05:00 (in the gap) | `business_date` = 5 Nov (next span) |
+| K1 | CLOSE count of the C@4 Nov shift at 5 Nov 07:10 (after C ended and after the 06:00 cutover) | count `business_date` = 4 Nov |
+| K2 | SAFE count at 5 Nov 05:00 / 06:30 | `business_date` = 4 Nov / 5 Nov |
 
-### CS-20 deadline · CS-21 sheet (overlapping fixture plan)
+### CS-20 deadline · CS-21 sheet (defaults)
 
 | # | Case | Required |
 |---|---|---|
-| X1 | sale in C@4 Nov completed 5 Nov 02:00 | `reversible_until` = 5 Nov 04:00 (end of the 4 Nov span); a reversal request at 5 Nov 03:59 is in the window, at 04:00 it is not |
+| X1 | sale in C@4 Nov completed 5 Nov 02:00 | `reversible_until` = 5 Nov 06:00 (the end of the 4 Nov business day); a reversal request at 05:59 is in the window, at 06:00 it is not |
 | X2 | reversal of that sale | its `business_date` = 4 Nov |
-| Y1 | CLOSE of C@4 Nov counted 5 Nov 04:10 | on the 4 Nov sheet, not 5 Nov |
+| Y1 | CLOSE of C@4 Nov counted 5 Nov 07:10, `business_date` 4 Nov | on the 4 Nov sheet, not 5 Nov |
 | Y2 | certifier verified only that count | may certify 4 Nov |
 
 ### CS-9 save command · CS-10 choices view · CS-11 shift views · CS-12 staff report
