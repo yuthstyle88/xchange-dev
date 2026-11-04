@@ -13,6 +13,8 @@ mod common;
 #[path = "rates_re4c_common/mod.rs"]
 mod rates_re4c_common;
 
+mod shift_plan_common;
+
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -442,32 +444,32 @@ async fn a_replay_with_the_same_idempotency_key_answers_the_same_body_and_issues
 }
 
 #[actix_web::test]
-async fn ten_minutes_before_close_a_new_entry_is_refused_outside_service_hours() {
+async fn ten_minutes_before_the_old_close_a_new_entry_is_served() {
     let db = TestDb::start().await;
-    // closes in 5 minutes: inside [close - 10 min, close)
+    // customer hours close in 5 min
     hours_around_now(&db, 60, 5).await;
 
     let a = serve(&db, "TELLER@XC-B01", &unique("sale")).await;
 
-    assert_eq!(a.status, StatusCode::CONFLICT, "{}", a.text);
-    refused_with(&a, "outsideServiceHours", "a new entry at close - 10 min");
-    assert_eq!(tickets(&db).await, 0, "no ticket and no number");
+    assert_eq!(a.status, StatusCode::OK, "{}", a.text);
+    assert_eq!(
+        tickets(&db).await,
+        1,
+        "opening_hours no longer gates serving"
+    );
     db.finish().await;
 }
 
 #[actix_web::test]
-async fn a_branch_with_no_opening_hours_refuses_outside_service_hours() {
+async fn a_branch_with_no_live_template_refuses_outside_service_hours() {
     let db = TestDb::start().await;
-    sqlx::query("UPDATE branches SET opening_hours = NULL WHERE id = $1")
-        .bind(B01)
-        .execute(&db.pool)
-        .await
-        .expect("clear the hours");
+    shift_plan_common::clear_plan(&db.pool, B01).await;
 
     let a = serve(&db, "TELLER@XC-B01", &unique("sale")).await;
 
     assert_eq!(a.status, StatusCode::CONFLICT, "{}", a.text);
-    refused_with(&a, "outsideServiceHours", "no hours set");
+    refused_with(&a, "outsideServiceHours", "no live template");
+    assert_eq!(tickets(&db).await, 0, "no ticket issued");
     db.finish().await;
 }
 
