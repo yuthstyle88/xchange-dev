@@ -143,6 +143,7 @@ const DRAFT = `${V}rate_draft`;
 const POLICY = `${V}rate_policy`;
 const PUBLICATIONS = `${V}rate_publications`;
 const REFERENCE = `${V}rates_reference`;
+const DRAFTABLE = `${V}rates_draftable`;
 const OLD_READS = [`${V}admin_rates`, `${V}admin_rate_history`];
 const RPC = '/api/rpc';
 
@@ -352,6 +353,7 @@ async function answer(s: Sent): Promise<Reply> {
     if (path === POLICY) return viewAnswer(1, policies[branch] ?? { policy: null }, since);
     if (path === PUBLICATIONS) return viewAnswer(1, (publications[branch] ?? []).map((p) => ({ ...p, lines: [] })), since);
     if (path === REFERENCE) return viewAnswer(3, reference, since);
+    if (path === DRAFTABLE) return viewAnswer(1, { rows: [] }, since);
     return refusal(500, 'serverError', `unexpected read ${path}`);
   }
   if (path === '/api/rate-references/fetch' && method === 'POST') return { status: 200, body: { batchId: 'batch-1' } };
@@ -591,7 +593,7 @@ describe('RE-5 A02: what it reads on show (#602; design §4.7, D-3)', () => {
   it('reads published_rates, rate_drafts, rate_policy, rates_reference and the open draft for the picked branch, writes nothing', async () => {
     mount();
     await settle();
-    for (const path of [PUBLISHED, DRAFTS, POLICY]) {
+    for (const path of [PUBLISHED, DRAFTS, POLICY, DRAFTABLE]) {
       expect(readsOf(path).length, `${path} is read`).toBeGreaterThanOrEqual(1);
       expect(readsOf(path)[0]!.params.get('branch'), `${path} for the picked branch`).toBe('MAIN');
     }
@@ -605,7 +607,7 @@ describe('RE-5 A02: what it reads on show (#602; design §4.7, D-3)', () => {
     expect(writes(), 'nothing is written on show').toEqual([]);
     const ownPaths = sent.filter((x) => !PAGE_WIDE.includes(x.path)).map((x) => x.path);
     for (const path of ownPaths) {
-      expect([PUBLISHED, DRAFTS, DRAFT, POLICY, REFERENCE], `an unexpected read on show: ${path}`).toContain(path);
+      expect([PUBLISHED, DRAFTS, DRAFT, POLICY, REFERENCE, DRAFTABLE], `an unexpected read on show: ${path}`).toContain(path);
     }
     expectNoDirectSave();
   });

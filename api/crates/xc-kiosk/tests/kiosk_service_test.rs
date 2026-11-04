@@ -151,10 +151,6 @@ fn the_limits_are_the_ones_measured_on_v2() {
     let limits = &fixture()["limits"];
     assert_eq!(limits["pageSize"], 50);
     assert_eq!(limits["receiptImageMaxLength"], ReceiptImage::MAX_LENGTH);
-    let mut defaults: Vec<&str> = DEFAULT_CODES.to_vec();
-    defaults.sort_unstable();
-    assert_eq!(limits["defaults"], json!(defaults));
-    assert_eq!(DEFAULT_CODES.len(), 6);
 }
 
 #[test]

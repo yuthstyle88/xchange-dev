@@ -1,12 +1,11 @@
-// The currencies a rate draft can add: the reference source's codes not yet in the draft (xchange#564 D-a gap).
-// Design: docs/design/rates-draftable-currencies.md §2. Skeleton: DC-1 writes the body.
-import type { RatesReferenceData } from '../../../shared/api/generated/rates_reference';
+// The currencies a rate draft can add: the branch's draftable rows not yet in the draft (docs/design/board-currencies.md § BC-6).
+import type { RatesDraftableData } from '../../../shared/api/generated/rates_draftable';
 
-export function draftableCurrencies(reference: RatesReferenceData | null, inDraft: readonly string[]): string[] {
-  if (!reference?.rows) return [];
+export function draftableCurrencies(data: RatesDraftableData | null, inDraft: readonly string[]): string[] {
+  if (!data?.rows) return [];
   const skip = new Set(['', 'THB', ...inDraft.map((c) => c.trim().toUpperCase())]);
   const out = new Set<string>();
-  for (const row of reference.rows) {
+  for (const row of data.rows) {
     const code = (row.code ?? '').trim().toUpperCase();
     if (!skip.has(code)) out.add(code);
   }

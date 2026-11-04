@@ -2,45 +2,44 @@
 
 use xc_kernel::money::CurrencyCode;
 use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
-use xc_kiosk::domain::kiosk::value_objects::kiosk_currencies::{DEFAULT_CODES, KioskCurrencies};
+use xc_kiosk::domain::kiosk::value_objects::kiosk_currencies::KioskCurrencies;
 
 fn code(s: &str) -> CurrencyCode {
     CurrencyCode::parse(s).expect("valid currency code")
 }
 
-/// Row 1: `[]` -> offers each of `DEFAULT_CODES`.
+/// Row 1: `[]` -> offers nothing.
 #[test]
 fn row1_empty_switches_offers_default_currencies() {
     let kc = KioskCurrencies::new(&[]);
-    for default_code in DEFAULT_CODES {
-        assert!(
-            kc.offers(code(default_code)),
-            "default currency {default_code} should be offered"
-        );
+    for c in ["USD", "EUR", "GBP", "JPY", "CNY", "AUD", "SGD"] {
+        assert!(!kc.offers(code(c)), "{c} should not be offered with no rows");
     }
-    assert!(
-        !kc.offers(code("SGD")),
-        "non-default currency SGD should not be offered by default"
-    );
 }
 
-/// Row 2: `[USD off]` -> `!offers(USD)`, EUR still offered.
+/// Row 2: `[USD off, EUR on]` -> `!offers(USD)`, EUR offered.
 #[test]
 fn row2_switch_off_disables_default_currency() {
-    let switches = [CurrencySwitch {
-        code: code("USD"),
-        enabled: false,
-    }];
+    let switches = [
+        CurrencySwitch {
+            code: code("USD"),
+            enabled: false,
+        },
+        CurrencySwitch {
+            code: code("EUR"),
+            enabled: true,
+        },
+    ];
     let kc = KioskCurrencies::new(&switches);
 
     assert!(
         !kc.offers(code("USD")),
         "USD should not be offered when switched off"
     );
-    assert!(kc.offers(code("EUR")), "EUR should still be offered");
+    assert!(kc.offers(code("EUR")), "EUR should be offered");
 }
 
-/// Row 3: `[SGD on]` -> offers SGD.
+/// Row 3: `[SGD on]` -> offers SGD only.
 #[test]
 fn row3_switch_on_adds_non_default_currency() {
     let switches = [CurrencySwitch {
@@ -54,8 +53,8 @@ fn row3_switch_on_adds_non_default_currency() {
         "SGD should be offered when switched on"
     );
     assert!(
-        kc.offers(code("USD")),
-        "default USD should still be offered"
+        !kc.offers(code("USD")),
+        "USD should not be offered without a row"
     );
 }
 

@@ -17,6 +17,7 @@ function getCurrencyName(code: string): string {
 
 export interface CurrencyCountProps {
   denominations: DenominationRow[];
+  countable?: string[];
   locked: string[];
   expected?: Record<string, string>;
   quantities: Record<number, string>;
@@ -31,8 +32,11 @@ export function CurrencyCount(props: CurrencyCountProps): JSX.Element {
   const added = () => [...props.locked, ...extra().filter((c) => !props.locked.includes(c))];
 
   const countableCurrencies = () => {
+    const allowed = props.countable ? new Set(props.countable) : null;
     const codes = new Set<string>();
-    for (const d of props.denominations) codes.add(d.currency);
+    for (const d of props.denominations) {
+      if (!allowed || allowed.has(d.currency)) codes.add(d.currency);
+    }
     return [...codes].sort();
   };
 

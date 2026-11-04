@@ -4,10 +4,7 @@ use xc_kernel::money::CurrencyCode;
 
 use crate::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 
-/// The currencies a kiosk offers when its branch has switched nothing.
-pub const DEFAULT_CODES: [&str; 6] = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
-
-/// The six default currencies, plus those the branch switched on, minus those it switched off.
+/// Currencies offered by a branch's kiosk (`display = 'SHOW'`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KioskCurrencies {
     offered: Vec<CurrencyCode>,
@@ -15,10 +12,7 @@ pub struct KioskCurrencies {
 
 impl KioskCurrencies {
     pub fn new(switches: &[CurrencySwitch]) -> Self {
-        let mut offered: Vec<CurrencyCode> = DEFAULT_CODES
-            .iter()
-            .filter_map(|code| CurrencyCode::parse(code).ok())
-            .collect();
+        let mut offered = Vec::new();
         for switch in switches {
             offered.retain(|code| *code != switch.code);
             if switch.enabled {

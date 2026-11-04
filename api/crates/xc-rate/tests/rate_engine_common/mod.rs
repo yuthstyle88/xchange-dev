@@ -289,6 +289,13 @@ impl TestDb {
             .execute(&self.pool)
             .await
             .expect("insert into branches");
+        xc_testdb::seed_branch_currencies(
+            &self.pool,
+            id,
+            &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+        )
+        .await
+        .expect("seed branch_currencies");
     }
 
     pub async fn count(&self, table: &str) -> i64 {

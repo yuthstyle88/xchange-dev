@@ -83,7 +83,6 @@ pub use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 pub use xc_kiosk::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 pub use xc_kiosk::domain::kiosk::value_objects::identified_request::IdentifiedRequest;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
-pub use xc_kiosk::domain::kiosk::value_objects::kiosk_currencies::DEFAULT_CODES;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_quote::KioskQuote;
 pub use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
@@ -664,6 +663,15 @@ impl TestDb {
             .execute(&pool)
             .await
             .expect("insert the second branch");
+        for b in [MAIN, B2] {
+            xc_testdb::seed_branch_currencies(
+                &pool,
+                b,
+                &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+            )
+            .await
+            .expect("seed the six currencies");
+        }
         sqlx::query(
             "CREATE TABLE test_audit (seq bigserial PRIMARY KEY, branch_id text NOT NULL, \
              actor text NOT NULL, kind text NOT NULL, subject text NOT NULL, \

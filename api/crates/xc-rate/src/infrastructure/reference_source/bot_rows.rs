@@ -4,10 +4,10 @@ use std::collections::HashSet;
 
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
+use xc_kernel::money::CurrencyCode;
 
 use crate::infrastructure::rate::bot_rate_source::BOT_UNAVAILABLE;
-
-const ALLOWED_CURRENCIES: [&str; 6] = ["USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
+use crate::infrastructure::reference_source::bot_table::{BOT_TABLE_SENTINELS, bot_unit};
 
 fn parse_rate(val: Option<&serde_json::Value>) -> Option<Decimal> {
     let text = match val? {
@@ -35,50 +35,54 @@ pub fn bot_rows(detail: &[serde_json::Value]) -> AppResult<Vec<serde_json::Value
         let Some(currency_id) = row_val.get("currency_id").and_then(|v| v.as_str()) else {
             continue;
         };
-        if !ALLOWED_CURRENCIES.contains(&currency_id) {
+        if CurrencyCode::parse(currency_id).is_err() {
             continue;
         }
+        let is_sentinel = BOT_TABLE_SENTINELS.contains(&currency_id);
 
-        let Some(period) = row_val.get("period").and_then(|v| v.as_str()) else {
-            return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-        };
-        if period.len() != 10 {
-            return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-        }
-        let bytes = period.as_bytes();
-        let is_date_shape = bytes.iter().enumerate().all(|(i, &b)| {
-            if i == 4 || i == 7 {
-                b == b'-'
-            } else {
-                b.is_ascii_digit()
+        let valid_date = row_val
+            .get("period")
+            .and_then(|v| v.as_str())
+            .filter(|period| {
+                period.len() == 10
+                    && period.as_bytes().iter().enumerate().all(|(i, &b)| {
+                        if i == 4 || i == 7 {
+                            b == b'-'
+                        } else {
+                            b.is_ascii_digit()
+                        }
+                    })
+            });
+        let Some(period) = valid_date else {
+            if is_sentinel {
+                return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
             }
-        });
-        if !is_date_shape {
-            return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-        }
+            continue;
+        };
 
         let bs_val = row_val.get("buying_sight");
         let bt_val = row_val.get("buying_transfer");
         let selling_val = row_val.get("selling");
 
-        let (Some(bs_dec), Some(bt_dec), Some(selling_dec)) = (
+        let (bs_dec, bt_dec, selling_dec) = (
             parse_rate(bs_val),
             parse_rate(bt_val),
             parse_rate(selling_val),
-        ) else {
+        );
+        if is_sentinel && (bs_dec.is_none() || bt_dec.is_none() || selling_dec.is_none()) {
             return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-        };
+        }
 
-        let unit: u64 = if currency_id == "JPY" { 100 } else { 1 };
+        let unit = bot_unit(currency_id);
 
-        let bs_rate = decimal_to_number(bs_dec);
-        let bt_rate = decimal_to_number(bt_dec);
-        let selling_rate = decimal_to_number(selling_dec);
+        let bs_rate = bs_dec.map(decimal_to_number);
+        let bt_rate = bt_dec.map(decimal_to_number);
+        let selling_rate = selling_dec.map(decimal_to_number);
 
         let original = serde_json::json!({
-            "buyingSight": bs_val.unwrap().clone(),
-            "buyingTransfer": bt_val.unwrap().clone(),
-            "selling": selling_val.unwrap().clone(),
+            "buyingSight": bs_val.cloned().unwrap_or(serde_json::Value::Null),
+            "buyingTransfer": bt_val.cloned().unwrap_or(serde_json::Value::Null),
+            "selling": selling_val.cloned().unwrap_or(serde_json::Value::Null),
         });
 
         let row = serde_json::json!({
@@ -94,20 +98,21 @@ pub fn bot_rows(detail: &[serde_json::Value]) -> AppResult<Vec<serde_json::Value
         kept_rows.push((currency_id.to_string(), row));
     }
 
-    if kept_rows.len() != 6 {
-        return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
-    }
-
     let mut seen_currencies = HashSet::new();
-    for (code, _) in &kept_rows {
-        if !seen_currencies.insert(code) {
+    let mut unique_rows = Vec::with_capacity(kept_rows.len());
+    for (code, row) in kept_rows {
+        if seen_currencies.insert(code.clone()) {
+            unique_rows.push(row);
+        } else if BOT_TABLE_SENTINELS.contains(&code.as_str()) {
             return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
         }
     }
-    if seen_currencies.len() != 6 {
+    if !BOT_TABLE_SENTINELS
+        .iter()
+        .all(|s| seen_currencies.contains(*s))
+    {
         return Err(AppError::Domain(BOT_UNAVAILABLE.to_string()));
     }
 
-    let rows: Vec<serde_json::Value> = kept_rows.into_iter().map(|(_, r)| r).collect();
-    Ok(rows)
+    Ok(unique_rows)
 }
