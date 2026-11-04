@@ -201,7 +201,7 @@ Nobody waits, and nobody edits another ticket's file.
   (`Need::Owner`-style), not a seed change (§11 Q3).
 - `[required]` The policy row lives in `areas/backdated_keying.rs`:
   `(EntryPath::Rpc, "transactionBackdate") → Need::Permission(Permission::ExchangeBackdate)`, `RowScope::Request`.
-  A teller is refused by the seam with `403 roleNotAllowedHere`, before any read.
+  A teller is refused by the seam with `400 roleNotAllowedHere`, before any read.
 - Seeding needs no SQL. `role_grant_store.rs` re-seeds built-in groups whose `seed_version < SEED_VERSION` at boot.
 
 ## 4. API (R2, R4)
@@ -234,7 +234,7 @@ same key with another body, as every v3 command does).
 
 | Case | Answer |
 |---|---|
-| Caller lacks `exchangeBackdate` (teller) | `403 roleNotAllowedHere`; nothing read or written |
+| Caller lacks `exchangeBackdate` (teller) | `400 roleNotAllowedHere` (the seam's status for that code across this API, `actor_role_5630_test.rs:373`); nothing read or written |
 | `paidAt` later than now | `400 validationFailed`, field `payment.paidAt` |
 | `valueDate` ≠ `paidAt`'s date in the branch timezone | `400 validationFailed`, field `valueDate` |
 | `valueDate` after today in the branch timezone | `400 validationFailed`, field `valueDate` |
@@ -432,7 +432,7 @@ within a date (`DocumentRef` uses Bangkok time; every branch today is in Asia/Ba
 |---|---|---|
 | B1 | Owner, BUY 500 USD cash at `rate 32.15`, `paidAt` 2026-11-04 13:23 ICT, `valueDate` 2026-11-04, no shift open anywhere, SAFE funded | 200; COMPLETED; `backdated = true`; `shift_id IS NULL`; `paid_at` as sent; `recorded_at` within the request; `recorded_by` = Owner's id; `completed_at = paid_at`; `document_ref` starts `XC-20261104-`; SAFE USD +500, SAFE THB −16075.00 |
 | B2 | Branch Manager, same | 200, as B1 |
-| B3 | Teller, same | 403 `roleNotAllowedHere`; no row |
+| B3 | Teller, same | 400 `roleNotAllowedHere`; no row |
 | B4 | `valueDate` certified | 409 `dayClosed`; no row, no posting |
 | B5 | `paidAt` one minute in the future | 400 `validationFailed` `payment.paidAt` |
 | B6 | `paidAt` 2026-11-04 00:30 ICT, `valueDate` 2026-11-03 | 400 `validationFailed` `valueDate` |

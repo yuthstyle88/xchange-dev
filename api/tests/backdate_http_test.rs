@@ -19,12 +19,16 @@ use std::sync::{Arc, Once};
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
+use pos_infra::transactions::Transactor;
 use quote_common::*;
 use serde_json::{Value, json};
 use tx4_common::*;
 use tx5_common::lg4_fund;
 use xc_auth::domain::access::Role;
 use xc_cash::domain::posting::CashPlace;
+use xc_customer::application::customer::service::CustomerService;
+use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
@@ -35,7 +39,6 @@ const HOST: &str = "xc.test";
 const SAME_ORIGIN: &str = "http://xc.test";
 const OWNER: &str = "owner-bk";
 const MANAGER: &str = "manager-bk";
-const LIVE_CUSTOMER: &str = "CU-BK-LIVE";
 const TEST_PII_KEYS: &str = "test-1:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
 /// 2026-11-04 13:23 ICT: the first Telegram order of the owner's replay.
 const PAID_AT: &str = "2026-11-04T13:23:00+07:00";
@@ -94,14 +97,44 @@ impl Answer {
     }
 }
 
-/// MAIN with no shift, a LIVE customer, a passport scan owned by each caller, and the SAFE holding THB `safe_thb`.
-async fn start(safe_thb: &str) -> (Desk, std::path::PathBuf) {
+/// The fixture: MAIN with no shift, a reserved LIVE and a reserved DEMO customer, a passport scan owned by each
+/// caller, and the SAFE holding THB `safe_thb`.
+struct Bk {
+    desk: Desk,
+    scratch: std::path::PathBuf,
+    live: String,
+    demo: String,
+}
+
+/// A customer reserved as the desk reserves one (PII sealed), in `mode` (`LIVE` | `DEMO`).
+async fn reserve(desk: &Desk, mode: &str) -> String {
+    CustomerService::new(BranchTx::new(Transactor::new(desk.db.pool.clone())))
+        .reserve(
+            &BranchId::new("MAIN"),
+            ReserveCustomer {
+                name: "Somchai Jaidee".to_owned(),
+                passport_no: format!("P{}", &uuid::Uuid::new_v4().simple().to_string()[..19])
+                    .to_uppercase(),
+                nationality: "THA".to_owned(),
+                birth_date: String::new(),
+                passport_expiry: String::new(),
+                mode: mode.to_owned(),
+            },
+            whole_second_now(),
+        )
+        .await
+        .unwrap_or_else(|e| panic!("reserve a {mode} customer: {e}"))
+        .customer_id
+}
+
+async fn start(safe_thb: &str) -> Bk {
     PII.call_once(|| {
         let keys = Arc::new(xc_kernel::pii::PiiKeys::parse(TEST_PII_KEYS).unwrap());
         let _ = xc_customer::install_pii_keys(keys);
     });
     let desk = Desk::start().await;
-    desk.db.customer(LIVE_CUSTOMER, "MAIN").await;
+    let live = reserve(&desk, "LIVE").await;
+    let demo = reserve(&desk, "DEMO").await;
     for who in [OWNER, MANAGER, TELLER] {
         desk.db
             .exec(&format!(
@@ -120,13 +153,18 @@ async fn start(safe_thb: &str) -> (Desk, std::path::PathBuf) {
     .await;
     let scratch = std::env::temp_dir().join(unique("xc-bk"));
     std::fs::create_dir_all(&scratch).unwrap();
-    (desk, scratch)
+    Bk {
+        desk,
+        scratch,
+        live,
+        demo,
+    }
 }
 
 /// B1's body: BUY 500 USD cash at 32.15, paid 2026-11-04 13:23 ICT.
-fn body(who: &str) -> Value {
+fn body(who: &str, customer: &str) -> Value {
     json!({
-        "customerId": LIVE_CUSTOMER,
+        "customerId": customer,
         "side": "BUY",
         "currency": "USD",
         "quantity": "500",
@@ -203,8 +241,13 @@ async fn finish(desk: Desk, scratch: std::path::PathBuf) {
 /// and its cash moved in MAIN's SAFE.
 #[actix_web::test]
 async fn b1_owner_keys_a_past_buy_with_no_shift_into_the_safe() {
-    let (desk, scratch) = start("100000.00").await;
-    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER)).await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER, &live)).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["status"], "COMPLETED", "{}", a.text);
     assert_eq!(a.body["backdate"]["enteredBy"], OWNER, "{}", a.text);
@@ -260,8 +303,20 @@ async fn b1_owner_keys_a_past_buy_with_no_shift_into_the_safe() {
 /// B2: a MAIN Branch Manager may key it too.
 #[actix_web::test]
 async fn b2_a_branch_manager_keys_it_too() {
-    let (desk, scratch) = start("100000.00").await;
-    let a = post(&desk, &scratch, "manager", &unique("bk"), &body(MANAGER)).await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let a = post(
+        &desk,
+        &scratch,
+        "manager",
+        &unique("bk"),
+        &body(MANAGER, &live),
+    )
+    .await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     assert_eq!(a.body["backdate"]["enteredBy"], MANAGER, "{}", a.text);
     finish(desk, scratch).await;
@@ -270,9 +325,22 @@ async fn b2_a_branch_manager_keys_it_too() {
 /// B3 (R1): a teller is refused at the seam; nothing is written.
 #[actix_web::test]
 async fn b3_a_teller_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let a = post(&desk, &scratch, "teller", &unique("bk"), &body(TELLER)).await;
-    assert_eq!(a.status, StatusCode::FORBIDDEN, "{}", a.text);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let a = post(
+        &desk,
+        &scratch,
+        "teller",
+        &unique("bk"),
+        &body(TELLER, &live),
+    )
+    .await;
+    // The seam answers `roleNotAllowedHere` with 400, as everywhere in this API (actor_role_5630_test.rs:373).
+    assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(a.code(), "roleNotAllowedHere", "{}", a.text);
     assert_eq!(desk.db.count("SELECT count(*) FROM transactions").await, 0);
     finish(desk, scratch).await;
@@ -281,7 +349,12 @@ async fn b3_a_teller_is_refused() {
 /// B4 (G): a certified business date is closed: 409 dayClosed, no row, no posting.
 #[actix_web::test]
 async fn b4_a_closed_day_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
     desk.db
         .exec(&format!(
             "INSERT INTO reconciliation_certifications (id, organization_id, branch_id, business_date, \
@@ -289,7 +362,7 @@ async fn b4_a_closed_day_is_refused() {
              VALUES (gen_random_uuid(), '{ORG_1}', 'MAIN', '{VALUE_DATE}', 'h', '{{}}', gen_random_uuid(), now())"
         ))
         .await;
-    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER)).await;
+    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER, &live)).await;
     assert_eq!(a.status, StatusCode::CONFLICT, "{}", a.text);
     assert_eq!(a.code(), "dayClosed", "{}", a.text);
     assert_eq!(desk.db.count("SELECT count(*) FROM transactions").await, 0);
@@ -300,8 +373,13 @@ async fn b4_a_closed_day_is_refused() {
 /// B5: a deal time in the future is refused, naming `payment.paidAt`.
 #[actix_web::test]
 async fn b5_paid_at_in_the_future_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
     let later = chrono::Utc::now() + chrono::Duration::hours(2);
     b["payment"]["paidAt"] = json!(later.to_rfc3339());
     b["valueDate"] = json!(
@@ -321,8 +399,13 @@ async fn b5_paid_at_in_the_future_is_refused() {
 /// B6: the business date must be the deal's Bangkok date.
 #[actix_web::test]
 async fn b6_value_date_not_the_deal_date_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
     b["valueDate"] = json!("2026-11-03");
     let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
@@ -333,8 +416,13 @@ async fn b6_value_date_not_the_deal_date_is_refused() {
 /// B7: a rate with 9 decimal places is refused, naming `rate`.
 #[actix_web::test]
 async fn b7_a_rate_with_nine_places_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
     b["rate"] = json!("32.150000001");
     let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
@@ -345,8 +433,13 @@ async fn b7_a_rate_with_nine_places_is_refused() {
 /// B8: a THB figure that differs from the computed settle is refused and names the computed one.
 #[actix_web::test]
 async fn b8_expected_settle_mismatch_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
     b["expectedSettleThb"] = json!("16075.01");
     let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
@@ -359,8 +452,13 @@ async fn b8_expected_settle_mismatch_is_refused() {
 /// B9 (R3): the SAFE never goes below zero: THB 100.00 cannot pay 16075.00; nothing is written.
 #[actix_web::test]
 async fn b9_a_short_safe_is_refused() {
-    let (desk, scratch) = start("100.00").await;
-    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER)).await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100.00").await;
+    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER, &live)).await;
     assert_eq!(a.status, StatusCode::CONFLICT, "{}", a.text);
     assert_eq!(a.code(), "stockInsufficient", "{}", a.text);
     assert_eq!(desk.db.count("SELECT count(*) FROM transactions").await, 0);
@@ -371,9 +469,14 @@ async fn b9_a_short_safe_is_refused() {
 /// B10: backdated keying is LIVE only: a DEMO customer is refused, naming `customerId`.
 #[actix_web::test]
 async fn b10_a_demo_customer_is_refused() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
-    b["customerId"] = json!(CUSTOMER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        demo,
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
+    b["customerId"] = json!(demo);
     let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
     assert_eq!(a.status, StatusCode::BAD_REQUEST, "{}", a.text);
     assert_eq!(a.field(), "customerId", "{}", a.text);
@@ -383,8 +486,13 @@ async fn b10_a_demo_customer_is_refused() {
 /// B13 (§10): the database itself refuses a LIVE row with no shift that is not backdated.
 #[actix_web::test]
 async fn b13_the_schema_refuses_a_live_row_without_a_shift_unless_backdated() {
-    let (desk, scratch) = start("100000.00").await;
-    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER)).await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let a = post(&desk, &scratch, "owner", &unique("bk"), &body(OWNER, &live)).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
     let id = a.body["id"].as_str().expect("an id").to_owned();
     assert_eq!(
@@ -402,11 +510,16 @@ async fn b13_the_schema_refuses_a_live_row_without_a_shift_unless_backdated() {
 /// B14: the same Idempotency-Key and body answers the first sale again; one row.
 #[actix_web::test]
 async fn b14_a_repeat_with_the_same_key_replays() {
-    let (desk, scratch) = start("100000.00").await;
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
     let key = unique("bk");
-    let first = post(&desk, &scratch, "owner", &key, &body(OWNER)).await;
+    let first = post(&desk, &scratch, "owner", &key, &body(OWNER, &live)).await;
     assert_eq!(first.status, StatusCode::OK, "{}", first.text);
-    let again = post(&desk, &scratch, "owner", &key, &body(OWNER)).await;
+    let again = post(&desk, &scratch, "owner", &key, &body(OWNER, &live)).await;
     assert_eq!(again.status, StatusCode::OK, "{}", again.text);
     assert_eq!(first.body["id"], again.body["id"]);
     assert_eq!(desk.db.count("SELECT count(*) FROM transactions").await, 1);
@@ -416,8 +529,13 @@ async fn b14_a_repeat_with_the_same_key_replays() {
 /// B1b (owner, design §11 Q1 = B): the passport scan is optional for a backdated sale.
 #[actix_web::test]
 async fn b1b_a_backdated_sale_needs_no_passport() {
-    let (desk, scratch) = start("100000.00").await;
-    let mut b = body(OWNER);
+    let Bk {
+        desk,
+        scratch,
+        live,
+        ..
+    } = start("100000.00").await;
+    let mut b = body(OWNER, &live);
     b.as_object_mut().unwrap().remove("passport");
     let a = post(&desk, &scratch, "owner", &unique("bk"), &b).await;
     assert_eq!(a.status, StatusCode::OK, "{}", a.text);
