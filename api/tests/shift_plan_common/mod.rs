@@ -11,11 +11,13 @@ use sqlx::PgPool;
 /// Retires `branch`'s live plan and stores `rows` of `(name, starts_at, ends_at)` as `HH:MM`, in that order. Stored by
 /// SQL, so it is not validated: `&[]` leaves the branch with no live template.
 pub async fn set_plan(pool: &PgPool, branch: &str, rows: &[(&str, &str, &str)]) {
-    sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL")
-        .bind(branch)
-        .execute(pool)
-        .await
-        .expect("retire the branch's plan");
+    sqlx::query(
+        "UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL",
+    )
+    .bind(branch)
+    .execute(pool)
+    .await
+    .expect("retire the branch's plan");
     for (i, (name, start, end)) in rows.iter().enumerate() {
         sqlx::query(
             "INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position) \
