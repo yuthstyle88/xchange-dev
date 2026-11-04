@@ -13,4 +13,4 @@ export type AdminShiftDifferenceItem = { code: string, amount: string, };
 /**
  * A row in the `admin_shifts` page.
  */
-export type AdminShiftRow = { id: string, status: string, openedAt: string, staff: string, note: string, difference: Array<AdminShiftDifferenceItem> | null, balances: Array<AdminShiftBalanceRow>, };
+export type AdminShiftRow = { id: string, status: string, openedAt: string, staff: string, note: string, difference: Array<AdminShiftDifferenceItem> | null, balances: Array<AdminShiftBalanceRow>, shiftName: string | null, businessDate: string, };

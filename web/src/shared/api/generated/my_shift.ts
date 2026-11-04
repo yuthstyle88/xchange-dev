@@ -4,7 +4,7 @@ import type { CashTransferRow } from "./cash_transfers";
 /**
  * `my_shift`: the caller's own OPEN shift in the branch, or none.
  */
-export type MyShift = { id: string, status: string, openedAt: string, balances: Array<MyShiftBalance>, incomingTransfers: Array<CashTransferRow>, };
+export type MyShift = { id: string, status: string, openedAt: string, balances: Array<MyShiftBalance>, incomingTransfers: Array<CashTransferRow>, shiftName: string | null, businessDate: string, };
 
 /**
  * One currency of the caller's shift: opening and expected, as strings.
