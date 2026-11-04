@@ -118,6 +118,45 @@ async fn key_of(db: &TestDb, ticket_id: &str) -> String {
     .expect("the ticket's key")
 }
 
+enum TxState {
+    Live,
+    Cancelled,
+}
+
+/// A transaction of `teller`'s open shift naming `ticket_id` (`xc-exchange` is not a dependency of
+/// `xc-queue`, so SQL).
+async fn add_transaction(db: &TestDb, teller: &str, ticket_id: &str, state: TxState) {
+    let (status, cancelled_at, cancel_reason) = match state {
+        TxState::Live => ("CONFIRMED", "NULL", "NULL"),
+        TxState::Cancelled => ("CANCELLED", "now()", "'test'"),
+    };
+    let customer = unique("CU");
+    db.exec(&format!(
+        "INSERT INTO customers (id, organization_id, customer_no, display_name, mode, created_at) \
+         VALUES ('{customer}', '{ORG_1}', '{customer}', 'Somchai', 'LIVE', now())"
+    ))
+    .await;
+    db.exec(&format!(
+        "INSERT INTO transactions (id, organization_id, document_ref, branch_id, mode, shift_id, \
+             submission_id, payload_hash, customer_id, customer_name, nationality, staff_id, \
+             booking_no, notes, value_date, paid_at, recorded_at, recorded_by, status, cancelled_at, \
+             cancel_reason, queue_ticket_id) \
+         SELECT gen_random_uuid(), '{ORG_1}', NULL, 'MAIN', 'LIVE', s.id, '{customer}', \
+             'hash', '{customer}', 'Somchai', 'THA', 'system', 'WALK-IN', '', current_date, now(), \
+             now(), 'system', '{status}', {cancelled_at}, {cancel_reason}, '{ticket_id}'::uuid \
+         FROM shifts s WHERE s.teller_id = '{teller}'::uuid AND s.status = 'OPEN'"
+    ))
+    .await;
+    assert_eq!(
+        db.count(&format!(
+            "SELECT count(*) FROM transactions WHERE queue_ticket_id = '{ticket_id}'::uuid"
+        ))
+        .await,
+        1,
+        "the transaction names the ticket"
+    );
+}
+
 // ------------------------------------------------------------ W3, W4 (4): a new Desk ticket
 
 #[tokio::test]
@@ -355,19 +394,134 @@ async fn a_held_kiosk_ticket_refuses_already_serving() {
     db.finish().await;
 }
 
+/// #6232 row F13c: a non-cancelled transaction names the held ticket, so it is not an orphan.
 #[tokio::test]
 async fn a_held_ticket_of_another_desk_sale_refuses_already_serving() {
     let (db, q) = open_main().await;
     let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
     let wd = walk_in_desk(&db, &q);
-    serve(&db, &wd, &t(&a), None, "sale-1", true, at(3, 0))
+    let first = serve(&db, &wd, &t(&a), None, "sale-1", true, at(3, 0))
         .await
         .expect("the first sale");
+    add_transaction(&db, &a, &first.id, TxState::Live).await;
 
     let got = serve(&db, &wd, &t(&a), None, "sale-2", true, at(3, 1)).await;
 
     assert_eq!(refused(got), "alreadyServing");
     assert_eq!(ticket_count(&db).await, 1);
+    db.finish().await;
+}
+
+// ------------------------------------------------------------ #6232 F13: an orphaned desk-sale ticket
+
+#[tokio::test]
+async fn f13a_an_orphaned_serving_ticket_is_returned_to_the_same_tellers_next_sale() {
+    let (db, q) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let wd = walk_in_desk(&db, &q);
+    let orphan = serve(&db, &wd, &t(&a), None, "sale-1", true, at(3, 0))
+        .await
+        .expect("the first sale");
+    let before = events(&db, &orphan.id).await;
+
+    let got = serve(&db, &wd, &t(&a), None, "sale-2", true, at(3, 1))
+        .await
+        .expect("the orphan is taken over");
+
+    assert_eq!(got.id, orphan.id);
+    assert_eq!(got.status, TicketStatus::Serving);
+    assert_eq!(got.counter_teller_id.as_deref(), Some(a.as_str()));
+    assert_eq!(ticket_count(&db).await, 1, "no new ticket row");
+    assert_eq!(
+        stored(&db, &orphan.id).await,
+        format!("SERVING {}", orphan.display_number)
+    );
+    assert_eq!(events(&db, &orphan.id).await, before, "already started");
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn f13b_a_ticket_named_only_by_a_cancelled_transaction_is_an_orphan() {
+    let (db, q) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let wd = walk_in_desk(&db, &q);
+    let orphan = serve(&db, &wd, &t(&a), None, "sale-1", true, at(3, 0))
+        .await
+        .expect("the first sale");
+    add_transaction(&db, &a, &orphan.id, TxState::Cancelled).await;
+
+    let got = serve(&db, &wd, &t(&a), None, "sale-2", true, at(3, 1))
+        .await
+        .expect("the orphan is taken over");
+
+    assert_eq!(got.id, orphan.id);
+    assert_eq!(got.status, TicketStatus::Serving);
+    assert_eq!(ticket_count(&db).await, 1, "no new ticket row");
+    assert_eq!(
+        stored(&db, &orphan.id).await,
+        format!("SERVING {}", orphan.display_number)
+    );
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn f13d_another_tellers_desk_sale_ticket_is_left_alone() {
+    let (db, q) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let b = on_duty(&db, &q, "MAIN", "Teller B", at(2, 0)).await;
+    let wd = walk_in_desk(&db, &q);
+    let theirs = serve(&db, &wd, &t(&b), None, "sale-1", true, at(3, 0))
+        .await
+        .expect("B's sale");
+    let before = events(&db, &theirs.id).await;
+
+    let got = serve(&db, &wd, &t(&a), None, "sale-2", true, at(3, 1))
+        .await
+        .expect("A gets a ticket of A's own");
+
+    assert_ne!(got.id, theirs.id);
+    assert_eq!(got.status, TicketStatus::Serving);
+    assert_eq!(got.counter_teller_id.as_deref(), Some(a.as_str()));
+    assert_eq!(key_of(&db, &got.id).await, "desk-sale:sale-2");
+    assert_eq!(ticket_count(&db).await, 2);
+    assert_eq!(
+        stored(&db, &theirs.id).await,
+        format!("SERVING {}", theirs.display_number)
+    );
+    assert_eq!(
+        events(&db, &theirs.id).await,
+        before,
+        "B's ticket is unchanged"
+    );
+    db.finish().await;
+}
+
+#[tokio::test]
+async fn f13e_an_orphaned_called_ticket_is_started_and_returned() {
+    let (db, q) = open_main().await;
+    let a = on_duty(&db, &q, "MAIN", "Teller A", at(2, 0)).await;
+    let orphan = issued(&db, IssueSource::Desk, "desk-sale:sale-1", at(3, 0)).await;
+    q.desk
+        .call_next(&t(&a), &main_branch(), at(3, 1))
+        .await
+        .expect("A calls the ticket");
+    assert_eq!(
+        stored(&db, &orphan.id).await,
+        format!("CALLED {}", orphan.display_number)
+    );
+    let wd = walk_in_desk(&db, &q);
+
+    let got = serve(&db, &wd, &t(&a), None, "sale-2", true, at(3, 2))
+        .await
+        .expect("the orphan is taken over");
+
+    assert_eq!(got.id, orphan.id);
+    assert_eq!(got.status, TicketStatus::Serving);
+    assert_eq!(ticket_count(&db).await, 1, "no new ticket row");
+    assert_eq!(
+        stored(&db, &orphan.id).await,
+        format!("SERVING {}", orphan.display_number)
+    );
     db.finish().await;
 }
 
