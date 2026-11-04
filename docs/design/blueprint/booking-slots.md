@@ -73,7 +73,7 @@ Already decided elsewhere, not asked again:
 | B7 | **The QR is an opaque token, never stored.** `token = base64url(HMAC-SHA256(qr_key, booking_id ‖ qr_version))`, `qr_key` derived from the PII key file with HKDF (`info = "xc-booking-qr-v1"`). The row stores `qr_token_hash = SHA-256(token)` (unique) and `qr_version`. The owner's view recomputes the token; nothing stores it, so an idempotency replay never carries it. Re-issuing bumps `qr_version` and the old QR stops working. | §07 *"QR ใช้ opaque token hash ไม่ใส่ PII"*, §18 |
 | B8 | **Check-in issues the BOOKING ticket in the same transaction** (`QueueTickets::issue_in`, `IssueSource::Booking`). The teller proves the owner by the QR or by ticking that the identity was checked; the kiosk by the QR. A refused issue (`queueClosed`) leaves the booking `CONFIRMED`. A `CHECKED_IN` booking whose ticket ended `NO_SHOW` may check in again and gets a new ticket (Q-A3; §16 *1:0..N ticket history*). | §10 *"check-in ตรวจ QR/เจ้าของ"*, Q-A2, Q-A3 |
 | B9 | **The queue moves the booking forward.** The booking's ticket becoming `SERVING` makes the booking `IN_SERVICE`; its ticket cancelled with `dayClosed` makes it `CANCELLED` (`dayClosed`); its ticket ended at the desk with no sale (released `noSale`, or finished with no COMPLETED sale naming it) makes it `CANCELLED` (`noSale`) and gives its place back (§4.2a). The queue calls the `BookingQueueEvents` port (xc-kernel), so `xc-queue` does not depend on `xc-booking`. | queue-tickets Q5, Q8, §4.6; staff e2e 2026-11-01 T1 |
-| B10 | **Completion completes the booking.** The transaction's completion runs `BookingSaveStep` (kept, quote-transaction D-7): `before_in` requires the booking `CHECKED_IN` or `IN_SERVICE`, the same branch and the same customer; `after_in` makes it `COMPLETED` with `transaction_id`. Side, currency and quantity may differ from the request (a queue place, B1). One booking → at most one completed transaction (unique `transaction_id`). | §06, §08 *"1:N → 0..1 completed"*, quote-transaction §6.4 |
+| B10 | **Completion completes the booking.** The transaction's completion runs `BookingSaveStep` (kept, quote-transaction D-7): `before_in` requires the booking `CHECKED_IN` or `IN_SERVICE`, the same branch and the same customer; `after_in` makes it `COMPLETED` with `transaction_id`, and the completion finishes the booking's SERVING queue ticket in the same transaction (`finish_for_sale_in`), as a walk-in sale's (F3, #564, #6105). Side, currency and quantity may differ from the request (a queue place, B1). One booking → at most one completed transaction (unique `transaction_id`). | §06, §08 *"1:N → 0..1 completed"*, quote-transaction §6.4 |
 | B11 | **Time rules are data.** Cancellation cutoff (Q-B2, seeded 60 min), no-show grace (Q-B3, seeded 15 min) and confirmation expiry (Q-B4, seeded 60 min) live in `booking_policies` per organisation, editable by ADMIN; slot length, capacity and horizon (Q-B1) in `booking_slot_rules` per branch, entered by ADMIN with no default. No number is in code. | §12 Booking *"slot length/capacity; cutoff ยกเลิก; no-show grace; confirmation expiry"* |
 | B12 | **Expiry and no-show are written by a sweeper**, every minute, compare-and-set, actor `system`: `PENDING_CUSTOMER_CONFIRMATION` past `confirm_expires_at` → `EXPIRED`; `CONFIRMED` past `slot.start_at + grace` → `NO_SHOW`; `CHECKED_IN` with no active ticket after the slot's service date → `CANCELLED` (`dayEnded`). Each releases its place. Readers also treat an overdue row as its final state, so a late sweep never shows a wrong state. | §06, §12 |
 | B13 | **Partner bookings need an attribution reference.** `source_channel = 'PARTNER'` requires `referralCode`; the booking's create captures it (`ReferralCaptureService::capture_in`, `CaptureTarget::Booking`) in the same transaction and stores `partner_attribution_id`. The Partner Portal (R03) is Broker-Platform's; v3 serves one machine route for it (BK-12). **For DESK and APP `referralCode` is optional**: when given, `BookingService::create` captures it the same way, in the create's transaction (BK-3), so a code given while booking is never dropped; without it nothing is captured. The capture moves to the exchange with `link_transaction_in` (FD-2 #973 / RA-1 #979). | #555 §3, `broker-seam.md` §4.2 |
@@ -373,6 +373,7 @@ The code ticket adds up-front tests for rows 1, 2 and 5. For row 6 it adds a QR-
 | `SlotService::open_in` (`slotOpen`) | `OPEN` | `NULL` |
 | `generate_in` closing a slot whose `service_date` is one of the branch's closure dates | `CLOSED` | `'CLOSURE'` |
 | `generate_in` closing any other slot (rule, hours or horizon change) | `CLOSED` | `'RULE'` |
+| `generate_in` reopening a `'RULE'`-closed, empty, future slot whose `(start_at, end_at)` is planned again (#6079, `issuecomment-6624616081`) | `OPEN` | `NULL` |
 | `remove_closure_in` reopening (below) | `OPEN` | `NULL` |
 | rows `CLOSED` before M3 | `CLOSED` | `NULL` = reason unknown; never reopened automatically |
 
@@ -385,9 +386,8 @@ branch that meets all of these:
 It sets `status = 'OPEN'`, `closed_by = NULL`, `updated_at = now()`. A branch with no rule reopens nothing. It reopens
 only what the closure closed, and it reopens it whether or not a closure row was deleted.
 
-**Not reopened:** `'SLOT'` (an ADMIN's hand close), `'RULE'`, `NULL` (before M3), a slot in the past, one no longer
-planned. **Out of scope:** reopening `RULE` slots when a rule change is undone. The owner's words name only the
-holiday's slots.
+**Not reopened by `remove_closure_in`:** `'SLOT'` (an ADMIN's hand close), `'RULE'`, `NULL` (before M3), a slot in the past, one no longer
+planned. **In scope for `generate_in` (#6079, ruled in `issuecomment-6624616081`, 2026-11-04):** reopening `'RULE'` slots when a rule or hours change is undone (`status = 'CLOSED'`, `closed_by = 'RULE'`, `reserved = 0`, `start_at > now()`, and planned again with the same `end_at` ⇒ `OPEN`, `closed_by = NULL`; never `'SLOT'`, `'CLOSURE'` or `NULL`).
 
 **Behaviour table** (route-level up-front tests, through `POST /api/branches/{id}/closures` and
 `POST /api/branches/{id}/closures/{date}/remove`, plus `slotClose`/`slotOpen`):
@@ -397,7 +397,7 @@ holiday's slots.
 | R1 | add a closure on D, then remove it | every empty future slot of D is `OPEN` with `closed_by` NULL; D's open count equals the count before the add |
 | R2 | `slotClose` S on D, then add a closure on D and remove it | S stays `CLOSED` with `closed_by = 'SLOT'`; D's other slots reopen |
 | R3 | slot T on D has a booking; add a closure on D and remove it | T is `OPEN` throughout, `closed_by` NULL |
-| R4 | a rule change closes R (`closed_by = 'RULE'`); add a closure on R's date and remove it | R stays `CLOSED` with `closed_by = 'RULE'` |
+| R4 | a rule change closes R (`closed_by = 'RULE'`); undoing the rule reopens R (`OPEN`, `closed_by` NULL, #6079 `issuecomment-6624616081`); a closure added and removed on R's date then closes and reopens it | R is `OPEN` with `closed_by` NULL |
 | R5 | a `CLOSED` row with `closed_by` NULL on D (before M3); add a closure on D and remove it | it stays `CLOSED`, `closed_by` NULL |
 | R6 | remove a closure on D whose slots have started | nothing reopens |
 | R7 | `slotOpen` on a slot closed by a closure | `OPEN`, `closed_by` NULL |
