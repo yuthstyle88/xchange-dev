@@ -56,6 +56,14 @@ describe('BK-13 DeskPage backdated keying link', () => {
     expect(link!.textContent?.trim()).toBe('คีย์ย้อนหลัง');
   });
 
+  it('renders "Backdated entry" when language is en and exchangeBackdate is held', () => {
+    setLang('en');
+    mount(['exchangeBackdate']);
+    const link = host.querySelector<HTMLAnchorElement>('a[href="/desk/backdated"]');
+    expect(link).not.toBeNull();
+    expect(link!.textContent?.trim()).toBe('Backdated entry');
+  });
+
   it('does not render the backdated link when me.permissions lacks exchangeBackdate', () => {
     mount(['BranchDayOperate', 'ShiftOperate']);
     const link = host.querySelector('a[href="/desk/backdated"]');
