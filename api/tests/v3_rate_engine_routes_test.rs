@@ -1059,6 +1059,9 @@ async fn a_rates_draft_out_of_bound_waits_for_the_owner_then_rates_publishes_it(
     ok(&decided, "the owner decides");
 
     // RATES publishes; the staff view of XC-B01 shows it
+    xc_testdb::seed_branch_currencies(&db.pool, B01, &["USD"])
+        .await
+        .expect("seed branch currencies");
     let p = publish_draft(&db, &rates, None, &draft, None).await;
     assert_eq!(p["version"], json!(1), "{p}");
     let front = ok(
