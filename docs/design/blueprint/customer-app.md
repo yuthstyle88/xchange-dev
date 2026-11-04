@@ -82,7 +82,7 @@ What is already decided elsewhere and is not asked again:
 | Read public branches, rates, service status (C01, C08) | public | no customer data (§10 *"ไม่คืน reference cost/PII"*) |
 | Save, read, delete a planner draft (C01, C09) | CUSTOMER → `CustomerSelf`, or the anonymous app session | owner check: the draft's customer is the actor's, or its `session_hash` is the cookie's |
 | Ask the assistant (C12) | CUSTOMER, or the anonymous app session | rate-limited per session (§4.3) |
-| Sign in / sign up (C14) | anyone → OR-3 `/api/auth/*`, then CI-7 `customerRegister` | first sign-in of a session claims its drafts (P6) |
+| Sign in / sign up (C14) | anyone → OR-3 `/api/auth/*`, then CI-7 `customerRegister` | first sign-in of a session claims its drafts (P6); today only the OTP door claims them (C14 doors, §4.5) |
 | Read my history and receipts (C04) | CUSTOMER → `CustomerSelf` | completed and reversed transactions of `actor.customer_id` only |
 | Read my journey (C09) | CUSTOMER → `CustomerSelf` | drafts here, bookings #555, ticket #556 |
 | Read / mark read my notifications (C13) | any signed-in user → own rows only | `recipient_user_id = actor.user_id` |
@@ -240,7 +240,7 @@ views and QR.
 | C03 my bookings `/app/bookings` (added 2026-10-10, below) | `web/pages/app-bookings.html` | `web/src/screens/customer/bookings/` | #555's `my_bookings`, `my_booking` (QR), `bookingCancel`, `bookingReschedule` |
 | C12 assistant `/app/assistant` | `web/pages/app-assistant.html` | `web/src/screens/customer/assistant/` | `assistantAsk`, `my_assistant_conversation` |
 | C13 notifications `/app/notifications` | `web/pages/app-notifications.html` | `web/src/screens/customer/notifications/` | `my_notifications`, `notificationRead*` |
-| C14 sign-in / sign-up `/app/sign-in`, `/app/sign-up` | `web/pages/app-sign-in.html`, `app-sign-up.html` | `web/src/screens/customer/sign-in/` | OR-3 `/api/auth/*`, `consent_texts`, `customerRegister` |
+| C14 sign-in / sign-up `/app/sign-in`, `/app/sign-up` | `web/pages/app-sign-in.html`, `app-sign-up.html` | `web/src/screens/customer/sign-in/` | OR-3 `/api/auth/*` (two sign-in doors, below: OTP `otp/request` + `otp/verify`, and password `POST /api/auth/login`), `consent_texts`, `customerRegister` |
 
 **C02 and C03 were missing (amendment, 2026-10-10, claude/89bd61d9).** `booking-slots.md` (#555) gives
 the customer's booking screens to this design (*"C02/C03/C08 customer screens are #558's"*), but this design built
@@ -257,6 +257,23 @@ above close that gap. The routes and views are #555's; this design adds only the
 - **A broker's link** `/app/book?ref=AB12CD` prefills the field from the page's own URL. Nothing is stored: no
   cookie and no local storage. Broker keeps the attribution window (Broker §6), and v3 only captures what the booking
   carries. Remembering a code across visits would be a retention rule nobody has decided, so it is not done.
+
+**C14 has two sign-in doors (amendment, 2026-11-04, claude/01TxaRJG).** This closes
+`customer-identity-consent.md` §10 O-6 on the FE side: a customer who signed up with a phone and password (§4.6 there)
+had no way back in except OTP, and OTP is not delivered on xc-v3 (`deploy/HOST-do-sgp1.md:75`, `AUTH_OTP_DELIVERY_MODE=noop`).
+- **OTP door** (default, unchanged): `POST /api/auth/otp/request`, then `POST /api/auth/otp/verify`
+  (`web/src/screens/customer/sign-in/SignIn.tsx:1-3`, on main `c8837a3d`).
+- **Password door** (new): on the same page, a switch to a phone + password form that sends
+  `POST /api/auth/login` `{identifier, password}`, with `identifier` the phone in E.164 (the page's `e164`).
+  The server already accepts it for a sign-up customer (`customer-identity-consent.md` §4.6.2 S2; route at
+  `api/src/presentation/http/auth.rs:76`).
+- **After a `200`** either door goes where verify goes today: APP-7c's `next` rule, else `/app`.
+- **Errors** are worded as today's OTP errors are (`fieldError` / `isServerFailure`). `401 invalidCredentials` stays on
+  the page and clears the password field. No new server code, route or error code.
+- **Known difference, not decided here:** only OTP verify claims the browser's anonymous planner drafts and
+  assistant conversation (P6; `auth.rs:382` `claim_session_for`). A password sign-in does not claim them yet. Making it
+  claim is a server change for the lane controller to rule on; until then the password door signs in without the claim.
+- The FE ticket is #5958 (behaviour table P1–P8 there).
 
 Every page: `xc-gate` `anyone` (the server checks every read and write); `main.tsx` calls `setAudience('customer')`
 before `render` (`languages.md` §3.1); `i18n.ts` exports complete `th`, `en`, `zh` (L4); the `zh` draft is checked by a
