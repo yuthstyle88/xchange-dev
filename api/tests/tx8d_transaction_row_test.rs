@@ -22,6 +22,7 @@ mod compat_common;
 mod kiosk_http_common;
 #[macro_use]
 mod rpc_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod snapshot_common;
 
@@ -528,6 +529,7 @@ impl Harness {
             slip: Some(slip_key.clone()),
             reference_rate: None,
         };
+        shift_date_common::date_open_shifts(&pool, "MAIN", &cmd.value_date).await;
         let compat_saved = counter
             .desk
             .workflow

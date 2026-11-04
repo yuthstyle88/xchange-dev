@@ -19,6 +19,7 @@
 //! name ends in `_test`). Without it they FAIL; none skips.
 
 mod save_common;
+mod shift_date_common;
 mod shift_holder_common;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -409,6 +410,7 @@ async fn a_saved_exchange_can_be_read_back_whole() {
     cmd.paid_at = "2026-10-06T12:30:00+07:00".to_owned();
     cmd.reference_rate = Some("32.95".to_owned());
     cmd.value_date = "2026-11-01".to_owned();
+    shift_date_common::date_open_shifts(&shop.pool, MAIN, &cmd.value_date).await;
     let saved = shop.save(MAIN, cmd, at(0)).await.expect("a save");
 
     assert_eq!(saved.mode, Mode::Live);

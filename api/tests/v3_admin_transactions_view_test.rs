@@ -45,6 +45,7 @@ mod compat_common;
 mod kiosk_http_common;
 #[macro_use]
 mod rpc_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
@@ -622,6 +623,7 @@ impl Room {
             slip: slip.clone(),
             reference_rate: s.reference.map(str::to_owned),
         };
+        shift_date_common::date_open_shifts(&self.counter.desk.db.pool, MAIN, s.date).await;
         let saved = self
             .counter
             .desk

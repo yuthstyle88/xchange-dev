@@ -62,6 +62,7 @@ mod rates_re4_common;
 mod rates_re4e_publish;
 #[macro_use]
 mod rpc_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
@@ -465,6 +466,9 @@ impl Room {
             slip,
             reference_rate: ex.reference.map(str::to_owned),
         };
+        if ex.live {
+            shift_date_common::date_open_shifts(&self.desk.db.pool, branch, ex.value_date).await;
+        }
         self.desk
             .workflow
             .save(&here, cmd, &saver, t)

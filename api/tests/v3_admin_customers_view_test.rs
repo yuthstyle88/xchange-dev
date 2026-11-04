@@ -50,6 +50,7 @@ mod rates_re4_common;
 mod rates_re4e_publish;
 #[macro_use]
 mod rpc_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
@@ -498,6 +499,9 @@ impl Room {
             slip: None,
             reference_rate: None,
         };
+        if !who.demo {
+            shift_date_common::date_open_shifts(&self.desk.db.pool, branch, ex.value_date).await;
+        }
         let saved = self
             .desk
             .workflow
