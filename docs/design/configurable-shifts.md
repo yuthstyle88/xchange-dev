@@ -79,13 +79,13 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 
 | # | Rule |
 |---|---|
-| T1 | **Anchor.** The plan's anchor `S0` is the template start that follows the longest stretch of the 24-hour clock that no template covers. A tie, or a plan with no uncovered stretch, takes the earliest such start. With the owner's first table the uncovered stretch is 04:00–10:00, so `S0 = 10:00`; the 24-hour defaults have no uncovered stretch, so `S0` = the earliest start, 06:00 (the owner's cutover). (The earliest start alone is wrong: with A 10–19, C 19–04 and D 00:30–06:00 it would anchor the day at 00:30 and refuse a normal plan.) |
+| T1 | **Cutover.** Owner 2026-11-04: *"มาตรฐานการทำงาน 24 ชม ไม่มีพัก"*, *"ให้มัน คร 24"*: every plan covers all 24 hours (T5), so the cutover `S0` is the **earliest template start**: 06:00 with the defaults. It is derived, not a stored column; the settings screen shows it (§2.9). |
 | T2 | **Offsets.** A template's start offset is `(start − S0) mod 24 h`; its duration is `end − start`, plus 24 h when `end <= start` (crosses midnight). End offset = start offset + duration. |
 | T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the first table: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. With the defaults: A = d 06:00–14:00, B = d 14:00–22:00, C = d 22:00–d+1 06:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight inside the night (D 00:30–06:00 next to C 19–04) belongs to the date before. |
-| T4 | **Service span.** The branch's service window on business date `d` is `[d + S0, d + S0 + max endOffset)`. First table: 10:00–04:00 next day; defaults: 06:00–06:00 next day. This **replaces** `opening_hours` as the gate for start, begin and save (§5). |
-| T5 | **Plan validity.** `max endOffset <= 24 h` (only reachable when no stretch is uncovered, e.g. A 08–20 + B 20–09), names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively, `start != end`, and a break lies inside its shift, measured on the same offsets. 1 to 12 templates. A break with only one end is refused by the command when it parses the body (`breakIncomplete`), before `validate`. |
-| T6 | **Covering now.** Template `t` covers instant `now` when `start(t, d) <= now < end(t, d)` for `d` = local today or local yesterday. Each covering instance carries its own `d`. |
-| T7 | **Business date of an instant.** `d` such that `now` lies in the service span of `d`. Outside every span there is none. |
+| T4 | **Business day.** Business date `d` is the 24 hours `[d + S0, d + S0 + 24 h)`. A shift straddling the cutover (C 22–07 with `S0` = 06:00) belongs to the day it started (T3), so its instance may end after the business day does. This span **replaces** `opening_hours` as the gate for start, begin and save. |
+| T5 | **Plan validity.** Names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively; `start != end`; a break, when set, lies strictly inside its shift; 1 to 12 templates; and **the plan covers all 24 hours**. The first uncovered window going forward from `S0` is refused as `PlanRefusal::Gap { from, to }` (wire `shiftPlanInvalid:gap:04:00-06:00`, message *"ช่วง 04:00–06:00 ไม่มีกะ"*). Overlaps are allowed. |
+| T6 | **Covering now.** Template `t` covers `now` when `start(t, d) <= now < end(t, d)` for `d` = local today, yesterday or the day before (a long shift reaches two days). Each covering instance carries its own `d`. |
+| T7 | **Business date of an instant.** The `d` (yesterday or today) whose business day holds it; always defined for a non-empty plan. |
 | T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4 = A). |
 | T9 | **End of a business day.** `ShiftPlan::business_day_end(d)` = the end of `service_span(d)`: 06:00 on `d+1` with the defaults. Every deadline that today means "midnight after the sale's date" uses it (§2.10). |
 | T10 | **Continuous spans.** When the span of `d+1` starts where the span of `d` ends (a 24-hour plan), `span_for` still answers one day's span; the custody window joins the two (§2.7), so no daily pause appears. |
@@ -170,10 +170,21 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 - `[required]` `POST /api/shift-templates` command `branchShiftsSave`, permission `BranchesManage` (the Owner standing holds it; same as `branchSave`). Body: `{branch, templates: [{id?, name, startsAt "HH:MM", endsAt, breakStartsAt?, breakEndsAt?}]}` in display order. It replaces the whole list: rows with an `id` are updated, rows without are inserted, live rows missing from the list are retired (`retired_at = now`), never deleted, because `shifts.template_id` points at them.
 - Refusals: `422 shiftPlanInvalid` with `{reason: emptyName|nameTooLong|duplicateName|zeroLength|spanOver24h|breakOutsideShift|breakIncomplete|tooMany|none}` and `index`.
 - `[required]` Editing does not touch open shifts: they keep the name and business date they opened with.
-- `[required]` `GET /api/v3/views/branch_shifts?branch=` returns the live plan plus the derived span, for the editor.
-- **The cutover is derived, not set (T1).** The Owner cannot type it; it follows from the list. A 24-hour list written as
-  00/08/16 cuts over at midnight, and 06/14/22 at 06:00. So the editor (CS-14) shows the derived business day
-  ("business day 06:00 → 06:00 next day") from E4's span above the rows, and refreshes it as rows change before Save.
+- `[required]` `GET /api/v3/views/branch_shifts?branch=` returns the live plan, the derived cutover (`cutover: "06:00"`) and `defaultShiftHours: 8`, for the screen.
+- **The cutover is derived, not set (T1).** The Owner moves it by moving the earliest shift; 06/14/22 cuts over at 06:00,
+  00/08/16 at midnight. No column is needed; if the owner later wants a cutover independent of the shifts, that is a column
+  and a migration.
+- **The Owner's settings screen** (owner, verbatim: *"ให้ ตั้งเวลา ของแต่ละกะได้ เอง"*). It lives on the admin branches
+  screen as a "Shifts" section per branch (CS-14, Argon web ticket, wave 3 after CS-9). It:
+  - lists the live shifts in order;
+  - adds a shift. A new row's end is pre-filled as start + `DEFAULT_SHIFT_HOURS` (8; the screen reads it from the
+    `branch_shifts` view's `defaultShiftHours`, so the 8 lives once, in `ShiftPlan::DEFAULT_SHIFT_HOURS`, the same constant
+    the seed is checked against);
+  - edits a shift's name, start, end and optional break, and retires a shift;
+  - draws a 24-hour bar with each shift and marks any uncovered window in red as rows change, before Save, using the same
+    rule as T5;
+  - enables Save only when the bar is fully covered. The server refusal (`gap`, with the window) shows on the screen too;
+  - shows the derived cutover ("วันทำการเริ่ม 06:00").
 
 ### 2.10 Deadlines that mean "the end of the sale's day"
 
@@ -741,7 +752,7 @@ DROP TABLE shift_templates;
 
 ## 7. Owner questions
 
-Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q1–Q9 = A**. Q10 is open.
+Decided (lane controller's messages and comments on #6149/#6170, 2026-11-04 21:10–22:05 ICT): **Q1–Q10 = A**. No question is open.
 
 | # | Question | Decided |
 |---|---|---|
@@ -754,13 +765,15 @@ Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q
 | Q7 | Keep the 10-minute pause before the cutover on a 24-hour plan? | **A**: no pause; consecutive spans join (T10). |
 | Q8 | Re-approve the migration with the 06/14/22 seed and the two triggers? | **A**: approved at `b661f613`. |
 | Q9 | Run the queue/kiosk day close at the cutover on a 24-hour branch? | **A**: *"Yes, at cutover"* (§2.12). |
-| Q10 | Seed the defaults on every new branch with a migration trigger (replacing the code call in `adminCreateBranch`)? | pending (sent 2026-11-04 22:00 ICT); recommendation A |
+| Q10 | Seed the defaults on every new branch with a migration trigger (replacing the code call in `adminCreateBranch`)? | **A**: *"Yes, add trigger"* (~22:0x ICT). CS-13 is dropped. |
+| — | 24-hour coverage, 8 h default, the Owner's settings screen | Owner, ~21:3x–21:5x ICT: *"มาตรฐานการทำงาน 24 ชม ไม่มีพัก"*, *"ให้มัน คร 24"*, *"ให้ ตั้งเวลา ของแต่ละกะได้ เอง"*, *"โดยจะมี default 8ชม ต่อกะ"* (T1, T4, T5, §2.9). |
 
 ## 8. Tickets and waves
 
 | Ticket | Class | Model | Files (File scope) | Wave |
 |---|---|---|---|---|
-| CS-1 `ShiftPlan` | logic | Argon | `xc-shift/src/domain/shift_plan/shift_plan.rs` | 1 |
+| CS-1 `ShiftPlan` | logic | Argon | `xc-shift/src/domain/shift_plan/shift_plan.rs` | 1 (merged, #6171) |
+| CS-1b `ShiftPlan` 24-hour rule (coverage, 24 h day) | logic | Argon | `xc-shift/src/domain/shift_plan/shift_plan.rs` | 1b (#6178) |
 | CS-2 `PgShiftTemplateStore` | mechanical | Flash | `xc-shift/src/infrastructure/shift_plan/pg_store.rs` + its test | 1 |
 | CS-3 `ShiftPlanService` | logic | Argon | `xc-shift/src/application/shift_plan/service.rs` | 1 |
 | CS-4 custody window from the plan | logic | Argon | `api/src/infrastructure/custody/custody_ports.rs` | 2 (after CS-1, CS-3); the full suite right after it finds the fixture reds (CS-4s…, mechanical, Flash) |
@@ -772,7 +785,7 @@ Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q
 | CS-11 shift views | mechanical | Flash | `views/my_shift.rs`, `views/admin_shifts.rs` + their DTOs | 1 |
 | CS-19 handover accept | guarded | Argon | `xc-cash/src/application/handover/handover_service.rs`, `api/src/presentation/http/v3/commands/cash/handovers.rs` | 2 (after CS-3) |
 | CS-21 reconciliation by business date | logic | Argon | `api/src/application/finance/reconciliation.rs`, `api/src/application/finance/sheet_parts.rs` | 1 |
-| CS-14 editor UI | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 3 (after CS-9) |
+| CS-14 the Owner's settings screen (§2.9) | logic | Argon | `ShiftsEditor.tsx`, `BranchesScreen.tsx`, admin branches i18n | 3 (after CS-9) |
 | CS-15 picker UI | logic | Argon | `ShiftPicker.tsx` (+ `CountForm.tsx` mount after board-currencies) | 3 (after CS-10) |
 | CS-16 admin cash UI | mechanical | Flash | `Cash.tsx`, `ShiftDetail.tsx` | 3 (after CS-11) |
 | CS-18 floor `onBreak` UI | mechanical | Flash | `FloorCard.tsx` | 3 (after CS-5) |
