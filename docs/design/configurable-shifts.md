@@ -103,6 +103,9 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 - `[required]` **Every count carries a business date** (reconciliation dates counts by it, §2.11), written at submit:
   OPEN = the chosen instance's date; CLOSE and HANDOVER_OUT = their shift's `business_date`; SAFE and SAFE_OPEN =
   `ShiftPlan::business_date_of(counted_at)`, else the date of `span_for(counted_at)` (a count in a gap belongs to the next span).
+- `[required]` **Every production writer names the date itself.** The `BEFORE INSERT` triggers (§5) exist for test fixtures and
+  pre-feature rows; a production writer that omits the date would silently get the calendar date. Each writer ticket (CS-7,
+  CS-19) states this and has a test that would go red under the calendar rule (O1, K1).
   The writer is `PgCashCountRepository`'s insert (`xc-cash/src/infrastructure/repository.rs:160`) and `CashCount`
   (`xc-cash/src/domain/count/cash_count.rs:40`) gains `shift_template_id` and `business_date`: both in CS-7's File scope.
 - `[required]` `GET /api/v3/views/open_shift_choices?branch=` returns the covering instances: `{templateId, name, businessDate, startsAt, endsAt, breakStartsAt?, breakEndsAt?}[]`, plus `preselect: templateId | null`, set when exactly one covers now. The count form shows a picker; one choice is preselected; none shows "outside shift hours" and disables Save.
@@ -146,9 +149,9 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
   later and keeps moving. A plan with a gap keeps the 10-minute cut-off before its gap.
 - **Fixtures.** About 25 api test files drive the custody window by writing `branches.opening_hours`
   (`grep -rln opening_hours api --include='*.rs' | grep tests` → 30 files at `6334e748`, a few of them booking-only). After CS-4
-  they must seed a plan instead. Ticket **CS-4s** (mechanical sweep, Flash) adds a shared helper that writes one template
-  `[open, close)` for a branch (retiring its others) and calls it next to every custody `opening_hours` write; it is additive,
-  so it lands **before** CS-4.
+  they must seed a plan instead. Which ones go red is measured, not guessed: the full suite on the feat branch runs right
+  after CS-4 merges into it, and each red file becomes a mechanical setup ticket (**CS-4s…**) in the next wave, using a shared
+  helper that writes one template `[open, close)` for a branch and retires its others.
 - `[proposed]` `opening_hours` stays as the **customer-facing** hours (booking slots, public branch API, customer screens) and is still edited in the branch profile. Whether it should follow the shifts is Q5.
 
 ### 2.8 Defaults
@@ -163,6 +166,9 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
 - Refusals: `422 shiftPlanInvalid` with `{reason: emptyName|nameTooLong|duplicateName|zeroLength|spanOver24h|breakOutsideShift|breakIncomplete|tooMany|none}` and `index`.
 - `[required]` Editing does not touch open shifts: they keep the name and business date they opened with.
 - `[required]` `GET /api/v3/views/branch_shifts?branch=` returns the live plan plus the derived span, for the editor.
+- **The cutover is derived, not set (T1).** The Owner cannot type it; it follows from the list. A 24-hour list written as
+  00/08/16 cuts over at midnight, and 06/14/22 at 06:00. So the editor (CS-14) shows the derived business day
+  ("business day 06:00 → 06:00 next day") from E4's span above the rows, and refreshes it as rows change before Save.
 
 ### 2.10 Deadlines that mean "the end of the sale's day"
 
@@ -184,6 +190,41 @@ Day close produces no report (`day_close.rs`); "the day close grouped by shift" 
   `value_date`. After CS-8 the 4 Nov sheet holds the 02:00 sales but C's 06:00 CLOSE lands on 5 Nov, so it no longer balances.
 - `[required]` Both read `cash_counts.business_date` (§2.3) instead. Ticket **CS-21** (logic, Argon): `reconciliation.rs`, `sheet_parts.rs`.
   This restates ruling Q3 of #1068 ("a count's `counted_at` business date") with the plan's business date; recorded here.
+
+### 2.12 Queue and kiosk day close at the cutover (owner Q9 = A, CS-22)
+
+Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
+
+- **Why.** `on_day_closed` runs only when the branch day is cut off and no shift is OPEN
+  (`xc-shift/src/application/shift/service/day_close.rs:33-42`). On the 24-hour defaults a shift is always open, so the
+  queue's WAITING/CALLED tickets and the kiosk's unfinished requests (`xc-queue/src/application/day/queue_day_hook.rs:46-60`,
+  `xc-kiosk/src/application/kiosk/day_close.rs:47-80`) would never be ended.
+- `[required]` **The cutover ends the previous business day's queue and kiosk work.** For each branch with a plan, the
+  cutover is the start of the span holding now (`ShiftPlan::span_for(now).0`, when `now` is inside it). Everything issued
+  before it that is still unfinished is ended exactly as the branch-day close ends it today (`dayClosed` /
+  `kioskCancelled:DAY_CLOSED`). Work issued after the cutover is untouched.
+- `[required]` **Stateless and idempotent, no migration.** The rule is "issued before the cutover", so running it again finds
+  nothing. A sweeper runs it every 60 s, like `BookingSweeper` (`api/src/bootstrap/mod.rs:475-485`), one branch transaction per
+  branch.
+- `[required]` The branch-day close keeps calling `on_day_closed` unchanged (a branch with a gap still closes its day as today).
+- Files and tickets:
+  - **CS-22a** (logic, Argon): `QueueDayHook::on_business_day_end(tx, branch, cutover)` in
+    `xc-queue/src/application/day/queue_day_hook.rs` (tickets with `issued_at < cutover`), and
+    `KioskDayClose::close_before_in(tx, branch, cutover, now)` in `xc-kernel/src/kiosk_day_close.rs` + its implementation in
+    `xc-kiosk/src/application/kiosk/day_close.rs` (requests with `created_at < cutover`). Both share their body with the
+    existing day close; the existing methods keep their behaviour.
+  - **CS-22b** (logic, Argon): `BusinessDayCloser` in `api/src/application/workflows/business_day_close.rs` (new): lists
+    branches, loads each plan (`ShiftPlanService::plan_in`), and runs CS-22a for the branch's current cutover; one `tokio::spawn`
+    in `api/src/bootstrap/mod.rs`. Waits for CS-3 and CS-22a.
+
+| # | Case | Required |
+|---|---|---|
+| Q1 | defaults; a WAITING ticket issued 4 Nov 23:00, sweep at 5 Nov 06:01 | CANCELLED `dayClosed` |
+| Q2 | a WAITING ticket issued 5 Nov 06:00:30, same sweep | untouched |
+| Q3 | sweep again at 06:02 | nothing changes, no new events |
+| Q4 | an unfinished kiosk request created 5 Nov 05:50 | cancelled `DAY_CLOSED` at the 06:01 sweep |
+| Q5 | overlapping plan (gap 04:00–10:00), sweep at 5 Nov 05:00 | nothing (now is not inside a span); at 10:01 the tickets from before 10:00 end |
+| Q6 | branch-day close (cut-off, last shift closed) | unchanged: `on_day_closed` ends everything, as today |
 
 ## 3. Class diagram
 
@@ -661,7 +702,7 @@ DROP TABLE shift_templates;
 
 ## 7. Owner questions
 
-Decided (lane controller's comments on this PR, 2026-11-04 ~21:2x and ~21:4x ICT): **Q1–Q6 = A**.
+Decided (lane controller's comments on #6149, 2026-11-04 21:10–21:32 ICT): **Q1–Q9 = A**. No question is open.
 
 | # | Question | Decided |
 |---|---|---|
@@ -671,13 +712,9 @@ Decided (lane controller's comments on this PR, 2026-11-04 ~21:2x and ~21:4x ICT
 | Q4 | Different shifts per weekday? | **A**: no, one plan every day. |
 | Q5 | Do customer-facing hours follow the shifts? | **A**: no; `opening_hours` stays customer hours; selling follows the shifts. |
 | Q6 | Re-date past night sales? | **A**: no backfill of `value_date`. |
-
-Open (sent to the lane controller with my recommendation):
-
-| # | Question | Options | Recommendation |
-|---|---|---|---|
-| Q7 | On a 24-hour plan, keep the 10-minute "no new sale" cut-off before the 06:00 cutover? | A. No pause: the window joins consecutive spans (T10, §2.7). B. Keep it: no new sale 05:50–06:00 every day. | **A**: the owner said 24 hours is the standard; B stops the counter daily for nothing the day close needs (the day close is the branch day, T11). |
-| Q8 | Re-approve the migration with two changes since "Approve all": the 06/14/22 seed without breaks, and two `BEFORE INSERT` triggers that date a `shifts`/`cash_counts` row written without a business date (same rule as the backfill), plus `cash_counts.business_date` on every count. | A. Approve. B. No triggers: every writer, including ~110 test files, names the date. | **A**: the column stays `NOT NULL`; B is a 110-file fixture sweep and four production writers for no behaviour difference. |
+| Q7 | Keep the 10-minute pause before the cutover on a 24-hour plan? | **A**: no pause; consecutive spans join (T10). |
+| Q8 | Re-approve the migration with the 06/14/22 seed and the two triggers? | **A**: approved at `b661f613`. |
+| Q9 | Run the queue/kiosk day close at the cutover on a 24-hour branch? | **A**: *"Yes, at cutover"* (§2.12). |
 
 ## 8. Tickets and waves
 
@@ -686,8 +723,7 @@ Open (sent to the lane controller with my recommendation):
 | CS-1 `ShiftPlan` | logic | Argon | `xc-shift/src/domain/shift_plan/shift_plan.rs` | 1 |
 | CS-2 `PgShiftTemplateStore` | mechanical | Flash | `xc-shift/src/infrastructure/shift_plan/pg_store.rs` + its test | 1 |
 | CS-3 `ShiftPlanService` | logic | Argon | `xc-shift/src/application/shift_plan/service.rs` | 1 |
-| CS-4s fixture sweep: plan helper next to custody `opening_hours` writes | mechanical | Flash | the custody test files and their common modules (listed in the ticket) | 1 |
-| CS-4 custody window from the plan | logic | Argon | `api/src/infrastructure/custody/custody_ports.rs` | 2 (after CS-1, CS-3, CS-4s) |
+| CS-4 custody window from the plan | logic | Argon | `api/src/infrastructure/custody/custody_ports.rs` | 2 (after CS-1, CS-3); the full suite right after it finds the fixture reds (CS-4s…, mechanical, Flash) |
 | CS-5 floor hours + `onBreak` | logic | Argon | `api/src/application/staff_floor/reader.rs`, `dto/v3/staff_floor.rs` | 2 (after CS-1, CS-3) |
 | CS-7 counts carry template and business date | guarded | Argon | `xc-cash/src/application/count/count_service.rs`, `xc-cash/src/infrastructure/repository.rs`, `xc-cash/src/domain/count/cash_count.rs`, `commands/cash.rs` | 2 (after CS-3) |
 | CS-8 LIVE `value_date` from the shift | guarded | Argon | `api/src/application/workflows/exchange/create.rs` | 1 |
@@ -703,6 +739,8 @@ Open (sent to the lane controller with my recommendation):
 | CS-18 floor `onBreak` UI | mechanical | Flash | `FloorCard.tsx` | 3 (after CS-5) |
 | CS-12 staff report BE | logic | Argon | `staff_daily_report.rs` + DTO | after `feat/board-currencies` lands |
 | CS-17 staff report UI | mechanical | Flash | `StaffReport.tsx` | after CS-12 |
+| CS-22a queue + kiosk end before the cutover | logic | Argon | `xc-queue/src/application/day/queue_day_hook.rs`, `xc-kernel/src/kiosk_day_close.rs`, `xc-kiosk/src/application/kiosk/day_close.rs` | 2 |
+| CS-22b business-day closer | logic | Argon | `api/src/application/workflows/business_day_close.rs`, `api/src/bootstrap/mod.rs` | 3 (after CS-3, CS-22a) |
 | CS-20 reversal and loyalty deadline | guarded | Argon | `xc-exchange/src/domain/reversal/window.rs`, `reversal_request.rs`, `reversal_post.rs`, `dto/v3/reversal.rs`, `api/src/infrastructure/loyalty/pg_facts_source.rs`, `complete.rs` (`branch_day_in` only) | after `feat/backdated-keying` lands |
 
 CS-6 is folded into the skeleton (it had to write the new columns for today's tests to stay green). Waves follow the
