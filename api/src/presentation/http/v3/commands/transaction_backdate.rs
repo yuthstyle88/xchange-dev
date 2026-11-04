@@ -132,8 +132,8 @@ impl CommandAction for TransactionBackdateCommand {
             "SELL" => Side::Sell,
             _ => return Err(invalid("side", "invalid side")),
         };
-        let currency =
-            CurrencyCode::parse(&input.currency).map_err(|_| invalid("currency", "invalid currency"))?;
+        let currency = CurrencyCode::parse(&input.currency)
+            .map_err(|_| invalid("currency", "invalid currency"))?;
         let quantity = ForeignAmount::from_decimal(input::decimal(
             "quantity",
             &input.quantity,
@@ -201,7 +201,10 @@ impl CommandAction for TransactionBackdateCommand {
         let mark = PgTransactionStore::new(self.pool.clone())
             .backdate_mark_in(tx, t.id)
             .await
-            .map_err(|_| server_error())?;
+            .map_err(|e| {
+                tracing::error!(error = %e, "transaction backdate mark read failed");
+                server_error()
+            })?;
         Ok(TransactionDto::from_domain(&t).with_backdate(mark))
     }
 }
