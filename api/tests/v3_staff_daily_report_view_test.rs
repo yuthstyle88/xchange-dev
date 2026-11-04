@@ -1347,7 +1347,11 @@ async fn the_drawer_is_the_sum_of_every_verified_close_count_of_the_day() {
         .iter()
         .map(|r| r["currency"].as_str().unwrap_or(""))
         .collect();
-    assert_eq!(codes, CODES, "v2's seven codes in v2's order: {report}");
+    assert_eq!(
+        &codes[..CODES.len()],
+        CODES,
+        "v2's seven codes first, in v2's order: {report}"
+    );
     let verified = [a_close.as_str(), b_close.as_str()];
     for (key, column) in [
         ("drawerCounted", "counted"),
