@@ -18,12 +18,14 @@ use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
 use sqlx::{Postgres, Transaction};
 use xc_kernel::ids::BranchId;
-use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xc_rate::domain::validation::format_iso;
 use xc_shift::application::custody::service::CustodyFactsPort;
 use xc_shift::domain::custody::repositories::custody_ports::{CustodyPorts, OutsideFacts};
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
 use xc_shift::domain::custody::value_objects::service_window::ServiceWindow;
+use xc_shift::domain::shift_plan::repository::ShiftTemplateStore;
+use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 /// The trait's future: `futures::future::BoxFuture` spelled out.
 type Answer<'a, T> = Pin<Box<dyn Future<Output = AppResult<T>> + Send + 'a>>;
@@ -152,55 +154,49 @@ impl CustodyPorts for PgCustodyPorts {
         now: CustodyTime,
     ) -> Answer<'a, ServiceWindow> {
         Box::pin(async move {
-            let row: Option<(String, Option<serde_json::Value>)> =
-                sqlx::query_as("SELECT timezone, opening_hours FROM branches WHERE id = $1")
+            let tz_str: Option<String> =
+                sqlx::query_scalar("SELECT timezone FROM branches WHERE id = $1")
                     .bind(branch.as_str())
                     .fetch_optional(&mut **tx)
                     .await
                     .map_err(AppError::Database)?;
 
-            let (timezone, opening_hours) = match row {
-                Some((tz, Some(hours))) if !hours.is_null() => (tz, hours),
-                _ => return Ok(ServiceWindow::NotSet),
+            let Some(tz_str) = tz_str else {
+                return Ok(ServiceWindow::NotSet);
             };
 
-            let hours = BranchHours::new(&timezone, Some(&opening_hours))?;
-
-            let now_millis = now.epoch_millis();
-            let now_utc = match DateTime::<Utc>::from_timestamp_millis(now_millis) {
-                Some(dt) => dt,
-                None => return Ok(ServiceWindow::Closed),
+            let Ok(tz) = tz_str.parse::<Tz>() else {
+                return Ok(ServiceWindow::Closed);
             };
 
-            let tz: Tz = match timezone.parse() {
-                Ok(t) => t,
-                Err(_) => return Ok(ServiceWindow::Closed),
-            };
-
-            let now_local = now_utc.with_timezone(&tz);
-            let local_today = now_local.date_naive();
-
-            for offset in [-2, -1, 0, 1] {
-                if let Some(date) = local_today.checked_add_signed(chrono::Duration::days(offset))
-                    && let HoursWindow::Open { open, close } = hours.window(date)
-                    && open <= now_utc
-                    && now_utc < close
-                {
-                    return Ok(ServiceWindow::Open {
-                        open: CustodyTime::from_epoch_millis(open.timestamp_millis()),
-                        close: CustodyTime::from_epoch_millis(close.timestamp_millis()),
-                    });
-                }
+            let templates = PgShiftTemplateStore.live_in(tx, branch).await?;
+            let plan = ShiftPlan::new(templates, tz);
+            if plan.templates().is_empty() {
+                return Ok(ServiceWindow::NotSet);
             }
 
-            if let HoursWindow::Open { open, close } = hours.window(local_today) {
-                return Ok(ServiceWindow::Open {
-                    open: CustodyTime::from_epoch_millis(open.timestamp_millis()),
-                    close: CustodyTime::from_epoch_millis(close.timestamp_millis()),
-                });
+            let Some(now_utc) = DateTime::<Utc>::from_timestamp_millis(now.epoch_millis()) else {
+                return Ok(ServiceWindow::Closed);
+            };
+
+            let Some(date) = plan.business_date_of(now_utc) else {
+                return Ok(ServiceWindow::Closed);
+            };
+            let Some((open, mut close)) = plan.service_span(date) else {
+                return Ok(ServiceWindow::NotSet);
+            };
+
+            if let Some(next_date) = date.succ_opt()
+                && let Some((next_open, next_close)) = plan.service_span(next_date)
+                && next_open == close
+            {
+                close = next_close;
             }
 
-            Ok(ServiceWindow::Closed)
+            Ok(ServiceWindow::Open {
+                open: CustodyTime::from_epoch_millis(open.timestamp_millis()),
+                close: CustodyTime::from_epoch_millis(close.timestamp_millis()),
+            })
         })
     }
 
