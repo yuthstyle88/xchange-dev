@@ -29,9 +29,9 @@ use xc_exchange::domain::transaction::transaction::{
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
-use xc_kernel::money::{CurrencyCode, ForeignAmount, Money, Rate, Side};
-use xc_rate::domain::currency::currency_register::CurrencyRegister;
-use xc_rate::infrastructure::currency::currency_register::PgCurrencyRegister;
+use xc_kernel::money::{
+    CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize,
+};
 
 use super::complete::{CompleteExchange, ExchangeEffects};
 use super::create::CreatePayment;
@@ -159,20 +159,34 @@ impl BackdateSale {
                 "validationFailed:currency: THB is not a foreign currency".to_owned(),
             ));
         }
-        let Some(units) = PgCurrencyRegister::new(self.pool.clone())
-            .units(req.currency)
-            .await?
-        else {
+        // Read in the caller's transaction (it holds the branch lock), as `PgCurrencyRegister::units` reads.
+        let row: Option<(rust_decimal::Decimal, i16)> =
+            sqlx::query_as("SELECT unit_size, minor_unit FROM currencies WHERE code = $1")
+                .bind(req.currency.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(AppError::Database)?;
+        let Some((unit_size, minor_unit)) = row else {
             return Err(AppError::Domain(format!(
                 "validationFailed:currency: unknown currency {}",
                 req.currency
             )));
         };
-        if req.quantity.value() <= rust_decimal::Decimal::ZERO
-            || req.quantity.value().normalize().scale() > u32::from(units.minor_unit().get())
-        {
+        let unit_size = UnitSize::from_decimal(unit_size).map_err(|e| {
+            AppError::Internal(format!("invalid unit_size for {}: {e}", req.currency))
+        })?;
+        let minor_unit = MinorUnit::new(minor_unit as u8).map_err(|e| {
+            AppError::Internal(format!("invalid minor_unit for {}: {e}", req.currency))
+        })?;
+        let units = CurrencyUnits::new(req.currency, unit_size, minor_unit);
+        if req.quantity.value() <= rust_decimal::Decimal::ZERO {
             return Err(AppError::Domain(
-                "validationFailed:quantity: quantity is invalid for currency minor unit".to_owned(),
+                "validationFailed:quantity: quantity must be greater than zero".to_owned(),
+            ));
+        }
+        if req.quantity.value().normalize().scale() > u32::from(units.minor_unit().get()) {
+            return Err(AppError::Domain(
+                "validationFailed:quantity: quantity has more decimals than the currency's minor unit".to_owned(),
             ));
         }
 
