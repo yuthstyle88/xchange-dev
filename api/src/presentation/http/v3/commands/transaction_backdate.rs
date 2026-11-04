@@ -6,23 +6,34 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use actix_web::http::Method;
+use actix_web::http::{Method, StatusCode};
 use actix_web::web;
+use chrono::{DateTime, NaiveDate, Utc};
+use pos_error::AppError;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
+use xc_exchange::domain::transaction::repository::TransactionStore;
+use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
 use xc_kernel::ids::BranchId;
+use xc_kernel::money::{Bound, CurrencyCode, ForeignAmount, Money, Rate, Side, Sign};
 
 use super::transactions::{TransactionPaymentInput, UploadRef};
-use crate::application::workflows::exchange::backdate::BackdateSale;
+use crate::application::workflows::exchange::backdate::{BackdateRequest, BackdateSale};
+use crate::application::workflows::exchange::create::CreatePayment;
+use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::transaction::TransactionDto;
-use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint};
+use crate::presentation::http::v3::command::{
+    CommandAction, CommandEndpoint, role_not_allowed_here, server_error,
+};
 use crate::presentation::http::v3::error::V3Error;
+use crate::presentation::http::v3::input::{self, TextBound};
 
 /// `[required]` §4's body. Every figure is the caller's.
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
@@ -72,6 +83,27 @@ impl TransactionBackdateCommand {
     }
 }
 
+fn invalid(field: &'static str, message: &str) -> V3Error {
+    V3Error::new(
+        "validationFailed",
+        Some(field),
+        message.to_owned(),
+        StatusCode::BAD_REQUEST,
+    )
+}
+
+fn refusal(e: AppError) -> V3Error {
+    match e {
+        AppError::Domain(ref m) if m.starts_with("dayClosed") => {
+            V3Error::new("dayClosed", None, m.clone(), StatusCode::CONFLICT)
+        }
+        AppError::Domain(ref m) if m.starts_with("stockInsufficient") => {
+            V3Error::new("stockInsufficient", None, m.clone(), StatusCode::CONFLICT)
+        }
+        other => super::transactions::refusal(other),
+    }
+}
+
 impl CommandAction for TransactionBackdateCommand {
     const NAME: &'static str = "transactionBackdate";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "transactionBackdate");
@@ -94,8 +126,82 @@ impl CommandAction for TransactionBackdateCommand {
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
-        let _ = (&self.service, &self.pool, tx, branch, who, input);
-        todo!("BK-9: backdated-keying.md §4")
+        let side = match input.side.as_str() {
+            "BUY" => Side::Buy,
+            "SELL" => Side::Sell,
+            _ => return Err(invalid("side", "invalid side")),
+        };
+        let currency =
+            CurrencyCode::parse(&input.currency).map_err(|_| invalid("currency", "invalid currency"))?;
+        let quantity = ForeignAmount::from_decimal(input::decimal(
+            "quantity",
+            &input.quantity,
+            Bound::numeric(20, 4, Sign::Positive).at_most(Money::MAX_INPUT_UNITS),
+        )?);
+        let rate = Rate::parse(&input.rate).map_err(|_| invalid("rate", "invalid rate"))?;
+        let fee_thb = match input.fee_thb.as_deref() {
+            Some(s) => Money::parse(s).map_err(|_| invalid("feeThb", "invalid fee"))?,
+            None => Money::ZERO,
+        };
+        let expected_settle_thb = match input.expected_settle_thb.as_deref() {
+            Some(s) => Some(
+                Money::parse(s)
+                    .map_err(|_| invalid("expectedSettleThb", "invalid expectedSettleThb"))?,
+            ),
+            None => None,
+        };
+        let method = PaymentMethod::parse(&input.payment.method)
+            .ok_or_else(|| invalid("payment.method", "invalid payment method"))?;
+        let bank_fee_thb = Money::parse(&input.payment.bank_fee_thb)
+            .map_err(|_| invalid("payment.bankFeeThb", "invalid bank fee"))?;
+        let paid_at = DateTime::parse_from_rfc3339(&input.payment.paid_at)
+            .map(|at| at.with_timezone(&Utc))
+            .map_err(|_| invalid("payment.paidAt", "invalid paidAt"))?;
+        let value_date = NaiveDate::parse_from_str(&input.value_date, "%Y-%m-%d")
+            .map_err(|_| invalid("valueDate", "invalid valueDate"))?;
+        input::text(
+            "payment.reference",
+            &input.payment.reference,
+            TextBound { min: 0, max: 100 },
+        )?;
+        input::text(
+            "payment.account",
+            &input.payment.account,
+            TextBound { min: 0, max: 100 },
+        )?;
+        input::text("notes", &input.notes, TextBound { min: 0, max: 500 })?;
+        let req = BackdateRequest {
+            branch_id: branch.clone(),
+            customer_id: input.customer_id,
+            side,
+            currency,
+            quantity,
+            rate,
+            fee_thb,
+            expected_settle_thb,
+            payment: CreatePayment {
+                method,
+                reference: input.payment.reference,
+                account: input.payment.account,
+                slip_key: input.payment.slip.map(|s| s.upload_key),
+                bank_fee_thb,
+                paid_at,
+            },
+            value_date,
+            passport_key: input.passport.map(|p| p.upload_key),
+            notes: input.notes,
+        };
+        let save_actor = SaveActor::from_actor(who).ok_or_else(role_not_allowed_here)?;
+        let t = self
+            .service
+            .run_in(tx, req, &save_actor, Utc::now())
+            .await
+            .map_err(refusal)?;
+        let mark = PgTransactionStore::new(self.pool.clone())
+            .backdate_mark_in(tx, t.id)
+            .await
+            .map_err(|_| server_error())?;
+        Ok(TransactionDto::from_domain(&t).with_backdate(mark))
     }
 }
 
