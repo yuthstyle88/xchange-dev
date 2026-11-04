@@ -124,6 +124,9 @@ impl TestDb {
             "INSERT INTO branches (id, name) VALUES ('{B01}', 'B01')"
         ))
         .await;
+        xc_testdb::seed_branch_currencies(&db.pool, B01, &["KWD"])
+            .await
+            .expect("seed branch currencies");
         db.exec(&format!(
             "INSERT INTO users (id, organization_id, name, status, created_by) \
              VALUES ('{TELLER_ID}', '{ORG}', '{TELLER}', 'ACTIVE', 'test')"

@@ -14,6 +14,7 @@ use xc_notify::application::template_registry::TemplateRegistry;
 
 use crate::application::formula::formula_resolver::{FormulaResolver, FormulaSource};
 use crate::application::publication::sharp_move_notices::SharpMoveNotices;
+use crate::domain::currency::branch_currencies::BranchCurrencies;
 use crate::domain::currency::denomination_groups::GroupCode;
 use crate::domain::draft::rate_draft::{DraftId, DraftLine, LineSide};
 use crate::domain::draft::rate_engine_error::RateEngineError;
@@ -28,6 +29,7 @@ use crate::domain::publication::publication::PublicationId;
 use crate::domain::publication::published_rates::PublicationRef;
 use crate::domain::publication::sharp_move::{ComparablePrice, SharpMove};
 use crate::domain::reference::reference_batch::ReferenceLine;
+use crate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
 use crate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use crate::infrastructure::policy::policy_tiers_store::PolicyTiersStore;
 
@@ -175,7 +177,7 @@ impl PublishService {
 
         // Load draft lines
         let db_lines = sqlx::query(
-            "SELECT l.id, l.currency_code, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason, \
+            "SELECT l.id, l.currency_code, l.denomination_group, l.buy_mode, l.sell_mode, l.manual_buy, l.manual_sell, l.reason, \
                     l.reference_line_id, l.policy_version_id \
              FROM rate_draft_lines l \
              JOIN rate_drafts d ON d.id = l.draft_id \
@@ -311,6 +313,18 @@ impl PublishService {
             let code_str: String = r.get("currency_code");
             let c = CurrencyCode::parse(code_str.trim())
                 .map_err(|e| RateEngineError::Internal(format!("invalid currency code: {e}")))?;
+            let group_str: String = r.get("denomination_group");
+            let group = GroupCode::new(group_str)
+                .map_err(|e| RateEngineError::Internal(format!("invalid group code: {e}")))?;
+            if PgBranchCurrencies
+                .display_in(tx, branch, c, &group)
+                .await?
+                .is_none()
+            {
+                return Err(RateEngineError::ValidationFailed(format!(
+                    "branch {branch_str} has no branch_currencies row for ({c}, {group})"
+                )));
+            }
             let buy_mode: String = r.get("buy_mode");
             let manual_buy: Option<Decimal> = r.get("manual_buy");
             let sell_mode: String = r.get("sell_mode");

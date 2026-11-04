@@ -519,6 +519,10 @@ async fn sp5_normal_pair_succeeds_and_draft_published() {
         "XC-B01 must be unpublished initially"
     );
 
+    xc_testdb::seed_branch_currencies(&db.pool, B01, &["USD"])
+        .await
+        .expect("seed branch currencies");
+
     let payload = save_payload(
         vec![entry("USD", Some("34.10"), Some("34.50"))],
         "SP5: normal pair",

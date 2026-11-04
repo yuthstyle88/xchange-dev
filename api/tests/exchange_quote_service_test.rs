@@ -451,6 +451,9 @@ async fn expires_at_is_now_plus_the_organisations_quote_ttl() {
     db.publish("MAIN", &[USD]).await;
     let org2 = "00000000-0000-0000-0000-000000000002";
     db.second_organisation(org2, "XC2", "B2").await;
+    xc_testdb::seed_branch_currencies(&db.pool, "B2", &["USD"])
+        .await
+        .expect("seed branch currencies");
     db.exec(&format!(
         "INSERT INTO exchange_settings (organization_id, quote_ttl_seconds, updated_by, updated_at) \
          VALUES ('{org2}', 600, 'test', now())"
@@ -703,12 +706,19 @@ async fn a_fee_above_the_thb_amount_is_refused_on_either_side() {
 async fn no_current_line_for_the_branch_currency_and_side_is_refused() {
     let db = TestDb::start().await;
     db.branch("B-EMPTY").await;
+    xc_testdb::seed_branch_currencies(&db.pool, "B-EMPTY", &["USD"])
+        .await
+        .expect("seed branch currencies");
     refused(
         &db,
         request("B-EMPTY", vec![line("USD", Side::Buy, "10", None)]),
         "a branch with no publication",
     )
     .await;
+
+    xc_testdb::seed_branch_currencies(&db.pool, "MAIN", &["GBP"])
+        .await
+        .expect("seed branch currencies");
 
     db.publish(
         "MAIN",
@@ -809,6 +819,9 @@ async fn a_stale_line_under_limit_is_refused_only_above_the_limit_and_null_admit
 
     // B-NULL: the same stale line under a policy with no on_stale is quoted at any amount
     db.branch("B-NULL").await;
+    xc_testdb::seed_branch_currencies(&db.pool, "B-NULL", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let none = db.policy("B-NULL", None, None).await;
     db.publish(
         "B-NULL",
@@ -871,6 +884,9 @@ async fn the_policy_the_line_was_published_under_governs_not_a_later_one() {
 
     // B-LATE: published under v1 (no on_stale); v2 (STOP) is saved afterwards
     db.branch("B-LATE").await;
+    xc_testdb::seed_branch_currencies(&db.pool, "B-LATE", &["USD"])
+        .await
+        .expect("seed branch currencies");
     let v1 = db.policy("B-LATE", None, None).await;
     db.publish(
         "B-LATE",

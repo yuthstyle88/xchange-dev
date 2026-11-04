@@ -112,6 +112,9 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
 
     // an exchange of another branch
     shop.seed_branch(OTHER, "Second").await;
+    xc_testdb::seed_branch_currencies(&shop.pool, OTHER, &["USD"])
+        .await
+        .expect("seed branch currencies");
     shop.set_rate(OTHER, "USD", "32.1", "33").await;
     shop.open_shift(OTHER, &[("THB", "100000"), ("USD", "1000")])
         .await;

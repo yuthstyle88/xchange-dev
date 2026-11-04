@@ -36,7 +36,8 @@
   min-width: 80px;
 }
 
-.xc-admin .xc-content .add-group-form {
+.xc-admin .xc-content .add-group-form,
+.xc-admin .xc-content .add-note-form {
   display: flex;
   align-items: center;
   gap: 12px;

@@ -37,8 +37,6 @@ use crate::presentation::dto::v3::staff_daily_report::{
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint, ViewFilter};
 
-/// v2's seven currencies, in v2's order (B.1 row 13: the look).
-const CODES: [&str; 7] = ["THB", "USD", "EUR", "GBP", "JPY", "CNY", "AUD"];
 /// At most this many notes (Q-SR3).
 const NOTES: i64 = 5;
 
@@ -212,13 +210,45 @@ impl StaffDailyReportView {
         .await
         .map_err(db)?;
 
-        let currencies = CODES
-            .iter()
-            .map(|code| {
-                let d = drawer.iter().find(|r| r.0 == *code);
-                let s = safe.iter().find(|r| r.0 == *code);
+        let set_rows: Vec<(String, Option<i32>)> = sqlx::query_as(
+            "SELECT trim(currency_code), min(sort_order) FROM branch_currencies \
+             WHERE branch_id = $1 GROUP BY trim(currency_code) \
+             UNION ALL \
+             SELECT trim(currency), NULL FROM inventory_positions \
+             WHERE branch_id = $1 AND quantity <> 0",
+        )
+        .bind(b)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(db)?;
+
+        let mut by_code: std::collections::BTreeMap<String, Option<i32>> =
+            std::collections::BTreeMap::new();
+        for (code, ord) in set_rows {
+            let entry = by_code.entry(code).or_insert(None);
+            if let Some(o) = ord {
+                *entry = Some(entry.map_or(o, |prev| prev.min(o)));
+            }
+        }
+        for (code, ..) in drawer.iter().chain(safe.iter()) {
+            by_code.entry(code.clone()).or_insert(None);
+        }
+        let mut codes: Vec<(String, Option<i32>)> = by_code.into_iter().collect();
+        codes.sort_by(|(a_code, a_ord), (b_code, b_ord)| {
+            (a_code != "THB", a_ord.unwrap_or(i32::MAX), a_code).cmp(&(
+                b_code != "THB",
+                b_ord.unwrap_or(i32::MAX),
+                b_code,
+            ))
+        });
+
+        let currencies = codes
+            .into_iter()
+            .map(|(code, _)| {
+                let d = drawer.iter().find(|r| r.0 == code);
+                let s = safe.iter().find(|r| r.0 == code);
                 ReportCurrencyRow {
-                    currency: (*code).to_owned(),
+                    currency: code,
                     drawer_counted: stored(d.map(|r| r.1)),
                     drawer_expected: stored(d.and_then(|r| r.2)),
                     drawer_difference: stored(d.and_then(|r| r.3)),

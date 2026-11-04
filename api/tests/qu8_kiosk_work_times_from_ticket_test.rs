@@ -147,6 +147,9 @@ impl TestDb {
         .await
         .expect("upsert branch_service_status B01");
 
+        xc_testdb::seed_branch_currencies(&pool, B01, &["USD"])
+            .await
+            .expect("seed branch currencies");
         rates_re4c_common::set_counter_rate(&pool, B01, "USD", "35.0", "36.0").await;
 
         // Seed B02
@@ -202,6 +205,9 @@ impl TestDb {
         .await
         .expect("upsert branch_service_status B02");
 
+        xc_testdb::seed_branch_currencies(&pool, B02, &["USD"])
+            .await
+            .expect("seed branch currencies");
         rates_re4c_common::set_counter_rate(&pool, B02, "USD", "35.0", "36.0").await;
 
         Self { pool, schema }

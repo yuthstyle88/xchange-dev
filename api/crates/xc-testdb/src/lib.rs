@@ -219,3 +219,24 @@ pub fn unique_schema_name(prefix: &str) -> String {
         .unwrap_or(0);
     format!("{}_{}", &prefix[..end], uuid::Uuid::new_v4().simple())
 }
+
+/// Gives `branch` a `SHOW` row for each code (`docs/design/board-currencies.md`): `line_for` refuses a currency with
+/// no row, so a test that publishes on a branch of its own seeds them here.
+pub async fn seed_branch_currencies(
+    pool: &PgPool,
+    branch: &str,
+    codes: &[&str],
+) -> anyhow::Result<()> {
+    for code in codes {
+        sqlx::query(
+            "INSERT INTO branch_currencies (branch_id, organization_id, currency_code, display) \
+             SELECT b.id, b.organization_id, $2, 'SHOW' FROM branches b WHERE b.id = $1 \
+             ON CONFLICT (branch_id, currency_code, group_code) DO UPDATE SET display = 'SHOW'",
+        )
+        .bind(branch)
+        .bind(*code)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}

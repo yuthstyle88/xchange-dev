@@ -24,6 +24,8 @@ use xc_rate::application::formula::formula_resolver::{FormulaResolver, FormulaSo
 use xc_rate::application::market::market_refresh::MarketRefresh;
 use xc_rate::application::pricing::branch_push::{BranchPush, PushKind};
 use xc_rate::application::pricing::tier_publish::TierSetPublisher;
+use xc_rate::domain::currency::branch_currencies::{BranchCurrencies, Display};
+use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::draft::rate_engine_error::RateEngineError;
 use xc_rate::domain::formula::price_formula::PriceFormula;
 use xc_rate::domain::pricing::follow_plan::{
@@ -36,6 +38,7 @@ use xc_rate::domain::pricing::pricing_suggestion::{
     PricingSuggestion, SuggestionConfig, SuggestionInput,
 };
 use xc_rate::domain::pricing::tier_set::{PricingTierSet, TierRate, TierSetSource, TierSetStore};
+use xc_rate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
 use xc_rate::infrastructure::market::market_feed_status_store::MarketFeedStatusStore;
 use xc_rate::infrastructure::policy::currency_tier_override_store::CurrencyTierOverrideStore;
 use xc_rate::infrastructure::pricing::follow_result_store::PgFollowResultStore;
@@ -126,8 +129,17 @@ impl MarketPricingLoop {
         let currencies = PgPricingModeStore
             .following_in(&mut lock_tx, &org_id)
             .await?;
+        let main_branch = BranchId::new("MAIN");
+        let all_group = GroupCode::all();
         let mut results = Vec::with_capacity(currencies.len());
         for currency in currencies {
+            if PgBranchCurrencies
+                .display_in(&mut lock_tx, &main_branch, currency, &all_group)
+                .await?
+                == Some(Display::Hide)
+            {
+                continue;
+            }
             match self.plan_currency(currency, now).await {
                 Ok(res) => results.push(res),
                 Err(e) => {

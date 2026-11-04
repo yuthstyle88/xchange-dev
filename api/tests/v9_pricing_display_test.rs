@@ -239,6 +239,12 @@ async fn pv18(room: &Room, all_market: bool) -> Value {
 async fn all_market_puts_a_super_rich_currency_with_no_price_in_more_and_orders_featured_then_sr_then_code()
  {
     let room = Room::start().await;
+    room.create_branch(BR_B).await;
+    room.exec(
+        "INSERT INTO branch_currencies (branch_id, currency_code, group_code, display, updated_by) \
+         VALUES ('BR-B', 'KHR', 'ALL', 'ASK', 'test')",
+    )
+    .await;
     let data = pv18(&room, true).await;
     assert_eq!(
         data["display"]["more"],

@@ -209,6 +209,31 @@ async fn replayed(name: &str) -> (Fixture, usize) {
             .map(|p| p.id.as_str())
             .collect();
         open_counters(&replay.replay.desk.db.pool, &staff).await;
+        if name == "kiosk/currencies.json" {
+            xc_testdb::seed_branch_currencies(
+                &replay.replay.desk.db.pool,
+                rpc_common::MAIN,
+                &["USD", "EUR", "GBP", "JPY", "CNY", "AUD"],
+            )
+            .await
+            .expect("seed branch currencies");
+            sqlx::raw_sql(
+                "CREATE FUNCTION seed_new_branch_v2_defaults() RETURNS trigger LANGUAGE plpgsql AS $$ \
+                 BEGIN \
+                     IF NEW.branch_id <> 'MAIN' AND NEW.group_code = 'ALL' \
+                        AND NEW.currency_code IN ('USD', 'EUR', 'GBP', 'JPY', 'CNY', 'AUD') THEN \
+                         NEW.display := 'SHOW'; \
+                     END IF; \
+                     RETURN NEW; \
+                 END $$; \
+                 CREATE TRIGGER tr_seed_new_branch_v2_defaults \
+                     BEFORE INSERT ON branch_currencies \
+                     FOR EACH ROW EXECUTE FUNCTION seed_new_branch_v2_defaults();",
+            )
+            .execute(&replay.replay.desk.db.pool)
+            .await
+            .expect("seed new branch SHOW defaults for currencies.json");
+        }
         for (n, rule) in changed_since_the_recording(name) {
             replay = replay.rule(n, rule);
         }
@@ -586,10 +611,11 @@ async fn a_configure_whose_audit_line_fails_stores_no_switch() {
     assert_eq!(answer.status, 500, "{}", answer.text);
     assert_eq!(answer.json(), json!({ "error": SERVER_ERROR }));
 
-    let switches: (i64,) = sqlx::query_as("SELECT count(*) FROM kiosk_currencies")
-        .fetch_one(&counter.desk.db.pool)
-        .await
-        .expect("read kiosk_currencies");
+    let switches: (i64,) =
+        sqlx::query_as("SELECT count(*) FROM branch_currencies WHERE updated_by IS NOT NULL")
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("read kiosk_currencies");
     assert_eq!(switches.0, 0, "no switch was stored");
     // re-expected for RE-7 #604 by the ticket author: `rates` is dropped (design §8 migration
     // 6); that configure saved no rate is now that it published nothing either

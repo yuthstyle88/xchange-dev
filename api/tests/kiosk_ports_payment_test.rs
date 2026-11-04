@@ -157,6 +157,9 @@ async fn each_branch_kiosk_reads_its_own_switch() {
     // #756 (RE-4b, rates.md D-3, §4.9): the kiosk's counter rate is the current publication.
     // Re-expected for RE-7 #604 by the ticket author: no `adminSaveRate` first (design §9 removes
     // the action); the publication alone sets the airport's dollar.
+    xc_testdb::seed_branch_currencies(&counter.desk.db.pool, &airport, &["USD"])
+        .await
+        .expect("seed branch currencies");
     kiosk_http_common::rates_re4_common::publish(
         &counter.desk.db.pool,
         &airport,

@@ -11,6 +11,8 @@ pub enum KioskServiceError {
     InvalidCurrencySettings,
     #[error("Set valid counter buy and sell rates first.")]
     RatesFirst,
+    #[error("Set valid currency notes first.")]
+    NotesFirst,
     #[error("Too many requests. Please wait a moment and try again.")]
     TooManyQuotes,
 }

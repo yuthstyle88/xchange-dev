@@ -130,6 +130,9 @@ impl Room {
         .execute(&self.pool)
         .await
         .expect("create branch");
+        xc_testdb::seed_branch_currencies(&self.pool, branch, &["USD"])
+            .await
+            .expect("seed branch currencies");
     }
 
     /// The worked-example branch (see the module doc): the branch, policy version 1 and the BoT batch.

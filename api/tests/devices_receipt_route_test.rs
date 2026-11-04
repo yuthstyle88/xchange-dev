@@ -145,6 +145,9 @@ impl Room {
             t0,
         };
         for branch in [MAIN, B9] {
+            xc_testdb::seed_branch_currencies(&room.desk.db.pool, branch, &["USD"])
+                .await
+                .expect("seed branch currencies");
             // Re-expected for RE-7 #604 by the ticket author (rates.md §8 migration 6 drops `rates`):
             // the rate is published, per 1 × unit_size, over the current publication; no `rates` row.
             rates_re4e_publish::set_counter_rate(&room.desk.db.pool, branch, "USD", "32.1", "33")
