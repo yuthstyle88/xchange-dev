@@ -437,7 +437,13 @@ async fn test_07_create_owner_on_fresh_install_makes_active_executive_admin_user
     let service = SessionService::new(desk.pool.clone(), Some(client), None, None);
     let now = Utc::now();
     let res = service
-        .create_owner("Root Owner", "+66810000001", "root-password-01", now)
+        .create_owner(
+            "Root Owner",
+            "+66810000001",
+            "root-password-01",
+            "xc-v3.spacing.cloud",
+            now,
+        )
         .await;
     assert!(res.is_ok(), "create_owner succeeds: {:?}", res.err());
 
