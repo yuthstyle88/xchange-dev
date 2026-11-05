@@ -123,3 +123,102 @@
   border-radius: 4px;
   cursor: pointer;
 }
+
+/* ── Look 2026-11-05: the admin palette, 44 px controls, styled checkboxes (scoped to win over admin.css) ── */
+.xc-admin .xc-content.xc-content .pricing-policy-form {
+  gap: 14px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-title {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-alert {
+  border-color: #edd4df;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-summary,
+.xc-admin .xc-content.xc-content .pricing-policy-label {
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-label:has(input[type='checkbox']) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-input {
+  min-height: 44px;
+  margin: 0;
+  border-color: #cdd0d7;
+  border-radius: 12px;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-tier {
+  border-color: var(--line);
+  border-radius: 12px;
+  background: #fcfafb;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-tier-label {
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-readonly-margin,
+.xc-admin .xc-content.xc-content .pricing-policy-readonly-spread {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: #eff0f4;
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-btn-save {
+  min-height: 44px;
+  padding: 8px 20px;
+  border: 1px solid var(--brand);
+  border-radius: 12px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-btn-save:hover {
+  background: #870032;
+}
+
+.xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-btn-clear {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+}

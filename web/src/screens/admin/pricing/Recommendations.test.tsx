@@ -11,6 +11,7 @@ import {
   type PricingRecommendationDto,
 } from '../../../shared/testing/fixtures/pricing_board';
 import { BOARD } from './__fixtures__/pricing-board.fixture';
+import { th } from './i18n';
 import { Recommendations } from './Recommendations';
 
 let host: HTMLDivElement;
@@ -66,13 +67,18 @@ describe('Recommendations', () => {
     expect(elements).toHaveLength(2);
 
     const first = elements[0];
-    expect(first.querySelector('.recommendation-severity')?.textContent).toBe('High');
+    // Restated for the card look (owner 2026-11-05): severity and side print in words; the raw value moved to
+    // `data-severity` / `data-side`. An unknown code still prints as sent.
+    expect(first.querySelector('.recommendation-severity')?.getAttribute('data-severity')).toBe('High');
+    expect(first.querySelector('.recommendation-severity')?.textContent).toBe(th['severity.High']);
     expect(first.querySelector('.recommendation-code')?.textContent).toBe('BELOW_COST');
     expect(first.querySelector('.recommendation-currency')?.textContent).toBe('EUR');
-    expect(first.querySelector('.recommendation-side')?.textContent).toBe('BUY');
+    expect(first.querySelector('.recommendation-side')?.getAttribute('data-side')).toBe('BUY');
+    expect(first.querySelector('.recommendation-side')?.textContent).toBe(th['side.BUY']);
 
     const second = elements[1];
-    expect(second.querySelector('.recommendation-severity')?.textContent).toBe('Warn');
+    expect(second.querySelector('.recommendation-severity')?.getAttribute('data-severity')).toBe('Warn');
+    expect(second.querySelector('.recommendation-severity')?.textContent).toBe(th['severity.Warn']);
     expect(second.querySelector('.recommendation-code')?.textContent).toBe('STALE_SOURCE');
     expect(second.querySelector('.recommendation-currency')?.textContent).toBe('');
     expect(second.querySelector('.recommendation-side')?.textContent).toBe('');

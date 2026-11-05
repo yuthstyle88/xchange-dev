@@ -1,29 +1,110 @@
-/* recommendations.css — styles for Recommendations.tsx (FE pricing-board, #564). */
+/* recommendations.css — Recommendations.tsx: a card of worded recommendations with severity pills (สูง / กลาง /
+   ต่ำ), the raw code in the title tooltip (owner 2026-11-05). */
 
-.recommendations {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+.xc-admin .xc-content.xc-content .recommendations {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04), 0 6px 18px rgba(23, 24, 27, 0.04);
 }
 
-.recommendation-item {
+.xc-admin .xc-content.xc-content .recommendations .recommendations-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.8px;
+  color: var(--muted);
 }
 
-.recommendation-severity {
+.xc-admin .xc-content.xc-content .recommendations-count {
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--brand);
+  font-size: 11px;
+  letter-spacing: 0;
+}
+
+.xc-admin .xc-content.xc-content .recommendations-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 40px;
+  padding: 6px 0;
+  border-top: 1px solid #eeeff2;
+  font-size: 14px;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-item:first-child {
+  border-top: 0;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-severity {
+  justify-self: start;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #eff0f4;
+  color: #4b4f5b;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-severity[data-severity='High'] {
+  background: var(--soft);
+  color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Warn'],
+.xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Medium'] {
+  background: #fff9ec;
+  color: #795919;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Low'] {
+  background: #f1f1f4;
+  color: #72747d;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-currency {
+  font-weight: 800;
+  letter-spacing: 0.3px;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-code {
+  min-width: 0;
+  color: var(--ink);
+  cursor: help;
+}
+
+.xc-admin .xc-content.xc-content .recommendation-side {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* NotOffered: one line, the codes underneath */
+.xc-admin .xc-content.xc-content .recommendation-item-group {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.xc-admin .xc-content.xc-content .recommendation-currency-list {
+  grid-column: 1 / -1;
+  font-size: 12px;
   font-weight: 600;
-}
-
-.recommendation-code {
-  font-family: monospace;
-}
-
-.recommendation-currency {
-  font-weight: 500;
-}
-
-.recommendation-side {
-  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--muted);
 }
