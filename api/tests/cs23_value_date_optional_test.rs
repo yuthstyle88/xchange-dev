@@ -1,7 +1,7 @@
 //! Up-front tests for ticket CS-23 (#6192): `valueDate` optional on `POST /api/transactions`.
 //!
 //! Behaviour:
-//! - V1: DEMO sale without `valueDate` at 5 Nov 02:00 Bangkok (defaults 06/14/22) -> stored `value_date = 2026-11-04`
+//! - V1: DEMO sale without `valueDate` (defaults 06/14/22) -> stored `value_date` = the business date of now under the defaults
 //! - V2: DEMO sale with `valueDate 2026-10-06` -> stored 2026-10-06 (unchanged)
 //! - V3: `valueDate "06-10-2026"` -> `invalid valueDate` (unchanged)
 //! - V4: LIVE sale without `valueDate` -> accepted; stored = its shift's business date
@@ -232,15 +232,19 @@ async fn open_shift_for_teller(desk: &Desk, teller_id: &str, business_date: &str
     shift_id
 }
 
-/// Row V1: DEMO sale without `valueDate` at 5 Nov 02:00 Bangkok (defaults 06/14/22) -> stored `value_date = 2026-11-04`.
+/// Row V1: DEMO sale without `valueDate` (defaults 06/14/22) -> stored `value_date` = the business date of now under the defaults.
 #[actix_web::test]
 async fn cs23_v1_demo_sale_without_value_date() {
     let desk = Desk::start().await;
     let teller_id = seed_teller_and_passport(&desk).await;
     let customer_id = reserve_customer(&desk, "DEMO").await;
-    let q = desk.quote("MAIN", Side::Buy, "100", None, Utc::now()).await;
+    let now = Utc::now();
+    let q = desk.quote("MAIN", Side::Buy, "100", None, now).await;
 
-    // Verify MAIN's shift plan yields 2026-11-04 for now under defaults (06/14/22)
+    // Verify MAIN's shift plan yields the business date of now under the defaults (06/14/22)
+    let expected = (now.with_timezone(&chrono_tz::Asia::Bangkok)
+        - chrono::TimeDelta::hours(6))
+    .date_naive();
     let mut tx = desk.db.pool.begin().await.unwrap();
     let plan = ShiftPlanService::new(
         Arc::new(PgShiftTemplateStore),
@@ -249,14 +253,7 @@ async fn cs23_v1_demo_sale_without_value_date() {
     .plan_in(&mut tx, &BranchId::new("MAIN"))
     .await
     .expect("MAIN shift plan");
-    let expected_date = plan
-        .business_date_of(Utc::now())
-        .expect("business date covering now");
-    assert_eq!(
-        expected_date.to_string(),
-        "2026-11-04",
-        "defaults 06/14/22 span covering now dates to 2026-11-04"
-    );
+    assert_eq!(plan.business_date_of(now), Some(expected));
     tx.rollback().await.unwrap();
 
     let body = json!({
@@ -279,10 +276,7 @@ async fn cs23_v1_demo_sale_without_value_date() {
     let id = ans.body["id"].as_str().expect("transaction id");
 
     let val_date = stored_value_date(&desk, id).await;
-    assert_eq!(
-        val_date, "2026-11-04",
-        "DEMO sale without valueDate stores shift plan business date 2026-11-04"
-    );
+    assert_eq!(val_date, expected.to_string());
 }
 
 /// Row V2: DEMO sale with `valueDate 2026-10-06` -> stored 2026-10-06 (unchanged).
