@@ -25,6 +25,12 @@ export const th = {
   cancelConfirm: 'ยกเลิกการจองนี้และกลับไปแก้ไขเรท?',
   reconfirmNet: 'ยอดเปลี่ยนจาก {fromNet} เป็น {toNet} THB กรุณาตรวจแล้วติ๊กยืนยันอีกครั้ง',
   reconfirmRate: 'ยอดเปลี่ยนจาก {fromNet} เป็น {toNet} THB (เรท {fromRate} → {toRate}) กรุณาตรวจแล้วติ๊กยืนยันอีกครั้ง',
+  methodCreditCard: 'บัตรเครดิต',
+  methodAlipay: 'Alipay',
+  methodPromptPay: 'พร้อมเพย์',
+  methodCash: 'เงินสด',
+  methodBankTransfer: 'โอนธนาคาร',
+  methodScbTransfer: 'โอน SCB',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -52,4 +58,10 @@ export const en: Record<keyof typeof th, string> = {
   cancelConfirm: 'Cancel this booking and go back to edit the rate?',
   reconfirmNet: 'The net changed from {fromNet} to {toNet} THB. Check it and confirm again.',
   reconfirmRate: 'The net changed from {fromNet} to {toNet} THB (rate {fromRate} → {toRate}). Check it and confirm again.',
+  methodCreditCard: 'Credit Card',
+  methodAlipay: 'Alipay',
+  methodPromptPay: 'PromptPay',
+  methodCash: 'Cash',
+  methodBankTransfer: 'Bank Transfer',
+  methodScbTransfer: 'SCB Transfer',
 };
