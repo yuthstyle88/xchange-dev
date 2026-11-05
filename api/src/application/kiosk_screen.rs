@@ -27,6 +27,14 @@ pub const DEFAULT_IDLE_SECONDS: u32 = 120;
 pub const DEFAULT_REVIEW_SECONDS: u32 = 3;
 /// Seconds between rate refreshes (their kiosk's 10). owner-set: not-set default.
 pub const DEFAULT_REFRESH_SECONDS: u32 = 10;
+/// The longest refresh period the kiosk is given. `kiosk.js` greys the rate out ("not available", Review off) once
+/// its last load is 30 s old, and it waits `refreshSeconds` only after a load ends, which can take up to its 10 s
+/// fetch timeout. So the period plus one load must stay under 30 s: 19 + 10. A saved value above this is clamped.
+pub const MAX_REFRESH_SECONDS: u32 = 19;
+const _: () = assert!(
+    MAX_REFRESH_SECONDS + 10 < 30,
+    "one refresh period plus one 10 s load must stay inside kiosk.js's 30 s freshness"
+);
 /// Days of trading history that decide the popular currencies. owner-set: not-set default.
 pub const DEFAULT_POPULAR_DAYS: u32 = 30;
 /// The payment method the kiosk preselects (owner: "Payment method ให้ default"). owner-set: not-set
@@ -117,7 +125,8 @@ impl KioskScreen {
         let tiles = whole(body, "tiles", 1..=60, DEFAULT_TILES, d);
         let idle_seconds = whole(body, "idleSeconds", 30..=3600, DEFAULT_IDLE_SECONDS, d);
         let review_seconds = whole(body, "reviewSeconds", 0..=30, DEFAULT_REVIEW_SECONDS, d);
-        let refresh_seconds = whole(body, "refreshSeconds", 5..=300, DEFAULT_REFRESH_SECONDS, d);
+        let refresh_seconds = whole(body, "refreshSeconds", 5..=300, DEFAULT_REFRESH_SECONDS, d)
+            .min(MAX_REFRESH_SECONDS);
         let popular_days = whole(body, "popularDays", 1..=365, DEFAULT_POPULAR_DAYS, d);
         let default_payment_method = body
             .get("defaultPaymentMethod")
@@ -207,6 +216,27 @@ mod tests {
         );
         let owner = KioskScreen::from_body(&json!({ "defaultPaymentMethod": "PromptPay" }));
         assert_eq!(owner.default_payment_method, "PromptPay");
+    }
+
+    /// A refresh period the kiosk would outlive its 30 s rate freshness with is clamped to the longest safe one;
+    /// a period within it is kept, and one below the floor still falls back to the default.
+    #[test]
+    fn a_long_refresh_period_is_clamped_below_the_kiosk_staleness() {
+        for saved in [20, 30, 60, 300] {
+            let screen = KioskScreen::from_body(&json!({ "refreshSeconds": saved }));
+            assert_eq!(screen.refresh_seconds, MAX_REFRESH_SECONDS, "{saved} s");
+            assert!(
+                !screen.defaults.contains(&"refreshSeconds"),
+                "{saved} s is the owner's value, clamped, not the default"
+            );
+        }
+        let kept = KioskScreen::from_body(&json!({ "refreshSeconds": 15 }));
+        assert_eq!(kept.refresh_seconds, 15);
+        let edge = KioskScreen::from_body(&json!({ "refreshSeconds": MAX_REFRESH_SECONDS }));
+        assert_eq!(edge.refresh_seconds, MAX_REFRESH_SECONDS);
+        let low = KioskScreen::from_body(&json!({ "refreshSeconds": 4 }));
+        assert_eq!(low.refresh_seconds, DEFAULT_REFRESH_SECONDS);
+        assert!(low.defaults.contains(&"refreshSeconds"));
     }
 
     #[test]

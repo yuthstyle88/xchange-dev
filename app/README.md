@@ -12,7 +12,11 @@ must be served from the same origin as `/api/kiosk`. `tool/dev_server.mjs`
 does that for development:
 
 ```bash
-flutter build web --release
+flutter build web --release \
+  --dart-define=APP_VERSION=$(sed -n 's/^version: *//p' pubspec.yaml) \
+  --dart-define=BUILD_SHA=$(git rev-parse HEAD) \
+  --dart-define=BUILT_AT=$(date -u +%FT%TZ) \
+  --dart-define=CHANNEL=staging
 node tool/dev_server.mjs 8094 http://127.0.0.1:8093   # kiosk on :8094, XCHANGE server on :8093
 ```
 
