@@ -11,6 +11,9 @@ use identity_signin_common::{
 };
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use xc_auth::domain::identity::identity_client::IdentityLoginResponse;
+use xchange::application::customer_otp_sign_in::proven_contacts;
+use xchange::application::otp_challenge_seal::{OTP_COOKIE, OtpChallengeSeal, OtpChannel};
 use xchange::presentation::http::auth::{AllowedOtpChannels, DEFAULT_OTP_CHANNELS};
 
 const CHALLENGE: &str = "c0ffee00-0000-4000-8000-000000006268";
@@ -182,4 +185,80 @@ async fn o5_invalid_channel_refused_with_400_invalid_request() {
         assert_eq!(body["error"]["message"], "คำขอไม่ถูกต้อง");
     }
     assert!(identity.received("/auth/otp/request").is_empty());
+}
+
+#[actix_web::test]
+async fn sms_issued_challenge_cannot_verify_email_destination() {
+    common::install_test_pii_keys();
+    let keys = xc_customer::get_pii_keys().expect("test pii keys");
+    let pool = lazy_pool();
+    let identity = FakeIdentity::start();
+    identity.answer(
+        "/auth/otp/request",
+        200,
+        &json!({ "challengeId": CHALLENGE, "expiresAt": 4102444800u64 }).to_string(),
+    );
+    let state = state_with(&pool, &identity_env(&identity.url()));
+    let app = test::init_service(
+        ActixApp::new().configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
+    )
+    .await;
+
+    let sms_req = test::TestRequest::post()
+        .uri("/api/auth/otp/request")
+        .insert_header((header::HOST, HOST))
+        .insert_header(("x-forwarded-proto", "https"))
+        .insert_header(("x-real-ip", BROWSER_ADDRESS))
+        .insert_header((header::ORIGIN, ORIGIN))
+        .insert_header(("x-xchange-request", "1"))
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .set_payload(json!({ "destination": "+66812345678", "channel": "sms" }).to_string())
+        .to_request();
+    let sms_resp = test::call_service(&app, sms_req).await;
+    assert_eq!(sms_resp.status().as_u16(), 200);
+
+    let set_cookie = sms_resp
+        .headers()
+        .get(header::SET_COOKIE)
+        .and_then(|h| h.to_str().ok())
+        .expect("SMS request sets OTP seal cookie");
+    let raw_seal = set_cookie
+        .split(';')
+        .next()
+        .and_then(|kv| kv.strip_prefix(&format!("{OTP_COOKIE}=")))
+        .expect("OTP_COOKIE value");
+
+    let opened = OtpChallengeSeal::open(raw_seal, &keys).expect("valid SMS seal");
+    assert_eq!(opened.channel, OtpChannel::Sms);
+    assert_eq!(opened.destination, "+66812345678");
+
+    // 1. Forging the cookie to claim an email destination with the SMS challenge's MAC fails to open.
+    let parts: Vec<&str> = raw_seal.split('.').collect();
+    let forged_email_seal = format!(
+        "v1.email.{}.{}.{}",
+        base64::Engine::encode(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+            b"customer@example.com"
+        ),
+        parts[3],
+        parts[4],
+    );
+    assert_eq!(OtpChallengeSeal::open(&forged_email_seal, &keys), None);
+
+    // 2. Keeping the valid SMS seal does not prove any email contact when verifying that challenge.
+    let login: IdentityLoginResponse = serde_json::from_value(json!({
+        "identityId": "sub-1",
+        "access_token": "sess-1",
+        "phone": "+66812345678",
+        "emailVerified": true,
+        "phoneVerified": true,
+    }))
+    .unwrap();
+    let contacts = proven_contacts(&login, Some(&opened), CHALLENGE);
+    assert!(
+        contacts
+            .iter()
+            .all(|c| !matches!(c, xchange::application::customer_binder::ProvenContact::Email(_))),
+        "SMS seal must never prove an email destination: {contacts:?}"
+    );
 }

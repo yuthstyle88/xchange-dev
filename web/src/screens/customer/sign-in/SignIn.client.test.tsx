@@ -111,6 +111,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     );
 
     // Step 1: request OTP code
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -163,6 +164,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       host,
     );
 
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -202,6 +204,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       host,
     );
 
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -230,6 +233,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       host,
     );
 
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -248,6 +252,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       host,
     );
 
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -284,6 +289,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       host,
     );
 
+    pickChannel('sms');
     typePhone('0812345678');
     clickSubmit();
 
@@ -615,5 +621,59 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     expect(host.textContent).toContain(table.zh.codeSentEmail);
     expect(host.textContent).toContain(table.zh.codeEmail);
     expect(host.textContent).not.toContain(table.zh.codeSent);
+  });
+
+  it('a code issued for SMS cannot be verified against an email destination', async () => {
+    const navigate = vi.fn();
+    const calls: RecordedCall[] = [];
+
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const headers = new Headers(init?.headers);
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ url, method, headers, body });
+
+      if (url === '/api/auth/otp/channels') {
+        return jsonResponse(200, { channels: ['email', 'sms'], source: 'default' });
+      }
+      if (url === '/api/auth/otp/request') {
+        const reqBody = body as { channel?: string } | undefined;
+        return jsonResponse(200, {
+          challengeId: reqBody?.channel === 'sms' ? 'ch-sms-issued' : 'ch-email-issued',
+        });
+      }
+      if (url === '/api/auth/otp/verify') {
+        return jsonResponse(200, { user: { id: 'u-1', name: 'Customer' } });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    pickChannel('sms');
+    typePhone('0812345678');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(host.textContent).toContain(table.th.codeSent);
+    });
+
+    pickChannel('email');
+    typeEmail('customer@example.com');
+    typeCode('123456');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(
+        calls.filter((c) => c.url === '/api/auth/otp/request' && (c.body as { channel?: string })?.channel === 'email'),
+      ).toHaveLength(1);
+    });
+
+    expect(calls.filter((c) => c.url === '/api/auth/otp/verify')).toHaveLength(0);
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

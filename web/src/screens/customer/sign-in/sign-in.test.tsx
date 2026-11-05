@@ -175,6 +175,7 @@ describe('customer sign-in and sign-up (APP-7 #998)', () => {
     );
 
     // 1. Enter phone number and submit -> POST /api/auth/otp/request
+    host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
     const phoneInput = (host.querySelector('input[type="tel"]') ??
       host.querySelector('input[name="phone"]') ??
       host.querySelector('input[name="identifier"]') ??
@@ -270,6 +271,7 @@ describe('customer sign-in and sign-up (APP-7 #998)', () => {
     );
 
     // Request OTP
+    host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
     const phoneInput = (host.querySelector('input[type="tel"]') ??
       host.querySelector('input[name="phone"]') ??
       host.querySelector('input[name="identifier"]') ??

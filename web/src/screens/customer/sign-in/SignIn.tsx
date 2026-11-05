@@ -380,8 +380,8 @@ export function SignIn(props: {
               </Show>
             </label>
           </Show>
-          <Show when={allowedChannels().includes('sms') && (activeChannel() === 'sms' || pickedChannel() === undefined)}>
-            <label hidden={activeChannel() !== 'sms'}>
+          <Show when={activeChannel() === 'sms'}>
+            <label>
               {tr('phone')}
               <input
                 ref={phoneInput}
@@ -393,9 +393,6 @@ export function SignIn(props: {
                 aria-invalid={phoneError() ? 'true' : undefined}
                 aria-describedby={phoneError() ? 'phone-error' : undefined}
                 onInput={(e) => {
-                  if (pickedChannel() === undefined && allowedChannels().includes('sms')) {
-                    setPickedChannel('sms');
-                  }
                   setOtpPhone(e.currentTarget.value);
                   setPhoneError('');
                 }}
