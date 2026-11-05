@@ -256,9 +256,10 @@ async fn sms_issued_challenge_cannot_verify_email_destination() {
     .unwrap();
     let contacts = proven_contacts(&login, Some(&opened), CHALLENGE);
     assert!(
-        contacts
-            .iter()
-            .all(|c| !matches!(c, xchange::application::customer_binder::ProvenContact::Email(_))),
+        contacts.iter().all(|c| !matches!(
+            c,
+            xchange::application::customer_binder::ProvenContact::Email(_)
+        )),
         "SMS seal must never prove an email destination: {contacts:?}"
     );
 }
