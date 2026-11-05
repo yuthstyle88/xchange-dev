@@ -247,8 +247,7 @@ impl ShiftPlan {
     /// `[required]` T9 (CS-20, design §2.10): the end of business day `date`, the end of `service_span(date)` (06:00 on
     /// `date + 1` with the defaults); `None` for an empty plan.
     pub fn business_day_end(&self, date: NaiveDate) -> Option<DateTime<Utc>> {
-        let _ = date;
-        todo!("CS-20")
+        self.service_span(date).map(|(_, end)| end)
     }
 
     /// The span of `business_date_of(now)`; `None` for an empty plan.

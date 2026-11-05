@@ -16,8 +16,7 @@ impl ReversalWindow {
     /// (`ShiftPlan::business_day_end(value_date)`, computed by the caller: xc-exchange does not depend on xc-shift).
     /// Replaces `business_date_of` and `is_open`, which CS-20 deletes once no caller is left.
     pub fn is_open_until(deadline: DateTime<Utc>, now: DateTime<Utc>) -> bool {
-        let _ = (deadline, now);
-        todo!("CS-20")
+        now < deadline
     }
 
     /// True while the date of `now` in `tz` is not after `business_date`.

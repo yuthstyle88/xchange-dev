@@ -3,17 +3,19 @@
 //! RV-4 (#685): ReversalSummaryDto for the reversal view and B04 transaction view.
 
 use std::path::Path;
-use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_exchange::domain::reversal::reversal::Reversal;
-use xc_exchange::domain::reversal::window::{ReversalWindow, Tz};
+use xc_exchange::domain::reversal::window::ReversalWindow;
+use xc_kernel::ids::BranchId;
+
+use crate::application::workflows::exchange::business_day::BusinessDayEnd;
 
 /// camelCase; money as a 2-place string, the business date as `YYYY-MM-DD`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +104,7 @@ pub(crate) async fn load_reversal_summary(
         ReversalBy::Original(id) => (None, Some(id)),
     };
     let row = sqlx::query(
-        "SELECT r.id, r.original_transaction_id, r.status, r.reason, r.amount_thb, \
+        "SELECT r.id, r.original_transaction_id, r.branch_id, r.status, r.reason, r.amount_thb, \
          r.requested_by, r.requested_at, r.business_date, b.timezone, \
          ad.at AS approved_at, r.posted_at, rc.number AS document_number \
          FROM reversals r \
@@ -126,7 +128,9 @@ pub(crate) async fn load_reversal_summary(
         return Ok(None);
     };
 
-    map_reversal_summary_row(row, Utc::now()).map(Some)
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    let dto = map_reversal_summary_row(pool, &mut tx, row, Utc::now()).await?;
+    Ok(Some(dto))
 }
 
 pub(crate) async fn load_reversal_summaries(
@@ -138,7 +142,7 @@ pub(crate) async fn load_reversal_summaries(
         return Ok(Vec::new());
     }
     let rows = sqlx::query(
-        "SELECT r.id, r.original_transaction_id, r.status, r.reason, r.amount_thb, \
+        "SELECT r.id, r.original_transaction_id, r.branch_id, r.status, r.reason, r.amount_thb, \
          r.requested_by, r.requested_at, r.business_date, b.timezone, \
          ad.at AS approved_at, r.posted_at, rc.number AS document_number \
          FROM reversals r \
@@ -156,24 +160,29 @@ pub(crate) async fn load_reversal_summaries(
     .map_err(AppError::Database)?;
 
     let now = Utc::now();
-    rows.into_iter()
-        .map(|row| map_reversal_summary_row(row, now))
-        .collect()
+    let mut tx = pool.begin().await.map_err(AppError::Database)?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        out.push(map_reversal_summary_row(pool, &mut tx, row, now).await?);
+    }
+    Ok(out)
 }
 
-fn map_reversal_summary_row(
+async fn map_reversal_summary_row(
+    pool: &PgPool,
+    tx: &mut Transaction<'_, Postgres>,
     row: sqlx::postgres::PgRow,
     now: DateTime<Utc>,
 ) -> AppResult<ReversalSummaryDto> {
     let id: Uuid = row.get("id");
     let original_id: Uuid = row.get("original_transaction_id");
+    let branch_id: String = row.get("branch_id");
     let stored_status: String = row.get("status");
     let reason: String = row.get("reason");
     let amount_thb: Decimal = row.get("amount_thb");
     let requested_by: String = row.get("requested_by");
     let requested_at: DateTime<Utc> = row.get("requested_at");
     let business_date: NaiveDate = row.get("business_date");
-    let timezone: String = row.get("timezone");
     let approved_at: Option<DateTime<Utc>> = row.get("approved_at");
     let posted_at: Option<DateTime<Utc>> = row.get("posted_at");
     let document_number: Option<String> = if stored_status == "POSTED" {
@@ -182,11 +191,15 @@ fn map_reversal_summary_row(
         None
     };
 
-    let tz = Tz::from_str(&timezone)
-        .map_err(|e| AppError::Internal(format!("invalid timezone {timezone}: {e}")))?;
-    let status = if stored_status == "APPROVED" && !ReversalWindow::is_open(business_date, now, tz)
-    {
-        "EXPIRED".to_string()
+    let status = if stored_status == "APPROVED" {
+        let deadline = BusinessDayEnd::new(pool.clone())
+            .of_in(tx, &BranchId::new(branch_id), business_date)
+            .await?;
+        if !ReversalWindow::is_open_until(deadline, now) {
+            "EXPIRED".to_string()
+        } else {
+            stored_status
+        }
     } else {
         stored_status
     };

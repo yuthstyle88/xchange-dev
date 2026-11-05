@@ -13,13 +13,17 @@ use xc_customer::application::customer::SystemReadPurpose;
 use xc_customer::application::customer::service::CustomerService;
 use xc_kernel::Mode;
 use xc_kernel::branch_tx::BranchTx;
+use xc_kernel::ids::BranchId;
 use xc_kernel::money::Side;
 use xc_loyalty::domain::facts::{CompletedFacts, CompletedLine, ReversedFacts};
 use xc_loyalty::domain::facts_source::LoyaltyFactsSource;
 use xc_loyalty::infrastructure::exchange_handler::LoyaltyPhoneReader;
 
+use crate::application::workflows::exchange::business_day::BusinessDayEnd;
+
 type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[allow(dead_code)]
 fn end_of_business_day(business_date: NaiveDate, tz: chrono_tz::Tz) -> Option<DateTime<Utc>> {
     business_date
         .checked_add_days(Days::new(1))
@@ -89,11 +93,13 @@ impl LoyaltyFactsSource for PgLoyaltyFactsSource {
                     "branch {branch_id} does not exist"
                 )));
             };
-            let tz: chrono_tz::Tz = timezone
+            let _tz: chrono_tz::Tz = timezone
                 .parse()
                 .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
-            let reversible_until = end_of_business_day(business_date, tz)
-                .ok_or_else(|| AppError::Internal(format!("the end of {business_date}")))?;
+            let mut tx = self.pool.begin().await.map_err(AppError::Database)?;
+            let reversible_until = BusinessDayEnd::new(self.pool.clone())
+                .of_in(&mut tx, &BranchId::new(&branch_id), business_date)
+                .await?;
 
             let line_rows = sqlx::query(
                 "SELECT currency, shop_side, quantity, unit_size, thb_amount, settle_thb, realized_margin_thb \

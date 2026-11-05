@@ -2,10 +2,16 @@
 //! "until the end of the sale's day" deadline means: a reversal's window, `reversible_until` on the completion and the
 //! loyalty facts.
 
-use chrono::{DateTime, NaiveDate, Utc};
-use pos_error::AppResult;
+use std::sync::Arc;
+
+use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
+use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use sqlx::{PgPool, Postgres, Transaction};
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_shift::application::shift_plan::service::ShiftPlanService;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 pub struct BusinessDayEnd {
     pool: PgPool,
@@ -26,7 +32,27 @@ impl BusinessDayEnd {
         branch: &BranchId,
         business_date: NaiveDate,
     ) -> AppResult<DateTime<Utc>> {
-        let _ = (&self.pool, tx, branch, business_date);
-        todo!("CS-20")
+        let plan = ShiftPlanService::new(
+            Arc::new(PgShiftTemplateStore),
+            BranchTx::new(Transactor::new(self.pool.clone())),
+        )
+        .plan_in(tx, branch)
+        .await
+        .map_err(|e| match e {
+            AppError::Domain(_) => {
+                AppError::Internal(format!("branch {} does not exist", branch.as_str()))
+            }
+            other => other,
+        })?;
+        if let Some(end) = plan.business_day_end(business_date) {
+            return Ok(end);
+        }
+        let tz = plan.timezone();
+        business_date
+            .checked_add_days(Days::new(1))
+            .and_then(|d| d.and_hms_opt(0, 0, 0))
+            .and_then(|d| tz.from_local_datetime(&d).earliest())
+            .map(|d| d.with_timezone(&Utc))
+            .ok_or_else(|| AppError::Internal(format!("the end of {business_date}")))
     }
 }
