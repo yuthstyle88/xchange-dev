@@ -200,7 +200,13 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
             } else if message == ShiftError::OutsideShiftWindow.to_string() {
                 V3Error::new("outsideShiftWindow", None, message, StatusCode::CONFLICT)
             } else if message == ShiftError::ShiftNotChosen.to_string() {
-                V3Error::new("shiftNotChosen", None, message, StatusCode::CONFLICT)
+                // 422, as on handover accept and in configurable-shifts.md §2.3.
+                V3Error::new(
+                    "shiftNotChosen",
+                    None,
+                    message,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                )
             } else if message.starts_with("stockInsufficient")
                 || message == TransferError::StockInsufficient.to_string()
             {

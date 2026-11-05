@@ -89,6 +89,11 @@ impl ShiftPlan {
             if trimmed.iter().any(|prev| prev.name.to_lowercase() == lower) {
                 return Err(PlanRefusal::DuplicateName(i));
             }
+            if let Some(id) = row.id.as_deref()
+                && trimmed.iter().any(|prev| prev.id.as_deref() == Some(id))
+            {
+                return Err(PlanRefusal::DuplicateId(i));
+            }
             if row.starts_at == row.ends_at {
                 return Err(PlanRefusal::ZeroLength(i));
             }

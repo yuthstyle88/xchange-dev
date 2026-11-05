@@ -39,6 +39,8 @@ function invalidPlanMessage(reason: string, detail: string): string {
       return t('shiftErrorNameTooLong');
     case 'duplicateName':
       return t('shiftErrorDuplicateName');
+    case 'duplicateId':
+      return t('shiftErrorDuplicateId');
     case 'zeroLength':
       return t('shiftErrorZeroLength');
     case 'spanOver24h':
