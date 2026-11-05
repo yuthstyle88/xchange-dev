@@ -1122,7 +1122,13 @@ async fn no_day_is_todays_business_date_in_the_branchs_timezone() {
     let report = d.report(&reader, None).await;
     let after = Utc::now();
     let tz: Tz = "Pacific/Kiritimati".parse().unwrap();
-    let today = [before, after].map(|t| t.with_timezone(&tz).date_naive().to_string());
+    // CS-12b (restated by claude/35271802): no `day` is the current business day under MAIN's default plan (cutover
+    // 06:00 local), so the expected date is the local date six hours earlier, not the calendar date.
+    let today = [before, after].map(|t| {
+        (t.with_timezone(&tz) - Duration::hours(6))
+            .date_naive()
+            .to_string()
+    });
     assert!(
         today.contains(&report["day"].as_str().unwrap_or("").to_owned()),
         "today in Pacific/Kiritimati is one of {today:?}: {report}"
