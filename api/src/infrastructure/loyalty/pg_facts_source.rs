@@ -93,6 +93,7 @@ impl LoyaltyFactsSource for PgLoyaltyFactsSource {
                     "branch {branch_id} does not exist"
                 )));
             };
+            // the unparsable-timezone refusal of #2202
             let _tz: chrono_tz::Tz = timezone
                 .parse()
                 .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
