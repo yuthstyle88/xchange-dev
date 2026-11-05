@@ -12,6 +12,8 @@ import {
   makeStaffFloorView,
   makeStaffMeView,
   type Me,
+  makeOpenShiftChoice,
+  makeOpenShiftChoices,
 } from '../../../shared/testing/fixtures';
 import { publishFreshNotices } from '../../../shared/ui/notice-bell/notice-feed';
 import { th } from '../i18n';
@@ -33,6 +35,10 @@ interface Server {
 }
 let server: Server;
 let calls: string[] = [];
+
+// CS-15m: the OPEN count form now reads open_shift_choices (ShiftPicker); one covering shift keeps Save usable as
+// before. Stub restated per the lane controller's ruling on PR 6274.
+const ONE_SHIFT = makeOpenShiftChoices({ choices: [makeOpenShiftChoice({ templateId: 'tpl-1' })], preselect: 'tpl-1' });
 
 function stub() {
   calls = [];
@@ -64,6 +70,7 @@ function stub() {
       if (method === 'GET' && path === '/api/v3/views/denominations') {
         return view({ rows: [makeDenominationRow({ id: 164, currency: 'THB', faceValue: '1000.0000', groupCode: 'NOTE' })] });
       }
+      if (method === 'GET' && path === '/api/v3/views/open_shift_choices') return view(ONE_SHIFT);
       if (method === 'POST' && path === '/api/attendance') {
         server.clockedIn = true;
         return json(200, { success: true });
