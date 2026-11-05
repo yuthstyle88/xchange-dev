@@ -231,6 +231,36 @@ fn p12_validate_refuses_each_broken_list() {
 }
 
 #[test]
+fn p12e_a_repeated_template_id_is_refused() {
+    // Review of PR 6274: A and B both name template X, so the save would update X twice and store only B and C,
+    // leaving 06:00–14:00 uncovered. The list is refused at the second X.
+    let with_id = |mut t: ShiftTemplateInput, id: &str| {
+        t.id = Some(id.to_owned());
+        t
+    };
+    assert_eq!(
+        ShiftPlan::validate(vec![
+            with_id(input("A", hm(6, 0), hm(14, 0)), "X"),
+            with_id(input("B", hm(14, 0), hm(22, 0)), "X"),
+            input("C", hm(22, 0), hm(6, 0)),
+        ]),
+        Err(PlanRefusal::DuplicateId(1))
+    );
+    assert_eq!(PlanRefusal::DuplicateId(1).reason(), "duplicateId");
+    assert_eq!(PlanRefusal::DuplicateId(1).detail(), "1");
+    // Distinct ids, and any number of new rows (no id), still pass.
+    assert!(
+        ShiftPlan::validate(vec![
+            with_id(input("A", hm(6, 0), hm(14, 0)), "X"),
+            with_id(input("B", hm(14, 0), hm(22, 0)), "Y"),
+            input("C", hm(22, 0), hm(2, 0)),
+            input("D", hm(2, 0), hm(6, 0)),
+        ])
+        .is_ok()
+    );
+}
+
+#[test]
 fn p12b_a_gap_is_refused_and_named() {
     // A 06–14, B 14–22: nothing covers 22:00–06:00.
     assert_eq!(

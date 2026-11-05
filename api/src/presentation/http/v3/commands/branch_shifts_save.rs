@@ -37,6 +37,7 @@ fn shift_plan_invalid(reason: &str, detail: &str) -> V3Error {
         "emptyName" => "กรุณาตั้งชื่อกะ".to_string(),
         "nameTooLong" => "ชื่อกะยาวเกิน 40 ตัวอักษร".to_string(),
         "duplicateName" => "ชื่อกะซ้ำกัน".to_string(),
+        "duplicateId" => "กะซ้ำกัน".to_string(),
         "zeroLength" => "เวลาเริ่มและเวลาเลิกกะต้องไม่เท่ากัน".to_string(),
         "spanOver24h" => "กะทั้งหมดต้องอยู่ภายใน 24 ชั่วโมงนับจากกะแรก".to_string(),
         "gap" => {

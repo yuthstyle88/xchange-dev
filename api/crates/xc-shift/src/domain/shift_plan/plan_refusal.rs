@@ -17,6 +17,9 @@ pub enum PlanRefusal {
     NameTooLong(usize),
     #[error("ชื่อกะซ้ำกัน")]
     DuplicateName(usize),
+    /// Two rows name the same stored template; saving them would update one row twice and drop a shift.
+    #[error("กะซ้ำกัน")]
+    DuplicateId(usize),
     #[error("เวลาเริ่มและเวลาเลิกกะต้องไม่เท่ากัน")]
     ZeroLength(usize),
     #[error("กะทั้งหมดต้องอยู่ภายใน 24 ชั่วโมงนับจากกะแรก")]
@@ -38,6 +41,7 @@ impl PlanRefusal {
             PlanRefusal::EmptyName(_) => "emptyName",
             PlanRefusal::NameTooLong(_) => "nameTooLong",
             PlanRefusal::DuplicateName(_) => "duplicateName",
+            PlanRefusal::DuplicateId(_) => "duplicateId",
             PlanRefusal::ZeroLength(_) => "zeroLength",
             PlanRefusal::SpanOver24h => "spanOver24h",
             PlanRefusal::BreakIncomplete(_) => "breakIncomplete",
@@ -51,6 +55,7 @@ impl PlanRefusal {
             PlanRefusal::EmptyName(i)
             | PlanRefusal::NameTooLong(i)
             | PlanRefusal::DuplicateName(i)
+            | PlanRefusal::DuplicateId(i)
             | PlanRefusal::ZeroLength(i)
             | PlanRefusal::BreakIncomplete(i)
             | PlanRefusal::BreakOutsideShift(i) => Some(i),
