@@ -10,6 +10,7 @@ use actix_web::web;
 use chrono::{NaiveTime, Utc};
 use pos_infra::transactions::Transactor;
 use sqlx::PgPool;
+use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::branch_tx::BranchTx;
@@ -28,6 +29,15 @@ pub struct BranchShiftsSaveCommand(pub PgPool);
 
 fn parse_time(s: &str) -> Option<NaiveTime> {
     NaiveTime::parse_from_str(s.trim(), "%H:%M").ok()
+}
+
+fn shift_template_unknown() -> V3Error {
+    V3Error::new(
+        "shiftTemplateUnknown",
+        None,
+        "ไม่พบกะที่ต้องการแก้ไข กรุณารีเฟรช".to_string(),
+        StatusCode::UNPROCESSABLE_ENTITY,
+    )
 }
 
 fn shift_plan_invalid(reason: &str, detail: &str) -> V3Error {
@@ -110,8 +120,17 @@ impl CommandAction for BranchShiftsSaveCommand {
                 _ => return Err(shift_plan_invalid("breakIncomplete", &i.to_string())),
             };
 
+            let id = match row.id.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                Some(raw) => Some(
+                    Uuid::parse_str(raw)
+                        .map_err(|_| shift_template_unknown())?
+                        .to_string(),
+                ),
+                None => None,
+            };
+
             inputs.push(ShiftTemplateInput {
-                id: row.id.filter(|s| !s.trim().is_empty()),
+                id,
                 name: row.name,
                 starts_at,
                 ends_at,
@@ -143,12 +162,7 @@ impl CommandAction for BranchShiftsSaveCommand {
                     shift_plan_invalid(reason, detail)
                 }
                 pos_error::AppError::Validation(msg) if msg == "shiftTemplateUnknown" => {
-                    V3Error::new(
-                        "shiftTemplateUnknown",
-                        None,
-                        "ไม่พบกะที่ต้องการแก้ไข กรุณารีเฟรช".to_string(),
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                    )
+                    shift_template_unknown()
                 }
                 pos_error::AppError::Domain(msg) => {
                     V3Error::new("domainError", None, msg, StatusCode::BAD_REQUEST)
