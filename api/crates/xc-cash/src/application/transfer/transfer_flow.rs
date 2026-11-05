@@ -726,6 +726,11 @@ impl TransferFlow {
         t.status
             .next(TransferStep::Receive)
             .map_err(|e| AppError::Domain(e.to_string()))?;
+        if counted.is_empty() {
+            return Err(AppError::Validation(
+                "a receive needs at least one counted line; count a missing note as 0".into(),
+            ));
+        }
         let ends = parts
             .kinds
             .get(t.kind)
