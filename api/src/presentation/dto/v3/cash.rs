@@ -40,6 +40,11 @@ pub struct CountSubmitInput {
     pub kind: String,
     #[serde(default)]
     pub shift_id: Option<String>,
+    /// The shift the teller opens as (OPEN only; configurable-shifts.md §2.3). Optional on the wire: the server takes
+    /// the only covering shift when it is absent.
+    #[serde(default)]
+    #[ts(optional)]
+    pub shift_template_id: Option<String>,
     pub lines: Vec<CashLineInput>,
     #[serde(default)]
     pub note: Option<String>,
@@ -290,6 +295,8 @@ pub struct MyShift {
     pub balances: Vec<MyShiftBalance>,
     // every transfer addressed to this open shift, any status
     pub incoming_transfers: Vec<CashTransferRow>,
+    pub shift_name: Option<String>,
+    pub business_date: String,
 }
 
 /// One currency of the caller's shift: opening and expected, as strings.

@@ -982,3 +982,43 @@ async fn ca10_seed_open(
         .unwrap_or_else(|e| panic!("open a shift at {branch}: {e}"));
     shift
 }
+
+/// CS-8 up-front (docs/design/configurable-shifts.md §2.4, row D1; written by the ticket author claude/35271802 — do not
+/// edit or delete): a LIVE sale's `value_date` is the business date of the saver's own open shift, whatever the client
+/// sends. The shift is C of 4 Nov (opened 22:00); the desk, at 02:00, sends the calendar date 5 Nov. Row D2 (DEMO keeps
+/// the client's date) is `a_draft_is_made_from_the_quote_with_every_figure_from_the_quote`.
+#[tokio::test]
+async fn cs8_d1_a_live_sale_takes_its_shifts_business_date_not_the_clients() {
+    let c = Counter::start().await;
+    let now = whole_second_now();
+    let customer = c.customer("MAIN", "AA1234567", "LIVE").await;
+    let q = c.desk.quote("MAIN", Side::Buy, "100", None, now).await;
+    let shift = c.open_shift().await;
+    sqlx::query("UPDATE shifts SET business_date = DATE '2026-11-04' WHERE id = $1")
+        .bind(&shift)
+        .execute(&c.desk.db.pool)
+        .await
+        .expect("date the open shift as C of 4 Nov");
+
+    let owner = c.shift_teller().await;
+    let passport = c.upload_as("MAIN", &owner.id, "image/jpeg", JPEG).await;
+    let mut req = c.request("MAIN", &q, &customer, &passport);
+    req.value_date = NaiveDate::from_ymd_opt(2026, 11, 5).unwrap();
+    let made = c
+        .create_as(req, &owner, later(now, 5))
+        .await
+        .expect("a LIVE draft on the teller's own shift");
+
+    let four_nov = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
+    assert_eq!(made.shift_id.as_deref(), Some(shift.as_str()));
+    assert_eq!(
+        made.value_date, four_nov,
+        "the answer carries the shift's business date"
+    );
+    assert_eq!(
+        c.desk.stored(made.id).await.value_date,
+        four_nov,
+        "stored value_date = shifts.business_date, not the client's 5 Nov"
+    );
+    c.finish().await;
+}

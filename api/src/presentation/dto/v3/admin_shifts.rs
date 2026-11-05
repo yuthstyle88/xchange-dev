@@ -35,4 +35,6 @@ pub struct AdminShiftRow {
     pub note: String,
     pub difference: Option<Vec<AdminShiftDifferenceItem>>,
     pub balances: Vec<AdminShiftBalanceRow>,
+    pub shift_name: Option<String>,
+    pub business_date: String,
 }

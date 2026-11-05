@@ -8,19 +8,20 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 use xc_approval::application::approval_service::ApprovalService;
 use xc_exchange::domain::reversal::repository::ReversalRepository;
 use xc_exchange::domain::reversal::reversal::{NewReversal, Reversal, ReversalId};
-use xc_exchange::domain::reversal::window::{ReversalWindow, Tz};
+use xc_exchange::domain::reversal::window::ReversalWindow;
 use xc_exchange::domain::transaction::transaction::TransactionId;
 use xc_exchange::infrastructure::reversal::repository::PgReversalRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::Money;
 
+use super::business_day::BusinessDayEnd;
 use super::reversal_approval::TRANSACTION_REVERSAL;
 use crate::application::workflows::save_step::SaveActor;
 
@@ -32,6 +33,7 @@ pub struct RequestReversalInput {
 }
 
 pub struct RequestReversal {
+    pool: PgPool,
     reversals: PgReversalRepository,
     approvals: Arc<ApprovalService>,
 }
@@ -43,7 +45,8 @@ fn refuse(code: &str, why: impl std::fmt::Display) -> AppError {
 impl RequestReversal {
     pub fn new(pool: PgPool, approvals: Arc<ApprovalService>) -> Self {
         Self {
-            reversals: PgReversalRepository::new(pool),
+            reversals: PgReversalRepository::new(pool.clone()),
+            pool,
             approvals,
         }
     }
@@ -65,7 +68,7 @@ impl RequestReversal {
 
         // The original, at the caller's branch: an unknown exchange answers as another branch's does
         let Some(t) = sqlx::query(
-            "SELECT t.branch_id, t.mode, t.status, t.completed_at, t.organization_id, b.timezone \
+            "SELECT t.branch_id, t.mode, t.status, t.completed_at, t.value_date, t.organization_id, b.timezone \
              FROM transactions t JOIN branches b ON b.id = t.branch_id WHERE t.id = $1",
         )
         .bind(input.original.0)
@@ -83,19 +86,19 @@ impl RequestReversal {
         let status: String = t.try_get("status").map_err(AppError::Database)?;
         let completed: Option<DateTime<Utc>> =
             t.try_get("completed_at").map_err(AppError::Database)?;
-        let (Some(completed), "COMPLETED") = (completed, status.as_str()) else {
+        let (Some(_completed), "COMPLETED") = (completed, status.as_str()) else {
             return Err(refuse(
                 "staleVersion",
                 format!("a {status} exchange is not reversed"),
             ));
         };
 
-        // R-1: inside the original's business day, in the branch timezone
-        let zone: String = t.try_get("timezone").map_err(AppError::Database)?;
-        let tz = Tz::from_str(&zone)
-            .map_err(|_| AppError::Internal(format!("branch timezone {zone}")))?;
-        let business_date = ReversalWindow::business_date_of(completed, tz);
-        if !ReversalWindow::is_open(business_date, now, tz) {
+        // R-1: inside the original's business day
+        let business_date: NaiveDate = t.try_get("value_date").map_err(AppError::Database)?;
+        let deadline = BusinessDayEnd::new(self.pool.clone())
+            .of_in(tx, &input.branch, business_date)
+            .await?;
+        if !ReversalWindow::is_open_until(deadline, now) {
             return Err(refuse(
                 "reversalWindowClosed",
                 format!("the business day {business_date} is over"),

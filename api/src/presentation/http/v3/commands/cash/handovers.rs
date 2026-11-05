@@ -5,6 +5,7 @@
 use actix_web::http::{Method, StatusCode};
 use chrono::Utc;
 use pos_error::AppError;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
@@ -13,6 +14,7 @@ use xc_cash::application::handover::{HandoverAccepted, HandoverService, StartHan
 use xc_cash::domain::error::CashError;
 use xc_cash::domain::handover::{Handover, HandoverError};
 use xc_kernel::ids::BranchId;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use super::{caller_in, count_lines, from_cash_error, shift_lifecycle_hook, validation_failed};
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -90,6 +92,16 @@ impl CommandAction for HandoverStart {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HandoverAcceptInput {
+    #[serde(default)]
+    pub branch: Option<String>,
+    pub id: String,
+    #[serde(default)]
+    pub shift_template_id: Option<String>,
+}
+
 pub struct HandoverAccept {
     handovers: HandoverService,
 }
@@ -106,7 +118,7 @@ impl HandoverAccept {
 impl CommandAction for HandoverAccept {
     const NAME: &'static str = "handoverAccept";
     const INHERITS: (EntryPath, &'static str) = (EntryPath::Rpc, "handoverAccept");
-    type Input = CashRecordInput;
+    type Input = HandoverAcceptInput;
     type Output = HandoverRecordOutput;
     const ROUTE: &'static str = "/api/handovers/{id}/accept";
     const METHOD: Method = Method::POST;
@@ -124,10 +136,33 @@ impl CommandAction for HandoverAccept {
         // §4.9: awaiting FINANCE is an answer, not an error, so its approval request commits with the seam
         match self
             .handovers
-            .accept_or_await_in(tx, &user, &input.id, now)
+            .accept_chosen_or_await_in(
+                tx,
+                &user,
+                &input.id,
+                input.shift_template_id.as_deref(),
+                now,
+            )
             .await
-            .map_err(from_cash_error)?
-        {
+            .map_err(|e| match e {
+                AppError::Domain(ref msg) if msg == &ShiftError::OutsideShiftWindow.to_string() => {
+                    V3Error::new(
+                        "outsideShiftWindow",
+                        None,
+                        msg.clone(),
+                        StatusCode::CONFLICT,
+                    )
+                }
+                AppError::Domain(ref msg) if msg == &ShiftError::ShiftNotChosen.to_string() => {
+                    V3Error::new(
+                        "shiftNotChosen",
+                        None,
+                        msg.clone(),
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                    )
+                }
+                other => from_cash_error(other),
+            })? {
             HandoverAccepted::Accepted(h) => Ok(answer(*h)),
             HandoverAccepted::AwaitingFinance(_) => Ok(HandoverRecordOutput {
                 id: input.id,

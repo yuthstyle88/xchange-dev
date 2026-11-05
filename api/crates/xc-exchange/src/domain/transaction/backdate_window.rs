@@ -1,18 +1,18 @@
 //! Backdated keying (`docs/design/backdated-keying.md` §5; owner rule R2 and guard G): which deal times and
-//! business dates a backdated exchange may be keyed at. Pure: the caller passes `now`, the branch's timezone and
-//! whether the business date is closed.
+//! business dates a backdated exchange may be keyed at. Pure: the caller passes `now`, the business dates of `paid_at`
+//! and of `now` (CS-20b: `ShiftPlan::business_date_of` under the branch's plan; one business-date rule, ruling on
+//! #564 issuecomment-6633086725) and whether the business date is closed.
 
 use chrono::{DateTime, NaiveDate, Utc};
-use chrono_tz::Tz;
 
 /// `[required]` Why a deal time or business date is refused, in the order `BackdateWindow::check` asks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackdateRefusal {
     /// `paid_at` is later than `now`.
     PaidAtInFuture,
-    /// `value_date` is not `paid_at`'s date in the branch's timezone.
+    /// `value_date` is not `paid_at`'s business date.
     ValueDateNotPaidDate,
-    /// `value_date` is after today in the branch's timezone.
+    /// `value_date` is after `now`'s business date.
     ValueDateInFuture,
     /// `value_date` is a closed (certified) business date.
     DayClosed,
@@ -44,22 +44,23 @@ pub struct BackdateWindow;
 
 impl BackdateWindow {
     /// `[required]` Refuses, in this order: `PaidAtInFuture` (`paid_at > now`) → `ValueDateNotPaidDate`
-    /// (`value_date` ≠ `paid_at`'s date in `tz`) → `ValueDateInFuture` (`value_date` > `now`'s date in `tz`) →
-    /// `DayClosed` (`closed`). Today counts as a past date.
+    /// (`value_date` ≠ `paid_day`, the business date of `paid_at`) → `ValueDateInFuture` (`value_date` > `today`, the
+    /// business date of `now`) → `DayClosed` (`closed`). Today counts as a past date.
     pub fn check(
         paid_at: DateTime<Utc>,
         value_date: NaiveDate,
         now: DateTime<Utc>,
-        tz: Tz,
+        paid_day: NaiveDate,
+        today: NaiveDate,
         closed: bool,
     ) -> Result<(), BackdateRefusal> {
         if paid_at > now {
             return Err(BackdateRefusal::PaidAtInFuture);
         }
-        if value_date != paid_at.with_timezone(&tz).date_naive() {
+        if value_date != paid_day {
             return Err(BackdateRefusal::ValueDateNotPaidDate);
         }
-        if value_date > now.with_timezone(&tz).date_naive() {
+        if value_date > today {
             return Err(BackdateRefusal::ValueDateInFuture);
         }
         if closed {

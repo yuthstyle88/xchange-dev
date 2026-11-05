@@ -18,8 +18,8 @@
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips. Rows are seeded with SQL in TX-2's schema (#670).
 //! The original was completed at 2026-10-06 03:00Z (10:00 in Bangkok, MAIN's timezone by OR-1's
-//! default); "inside the window" is 05:00Z the same day, "after it" is 17:00Z (00:00 the next day in
-//! Bangkok).
+//! default); "inside the window" is 05:00Z the same day, "after it" is 23:00Z (06:00 the next day in
+//! Bangkok: CS-20 ends the business day at the shift plan's cutover, restated by claude/35271802).
 //!
 //! Signatures this test assumes ([required] in ticket §7 unless marked; RG5 decided by the ticket
 //! author, 2026-10-10: the design's `run_in` has no branch, yet must refuse another branch's
@@ -77,7 +77,7 @@ fn inside() -> DateTime<Utc> {
 }
 
 fn after() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 10, 6, 17, 0, 0).unwrap()
+    Utc.with_ymd_and_hms(2026, 10, 6, 23, 0, 0).unwrap()
 }
 
 fn teller() -> SaveActor {

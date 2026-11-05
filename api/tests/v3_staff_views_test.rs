@@ -7,7 +7,7 @@
 //! tests in a file of your own.
 //!
 //! Design: `docs/design/xchange-v3-wave3-staff.md` (SD) §2 S2 (no role literal; access is a
-//! `Permission`), S4 (paged, newest first), S12 (hours from `BranchHours::window(today)`, none set →
+//! `Permission`), S4 (paged, newest first), S12 (hours from the shift plan's business day, restated for CS-5; none set →
 //! absent), §3.1 (the views, their permission and their answers), §3.2 (`StaffFloorReader`), §6.1
 //! B3/B5/B9/B10, §8.1 row S-1. Ticket #573 §7–§9 and the lane controller's rulings on #573
 //! (2026-10-10): each view is a row of the area file `xc-auth/.../policy/areas/staff_floor.rs` on
@@ -70,7 +70,6 @@ use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 use xc_cash::application::count::{CashCountService, SubmitCount};
 use xc_cash::domain::count::{CountKind, CountLine};
 use xc_kernel::ids::BranchId;
-use xc_rate::domain::branch::branch_hours::{BranchHours, HoursWindow};
 use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::test_callers;
@@ -631,8 +630,12 @@ async fn staff_floor_shows_target_and_safe_only_to_cash_permissions() {
     f.finish().await;
 }
 
+/// Restated by the sub-controller claude/35271802 for configurable shifts (owner 2026-11-04: selling follows the shifts,
+/// `opening_hours` stays the customer-facing hours; design `configurable-shifts.md` §2.7, ticket CS-5). The floor's hours
+/// are the business day of the branch's shift plan holding now; `opening_hours` does not change them; a branch with no
+/// live shift has none.
 #[actix_web::test]
-async fn staff_floor_hours_come_from_the_branchs_own_hours_and_are_absent_when_none_are_set() {
+async fn staff_floor_hours_come_from_the_branchs_shift_plan_and_are_absent_without_one() {
     let f = Floor::start().await;
     f.ops("READY", None, None, None).await;
     let teller = test_callers::V2_STAFF
@@ -643,23 +646,44 @@ async fn staff_floor_hours_come_from_the_branchs_own_hours_and_are_absent_when_n
     let id = f.person("p").await;
     let who = spec(teller, &id, "MAIN");
 
-    let none = f.ok(&who, "staff_floor", "").await;
-    assert!(
-        none.get("hours").is_none_or(Value::is_null),
-        "S12: none set → absent: {none}"
+    // MAIN has the seeded defaults (A 06–14, B 14–22, C 22–06): the hours are the business day holding now.
+    let plan = xc_shift::domain::shift_plan::shift_plan::ShiftPlan::new(
+        xc_shift::domain::shift_plan::shift_plan::ShiftPlan::defaults()
+            .into_iter()
+            .enumerate()
+            .map(
+                |(i, t)| xc_shift::domain::shift_plan::shift_template::ShiftTemplate {
+                    id: t.name.clone(),
+                    name: t.name,
+                    starts_at: t.starts_at,
+                    ends_at: t.ends_at,
+                    break_window: t.break_window,
+                    position: i as i16,
+                },
+            )
+            .collect(),
+        Tz::Asia__Bangkok,
     );
-
-    let hours = f.every_day_nine_to_eight().await;
-    let today = Utc::now().with_timezone(&Tz::Asia__Bangkok).date_naive();
-    let HoursWindow::Open { open, close } = BranchHours::new("Asia/Bangkok", Some(&hours))
-        .expect("hours parse")
-        .window(today)
-    else {
-        panic!("every day is open");
-    };
+    let (open, close) = plan.span_for(Utc::now()).expect("the defaults cover now");
     let set = f.ok(&who, "staff_floor", "").await;
     assert_eq!(instant(&set["hours"]["open"], "hours.open"), open);
     assert_eq!(instant(&set["hours"]["close"], "hours.close"), close);
+
+    // `opening_hours` is customer-facing only: setting it does not move the floor's hours.
+    f.every_day_nine_to_eight().await;
+    let still = f.ok(&who, "staff_floor", "").await;
+    assert_eq!(instant(&still["hours"]["open"], "hours.open"), open);
+
+    // No live shift: no hours.
+    sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = 'MAIN'")
+        .execute(&f.db.pool)
+        .await
+        .expect("retire MAIN's shifts");
+    let none = f.ok(&who, "staff_floor", "").await;
+    assert!(
+        none.get("hours").is_none_or(Value::is_null),
+        "no plan → absent: {none}"
+    );
     f.finish().await;
 }
 

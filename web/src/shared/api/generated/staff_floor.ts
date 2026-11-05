@@ -4,7 +4,7 @@ export type StaffFloorCutoff = { at: string, pendingCount: number, };
 
 export type StaffFloorHours = { open: string, close: string, };
 
-export type StaffFloorMyShift = { id: string, openedAt: string, };
+export type StaffFloorMyShift = { id: string, openedAt: string, shiftName?: string, businessDate?: string, onBreak?: boolean, };
 
 export type StaffFloorTarget = { amounts: { [key in string]: string }, at: string, };
 

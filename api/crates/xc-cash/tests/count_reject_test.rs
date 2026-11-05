@@ -400,7 +400,7 @@ async fn an_unknown_count_is_not_found() {
 async fn a_handover_count_is_only_through_handover() {
     let f = floor().await;
     let count = waiting_open(&f.db, &f.branch, &f.teller).await;
-    sqlx::query("UPDATE cash_counts SET kind = 'HANDOVER_OUT' WHERE id = $1::uuid")
+    sqlx::query("UPDATE cash_counts SET kind = 'HANDOVER_OUT', shift_template_id = NULL WHERE id = $1::uuid")
         .bind(&count.id)
         .execute(&f.db.pool)
         .await

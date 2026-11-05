@@ -284,6 +284,7 @@ impl Shop {
                     ("THB".to_owned(), d("10000.00")),
                     ("USD".to_owned(), d("500.00")),
                 ],
+                &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
                 now,
             )
             .await

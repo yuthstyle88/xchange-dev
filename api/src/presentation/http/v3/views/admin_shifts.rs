@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::PgPool;
 use ts_rs::TS;
@@ -66,6 +66,8 @@ struct ShiftSqlRow {
     opened_at: DateTime<Utc>,
     opened_by: String,
     close_note: String,
+    template_name: Option<String>,
+    business_date: NaiveDate,
 }
 
 impl PagedView for AdminShiftsPagedView {
@@ -101,7 +103,7 @@ impl PagedView for AdminShiftsPagedView {
                 };
 
                 sqlx::query_as(
-                    "SELECT id, status, opened_at, opened_by, close_note \
+                    "SELECT id, status, opened_at, opened_by, close_note, template_name, business_date \
                      FROM shifts \
                      WHERE branch_id = $1 AND seq < $2 \
                      ORDER BY seq DESC \
@@ -115,7 +117,7 @@ impl PagedView for AdminShiftsPagedView {
                 .map_err(AppError::Database)?
             } else {
                 sqlx::query_as(
-                    "SELECT id, status, opened_at, opened_by, close_note \
+                    "SELECT id, status, opened_at, opened_by, close_note, template_name, business_date \
                      FROM shifts \
                      WHERE branch_id = $1 \
                      ORDER BY seq DESC \
@@ -211,6 +213,8 @@ impl PagedView for AdminShiftsPagedView {
                         note: s.close_note,
                         difference: Some(diff_items),
                         balances,
+                        shift_name: s.template_name,
+                        business_date: s.business_date.to_string(),
                     });
                 } else {
                     // Shift is OPEN: difference is None, note is empty string
@@ -246,6 +250,8 @@ impl PagedView for AdminShiftsPagedView {
                         note: String::new(),
                         difference: None,
                         balances,
+                        shift_name: s.template_name,
+                        business_date: s.business_date.to_string(),
                     });
                 }
             }

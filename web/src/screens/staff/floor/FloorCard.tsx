@@ -55,6 +55,28 @@ function getCurrencies(
   return [THB, ...sorted];
 }
 
+function formatBusinessDate(dateStr: string): string {
+  const dateOnly = dateStr.split('T')[0];
+  const parts = dateOnly.split('-');
+  if (parts.length === 3) {
+    const day = parseInt(parts[2], 10);
+    const month = parseInt(parts[1], 10);
+    if (!Number.isNaN(day) && !Number.isNaN(month)) {
+      return `${day}/${month}`;
+    }
+  }
+  return dateStr;
+}
+
+function formatShiftName(name: string, t: (key: any, params?: any) => string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('กะ ') || trimmed.startsWith('Shift ')) {
+    return trimmed;
+  }
+  return t('shiftLabel', { name: trimmed });
+}
+
 export function FloorCard(props: FloorCardProps): JSX.Element {
   const t = screenT('staff.floor', { th, en });
   const api = new ApiClient();
@@ -225,6 +247,37 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
       <div data-testid="floor-phase" class="xc-floor-phase">
         {props.ctx.floor?.phase ? t(`phase.${props.ctx.floor.phase}` as any) : ''}
       </div>
+
+      <Show when={props.ctx.floor?.myShift}>
+        {(shift) => {
+          const shiftText = () => {
+            const s = shift();
+            const namePart = s.shiftName ? formatShiftName(s.shiftName, t) : '';
+            const datePart = s.businessDate ? formatBusinessDate(s.businessDate) : '';
+            if (namePart && datePart) return `${namePart} · ${datePart}`;
+            return namePart || datePart;
+          };
+          const hasBreak = () => Boolean(shift().onBreak);
+          const hasContent = () => shiftText() !== '' || hasBreak();
+
+          return (
+            <Show when={hasContent()}>
+              <div data-testid="floor-my-shift" class="xc-floor-my-shift">
+                <Show when={shiftText()}>
+                  <span data-testid="floor-shift-info" class="xc-floor-shift-info">
+                    {shiftText()}
+                  </span>
+                </Show>
+                <Show when={hasBreak()}>
+                  <span data-testid="floor-break-badge" class="xc-floor-break-badge">
+                    {t('onBreak')}
+                  </span>
+                </Show>
+              </div>
+            </Show>
+          );
+        }}
+      </Show>
 
       <div class="xc-floor-actions">
         <ClockButton

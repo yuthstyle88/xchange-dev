@@ -269,6 +269,7 @@ impl Env {
                 &teller.to_string(),
                 &count.to_string(),
                 &lines,
+                &xc_shift::domain::shift::value_objects::opened_as::OpenedAs::untemplated(),
                 now(),
             )
             .await
