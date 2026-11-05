@@ -121,6 +121,20 @@ pub(crate) fn check_ticket_owner(actor: &Actor, ticket: &QueueTicket) -> AppResu
     }
 }
 
+pub(crate) async fn ticket_has_live_sale(
+    tx: &mut Transaction<'_, Postgres>,
+    ticket_id: &str,
+) -> AppResult<bool> {
+    let (sales,): (i64,) = sqlx::query_as(
+        "SELECT count(*) FROM transactions \
+         WHERE queue_ticket_id = $1::uuid AND status <> 'CANCELLED'",
+    )
+    .bind(ticket_id)
+    .fetch_one(&mut **tx)
+    .await?;
+    Ok(sales > 0)
+}
+
 async fn fetch_ticket_for_update(
     tx: &mut Transaction<'_, Postgres>,
     branch: &BranchId,
@@ -828,14 +842,7 @@ impl QueueDesk {
         }
         check_ticket_owner(actor, &ticket)?;
 
-        let (sales,): (i64,) = sqlx::query_as(
-            "SELECT count(*) FROM transactions \
-             WHERE queue_ticket_id = $1::uuid AND status <> 'CANCELLED'",
-        )
-        .bind(&ticket.id)
-        .fetch_one(&mut **tx)
-        .await?;
-        if sales > 0 {
+        if ticket_has_live_sale(tx, &ticket.id).await? {
             return Err(QueueError::TicketHasSale.into());
         }
 
