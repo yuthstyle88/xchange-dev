@@ -17,6 +17,14 @@ const SLIP_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const SLIP_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
 /** v2 sends Cash's reference as an em dash (dh:117). */
 const CASH_REF = '—';
+const METHOD_KEY = {
+  'Credit Card': 'methodCreditCard',
+  'Alipay': 'methodAlipay',
+  'PromptPay': 'methodPromptPay',
+  'Cash': 'methodCash',
+  'Bank Transfer': 'methodBankTransfer',
+  'SCB Transfer': 'methodScbTransfer',
+} as const;
 
 function slipRefused(file: File): boolean {
   const known = SLIP_TYPES.includes(file.type) || /\.(jpe?g|png|webp|pdf)$/i.test(file.name);
@@ -172,7 +180,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
                 disabled={!noRules() && !open(m)}
                 hidden={!noRules() && !open(m) && store.method() !== m}
               >
-                {m}
+                {t(METHOD_KEY[m])}
               </option>
             )}
           </For>
