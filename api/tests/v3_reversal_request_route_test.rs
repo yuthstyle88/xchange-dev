@@ -132,7 +132,7 @@ async fn completed(db: &TestDb, n: u32, completed: &str) -> String {
             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
             recorded_by, status, completed_at) \
          VALUES ('{id}', 'XC-R-{n:06}', 'MAIN', 'LIVE', 'SH-1', 'sub-{id}', 'h', 'CU-1', 'Somchai', 'THA', \
-            'EMP-001', 'WALK-IN', '', ({completed} AT TIME ZONE 'Asia/Bangkok')::date, {completed}, {completed}, 'owner', 'COMPLETED', \
+            'EMP-001', 'WALK-IN', '', (({completed}) AT TIME ZONE 'Asia/Bangkok')::date, {completed}, {completed}, 'owner', 'COMPLETED', \
             {completed})"
     ))
     .await;
