@@ -12,6 +12,8 @@ import {
   makeMyShiftBalance,
   makeStaffFloorView,
   makeStaffMeView,
+  makeOpenShiftChoice,
+  makeOpenShiftChoices,
 } from '../../../shared/testing/fixtures';
 import type { StaffCtx } from '../cards';
 import { CountForm, CountWaitingLine } from './CountForm';
@@ -42,6 +44,10 @@ const shiftAnswer = () =>
   });
 let myShiftAnswer: () => Response | Promise<Response> = shiftAnswer;
 
+// CS-15m: the OPEN count form and the handover accept now read open_shift_choices (ShiftPicker); one covering
+// shift keeps Save and Accept usable as before. Stub restated per the lane controller's ruling on PR 6274.
+const ONE_SHIFT = makeOpenShiftChoices({ choices: [makeOpenShiftChoice({ templateId: 'tpl-1' })], preselect: 'tpl-1' });
+
 function stub() {
   views = [];
   posts = [];
@@ -56,6 +62,7 @@ function stub() {
         views.push(view);
         if (view === 'denominations') return json(200, { version: 1, changed: true, data: { rows: DENOMS } });
         if (view === 'my_shift') return myShiftAnswer();
+        if (view === 'open_shift_choices') return json(200, { version: 1, changed: true, data: ONE_SHIFT });
         return json(404, { error: { code: 'notFound', message: 'x' } });
       }
       posts.push({ path, body: JSON.parse(String(init?.body ?? '{}')) });

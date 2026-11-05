@@ -16,6 +16,8 @@ import {
   makeStaffFloorView,
   makeStaffMeView,
   type CountSubmitInput,
+  makeOpenShiftChoice,
+  makeOpenShiftChoices,
 } from '../../../shared/testing/fixtures';
 
 const BRANCH = 'MAIN';
@@ -74,6 +76,10 @@ describe('#5127 shift forms show money: face values and the expected amount', ()
   let dispose: (() => void) | undefined;
   let posts: CountSubmitInput[];
 
+  // CS-15m: the OPEN count form and the handover accept now read open_shift_choices (ShiftPicker); one covering
+  // shift keeps Save and Accept usable as before. Stub restated per the lane controller's ruling on PR 6274.
+  const ONE_SHIFT = makeOpenShiftChoices({ choices: [makeOpenShiftChoice({ templateId: 'tpl-1' })], preselect: 'tpl-1' });
+
   function stubViews() {
     const views: Record<string, () => Promise<Response>> = {
       cash_counts: async () => json(200, { version: 1, changed: true, data: [] }),
@@ -86,6 +92,7 @@ describe('#5127 shift forms show money: face values and the expected amount', ()
           data: { rows: [makeHandoverReceiverRow({ userId: OTHER, name: 'Somchai' })] },
         }),
       my_shift: async () => json(200, { version: 1, changed: true, data: MY_SHIFT }),
+      open_shift_choices: async () => json(200, { version: 1, changed: true, data: ONE_SHIFT }),
     };
     vi.stubGlobal(
       'fetch',
@@ -214,6 +221,8 @@ describe('#5127 shift forms show money: face values and the expected amount', ()
     await vi.waitFor(() => expect(q(qty(11))).not.toBeNull());
 
     type(must<HTMLInputElement>(qty(11)), '10');
+    // CS-15m: Save now waits for open_shift_choices to answer (ShiftPicker), so wait for it to be enabled before clicking.
+    await vi.waitFor(() => expect(must<HTMLButtonElement>(tid('shift-count-save')).disabled).toBe(false));
     must<HTMLButtonElement>(tid('shift-count-save')).click();
     await vi.waitFor(() => expect(posts.length).toBe(1));
     expect(posts[0]?.lines).toEqual([{ currency: 'THB', denominationId: 11, qty: '10' }]);
