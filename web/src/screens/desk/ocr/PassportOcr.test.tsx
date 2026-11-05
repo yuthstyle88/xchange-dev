@@ -4,7 +4,7 @@ import { render } from 'solid-js/web';
 import { ApiError, type ApiClient } from '../../../shared/api/client';
 import { setLang } from '../../../shared/i18n';
 import type { DeskStore, PassportFields } from '../desk-store';
-import { PassportOcr } from './PassportOcr';
+import { PassportOcr, resetPassportReaderNotConfigured } from './PassportOcr';
 import * as texts from './i18n';
 
 vi.mock('./image', () => ({
@@ -67,6 +67,7 @@ describe('PassportOcr', () => {
   let dispose: (() => void) | undefined;
 
   beforeEach(() => {
+    resetPassportReaderNotConfigured();
     setLang('th');
     host = document.createElement('div');
     document.body.appendChild(host);
@@ -313,6 +314,74 @@ describe('PassportOcr', () => {
 
     await vi.waitFor(() => {
       expect(getStatusText()).toBe(texts.th.imageTooLarge);
+    });
+  });
+
+  // F18a: passport_read answers 503 passportReaderNotConfigured -> desk.ocr.notConfigured shown
+  it('F18a: shows desk.ocr.notConfigured when passport_read answers 503 passportReaderNotConfigured', async () => {
+    const { store, postBytes, setPassport } = createTestStore();
+    postBytes.mockRejectedValueOnce(
+      new ApiError({
+        code: 'passportReaderNotConfigured',
+        status: 503,
+        message: 'passport reader not configured',
+      }),
+    );
+    mount(store);
+
+    setPassport(JPEG_FILE);
+
+    await vi.waitFor(() => {
+      expect(getStatusText()).toBe(texts.th.notConfigured);
+    });
+    expect(postBytes).toHaveBeenCalledTimes(1);
+  });
+
+  // F18b: a second image after F18a in the same page session -> no second request, the same notice shown
+  it('F18b: does not call passport_read for a second image after notConfigured and keeps the same notice', async () => {
+    const { store, postBytes, setPassport } = createTestStore();
+    postBytes.mockRejectedValueOnce(
+      new ApiError({
+        code: 'passportReaderNotConfigured',
+        status: 503,
+        message: 'passport reader not configured',
+      }),
+    );
+    mount(store);
+
+    setPassport(JPEG_FILE);
+
+    await vi.waitFor(() => {
+      expect(getStatusText()).toBe(texts.th.notConfigured);
+    });
+    expect(postBytes).toHaveBeenCalledTimes(1);
+
+    const secondFile = new File([new Uint8Array([0xff, 0xd8, 0x01])], 'passport2.jpg', {
+      type: 'image/jpeg',
+    });
+    setPassport(secondFile);
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(postBytes).toHaveBeenCalledTimes(1);
+    expect(getStatusText()).toBe(texts.th.notConfigured);
+  });
+
+  // F18c: a busy answer -> desk.ocr.failed, unchanged
+  it('F18c: shows desk.ocr.failed when server answers busy', async () => {
+    const { store, postBytes, setPassport } = createTestStore();
+    postBytes.mockRejectedValueOnce(
+      new ApiError({
+        code: 'passportReaderBusy',
+        status: 503,
+        message: 'passport reader busy',
+      }),
+    );
+    mount(store);
+
+    setPassport(JPEG_FILE);
+
+    await vi.waitFor(() => {
+      expect(getStatusText()).toBe(texts.th.failed);
     });
   });
 });

@@ -11,7 +11,7 @@ use sqlx::{Postgres, Row, Transaction};
 use xc_auth::domain::access::Actor;
 use xc_kernel::ids::BranchId;
 
-use crate::application::desk::queue_desk::QueueDesk;
+use crate::application::desk::queue_desk::{QueueDesk, ticket_has_live_sale};
 use crate::application::issue::ticket_issuer::TicketIssuer;
 use crate::application::status::status_service::StatusService;
 use crate::domain::repository::QueueRepository;
@@ -95,15 +95,16 @@ impl WalkInDesk {
     /// The ticket the customer at the counter is served under, SERVING and held by `actor` when it
     /// answers (W3). In this order (W4):
     /// 1. the ticket stored under `desk-sale:<sale_key>` in the branch (a replay), unchanged;
-    /// 2. the actor's held CALLED/SERVING walk-in ticket with no booking, no kiosk request and no
-    ///    other desk sale's key: started if CALLED, then returned;
+    /// 2. the actor's held CALLED/SERVING walk-in ticket with no booking, no kiosk request and
+    ///    either no other desk sale's key or no non-CANCELLED transaction naming it: started if
+    ///    CALLED, then returned;
     /// 3. `customer_id`'s active `App` ticket of today in the branch, called and started;
     /// 4. a new `IssueSource::Desk` ticket under `desk-sale:<sale_key>`, called and started.
     ///
-    /// A held booking or kiosk ticket, or a held ticket of another desk sale, refuses
-    /// `QueueError::AlreadyServing`. When `may_issue` is false (W6), (1) and (2) still answer and
-    /// (3) and (4) refuse `QueueError::OutsideServiceHours`. A closed queue refuses
-    /// `QueueError::QueueClosed` (W7) and uses no number.
+    /// A held booking or kiosk ticket, or a held ticket of another desk sale with a live
+    /// transaction, refuses `QueueError::AlreadyServing`. When `may_issue` is false (W6), (1) and
+    /// (2) still answer and (3) and (4) refuse `QueueError::OutsideServiceHours`. A closed queue
+    /// refuses `QueueError::QueueClosed` (W7) and uses no number.
     #[allow(clippy::too_many_arguments)]
     pub async fn serve_in(
         &self,
@@ -133,7 +134,8 @@ impl WalkInDesk {
                 let held = map_row(row)?;
                 if held.booking_id.is_none()
                     && held.kiosk_request_id.is_none()
-                    && !held.idempotency_key.starts_with(DESK_SALE_KEY_PREFIX)
+                    && (!held.idempotency_key.starts_with(DESK_SALE_KEY_PREFIX)
+                        || !ticket_has_live_sale(tx, &held.id).await?)
                 {
                     if held.status == TicketStatus::Called {
                         return self.desk.start_in(tx, actor, branch, &held.id, now).await;
