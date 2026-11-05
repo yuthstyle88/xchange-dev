@@ -145,9 +145,7 @@ impl CommandAction for HandoverAccept {
             )
             .await
             .map_err(|e| match e {
-                AppError::Domain(ref msg)
-                    if msg == &ShiftError::OutsideShiftWindow.to_string() =>
-                {
+                AppError::Domain(ref msg) if msg == &ShiftError::OutsideShiftWindow.to_string() => {
                     V3Error::new(
                         "outsideShiftWindow",
                         None,
@@ -164,8 +162,7 @@ impl CommandAction for HandoverAccept {
                     )
                 }
                 other => from_cash_error(other),
-            })?
-        {
+            })? {
             HandoverAccepted::Accepted(h) => Ok(answer(*h)),
             HandoverAccepted::AwaitingFinance(_) => Ok(HandoverRecordOutput {
                 id: input.id,

@@ -189,5 +189,8 @@ async fn cs11_r1c_admin_shifts_no_template() {
         .unwrap_or_else(|| panic!("shift {shift_id} not found in {rows}"));
 
     assert_eq!(row["shiftName"], Value::Null, "{row}");
-    assert!(row["businessDate"].is_string(), "businessDate should be string: {row}");
+    assert!(
+        row["businessDate"].is_string(),
+        "businessDate should be string: {row}"
+    );
 }

@@ -20,7 +20,9 @@ fn march(d: u32) -> NaiveDate {
 }
 
 fn utc(iso: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(iso).unwrap().with_timezone(&Utc)
+    DateTime::parse_from_rfc3339(iso)
+        .unwrap()
+        .with_timezone(&Utc)
 }
 
 fn template(name: &str, start: NaiveTime, end: NaiveTime, position: i16) -> ShiftTemplate {

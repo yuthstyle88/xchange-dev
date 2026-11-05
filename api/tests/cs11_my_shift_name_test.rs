@@ -256,6 +256,9 @@ async fn cs11_r1c_my_shift_no_template() {
         .expect("strip the shift's template");
     let data = room.my_shift(&room.teller).await;
     assert_eq!(data["shiftName"], Value::Null, "{data}");
-    assert!(data["businessDate"].is_string(), "businessDate should be string: {data}");
+    assert!(
+        data["businessDate"].is_string(),
+        "businessDate should be string: {data}"
+    );
     room.finish().await;
 }

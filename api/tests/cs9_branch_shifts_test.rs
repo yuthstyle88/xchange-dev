@@ -219,7 +219,12 @@ async fn cs9_e1_save_by_branches_manage_stores_and_returns_plan() {
     });
 
     let res = h
-        .call(&h.admin, Method::PUT, "/api/branches/shifts", Some(plan_input))
+        .call(
+            &h.admin,
+            Method::PUT,
+            "/api/branches/shifts",
+            Some(plan_input),
+        )
         .await;
 
     assert_eq!(res.status, StatusCode::OK, "save failed: {}", res.text);
@@ -282,7 +287,12 @@ async fn cs9_e2_save_by_teller_is_forbidden() {
     });
 
     let res = h
-        .call(&h.teller, Method::PUT, "/api/branches/shifts", Some(plan_input))
+        .call(
+            &h.teller,
+            Method::PUT,
+            "/api/branches/shifts",
+            Some(plan_input),
+        )
         .await;
 
     assert!(
@@ -350,7 +360,12 @@ async fn cs9_e3b_save_plan_with_bad_time_is_refused_422() {
     });
 
     let res = h
-        .call(&h.admin, Method::PUT, "/api/branches/shifts", Some(bad_start))
+        .call(
+            &h.admin,
+            Method::PUT,
+            "/api/branches/shifts",
+            Some(bad_start),
+        )
         .await;
 
     assert_eq!(res.status, StatusCode::UNPROCESSABLE_ENTITY, "{}", res.text);

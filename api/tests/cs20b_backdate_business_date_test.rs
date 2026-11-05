@@ -73,7 +73,10 @@ async fn refusal_at(shop: &Shop, paid_at: &str, value_date: &str, now: &str) -> 
 }
 
 fn assert_starts(got: &str, prefix: &str, row: &str) {
-    assert!(got.starts_with(prefix), "{row}: expected `{prefix}…`, got `{got}`");
+    assert!(
+        got.starts_with(prefix),
+        "{row}: expected `{prefix}…`, got `{got}`"
+    );
 }
 
 /// D1: paid 5 Nov 02:00 Bangkok (before the 06:00 cutover) belongs to business date 4 Nov.
@@ -81,7 +84,13 @@ fn assert_starts(got: &str, prefix: &str, row: &str) {
 async fn d1_a_two_am_deal_is_dated_the_previous_business_date() {
     let shop = Shop::start().await;
     // now 5 Nov 10:00 Bangkok
-    let got = refusal_at(&shop, "2026-11-04T19:00:00Z", "2026-11-04", "2026-11-05T03:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-04T19:00:00Z",
+        "2026-11-04",
+        "2026-11-05T03:00:00Z",
+    )
+    .await;
     assert_starts(&got, WINDOW_PASSED, "D1");
     shop.finish().await;
 }
@@ -90,7 +99,13 @@ async fn d1_a_two_am_deal_is_dated_the_previous_business_date() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn d2_the_calendar_date_of_a_two_am_deal_is_refused() {
     let shop = Shop::start().await;
-    let got = refusal_at(&shop, "2026-11-04T19:00:00Z", "2026-11-05", "2026-11-05T03:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-04T19:00:00Z",
+        "2026-11-05",
+        "2026-11-05T03:00:00Z",
+    )
+    .await;
     assert_starts(&got, VALUE_DATE_REFUSED, "D2");
     shop.finish().await;
 }
@@ -99,7 +114,13 @@ async fn d2_the_calendar_date_of_a_two_am_deal_is_refused() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn d3_before_the_cutover_today_is_still_the_previous_business_date() {
     let shop = Shop::start().await;
-    let got = refusal_at(&shop, "2026-11-04T19:00:00Z", "2026-11-04", "2026-11-04T20:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-04T19:00:00Z",
+        "2026-11-04",
+        "2026-11-04T20:00:00Z",
+    )
+    .await;
     assert_starts(&got, WINDOW_PASSED, "D3");
     shop.finish().await;
 }
@@ -108,9 +129,21 @@ async fn d3_before_the_cutover_today_is_still_the_previous_business_date() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn d4_after_the_cutover_the_business_date_is_the_calendar_date() {
     let shop = Shop::start().await;
-    let got = refusal_at(&shop, "2026-11-05T00:00:00Z", "2026-11-05", "2026-11-05T03:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-05T00:00:00Z",
+        "2026-11-05",
+        "2026-11-05T03:00:00Z",
+    )
+    .await;
     assert_starts(&got, WINDOW_PASSED, "D4");
-    let got = refusal_at(&shop, "2026-11-05T00:00:00Z", "2026-11-04", "2026-11-05T03:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-05T00:00:00Z",
+        "2026-11-04",
+        "2026-11-05T03:00:00Z",
+    )
+    .await;
     assert_starts(&got, VALUE_DATE_REFUSED, "D4 previous day");
     shop.finish().await;
 }
@@ -121,7 +154,13 @@ async fn d4_after_the_cutover_the_business_date_is_the_calendar_date() {
 async fn d5_without_a_plan_the_calendar_date_is_the_business_date() {
     let shop = Shop::start().await;
     clear_plan(&shop.pool, MAIN).await;
-    let got = refusal_at(&shop, "2026-11-04T19:00:00Z", "2026-11-05", "2026-11-05T03:00:00Z").await;
+    let got = refusal_at(
+        &shop,
+        "2026-11-04T19:00:00Z",
+        "2026-11-05",
+        "2026-11-05T03:00:00Z",
+    )
+    .await;
     assert_starts(&got, WINDOW_PASSED, "D5");
     shop.finish().await;
 }

@@ -368,13 +368,11 @@ impl CommandAction for TransactionCreateCommand {
             Some(ref s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
                 .map_err(|_| invalid("valueDate", "invalid valueDate"))?,
             None => {
-                let plan = ShiftPlanService::new(
-                    Arc::new(PgShiftTemplateStore),
-                    self.branch_tx.clone(),
-                )
-                .plan_in(tx, branch)
-                .await
-                .map_err(refusal)?;
+                let plan =
+                    ShiftPlanService::new(Arc::new(PgShiftTemplateStore), self.branch_tx.clone())
+                        .plan_in(tx, branch)
+                        .await
+                        .map_err(refusal)?;
                 plan.business_date_of(now)
                     .unwrap_or_else(|| now.with_timezone(&plan.timezone()).date_naive())
             }
@@ -412,13 +410,7 @@ impl CommandAction for TransactionCreateCommand {
         };
         let made = self
             .service
-            .run_with_ticket_in(
-                tx,
-                req,
-                input.queue_ticket_id,
-                &save_actor(who)?,
-                now,
-            )
+            .run_with_ticket_in(tx, req, input.queue_ticket_id, &save_actor(who)?, now)
             .await
             .map_err(refusal)?;
         if let Some(ref shift_id) = made.shift_id {

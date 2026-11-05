@@ -305,11 +305,8 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
     let status = StatusService::new(branch_tx.clone(), queue.clone());
-    let counters: Arc<dyn ShiftLifecycleHook> = Arc::new(CounterService::new(
-        branch_tx,
-        queue,
-        status,
-    ));
+    let counters: Arc<dyn ShiftLifecycleHook> =
+        Arc::new(CounterService::new(branch_tx, queue, status));
     let day: Arc<dyn ShiftLifecycleHook> = Arc::new(queue_day_hook(pool));
     Arc::new(ShiftLifecycleHooks::new(vec![counters, day]))
 }

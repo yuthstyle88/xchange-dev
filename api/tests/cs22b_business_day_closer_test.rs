@@ -123,10 +123,12 @@ async fn cs22b_b2_same_sweep_again_returns_zero_queue_version_unchanged() {
 #[tokio::test]
 async fn cs22b_b3_branch_with_no_live_template_skipped_without_error() {
     let db = TestDb::start().await;
-    sqlx::query("INSERT INTO branches (id, name, timezone) VALUES ('B02', 'Branch B02', 'Asia/Bangkok')")
-        .execute(&db.pool)
-        .await
-        .expect("insert branch");
+    sqlx::query(
+        "INSERT INTO branches (id, name, timezone) VALUES ('B02', 'Branch B02', 'Asia/Bangkok')",
+    )
+    .execute(&db.pool)
+    .await
+    .expect("insert branch");
     sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = 'B02'")
         .execute(&db.pool)
         .await

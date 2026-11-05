@@ -204,7 +204,10 @@ async fn cs10_e5c_caller_without_permission_is_refused() {
     )
     .await;
 
-    let uri = format!("/api/v3/views/open_shift_choices?branch={}", branch.as_str());
+    let uri = format!(
+        "/api/v3/views/open_shift_choices?branch={}",
+        branch.as_str()
+    );
 
     // 1. Caller without myShift permission on this branch -> 403 Forbidden (outOfScope)
     let req_unauth = atest::TestRequest::default()
@@ -239,7 +242,10 @@ async fn cs10_e5c_caller_without_permission_is_refused() {
 
     let bytes = atest::read_body(resp).await;
     let body: Value = serde_json::from_slice(&bytes).unwrap();
-    assert!(body["data"]["choices"].is_array(), "data.choices must be an array: {body}");
+    assert!(
+        body["data"]["choices"].is_array(),
+        "data.choices must be an array: {body}"
+    );
 
     db.finish().await;
 }
@@ -281,7 +287,11 @@ fn cs10_generated_ts_matches_export_types() {
     let committed_file = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../web/src/shared/api/generated/open_shift_choices.ts");
     if committed_file.exists() {
-        let committed = std::fs::read_to_string(&committed_file).expect("read committed open_shift_choices.ts");
-        assert_eq!(committed, exported, "committed open_shift_choices.ts must match exported");
+        let committed =
+            std::fs::read_to_string(&committed_file).expect("read committed open_shift_choices.ts");
+        assert_eq!(
+            committed, exported,
+            "committed open_shift_choices.ts must match exported"
+        );
     }
 }

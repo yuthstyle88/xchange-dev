@@ -21,9 +21,7 @@ use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::branch_shifts::{BranchShiftsData, BranchShiftsSaveInput};
-use crate::presentation::http::v3::command::{
-    CommandAction, CommandEndpoint, server_error,
-};
+use crate::presentation::http::v3::command::{CommandAction, CommandEndpoint, server_error};
 use crate::presentation::http::v3::error::V3Error;
 
 pub struct BranchShiftsSaveCommand(pub PgPool);
@@ -120,17 +118,16 @@ impl CommandAction for BranchShiftsSaveCommand {
             });
         }
 
-        let org: String = match sqlx::query_scalar(
-            "SELECT organization_id::text FROM branches WHERE id = $1",
-        )
-        .bind(branch.as_str())
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|_| server_error())?
-        {
-            Some(o) => o,
-            None => who.organization_id.clone(),
-        };
+        let org: String =
+            match sqlx::query_scalar("SELECT organization_id::text FROM branches WHERE id = $1")
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(|_| server_error())?
+            {
+                Some(o) => o,
+                None => who.organization_id.clone(),
+            };
 
         let branch_tx = BranchTx::new(Transactor::new(self.0.clone()));
         let service = ShiftPlanService::new(Arc::new(PgShiftTemplateStore), branch_tx);
@@ -144,12 +141,14 @@ impl CommandAction for BranchShiftsSaveCommand {
                     let (reason, detail) = rest.split_once(':').unwrap_or((rest, ""));
                     shift_plan_invalid(reason, detail)
                 }
-                pos_error::AppError::Validation(msg) if msg == "shiftTemplateUnknown" => V3Error::new(
-                    "shiftTemplateUnknown",
-                    None,
-                    "ไม่พบกะที่ต้องการแก้ไข กรุณารีเฟรช".to_string(),
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                ),
+                pos_error::AppError::Validation(msg) if msg == "shiftTemplateUnknown" => {
+                    V3Error::new(
+                        "shiftTemplateUnknown",
+                        None,
+                        "ไม่พบกะที่ต้องการแก้ไข กรุณารีเฟรช".to_string(),
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                    )
+                }
                 pos_error::AppError::Domain(msg) => {
                     V3Error::new("domainError", None, msg, StatusCode::BAD_REQUEST)
                 }
