@@ -1,0 +1,81 @@
+/* xchange: our additions to the shop's kiosk look. Every rule is lifted from their own attract-loop demo
+   card (.xa-* in kiosk-attract.css) with the tokens of xc-tokens.css. Loaded after kiosk.css and
+   kiosk-attract.css, so it wins at the same specificity. Owner's words, 2026-11-05:
+   - the amount area, final ("ไม่เปลี่ยน", "ผมว่ามัน ok"), top to bottom: the amount field at full width
+     (the currency code inside on the left in the grey label style, a large bold number on the right, a
+     2px red border on white, the demo card's rounded corners, no number spinner), one row of the four
+     quick amounts, the complete keypad 1-9 . 0 ⌫ ("ตรง ตัวเลข 1-5"), then the red estimate;
+   - phones (<= 600px): the rest of Step 1 drawn as the demo card ("ตอนเป็น มือถือ"). Wider screens keep
+     kiosk.css's layout around the amount area. */
+body.customer-kiosk .currency-shortcuts button .currency-sym{display:none}
+
+/* the field: .xa-field */
+body.customer-kiosk .amount-field{position:relative;direction:ltr}
+body.customer-kiosk .amount-field #amount{width:100%;height:72px;min-height:72px;margin:0;padding:8px 18px 8px 76px;border:2px solid var(--xc-brand);border-radius:var(--xc-radius-3xl);background:var(--xc-surface);color:var(--xc-ink);font:800 36px/1 var(--xc-font-sans);text-align:right;letter-spacing:0;font-variant-numeric:tabular-nums;caret-color:var(--xc-brand);-moz-appearance:textfield;appearance:textfield}
+body.customer-kiosk .amount-field #amount::placeholder{color:var(--xc-gray-300);text-align:right}
+body.customer-kiosk .amount-field #amount::-webkit-inner-spin-button,body.customer-kiosk .amount-field #amount::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+body.customer-kiosk .amount-field #amount:focus{outline:0;box-shadow:0 0 0 3px var(--xc-brand-soft)}
+body.customer-kiosk .amount-code{position:absolute;left:18px;top:50%;transform:translateY(-50%);font-size:18px;font-weight:600;color:var(--xc-muted);pointer-events:none}
+/* the quick amounts, one row: the keys' look (.xa-key), the selected one bordered in red (.xa-tile.sel) */
+body.customer-kiosk .quick-amounts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 0}
+body.customer-kiosk .quick-amounts button{min-width:0;min-height:0;height:48px;padding:0 4px;border:2px solid transparent;border-radius:var(--xc-radius-lg);background:var(--xc-gray-100);color:var(--xc-ink);font:800 17px/1 var(--xc-font-sans);box-shadow:none;touch-action:manipulation}
+body.customer-kiosk .quick-amounts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+
+@media(max-width:600px){
+ /* the card: one white surface, as .xa-device */
+ body.customer-kiosk #select{display:block;background:var(--xc-surface);border-radius:22px;box-shadow:0 12px 32px rgba(84,0,30,.12);padding:16px 14px 18px}
+ body.customer-kiosk #select .currency-pane,body.customer-kiosk #select .layout-amount,body.customer-kiosk #select .layout-result{background:transparent;padding:0;margin:0;border:0;border-radius:0;box-shadow:none}
+ /* 1. side toggle: .xa-dirs / .xa-dir */
+ body.customer-kiosk #select>.directions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 4px;padding:0;border:0}
+ body.customer-kiosk #select>.directions button{min-height:58px;padding:8px 10px;border:2px solid var(--xc-line);border-radius:12px;background:var(--xc-surface);color:var(--xc-ink);font-size:14px;font-weight:700;text-align:start;box-shadow:none;line-height:1.25}
+ body.customer-kiosk #select>.directions button small{display:block;font-weight:400;font-size:11px;color:var(--xc-muted);margin-top:2px}
+ body.customer-kiosk #select>.directions button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+ body.customer-kiosk #select>.directions button.selected:after,body.customer-kiosk #select>.directions button bdi:after{display:none}
+ /* 2. currency label + 3-column tiles: .xa-lbl / .xa-tiles / .xa-tile / .xa-sym */
+ body.customer-kiosk .currency-pane>label,body.customer-kiosk #amount-label,body.customer-kiosk #payment-choice>label{margin:12px 0 6px;font-size:13px;font-weight:600;color:var(--xc-muted);letter-spacing:0;text-transform:none}
+ body.customer-kiosk #currency-search{min-height:40px;padding:6px 10px;font-size:14px}
+ body.customer-kiosk #currency{min-height:40px;margin-top:8px;padding:6px 10px;font-size:14px}
+ body.customer-kiosk .currency-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:142px;overflow-y:auto;margin:8px 0 0;padding:2px}
+ body.customer-kiosk .currency-shortcuts button{min-width:0;min-height:40px;height:40px;padding:0 8px;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:6px;border:2px solid var(--xc-line);border-radius:10px;background:var(--xc-surface);color:var(--xc-ink);box-shadow:none}
+ body.customer-kiosk .currency-shortcuts button .currency-flag,body.customer-kiosk .currency-shortcuts button small,body.customer-kiosk .currency-shortcuts button.featured::after{display:none}
+ body.customer-kiosk .currency-shortcuts button .currency-sym{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--xc-gray-100);color:var(--xc-brand);font-size:13px;font-weight:800;line-height:1;overflow:hidden}
+ body.customer-kiosk .currency-shortcuts button bdi{font-size:15px;font-weight:800}
+ body.customer-kiosk .currency-shortcuts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-ink)}
+ body.customer-kiosk .currency-shortcuts button.selected .currency-sym{background:var(--xc-brand);color:var(--xc-on-brand)}
+ /* 3. the rate, the amount label, the field, the quick amounts, then the complete keypad at full width (.xa-keys / .xa-key) */
+ body.customer-kiosk #rates{margin:12px 0 0;padding:0;background:transparent;border:0}
+ body.customer-kiosk #rates>div{font-size:12px;color:var(--xc-muted)}
+ body.customer-kiosk #rates strong{font-size:14px;color:var(--xc-ink)}
+ body.customer-kiosk .amount-field #amount{height:58px;min-height:58px;padding:6px 14px 6px 60px;border-radius:var(--xc-radius-xl);font-size:28px}
+ body.customer-kiosk .amount-code{left:14px;font-size:14px}
+ body.customer-kiosk .quick-amounts{gap:6px;margin-top:8px}
+ body.customer-kiosk .quick-amounts button{height:40px;font-size:15px}
+ body.customer-kiosk #amount-keypad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:none;grid-auto-rows:44px;gap:6px;height:auto;margin:8px 0 0}
+ body.customer-kiosk #amount-keypad button{min-height:0;height:44px;padding:0;border:0;border-radius:10px;background:var(--xc-gray-100);color:var(--xc-ink);font:800 20px/1 var(--xc-font-sans);touch-action:manipulation}
+ /* 4. the estimate in red (.xa-est); the receive field it repeats is not drawn */
+ body.customer-kiosk #receive-label,body.customer-kiosk #receive{display:none}
+ body.customer-kiosk #estimate{min-height:0;margin:12px 0 0;padding:0;background:transparent;border-radius:0;color:var(--xc-brand);font-size:15px;font-weight:600;overflow-wrap:anywhere}
+ body.customer-kiosk #payment-choice select{min-height:44px;padding:6px 10px;font-size:15px}
+ /* 5. a full-width red Review (.xa-btn) */
+ body.customer-kiosk #review{width:100%;min-height:52px;margin:14px 0 0;border:0;border-radius:12px;background:var(--xc-brand);color:var(--xc-on-brand);font-size:17px;font-weight:800;letter-spacing:0;box-shadow:none}
+ body.customer-kiosk #review:disabled{background:var(--xc-gray-300);opacity:1}
+}
+
+/* xchange: the attract loop's step-1 card (kiosk-attract.js #xa-s1) shows the screen above: the field with the
+   code on the left and the number on the right, one row of quick amounts, the complete keypad (owner 2026-11-05:
+   "ก็ทำตาม งานที่เราแก้ เลย"). Sizes are the demo stage's (1080 px wide), fitted into its 990 px card. */
+#xa-s1 .xa-dbody{padding:20px 40px}
+#xa-s1 .xa-dir{height:92px;padding:10px 18px;font-size:26px}
+#xa-s1 .xa-lbl{height:34px;font-size:24px;margin:10px 0 6px}
+#xa-s1 .xa-tile{height:56px}
+#xa-s1 .xa-tiles{gap:12px}
+#xa-s1 .xa-field{height:84px;border:3px solid var(--xc-brand);background:var(--xc-surface);font-size:50px}
+#xa-s1 .xa-field small{font-size:26px;font-weight:600}
+#xa-s1 .xa-caret{height:48px}
+#xa-s1 .xa-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
+#xa-s1 .xa-chip{height:54px;border:3px solid transparent;border-radius:14px;background:var(--xc-gray-100);display:grid;place-items:center;font-size:26px;font-weight:800}
+#xa-s1 .xa-chip.sel{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+#xa-s1 .xa-keys{grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
+#xa-s1 .xa-key{height:46px;font-size:26px}
+#xa-s1 .xa-est{height:48px;line-height:48px;margin-top:10px;font-size:28px}
+#xa-s1 .xa-btn{height:72px;margin-top:6px;font-size:34px}

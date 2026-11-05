@@ -275,12 +275,34 @@ pub async fn publish_rate_per_one(
 /// - #3473: the kiosk `get` answer appends `quoteId`.
 /// - KC-S (#4176, `docs/design/blueprint/kiosk-cancel.md` §3.4): the kiosk `confirm`
 ///   answer appends `cancelToken` on the confirm that moves the request to WAITING.
+/// - The kiosk swap (owner 2026-11-05; `api/src/application/kiosk_popular.rs`, `kiosk_screen.rs`): the
+///   kiosk `rates` answer appends `ask` (the ASK currencies, no prices), `popular` (a list of codes;
+///   `["[]"]` below marks a list) and `screen` (the owner-set screen values).
 pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
     (
         "/api/kiosk",
         "rates",
         "freshness",
         &["publishedAt", "sourceDate", "stale"],
+    ),
+    ("/api/kiosk", "rates", "ask", &["[]"]),
+    ("/api/kiosk", "rates", "popular", &["[]"]),
+    (
+        "/api/kiosk",
+        "rates",
+        "screen",
+        &[
+            "defaultPaymentMethod",
+            "defaults",
+            "idleSeconds",
+            "popularDays",
+            "quickAmounts",
+            "refreshSeconds",
+            "reviewSeconds",
+            "set",
+            "source",
+            "tiles",
+        ],
     ),
     ("/api/kiosk", "get", "quoteId", &[]),
     ("/api/kiosk", "confirm", "cancelToken", &[]),
@@ -304,7 +326,9 @@ pub fn without_v3_added_keys(
             continue;
         };
         if let Some(added) = map.remove(*key) {
-            if fields.is_empty() {
+            if *fields == ["[]"] {
+                assert!(added.is_array(), "{label}: $.{key} is a list; got {added}");
+            } else if fields.is_empty() {
                 assert!(
                     added.is_string() || added.is_null(),
                     "{label}: $.{key} is a string or null; got {added}"

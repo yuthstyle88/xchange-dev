@@ -139,6 +139,9 @@ say "binary installed: $BIN sha256 $(sha_of "$BIN")"
 
 # 6. pages: extracted on this host from the installed v2 bundle, once.
 #    To extract again after the v2 bundle changed: move $WEB_DIR away, re-run.
+#    The customer kiosk (/kiosk and its kiosk*.js/css and xc-tokens.css) is not taken from here
+#    any more: it is compiled into the binary (api/static/kiosk/) and wins over $WEB_DIR, so it
+#    changes with every binary update.sh installs and never needs this extraction again.
 if ! sudo test -d "$WEB_DIR" || [ -z "$(sudo ls -A "$WEB_DIR")" ]; then
   need node
   NODE="$(command -v node)"

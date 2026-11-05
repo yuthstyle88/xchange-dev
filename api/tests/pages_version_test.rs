@@ -8,6 +8,9 @@
 //! - take the build from a constant, not the state  -> …_matches_health_ready
 //! - add the line to static files or redirects      -> static_file_… / a_redirect_…
 //! - skip the escaping                              -> the_values_are_escaped
+//!
+//! `/kiosk` (used below) is compiled in since 2026-11-05 (`api/static/kiosk/`); it still carries
+//! the one version line, which is what these tests read from it.
 
 mod common;
 
@@ -256,13 +259,23 @@ async fn the_values_are_escaped() {
 
 #[actix_web::test]
 async fn a_page_without_a_body_end_gets_the_line_at_the_end_once() {
-    // /kiosk is chosen from v2_page_cases.json: it is a plain v2 page
-    // that no V1, V2 or V3 screen will take over (design §6: Flutter app, not in this phase).
+    // Restated 2026-11-05: /kiosk was the page used here, and it is compiled in now
+    // (api/static/kiosk/), so a page still read from web.dir is used. Once every such page is
+    // a v3 screen none is left; `pages.rs`'s unit test
+    // `a_page_without_end_tags_gets_the_version_line_at_the_end_once` pins the same branch.
+    let Some((path, file)) = [
+        ("/devices", "devices.html"),
+        ("/staff-guide", "staff-guide.html"),
+    ]
+    .into_iter()
+    .find(|(path, _)| !ScreenTable::compiled().holds(path)) else {
+        return;
+    };
     let dir = std::env::temp_dir().join(format!("xc-version-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("kiosk.html"), "<html><head></head><p>no end tags").unwrap();
+    std::fs::write(dir.join(file), "<html><head></head><p>no end tags").unwrap();
     let app = app!(&dir, None);
-    let (status, body) = get!(&app, "/kiosk", "owner");
+    let (status, body) = get!(&app, path, "owner");
     std::fs::remove_dir_all(&dir).ok();
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.matches(MARK).count(), 1, "{body}");

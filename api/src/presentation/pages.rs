@@ -92,6 +92,8 @@ struct PageSpec {
     kind: PageKind,
     who_signed_in: bool,
     scripts: &'static [&'static str],
+    /// The page compiled into the server, read instead of `file` in `web.dir`.
+    compiled: Option<&'static str>,
 }
 
 const DESK_SCRIPTS: &[&str] = &[
@@ -104,6 +106,61 @@ const DESK_SCRIPTS: &[&str] = &[
 
 const STAFF_DESK_SCRIPT: &str = "<script>let staffDraftId='';const staffGasOriginal=gasCall;gasCall=async function(name,payload){if(name==='reserveCustomer'&&!staffDraftId){const r=await fetch('/api/tx-drafts',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json','x-xchange-request':'1','idempotency-key':crypto.randomUUID()},body:JSON.stringify({branch:window.XC_BRANCH||'',side:s.type,currency:s.currency,amount:String(s.amount)})});const answer=await r.json();if(!r.ok)throw new Error((answer.error&&answer.error.message)||answer.error||'draftBegin');staffDraftId=answer.id;}if(name==='saveTransaction')payload={...payload,staffDraftId};return staffGasOriginal(name,payload);};</script>";
 
+/// The customer kiosk is this repository's own (`api/static/kiosk/`): the shop's live kiosk at
+/// xc-th.work, captured 2026-11-05 (byte copies and what changed:
+/// `docs/design/reference/kiosk-example/README.md`). Compiled in, so `/kiosk` and its files no longer
+/// come from what install once extracted from the v2 bundle into `web.dir`, and win over anything
+/// `web.dir` still holds under the same names. The sign-in gate of `/kiosk` (#6096) is unchanged.
+const KIOSK_PAGE: &str = include_str!("../../static/kiosk/kiosk.html");
+
+const JS: &str = "text/javascript; charset=utf-8";
+const CSS: &str = "text/css; charset=utf-8";
+
+/// The kiosk page's own files, at the paths `kiosk.html` names.
+const KIOSK_FILES: &[(&str, &str, &str)] = &[
+    ("/kiosk.js", JS, include_str!("../../static/kiosk/kiosk.js")),
+    (
+        "/kiosk-i18n.js",
+        JS,
+        include_str!("../../static/kiosk/kiosk-i18n.js"),
+    ),
+    (
+        "/kiosk-language-extras.js",
+        JS,
+        include_str!("../../static/kiosk/kiosk-language-extras.js"),
+    ),
+    (
+        "/kiosk-attract.js",
+        JS,
+        include_str!("../../static/kiosk/kiosk-attract.js"),
+    ),
+    (
+        "/kiosk.css",
+        CSS,
+        include_str!("../../static/kiosk/kiosk.css"),
+    ),
+    (
+        "/kiosk-attract.css",
+        CSS,
+        include_str!("../../static/kiosk/kiosk-attract.css"),
+    ),
+    (
+        "/kiosk-fonts.css",
+        CSS,
+        include_str!("../../static/kiosk/kiosk-fonts.css"),
+    ),
+    (
+        "/kiosk-xchange.css",
+        CSS,
+        include_str!("../../static/kiosk/kiosk-xchange.css"),
+    ),
+    (
+        "/xc-tokens.css",
+        CSS,
+        include_str!("../../static/kiosk/xc-tokens.css"),
+    ),
+];
+
 const PAGE_SPECS: &[PageSpec] = &[
     PageSpec {
         path: "/",
@@ -111,6 +168,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Branch,
         who_signed_in: true,
         scripts: &["/admin-devices.js", "/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/desk",
@@ -118,6 +176,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Branch,
         who_signed_in: true,
         scripts: DESK_SCRIPTS,
+        compiled: None,
     },
     PageSpec {
         path: "/receipt-sample",
@@ -125,6 +184,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Branch,
         who_signed_in: true,
         scripts: &[],
+        compiled: None,
     },
     PageSpec {
         path: "/staff",
@@ -132,6 +192,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: false,
         scripts: &[],
+        compiled: None,
     },
     PageSpec {
         path: "/staff/report",
@@ -139,6 +200,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: false,
         scripts: &[],
+        compiled: None,
     },
     PageSpec {
         path: "/login",
@@ -146,6 +208,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: false,
         scripts: &[],
+        compiled: None,
     },
     PageSpec {
         path: "/kiosk",
@@ -153,6 +216,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &[],
+        compiled: Some(KIOSK_PAGE),
     },
     PageSpec {
         path: "/devices",
@@ -160,6 +224,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &["/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/kiosk-queue.html",
@@ -167,6 +232,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &["/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/kiosk-currencies.html",
@@ -174,6 +240,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &["/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/staff-guide",
@@ -181,6 +248,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &["/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/staff-guide.html",
@@ -188,6 +256,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::Plain,
         who_signed_in: true,
         scripts: &["/account-bar.js"],
+        compiled: None,
     },
     PageSpec {
         path: "/staff/desk",
@@ -195,6 +264,7 @@ const PAGE_SPECS: &[PageSpec] = &[
         kind: PageKind::DeskVariant,
         who_signed_in: false,
         scripts: DESK_SCRIPTS,
+        compiled: None,
     },
 ];
 
@@ -206,6 +276,9 @@ pub fn configure(cfg: &mut web::ServiceConfig, _state: &AppState) {
             .default_service(web::to(fallback)),
     );
     compiled_script(cfg, "/_xc/desk.js", include_str!("../../static/xc-desk.js"));
+    for &(path, content_type, body) in KIOSK_FILES {
+        compiled_file(cfg, path, content_type, body);
+    }
 
     cfg.service(
         web::resource("/devices/receipt")
@@ -571,9 +644,25 @@ async fn page_handler(req: HttpRequest) -> HttpResponse {
         return plain_404();
     };
     let web_dir = Path::new(&state.settings.web.dir);
-    let Some(mut content) = read_page_file(web_dir, spec.file) else {
+    let page = match spec.compiled {
+        Some(page) => Some(page.to_owned()),
+        None => read_page_file(web_dir, spec.file),
+    };
+    let Some(mut content) = page else {
         return plain_404();
     };
+
+    if spec.path == "/kiosk" {
+        // the kiosk's owner-set values before its first `rates` answer, which carries the branch's own
+        // (`application::kiosk_screen`): never constants in kiosk.js
+        let screen = crate::application::kiosk_screen::KioskScreen::not_set().to_json();
+        if let Some(pos) = content.find("<head>") {
+            content.insert_str(
+                pos + "<head>".len(),
+                &format!("<script>window.XC_KIOSK_SCREEN={screen};</script>"),
+            );
+        }
+    }
 
     if let Some(branch_name) = branch {
         let json_branch =
@@ -804,11 +893,20 @@ async fn forms_script() -> HttpResponse {
 }
 
 fn compiled_script(cfg: &mut web::ServiceConfig, path: &'static str, body: &'static str) {
+    compiled_file(cfg, path, JS, body);
+}
+
+fn compiled_file(
+    cfg: &mut web::ServiceConfig,
+    path: &'static str,
+    content_type: &'static str,
+    body: &'static str,
+) {
     cfg.service(
         web::resource(path)
             .route(web::get().to(move || async move {
                 HttpResponse::Ok()
-                    .content_type("text/javascript; charset=utf-8")
+                    .content_type(content_type)
                     .insert_header(("Cache-Control", "no-cache"))
                     .insert_header(("X-Content-Type-Options", "nosniff"))
                     .body(body)
@@ -1055,6 +1153,23 @@ mod tests {
         );
         let body = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
         assert_eq!(body, "{\"error\":\"เซิร์ฟเวอร์ขัดข้อง\"}");
+    }
+
+    #[test]
+    fn a_page_without_end_tags_gets_the_version_line_at_the_end_once() {
+        let build = BuildInfo {
+            version: "1.0.0".to_string(),
+            build: "abcdef0123".to_string(),
+            built_at: "2001-02-03T04:05:06Z".to_string(),
+        };
+        let page = add_version_line(
+            "<html><head></head><p>no end tags".to_string(),
+            &build,
+            "staging",
+        );
+        assert_eq!(page.matches("id=\"xc-version\"").count(), 1);
+        assert!(page.starts_with("<html><head></head><p>no end tags<div id=\"xc-version\""));
+        assert!(page.ends_with(">v1.0.0 · abcdef0 · staging</div>"));
     }
 
     #[test]

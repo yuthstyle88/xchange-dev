@@ -746,8 +746,14 @@ async fn c9_the_web_page_gets_the_kiosk_rates_and_unknown_is_the_public_404() {
     )
     .await;
     assert_eq!(web.status, StatusCode::OK, "{}", web.text);
+    // restated 2026-11-05 (the kiosk swap): the kiosk's answer also carries its own `ask`, `popular`
+    // and `screen` (snapshot_common `V3_ADDED_KEYS`); the rates themselves are the same
+    let mut kiosk_rates = kiosk.body.clone();
+    for key in ["ask", "popular", "screen"] {
+        kiosk_rates.as_object_mut().expect("an object").remove(key);
+    }
     assert_eq!(
-        web.body, kiosk.body,
+        web.body, kiosk_rates,
         "the same rates the kiosk core answers"
     );
 
