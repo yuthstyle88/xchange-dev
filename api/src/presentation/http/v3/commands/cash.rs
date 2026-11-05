@@ -41,6 +41,7 @@ use xc_queue::application::status::status_service::StatusService;
 use xc_queue::domain::repository::QueueRepository;
 use xc_queue::domain::ticket::live_ticket::LiveTicket;
 use xc_queue::infrastructure::repository::PgQueueRepository;
+use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
 use crate::bootstrap::AppState;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
@@ -196,6 +197,16 @@ pub(crate) fn from_cash_error(e: AppError) -> V3Error {
                 V3Error::new("outOfScope", None, message, StatusCode::FORBIDDEN)
             } else if message == HandoverError::NotPending.to_string() {
                 V3Error::new("staleVersion", None, message, StatusCode::CONFLICT)
+            } else if message == ShiftError::OutsideShiftWindow.to_string() {
+                V3Error::new("outsideShiftWindow", None, message, StatusCode::CONFLICT)
+            } else if message == ShiftError::ShiftNotChosen.to_string() {
+                // 422, as on handover accept and in configurable-shifts.md §2.3.
+                V3Error::new(
+                    "shiftNotChosen",
+                    None,
+                    message,
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                )
             } else if message.starts_with("stockInsufficient")
                 || message == TransferError::StockInsufficient.to_string()
             {
@@ -261,7 +272,7 @@ pub(crate) fn count_lines(lines: &[CashLineInput]) -> Result<Vec<CountLine>, V3E
         .collect()
 }
 
-pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+pub(crate) fn queue_day_hook(pool: &PgPool) -> QueueDayHook {
     use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
     use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
     use xc_kiosk::application::kiosk::day_close::KioskDayCloser;
@@ -271,12 +282,7 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
 
     let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
     let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
-    let status = StatusService::new(branch_tx.clone(), queue.clone());
-    let counters: Arc<dyn ShiftLifecycleHook> = Arc::new(CounterService::new(
-        branch_tx,
-        queue.clone(),
-        status.clone(),
-    ));
+    let status = StatusService::new(branch_tx, queue.clone());
     let booking = pg_booking_lifecycle(pool.clone());
     let audit = Arc::new(PgKioskAuditLog::new(PgDeviceRepository::new(pool.clone())));
     let ports = Arc::new(PgKioskPorts::new(
@@ -296,11 +302,18 @@ pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook>
         ports,
         kiosk_queue,
     ));
-    let day: Arc<dyn ShiftLifecycleHook> = Arc::new(
-        QueueDayHook::new(queue, status)
-            .with_booking_events(booking)
-            .with_kiosk_day_close(kiosk),
-    );
+    QueueDayHook::new(queue, status)
+        .with_booking_events(booking)
+        .with_kiosk_day_close(kiosk)
+}
+
+pub(crate) fn shift_lifecycle_hook(pool: &PgPool) -> Arc<dyn ShiftLifecycleHook> {
+    let branch_tx = BranchTx::new(Transactor::new(pool.clone()));
+    let queue: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
+    let status = StatusService::new(branch_tx.clone(), queue.clone());
+    let counters: Arc<dyn ShiftLifecycleHook> =
+        Arc::new(CounterService::new(branch_tx, queue, status));
+    let day: Arc<dyn ShiftLifecycleHook> = Arc::new(queue_day_hook(pool));
     Arc::new(ShiftLifecycleHooks::new(vec![counters, day]))
 }
 
@@ -345,7 +358,7 @@ impl CommandAction for CountSubmit {
         let user = caller_in(tx, who, now).await?;
         let count = self
             .counts
-            .submit_in(
+            .submit_chosen_in(
                 tx,
                 &user,
                 SubmitCount {
@@ -356,6 +369,7 @@ impl CommandAction for CountSubmit {
                     note: input.note,
                     idempotency_key: key.as_str().to_owned(),
                 },
+                input.shift_template_id.as_deref(),
                 now,
             )
             .await

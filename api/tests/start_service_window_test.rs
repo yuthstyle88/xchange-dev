@@ -1,49 +1,31 @@
-//! #4130 (owner 2026-10-21, "ทำตามที่แนะนำทั้ง 5 ข้อ", recommendation 2): service cannot start outside the
-//! branch's hours. `BranchDayService::start_service` must refuse a READY day when
-//! `ServiceWindow::allows_start(now)` is false, with the same sentence #755 pins for a refused start
-//! (`CustodyError::ServiceNotReady { window, utc_offset_minutes }`), and leave the day READY.
+//! #4130 (owner 2026-10-21, "ทำตามที่แนะนำทั้ง 5 ข้อ", recommendation 2), restated for CS-4s (#6236) by claude/35271802.
 //!
-//! Written before the implementation by the BE-R6 sub-controller (claude/studio-claude-8). Do not edit, delete or
-//! weaken; add tests in a file of your own.
+//! Under Q5 = A (selling follows the shifts; opening_hours is customer-facing only), Q7 = A (no daily pause), and T5
+//! (every plan covers 24 h), service start follows the shift plan's business day, not opening_hours.
 //!
 //! The command goes the way the staff route sends it: `BranchDayService` on PostgreSQL (`PgCustodyPorts` reads the
-//! branch's `timezone` and `opening_hours`), by a BRANCH_MANAGER of `MAIN` whose day is READY. Rows:
-//! 1. inside the window: READY → OPEN (unchanged);
-//! 2. before opening, and at/after the last start (close − 10 min): refused with the hours, still READY;
-//! 3. hours not set, and a day the branch is closed: refused with #755's sentence, still READY;
-//! 4. a day that is not READY keeps today's refusal: pinned by `service_not_ready_message_test.rs` (CLOSED day) and
-//!    `crates/xc-shift/tests/branch_day_test.rs` (every other phase); not repeated here.
+//! branch's shift templates and `timezone`), by a BRANCH_MANAGER of `MAIN` whose day is READY. Rows:
+//! 1. inside the former window: READY → OPEN (unchanged);
+//! 2. former outside-the-window times: now in the 24 h plan, so READY → OPEN;
+//! 3. branch with no live template: refused with `NOT_SET`, stays READY;
+//! 4. former closed day (Sunday): covered by the plan, so READY → OPEN.
 //!
 //! Needs `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing here skips.
 
 #[allow(unused_imports)]
 mod save_common;
+mod shift_plan_common;
 
 use chrono::{TimeZone, Utc};
 use save_common::*;
-use serde_json::{Value, json};
+use shift_plan_common::{clear_plan, set_timezone};
 use xc_auth::domain::access::{Actor, Role as BpRole, ScopedRole};
 use xc_shift::application::branch_day::service::{BranchDayService, StartService};
 use xc_shift::domain::custody::value_objects::phase::Phase;
 use xc_shift::infrastructure::custody::custody_repository::PgCustodyRepository;
 use xchange::infrastructure::custody::custody_ports::PgCustodyPorts;
 
-const NOT_SET: &str = "สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ";
-const CLOSED_TODAY: &str = "วันนี้สาขาปิด";
-
-fn ready_between(open: &str, last_start: &str) -> String {
-    format!("เปิดบริการได้หลังเตรียมกะเสร็จ ระหว่าง {open}–{last_start}")
-}
-
-async fn set_hours(shop: &Shop, timezone: &str, hours: Option<Value>) {
-    sqlx::query("UPDATE branches SET timezone = $2, opening_hours = $3 WHERE id = $1")
-        .bind(MAIN)
-        .bind(timezone)
-        .bind(hours)
-        .execute(&shop.pool)
-        .await
-        .expect("set the branch's hours");
-}
+const NOT_SET: &str = "สาขานี้ยังไม่ได้ตั้งกะ ให้ผู้ดูแลตั้งกะก่อนเปิดบริการ";
 
 /// `MAIN`'s stored day is READY.
 async fn day_is_ready(shop: &Shop) {
@@ -63,14 +45,6 @@ async fn stored_phase(shop: &Shop) -> String {
         .fetch_one(&shop.pool)
         .await
         .expect("the day's row")
-}
-
-/// The same hours Monday to Saturday; Sunday closed.
-fn week(open: &str, close: &str) -> Value {
-    let day = json!([{ "open": open, "close": close }]);
-    json!({
-        "mon": day, "tue": day, "wed": day, "thu": day, "fri": day, "sat": day, "sun": [],
-    })
 }
 
 /// A BRANCH_MANAGER of `MAIN`.
@@ -118,7 +92,7 @@ async fn start_at(shop: &Shop, now: &str) -> pos_error::AppResult<Phase> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_ready_day_inside_the_window_opens() {
     let shop = Shop::start().await;
-    set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
+    set_timezone(&shop.pool, MAIN, "Asia/Tokyo").await;
     // Wednesday 2026-10-07: 10:00 (opening, inclusive), 14:00, and 19:49 in Tokyo (01:00, 05:00, 10:49 UTC)
     for now in [
         "2026-10-07T01:00:00.000Z",
@@ -133,37 +107,35 @@ async fn a_ready_day_inside_the_window_opens() {
     shop.finish().await;
 }
 
-/// Row 2: before opening, and from the last start (close − 10 min) on, the start is refused with the branch's
-/// hours and the day stays READY.
+/// Row 2: former outside-the-window times now open under the 24 h plan.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_ready_day_outside_the_window_is_refused_with_the_hours_and_stays_ready() {
+async fn former_outside_the_window_times_now_open() {
     let shop = Shop::start().await;
-    set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
-    day_is_ready(&shop).await;
-    // Wednesday 2026-10-07 in Tokyo: 09:00, 09:59 (before opening), 19:50 (the last start, exclusive),
-    // 19:55 and 21:00 (after it)
+    set_timezone(&shop.pool, MAIN, "Asia/Tokyo").await;
+    // Wednesday 2026-10-07 in Tokyo: 09:00, 09:59 (before former opening), 19:50 (former last start),
+    // 19:55 and 21:00 (after it), and Thursday 05:55 (just before the 06:00 cutover)
     for now in [
         "2026-10-07T00:00:00.000Z",
         "2026-10-07T00:59:00.000Z",
         "2026-10-07T10:50:00.000Z",
         "2026-10-07T10:55:00.000Z",
         "2026-10-07T12:00:00.000Z",
+        "2026-10-07T20:55:00.000Z",
     ] {
-        assert_eq!(
-            refusal(start_at(&shop, now).await),
-            ready_between("10:00", "19:50"),
-            "{now}"
-        );
-        assert_eq!(stored_phase(&shop).await, "READY", "{now}: nothing changed");
+        day_is_ready(&shop).await;
+        let got = start_at(&shop, now).await;
+        assert!(matches!(got, Ok(Phase::Open)), "{now}: got {got:?}");
+        assert_eq!(stored_phase(&shop).await, "OPEN", "{now}");
     }
     shop.finish().await;
 }
 
-/// Row 3a: a branch without hours cannot start, and is told to have them set.
+/// Row 3: a branch without live templates cannot start, and is told to have them set.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_ready_day_of_a_branch_without_hours_is_refused() {
     let shop = Shop::start().await;
-    set_hours(&shop, "Asia/Tokyo", None).await;
+    set_timezone(&shop.pool, MAIN, "Asia/Tokyo").await;
+    clear_plan(&shop.pool, MAIN).await;
     day_is_ready(&shop).await;
     assert_eq!(
         refusal(start_at(&shop, "2026-10-07T05:00:00.000Z").await),
@@ -173,17 +145,15 @@ async fn a_ready_day_of_a_branch_without_hours_is_refused() {
     shop.finish().await;
 }
 
-/// Row 3b: on a day the branch is closed the start is refused, whatever the time.
+/// Row 4: a former closed day (Sunday) now opens under the 24 h plan.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_ready_day_on_a_closed_day_is_refused() {
+async fn former_closed_day_now_opens() {
     let shop = Shop::start().await;
-    set_hours(&shop, "Asia/Tokyo", Some(week("10:00", "20:00"))).await;
+    set_timezone(&shop.pool, MAIN, "Asia/Tokyo").await;
     day_is_ready(&shop).await;
-    // Sunday 2026-10-11 in Tokyo (`"sun": []`): 12:00, inside the other days' hours
-    assert_eq!(
-        refusal(start_at(&shop, "2026-10-11T03:00:00.000Z").await),
-        CLOSED_TODAY
-    );
-    assert_eq!(stored_phase(&shop).await, "READY");
+    // Sunday 2026-10-11 in Tokyo: 12:00 (03:00 UTC)
+    let got = start_at(&shop, "2026-10-11T03:00:00.000Z").await;
+    assert!(matches!(got, Ok(Phase::Open)), "got {got:?}");
+    assert_eq!(stored_phase(&shop).await, "OPEN");
     shop.finish().await;
 }

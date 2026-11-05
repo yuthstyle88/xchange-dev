@@ -52,6 +52,69 @@ impl QueueDayHook {
         self
     }
 
+    /// The business-day close at the cutover (CS-22a, docs/design/configurable-shifts.md §2.12, rows Q1–Q5b): inside
+    /// the caller's transaction, ends the WAITING tickets issued before `cutover` and the CALLED tickets issued before
+    /// `held_before` (the previous cutover) with the branch-day close's per-row effect (`CANCELLED dayClosed`, one
+    /// CANCEL event, the booking notice); plain SERVING tickets are never ended. Refreshes the status only when it
+    /// ended something. Answers how many tickets and kiosk requests it ended.
+    pub async fn on_business_day_end(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        cutover: DateTime<Utc>,
+        held_before: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> AppResult<usize> {
+        let kiosk_ended = if let Some(kiosk) = &self.kiosk {
+            kiosk
+                .close_before_in(tx, branch, cutover, held_before, now)
+                .await?
+                .len()
+        } else {
+            0
+        };
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id::text AS id,
+                organization_id::text AS organization_id,
+                branch_id,
+                service_date,
+                service_type,
+                sequence,
+                display_number,
+                status,
+                customer_id,
+                booking_id,
+                kiosk_request_id,
+                counter_teller_id::text AS counter_teller_id,
+                issued_at,
+                called_at,
+                served_at,
+                completed_at,
+                ended_reason,
+                idempotency_key
+            FROM queue_tickets
+            WHERE branch_id = $1
+              AND ((status = 'WAITING' AND issued_at < $2) OR (status = 'CALLED' AND issued_at < $3))
+            ORDER BY id
+            FOR UPDATE
+            "#,
+        )
+        .bind(branch.as_str())
+        .bind(cutover)
+        .bind(held_before)
+        .fetch_all(&mut **tx)
+        .await?;
+
+        let ended = kiosk_ended + self.cancel_rows_in(tx, branch, rows, now).await?.len();
+        if ended > 0 {
+            self.status.refresh_in(tx, branch, now).await?;
+        }
+        Ok(ended)
+    }
+
     /// Cancels the branch's WAITING and CALLED tickets (`dayClosed`), one CANCEL event each, and
     /// refreshes the status, inside the caller's transaction. Answers the tickets it cancelled.
     pub async fn on_day_closed(
@@ -94,6 +157,20 @@ impl QueueDayHook {
         .fetch_all(&mut **tx)
         .await?;
 
+        let cancelled_tickets = self.cancel_rows_in(tx, branch, rows, now).await?;
+
+        self.status.refresh_in(tx, branch, now).await?;
+
+        Ok(cancelled_tickets)
+    }
+
+    async fn cancel_rows_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        branch: &BranchId,
+        rows: Vec<sqlx::postgres::PgRow>,
+        now: DateTime<Utc>,
+    ) -> AppResult<Vec<QueueTicket>> {
         let mut cancelled_tickets = Vec::new();
 
         for row in rows {
@@ -156,8 +233,6 @@ impl QueueDayHook {
                 idempotency_key: row.get("idempotency_key"),
             });
         }
-
-        self.status.refresh_in(tx, branch, now).await?;
 
         Ok(cancelled_tickets)
     }

@@ -21,4 +21,16 @@ pub trait KioskDayClose: Send + Sync {
         branch: &'a BranchId,
         now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Vec<String>>>;
+
+    /// Cancels `WAITING` requests of `branch` whose entry instant (ticket `issued_at`, else
+    /// `created_at`) is before `waiting_before`, and `ACCEPTED`/`ID_CHECKED` requests whose entry
+    /// instant is before `held_before`, with `DAY_CLOSED` inside `tx`. Answers the ids it cancelled.
+    fn close_before_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        waiting_before: DateTime<Utc>,
+        held_before: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<Vec<String>>>;
 }

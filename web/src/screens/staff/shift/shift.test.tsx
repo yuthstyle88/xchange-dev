@@ -69,6 +69,8 @@ import {
   makeStaffMeView,
   type StaffFloorView,
   type StaffMeView,
+  makeOpenShiftChoice,
+  makeOpenShiftChoices,
 } from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -242,6 +244,10 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+// CS-15m: the OPEN count form and the handover accept now read open_shift_choices (ShiftPicker); one covering
+// shift keeps Save and Accept usable as before. Stub restated per the lane controller's ruling on PR 6274.
+const ONE_SHIFT = makeOpenShiftChoices({ choices: [makeOpenShiftChoice({ templateId: "tpl-1" })], preselect: "tpl-1" });
+
 function stub(views: Record<string, unknown> = {}) {
   const all: Record<string, unknown> = {
     cash_counts: COUNTS,
@@ -249,6 +255,7 @@ function stub(views: Record<string, unknown> = {}) {
     my_shift: null,
     denominations: { rows: DENOMS },
     handover_receivers: { rows: [] },
+    open_shift_choices: ONE_SHIFT,
     ...views,
   };
   vi.stubGlobal(
@@ -597,7 +604,8 @@ describe("C7 and C7b each control sends exactly its command and body", () => {
     expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([
       `POST /api/handovers/${H_MINE}/accept`,
     ]);
-    expect(bodyOf(sent[0]!)).toEqual({ id: H_MINE });
+    // CS-15m: the accept names the shift it opens (the one covering shift the stub offers).
+    expect(bodyOf(sent[0]!)).toEqual({ id: H_MINE, shiftTemplateId: "tpl-1" });
   });
 
   it("C7b reject sends POST /api/handovers/{id}/reject {id}, with no reason asked or sent", async () => {
@@ -736,7 +744,9 @@ describe("C5 open and close counts send countSubmit with one line per typed face
       "POST /api/cash-counts",
     ]);
     const body = bodyOf(sent[0]!);
-    expect(Object.keys(body).sort()).toEqual(["kind", "lines"]);
+    // CS-15m: an OPEN count names the shift it opens (the one covering shift the stub offers).
+    expect(Object.keys(body).sort()).toEqual(["kind", "lines", "shiftTemplateId"]);
+    expect(body["shiftTemplateId"]).toBe("tpl-1");
     expect(body["kind"]).toBe("OPEN");
     expect(linesOf(body)).toEqual([
       { currency: "THB", denominationId: 11, qty: "2" },

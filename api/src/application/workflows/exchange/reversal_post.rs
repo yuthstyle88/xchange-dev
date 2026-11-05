@@ -36,6 +36,7 @@ use xc_kernel::money::{CurrencyCode, ForeignAmount, Side};
 use xc_referral::application::feed_writer::ExchangeFeedWriter;
 use xc_shift::application::shift::service::ShiftService;
 
+use super::business_day::BusinessDayEnd;
 use super::complete::{EffectPhase, ExchangeEffects, PostedReversal};
 use crate::application::workflows::save_step::SaveActor;
 use crate::infrastructure::files::file_service::FileService;
@@ -283,7 +284,10 @@ impl PostReversal {
         let (branch_name, zone) = branch_in(tx, &reversal.branch_id).await?;
         let tz = Tz::from_str(&zone)
             .map_err(|_| AppError::Internal(format!("branch timezone {zone}")))?;
-        if !ReversalWindow::is_open(reversal.business_date, now, tz) {
+        let deadline = BusinessDayEnd::new(self.pool.clone())
+            .of_in(tx, &reversal.branch_id, reversal.business_date)
+            .await?;
+        if !ReversalWindow::is_open_until(deadline, now) {
             return refuse(
                 "reversalWindowClosed",
                 format!(

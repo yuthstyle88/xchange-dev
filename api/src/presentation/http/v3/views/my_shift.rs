@@ -6,7 +6,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use actix_web::web;
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use pos_error::{AppError, AppResult};
 use sqlx::{AssertSqlSafe, PgPool};
 use ts_rs::TS;
@@ -23,6 +23,9 @@ use crate::presentation::http::v3::cash_transfer_rows::{
     TRANSFER_COLUMNS, TransferSqlRow, with_lines,
 };
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
+
+/// `id, status, opened_at, template_name, business_date` of the caller's open shift.
+type MyShiftRow = (String, String, DateTime<Utc>, Option<String>, NaiveDate);
 
 struct MyShiftView {
     pool: PgPool,
@@ -47,8 +50,8 @@ impl BranchView for MyShiftView {
         let branch = branch.as_str().to_owned();
         let me = who.user_id.clone();
         async move {
-            let shift: Option<(String, String, DateTime<Utc>)> = sqlx::query_as(
-                "SELECT id, status, opened_at FROM shifts \
+            let shift: Option<MyShiftRow> = sqlx::query_as(
+                "SELECT id, status, opened_at, template_name, business_date FROM shifts \
                  WHERE branch_id = $1 AND teller_id::text = $2 AND status = 'OPEN' \
                  ORDER BY opened_at DESC LIMIT 1",
             )
@@ -57,7 +60,7 @@ impl BranchView for MyShiftView {
             .fetch_optional(&pool)
             .await
             .map_err(AppError::Database)?;
-            let Some((id, status, opened_at)) = shift else {
+            let Some((id, status, opened_at, shift_name, business_date)) = shift else {
                 return Ok(None);
             };
             let balances = shift_balances.shift_balances(&id).await?;
@@ -96,6 +99,8 @@ impl BranchView for MyShiftView {
                     })
                     .collect(),
                 incoming_transfers,
+                shift_name,
+                business_date: business_date.to_string(),
             }))
         }
     }

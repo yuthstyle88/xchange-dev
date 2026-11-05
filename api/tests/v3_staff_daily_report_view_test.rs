@@ -404,6 +404,18 @@ impl Day {
         let start = at - Duration::seconds(2);
         let q = self.c.desk.quote(MAIN, side, quantity, fee, start).await;
         let t = self.c.live_of(&q, PaymentMethod::Cash, true, start).await;
+        // CS-12a (restated by the ticket author claude/35271802; no assertion changed): the report dates a sale by
+        // its `value_date`, and `tx5_common::live_draft` stores a fixed one. Each sale here belongs to the branch-local
+        // calendar day it completes on, so it is dated that day.
+        sqlx::query(
+            "UPDATE transactions t SET value_date = ($2 AT TIME ZONE b.timezone)::date \
+             FROM branches b WHERE b.id = t.branch_id AND t.id = $1",
+        )
+        .bind(t.id.0)
+        .bind(at)
+        .execute(&self.db().pool)
+        .await
+        .expect("date the sale by the day it completes on");
         self.c
             .complete(&Ledger::new("0.00", None), t.id, at)
             .await

@@ -44,6 +44,7 @@ mod rates_re4_common;
 mod rates_re4e_publish;
 #[macro_use]
 mod rpc_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod shift_setup_common;
 mod snapshot_common;
@@ -496,6 +497,9 @@ impl Room {
             slip: None,
             reference_rate: None,
         };
+        if ex.live {
+            shift_date_common::date_open_shifts(&self.desk.db.pool, branch, ex.value_date).await;
+        }
         self.desk
             .workflow
             .save(&here, cmd, &saver, t)
@@ -1295,6 +1299,7 @@ async fn save_midpoint_tx(
         slip: None,
         reference_rate: None,
     };
+    shift_date_common::date_open_shifts(&room.desk.db.pool, branch, value_date).await;
     room.desk
         .workflow
         .save(&here, cmd, &saver, t)

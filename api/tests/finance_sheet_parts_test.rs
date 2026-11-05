@@ -1199,3 +1199,64 @@ async fn sheet_built_from_stored_face_value_with_more_than_two_non_zero_decimals
         "expected AppError::Internal, got {err:?}"
     );
 }
+
+/// CS-21 up-front (docs/design/configurable-shifts.md §2.11, row Y1; written by the ticket author claude/35271802 — do
+/// not edit or delete): a count belongs to the sheet of its stored `business_date`, not the calendar date of
+/// `counted_at`. C of DAY closes at 04:10 the next morning; its count carries DAY (CS-7 writes it), so it is on DAY's
+/// sheet and not on the next day's.
+#[tokio::test]
+async fn cs21_y1_a_night_shifts_close_count_is_on_its_business_dates_sheet() {
+    let room = Room::start().await;
+    let parts = SheetParts::new(room.pool.clone(), Arc::new(Reconcile::standard()));
+    let next_day = "2026-10-06";
+
+    let night_close = Uuid::new_v4();
+    room.insert_count(
+        night_close,
+        B1,
+        "CLOSE",
+        &user_id(COUNTER),
+        bangkok(next_day, 4, 10),
+        Some(&user_id(VERIFIER)),
+        Some(bangkok(next_day, 4, 20)),
+    )
+    .await;
+    sqlx::query("UPDATE cash_counts SET business_date = $2 WHERE id = $1")
+        .bind(night_close)
+        .bind(date(DAY))
+        .execute(&room.pool)
+        .await
+        .expect("date the count by its shift (as CS-7 writes it)");
+    room.insert_count_total(
+        night_close,
+        "THB",
+        Decimal::new(100000, 2),
+        Some(Decimal::new(100000, 2)),
+        Some(Decimal::ZERO),
+    )
+    .await;
+
+    let ids_on = |d: &'static str| {
+        let parts = &parts;
+        async move {
+            parts
+                .counts(&BranchId::new(B1), date(d))
+                .await
+                .expect("counts")
+                .data
+                .expect("data")
+                .into_iter()
+                .map(|r| r.count_id)
+                .collect::<Vec<String>>()
+        }
+    };
+    let night = night_close.to_string();
+    assert!(
+        ids_on(DAY).await.contains(&night),
+        "the CLOSE of DAY's night shift is on DAY's sheet"
+    );
+    assert!(
+        !ids_on(next_day).await.contains(&night),
+        "and not on the calendar day it was counted"
+    );
+}

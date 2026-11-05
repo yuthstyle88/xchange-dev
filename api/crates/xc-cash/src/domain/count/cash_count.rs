@@ -53,6 +53,11 @@ pub struct CashCount {
     pub updated_at: DateTime<Utc>,
     /// Staff-corrections §2 SC-D7: set once a verifier rejects the count (`countReject`); `None` otherwise.
     pub rejection: Option<CountRejection>,
+    /// The shift the teller opened as (OPEN counts only; configurable-shifts.md §2.3).
+    pub shift_template_id: Option<String>,
+    /// The count's business date. `None` on a value about to be written lets the
+    /// `cash_counts_business_date_default` trigger date it; every production writer sets it (CS-7, CS-19).
+    pub business_date: Option<chrono::NaiveDate>,
 }
 
 /// Who rejected a waiting count, when, and why (`cash_counts.rejected_by`, `rejected_at`, `reject_reason`).

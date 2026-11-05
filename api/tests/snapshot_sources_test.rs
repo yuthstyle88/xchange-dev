@@ -9,6 +9,7 @@
 
 mod compat_common;
 mod save_common;
+mod shift_date_common;
 mod shift_holder_common;
 mod snapshot_common;
 
@@ -81,6 +82,7 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
     let mut first = form("first-0001-aaaaaaaaaa", &customer, &passport);
     first.staff = "fr1".to_owned();
     first.notes = "first".to_owned();
+    shift_date_common::date_open_shifts(&shop.pool, MAIN, &first.value_date).await;
     shop.save(MAIN, first, at(10))
         .await
         .expect("the first save");
@@ -98,6 +100,7 @@ async fn the_exchanges_are_the_live_ones_of_the_branch_oldest_first() {
     second.staff = "owner".to_owned();
     second.reference_rate = Some("32.95".to_owned());
     second.value_date = "2026-11-01".to_owned();
+    shift_date_common::date_open_shifts(&shop.pool, MAIN, &second.value_date).await;
     shop.save(MAIN, second, at(20))
         .await
         .expect("the second save");

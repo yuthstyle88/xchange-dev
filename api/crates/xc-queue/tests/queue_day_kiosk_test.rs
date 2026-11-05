@@ -86,6 +86,56 @@ impl KioskDayClose for FakeKiosk {
             Ok(ids)
         })
     }
+
+    fn close_before_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        branch: &'a BranchId,
+        waiting_before: DateTime<Utc>,
+        held_before: DateTime<Utc>,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<Vec<String>>> {
+        Box::pin(async move {
+            let open: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM queue_tickets WHERE branch_id = $1 AND status IN ('WAITING', 'CALLED')",
+            )
+            .bind(branch.as_str())
+            .fetch_one(&mut **tx)
+            .await?;
+            self.calls
+                .lock()
+                .expect("lock")
+                .push((branch.as_str().to_owned(), open));
+            if self.fail {
+                return Err(AppError::Internal("the kiosk step failed".into()));
+            }
+            let ended: Vec<(String, String)> = sqlx::query_as(
+                "UPDATE queue_tickets SET status = 'CANCELLED', ended_reason = 'kioskCancelled:DAY_CLOSED' \
+                 WHERE branch_id = $1 AND kiosk_request_id IS NOT NULL \
+                   AND ((status = 'WAITING' AND issued_at < $2) OR (status IN ('CALLED', 'SERVING') AND issued_at < $3)) \
+                 RETURNING id::text, organization_id::text",
+            )
+            .bind(branch.as_str())
+            .bind(waiting_before)
+            .bind(held_before)
+            .fetch_all(&mut **tx)
+            .await?;
+            let mut ids = Vec::new();
+            for (ticket, org) in ended {
+                sqlx::query(
+                    "INSERT INTO queue_events (id, organization_id, ticket_id, status, kind, actor_id, at, reason) \
+                     VALUES (gen_random_uuid(), $1::uuid, $2::uuid, 'CANCELLED', 'CANCEL', NULL, $3, 'kioskCancelled:DAY_CLOSED')",
+                )
+                .bind(&org)
+                .bind(&ticket)
+                .bind(now)
+                .execute(&mut **tx)
+                .await?;
+                ids.push(ticket);
+            }
+            Ok(ids)
+        })
+    }
 }
 
 async fn issue(db: &TestDb, source: IssueSource, key: &str, now: DateTime<Utc>) -> QueueTicket {

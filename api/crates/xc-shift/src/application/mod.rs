@@ -2,3 +2,4 @@
 pub mod branch_day;
 pub mod custody;
 pub mod shift;
+pub mod shift_plan;

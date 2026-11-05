@@ -205,6 +205,10 @@
   margin: 0 0 12px;
 }
 
+.xc-admin .xc-content .shift-label {
+  margin-left: 6px;
+}
+
 /* v2 src/online/lib/admin-html.ts dialog table */
 .xc-admin .xc-content .shift-detail-table {
   width: 100%;

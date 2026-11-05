@@ -32,6 +32,8 @@ export function makeAdminShiftRow(o: Partial<AdminShiftRow> = {}): AdminShiftRow
     note: 'note',
     difference: null,
     balances: [],
+    shiftName: null,
+    businessDate: '2026-01-01',
     ...o,
   };
 }

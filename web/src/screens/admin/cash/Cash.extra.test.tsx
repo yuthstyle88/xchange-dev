@@ -11,6 +11,7 @@ import {
   makeAdminCashReference,
   makeAdminCashStats,
   makeAdminCashStockRow,
+  makeAdminShiftRow,
   makeOpenShiftDto,
   type AdminShiftRow,
 } from '../../../shared/testing/fixtures';
@@ -206,7 +207,7 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
 
   it('shifts list: loads older shifts keyset by before until server returns empty', async () => {
     server.shiftsPages['initial'] = [
-      {
+      makeAdminShiftRow({
         id: 'S-0002',
         status: 'OPEN',
         openedAt: '2026-10-06T08:00:00.000Z',
@@ -214,10 +215,10 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
         note: '',
         difference: null,
         balances: [{ code: 'THB', expected: '10000.00', counted: null, difference: null }],
-      },
+      }),
     ];
     server.shiftsPages['S-0002'] = [
-      {
+      makeAdminShiftRow({
         id: 'S-0001',
         status: 'CLOSED',
         openedAt: '2026-10-05T08:00:00.000Z',
@@ -225,7 +226,7 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
         note: '',
         difference: [],
         balances: [{ code: 'THB', expected: '5000.00', counted: '5000.00', difference: '0.00' }],
-      },
+      }),
     ];
     server.shiftsPages['S-0001'] = [];
 
@@ -269,7 +270,7 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
 
   it('shifts list: shows errorText when load older read fails, does not swallow it', async () => {
     server.shiftsPages['initial'] = [
-      {
+      makeAdminShiftRow({
         id: 'S-0002',
         status: 'OPEN',
         openedAt: '2026-10-06T08:00:00.000Z',
@@ -277,7 +278,7 @@ describe('V2-cash extra tests: keyset pagination, 153 register currencies, local
         note: '',
         difference: null,
         balances: [{ code: 'THB', expected: '10000.00', counted: null, difference: null }],
-      },
+      }),
     ];
 
     const m = mount();
