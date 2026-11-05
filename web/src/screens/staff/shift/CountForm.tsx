@@ -5,6 +5,7 @@ import type { CashLineInput, CountSubmitInput } from '../../../shared/api/genera
 import type { CashCountRow, CashCountTotalRow } from '../../../shared/api/generated/cash_counts';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { MyShift } from '../../../shared/api/generated/my_shift';
+import type { OpenShiftChoice } from '../../../shared/api/generated/open_shift_choices';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
@@ -16,6 +17,7 @@ import type { StaffCtx } from '../cards';
 import { command } from '../parts/command';
 import { formatCountTime } from './counts';
 import { en, th } from './i18n';
+import { ShiftPicker, shiftChosenOrUnneeded } from './ShiftPicker';
 
 const SHIFT_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Bangkok',
@@ -61,6 +63,8 @@ export function CountForm(p: CountFormProps): JSX.Element {
   const [myShiftLoaded, setMyShiftLoaded] = createSignal<boolean>(p.kind !== 'CLOSE');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
   const [lineErrors, setLineErrors] = createSignal<Record<number, string>>({});
+  const [shiftTemplateId, setShiftTemplateId] = createSignal<string | null>(null);
+  const [shiftChoices, setShiftChoices] = createSignal<OpenShiftChoice[] | null>(null);
 
   const denoms = (): DenominationRow[] => (p.denominations ? p.denominations() : ownDenominations());
 
@@ -134,7 +138,11 @@ export function CountForm(p: CountFormProps): JSX.Element {
     return out;
   };
 
-  const saveDisabled = (): boolean => p.busy() || denoms().length === 0 || !myShiftLoaded();
+  const shiftReady = () =>
+    p.kind !== 'OPEN' || shiftChosenOrUnneeded(shiftChoices(), shiftTemplateId());
+
+  const saveDisabled = (): boolean =>
+    p.busy() || denoms().length === 0 || !myShiftLoaded() || !shiftReady();
 
   const shiftAge = (): string | null => {
     if (p.kind !== 'CLOSE') return null;
@@ -203,6 +211,10 @@ export function CountForm(p: CountFormProps): JSX.Element {
       lines,
       note: null,
     };
+    const tid = shiftTemplateId();
+    if (p.kind === 'OPEN' && tid) {
+      body.shiftTemplateId = tid;
+    }
 
     p.setBusy(true);
     try {
@@ -226,33 +238,44 @@ export function CountForm(p: CountFormProps): JSX.Element {
   };
 
   return (
-    <form data-testid="shift-count-form" class="xc-shift-count-form" onSubmit={handleSubmit}>
-      <CurrencyCount
-        denominations={denoms()}
-        countable={countable()}
-        locked={countLocked()}
-        expected={countExpected()}
-        quantities={quantities()}
-        setQuantity={(id, v) => setQuantities((prev) => ({ ...prev, [id]: v }))}
-        lineErrors={lineErrors()}
-      />
-      <Show when={shiftAge()}>
-        {(text) => <p data-testid="shift-age">{text()}</p>}
+    <>
+      <Show when={p.kind === 'OPEN'}>
+        <ShiftPicker
+          ctx={p.ctx}
+          api={api}
+          value={shiftTemplateId}
+          onChange={setShiftTemplateId}
+          onChoices={setShiftChoices}
+        />
       </Show>
-      <div class="xc-shift-form-actions">
-        <button
-          type="submit"
-          data-testid="shift-count-save"
-          class="xc-shift-save-btn"
-          disabled={saveDisabled()}
-        >
-          {t('save')}
-        </button>
-        <button type="button" class="xc-shift-cancel-btn" onClick={() => p.onCancel()}>
-          {t('cancel')}
-        </button>
-      </div>
-    </form>
+      <form data-testid="shift-count-form" class="xc-shift-count-form" onSubmit={handleSubmit}>
+        <CurrencyCount
+          denominations={denoms()}
+          countable={countable()}
+          locked={countLocked()}
+          expected={countExpected()}
+          quantities={quantities()}
+          setQuantity={(id, v) => setQuantities((prev) => ({ ...prev, [id]: v }))}
+          lineErrors={lineErrors()}
+        />
+        <Show when={shiftAge()}>
+          {(text) => <p data-testid="shift-age">{text()}</p>}
+        </Show>
+        <div class="xc-shift-form-actions">
+          <button
+            type="submit"
+            data-testid="shift-count-save"
+            class="xc-shift-save-btn"
+            disabled={saveDisabled()}
+          >
+            {t('save')}
+          </button>
+          <button type="button" class="xc-shift-cancel-btn" onClick={() => p.onCancel()}>
+            {t('cancel')}
+          </button>
+        </div>
+      </form>
+    </>
   );
 }
 
