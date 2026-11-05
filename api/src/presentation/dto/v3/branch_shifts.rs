@@ -10,13 +10,16 @@ use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
 #[ts(export_to = "branch_shifts.ts")]
 pub struct ShiftTemplateSaveRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub id: Option<String>,
     pub name: String,
     pub starts_at: String,
     pub ends_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub break_starts_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
     pub break_ends_at: Option<String>,
 }
 
