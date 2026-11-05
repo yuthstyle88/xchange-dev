@@ -1,5 +1,5 @@
-//! Board currencies BC-13 (`docs/design/board-currencies.md` §6, §9): a new branch copies the currency set and
-//! note links of `from_branch`, with every row `HIDE`, in the same transaction.
+//! Board currencies BC-13 (`docs/design/board-currencies.md` §6, §9, #6266): a new branch copies the currency set
+//! (including `display`) and note links of `from_branch` in the same transaction.
 
 mod common;
 
@@ -29,7 +29,7 @@ async fn note_links(db: &TestDb, branch_id: &str) -> Vec<(String, String, i64)> 
 }
 
 #[tokio::test]
-async fn new_branch_copies_from_branch_rows_and_note_links_all_hide() {
+async fn new_branch_copies_from_branch_display() {
     let db = TestDb::start().await;
     let made = db
         .branches()
@@ -48,17 +48,10 @@ async fn new_branch_copies_from_branch_rows_and_note_links_all_hide() {
         .expect("new rows");
     tx.rollback().await.expect("rollback");
 
-    assert_eq!(new_rows.len(), main_rows.len());
-    assert!(
-        new_rows.iter().all(|r| r.display == Display::Hide),
-        "every copied row must be HIDE"
-    );
-    let shape = |rows: &[xc_rate::domain::currency::branch_currencies::BranchCurrency]| {
-        rows.iter()
-            .map(|r| (r.code, r.group.clone(), r.sort_order))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(shape(&new_rows), shape(&main_rows));
+    assert!(main_rows.iter().any(|r| r.display == Display::Show));
+    assert!(main_rows.iter().any(|r| r.display == Display::Ask));
+    assert!(main_rows.iter().any(|r| r.display == Display::Hide));
+    assert_eq!(new_rows, main_rows);
     assert_eq!(
         note_links(&db, made.id.as_str()).await,
         note_links(&db, MAIN).await

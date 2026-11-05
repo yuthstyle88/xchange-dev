@@ -208,7 +208,7 @@ CREATE TABLE branch_currency_notes (
 
 **Effect at the counter after deploy:** the same four currencies sell. The board's `more` list changes from SR's list to the 14 `ASK` rows. **A kiosk with no rows now offers nothing**, where the literal offered six: MAIN has rows, and the other branch has no publication anyway.
 
-**New branches:** `BranchService::create_with_org` (`xc-rate/src/application/branch/service.rs`, reached through `create` and `create_in`) copies the rows and note links of `cmd.from_branch`, the branch creating it, with every row `HIDE`, in the same transaction (BC-13). A new branch can therefore count and add currencies at once, and sells nothing until someone publishes and shows. Copying from `from_branch`, not MAIN, keeps it inside the organisation, which `create_with_org` already checks.
+**New branches:** `BranchService::create_with_org` (`xc-rate/src/application/branch/service.rs`, reached through `create` and `create_in`) copies the rows and note links of `cmd.from_branch`, the branch creating it, keeping each row's `display` (`SHOW`, `ASK` or `HIDE`) as it is, in the same transaction (BC-13; owner ruling 2026-11-05 10:38 ICT, *"แสดงให้หมด คือ default"*, #6266, reversing the initial all-`HIDE` rule). `SHOW` still requires a published rate at configure time and when quoting, so a copied `SHOW` row on a new branch with no prices yet quotes nothing until rates exist, and the kiosk shows contact-staff. Copying from `from_branch`, not MAIN, keeps it inside the organisation, which `create_with_org` already checks.
 
 ## 7. How a currency gets its notes
 
@@ -305,7 +305,7 @@ classDiagram
     }
     class BranchService {
         <<xc-rate/application/branch/service.rs, BC-13>>
-        -create_with_org() copies from_branch's rows, HIDE
+        -create_with_org() copies from_branch's rows and display
     }
     BranchCurrencies <|.. PgBranchCurrencies
     BranchCurrencies *-- BranchCurrency
@@ -359,7 +359,7 @@ New v3 views, DTO modules and commands need no `mod.rs` edit (`api/build.rs:154,
 | `configure` | one audit row with `from` and `display`, same transaction | BC-12 |
 | user without `RatesDraft` | refused, as today | BC-12 |
 | `denominationNoteAdd` twice | one row, idempotent | BC-11 |
-| new branch from `B` | `B`'s rows and note links, every row `HIDE`; same transaction as the branch | BC-13 |
+| new branch from `B` | `B`'s rows (with their `display`) and note links; same transaction as the branch | BC-13, #6266 |
 | new branch, `B` has no rows | created, no rows | BC-13 |
 | `CurrencyCount` with `countable` | search lists only those codes with notes | BC-10 |
 | `CurrencyCount` without `countable` | as today | BC-10 |
@@ -383,7 +383,7 @@ BC-0 is the skeleton and the migration, on `feat/board-currencies`, once this do
 | BC-10 | `branch_currencies` view; count form reads it | `views/branch_currencies.rs`, `CountForm.tsx`, `CurrencyCount.tsx` | logic | any |
 | BC-11 | `denominationNoteAdd` and its screen | new command, `DenominationGroups.tsx` | logic | any |
 | BC-12 | `configure` extended; three-way screen | `currencies.rs`, `audit_line.rs`, `kiosk_ports.rs`, `KioskCurrenciesScreen.tsx`, `kiosk-api.ts` | guarded | Studio |
-| BC-13 | a new branch copies the set, all `HIDE` | `xc-rate/src/application/branch/service.rs`, `xc-rate/src/domain/branch/repositories/branch_repository.rs`, `xc-rate/src/infrastructure/branch/branch_repository.rs` | logic | any |
+| BC-13 | a new branch copies the set and display (#6266) | `xc-rate/src/application/branch/service.rs`, `xc-rate/src/domain/branch/repositories/branch_repository.rs`, `xc-rate/src/infrastructure/branch/branch_repository.rs` | logic | any |
 
 **#6074 (`CurrencyCount` on the four cash forms) is re-cut against the view, not absorbed by BC-10.**
 - **Why not absorb:** #6074 already has 14 files in scope, its own provided tests on `test/cc-cash-forms` and 36 pinned tests. BC-10 would stop being one reviewable outcome. The scopes are disjoint today: #6074 forbids touching `CurrencyCount.tsx` and `CountForm.tsx`, which BC-10 owns.
