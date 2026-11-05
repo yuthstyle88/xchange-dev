@@ -466,6 +466,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       const data = await createBooking.send(payload);
       if (seq !== submitSeq) return;
       setSuccessData(data);
+      void loadSlots(currentBranch, serviceDate());
     } catch (err) {
       if (seq !== submitSeq) return;
       if (err instanceof ApiError && !isServerFailure(err)) {
