@@ -138,7 +138,7 @@ const MOVEMENT_FIELDS: [&str; 8] = [
     "reason",
     "staff",
 ];
-const SHIFT_ROW_FIELDS: [&str; 7] = [
+const SHIFT_ROW_FIELDS: [&str; 9] = [
     "id",
     "status",
     "openedAt",
@@ -146,6 +146,8 @@ const SHIFT_ROW_FIELDS: [&str; 7] = [
     "note",
     "difference",
     "balances",
+    "businessDate",
+    "shiftName",
 ];
 const BALANCE_FIELDS: [&str; 4] = ["code", "expected", "counted", "difference"];
 
@@ -1362,6 +1364,20 @@ async fn the_shifts_page_is_newest_first_with_v2s_difference_and_the_detail_rows
                 .await
                 .expect("opened_at");
         assert_eq!(row["openedAt"], json!(iso(opened)), "{row}");
+        let business_date: String =
+            sqlx::query_scalar("SELECT business_date::text FROM shifts WHERE id = $1")
+                .bind(id)
+                .fetch_one(&room.desk.db.pool)
+                .await
+                .expect("business_date");
+        assert_eq!(row["businessDate"], json!(business_date), "{row}");
+        let shift_name: Option<String> =
+            sqlx::query_scalar("SELECT template_name FROM shifts WHERE id = $1")
+                .bind(id)
+                .fetch_one(&room.desk.db.pool)
+                .await
+                .expect("template_name");
+        assert_eq!(row["shiftName"], json!(shift_name), "{row}");
         for balance in list(&row["balances"]) {
             assert_eq!(keys(balance), set_of(&BALANCE_FIELDS), "{balance}");
         }
