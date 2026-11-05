@@ -6,14 +6,12 @@
   min-height: 100vh;
   box-sizing: border-box;
   padding: 1rem 1.25rem 2.5rem;
-  background-color: var(--xc-bg, #f8fafc);
-  color: var(--xc-text, #0f172a);
+  background-color: var(--xc-bg);
+  color: var(--xc-text);
   font-family: inherit;
 }
 
 .xc-notifications-header {
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--xc-border, #e2e8f0);
   margin-bottom: 1rem;
 }
 
@@ -21,13 +19,13 @@
   margin: 0 0 0.25rem;
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .xc-notifications-subtitle {
   margin: 0;
   font-size: 0.875rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .xc-notifications-toolbar {
@@ -44,7 +42,7 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: var(--xc-text, #1e293b);
+  color: var(--xc-text);
   cursor: pointer;
   user-select: none;
 }
@@ -53,23 +51,24 @@
   cursor: pointer;
   width: 1rem;
   height: 1rem;
-  accent-color: var(--xc-primary, #0284c7);
+  accent-color: var(--xc-primary);
 }
 
 .xc-notifications-mark-all-btn {
   padding: 0.4rem 0.85rem;
   font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--xc-surface, #ffffff);
-  background: var(--xc-primary, #0284c7);
+  font-weight: 800;
+  color: var(--xc-on-brand);
+  background: var(--xc-primary);
   border: 1px solid transparent;
-  border-radius: 0.375rem;
+  border-radius: var(--xc-radius-lg);
   cursor: pointer;
   transition: background-color 0.15s ease-in-out;
+  min-height: 48px;
 }
 
 .xc-notifications-mark-all-btn:hover:not(:disabled) {
-  background: var(--xc-primary-hover, #0369a1);
+  background: var(--xc-primary-hover);
 }
 
 .xc-notifications-mark-all-btn:disabled {
@@ -81,16 +80,16 @@
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
   border-radius: 0.5rem;
-  background-color: var(--xc-error-bg, #fef2f2);
-  border: 1px solid var(--xc-error-border, #fecaca);
-  color: var(--xc-error-text, #b91c1c);
+  background-color: var(--xc-error-bg);
+  border: 1px solid var(--xc-error-border);
+  color: var(--xc-error-text);
   font-size: 0.875rem;
 }
 
 .xc-notifications-loading {
   padding: 2.5rem 1rem;
   text-align: center;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   font-size: 0.9375rem;
 }
 
@@ -101,10 +100,10 @@
   gap: 0.75rem;
   padding: 2rem 1rem;
   margin-bottom: 1.5rem;
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-error-border, #fecaca);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-error-border);
   border-radius: 0.75rem;
-  color: var(--xc-error-text, #b91c1c);
+  color: var(--xc-error-text);
   text-align: center;
 }
 
@@ -117,21 +116,22 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  border: 1px solid var(--xc-border, #cbd5e1);
-  border-radius: 0.375rem;
-  background: var(--xc-surface, #ffffff);
-  color: var(--xc-text, #0f172a);
+  border: 2px solid var(--xc-border);
+  border-radius: var(--xc-radius-lg);
+  background: var(--xc-surface);
+  color: var(--xc-text);
   cursor: pointer;
+  min-height: 44px;
 }
 
 .xc-notifications-retry-btn:hover {
-  background: var(--xc-bg, #f1f5f9);
+  background: var(--xc-bg);
 }
 
 .xc-notifications-empty {
   padding: 3rem 1rem;
   text-align: center;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   font-size: 0.9375rem;
 }
 
@@ -146,15 +146,15 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 1rem;
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e2e8f0);
-  border-radius: 0.75rem;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  background: var(--xc-surface);
+  border: 0;
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-notifications-item-unread {
-  border-left: 4px solid var(--xc-primary, #0284c7);
-  background: var(--xc-unread-bg, #f0f9ff);
+  border-left: 4px solid var(--xc-primary);
+  background: var(--xc-unread-bg);
 }
 
 .xc-notifications-item-header {
@@ -167,7 +167,7 @@
 .xc-notifications-item-title {
   font-weight: 600;
   font-size: 0.9375rem;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
   flex: 1 1 auto;
 }
 
@@ -179,24 +179,24 @@
 }
 
 .xc-notifications-badge-unread {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
 }
 
 .xc-notifications-badge-read {
-  background: #f1f5f9;
-  color: #64748b;
+  background: var(--xc-surface-subtle);
+  color: var(--xc-text-muted);
 }
 
 .xc-notifications-time {
   font-size: 0.75rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   white-space: nowrap;
 }
 
 .xc-notifications-body {
   font-size: 0.875rem;
-  color: var(--xc-text, #334155);
+  color: var(--xc-text);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -217,33 +217,35 @@
   font-size: 0.75rem;
   font-weight: 500;
   text-decoration: none;
-  color: var(--xc-primary, #0284c7);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #cbd5e1);
-  border-radius: 0.375rem;
+  color: var(--xc-primary);
+  background: var(--xc-surface);
+  border: 2px solid var(--xc-border);
+  border-radius: var(--xc-radius-lg);
   transition: all 0.15s ease-in-out;
+  min-height: 44px;
 }
 
 .xc-notifications-open:hover {
-  background: #e0f2fe;
-  border-color: #7dd3fc;
+  background: var(--xc-brand-soft);
+  border-color: var(--xc-brand-line);
 }
 
 .xc-notifications-mark-btn {
   padding: 0.35rem 0.75rem;
   font-size: 0.75rem;
   font-weight: 500;
-  border: 1px solid var(--xc-border, #cbd5e1);
-  border-radius: 0.375rem;
-  background: var(--xc-surface, #ffffff);
-  color: var(--xc-primary, #0284c7);
+  border: 2px solid var(--xc-border);
+  border-radius: var(--xc-radius-lg);
+  background: var(--xc-surface);
+  color: var(--xc-primary);
   cursor: pointer;
   transition: all 0.15s ease-in-out;
+  min-height: 44px;
 }
 
 .xc-notifications-mark-btn:hover:not(:disabled) {
-  background: #e0f2fe;
-  border-color: #7dd3fc;
+  background: var(--xc-brand-soft);
+  border-color: var(--xc-brand-line);
 }
 
 .xc-notifications-mark-btn:disabled {

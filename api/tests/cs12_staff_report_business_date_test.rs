@@ -21,6 +21,7 @@
 
 mod common;
 mod quote_common;
+mod shift_plan_common;
 mod tx4_common;
 mod tx5_common;
 
@@ -31,7 +32,7 @@ use std::sync::{Arc, Once};
 
 use actix_web::http::{StatusCode, header};
 use actix_web::{App, HttpRequest, test as atest, web};
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use pos_infra::transactions::Transactor;
 use quote_common::*;
@@ -365,6 +366,15 @@ impl Day {
 
     /// The report of `day` as `who`, which must be answered 200.
     async fn report(&self, who: &Who, day: NaiveDate) -> Value {
+        self.report_query(who, &format!("&day={day}")).await
+    }
+
+    /// The report with no `day` (CS-12b), which must be answered 200.
+    async fn report_today(&self, who: &Who) -> Value {
+        self.report_query(who, "").await
+    }
+
+    async fn report_query(&self, who: &Who, day_param: &str) -> Value {
         let state = AppState::new(
             Arc::new(common::settings(&[(
                 "APP_FILES__DIR",
@@ -380,7 +390,7 @@ impl Day {
         )
         .await;
         let req = atest::TestRequest::get()
-            .uri(&format!("/api/v3/views/{VIEW}?branch={MAIN}&day={day}"))
+            .uri(&format!("/api/v3/views/{VIEW}?branch={MAIN}{day_param}"))
             .insert_header((header::HOST, HOST))
             .insert_header((AS, who.spec.clone()))
             .to_request();
@@ -389,7 +399,7 @@ impl Day {
         let bytes = atest::read_body(resp).await;
         let body: Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&bytes).into_owned()));
-        assert_eq!(status, StatusCode::OK, "the report of {day}: {body}");
+        assert_eq!(status, StatusCode::OK, "the report ({day_param}): {body}");
         let data = body["data"].clone();
         assert!(data.is_object(), "a report: {body}");
         data
@@ -651,6 +661,53 @@ async fn r2c_the_status_counts_the_shifts_of_the_business_date() {
     assert_eq!(
         nov5["status"], "preliminary",
         "5 Nov has no shift of its own: {nov5}"
+    );
+    d.finish().await;
+}
+
+/// R4 (CS-12b, re-review of PR 6274 out-of-scope item 2, ruled by the lane controller claude/022a7453): with no `day`,
+/// the report opens on the current **business** day, `ShiftPlan::business_date_of(now)`, not the calendar date. Between
+/// midnight and the cutover those differ. The view reads the real clock, so the test makes "now is before the cutover"
+/// true whatever the time: MAIN takes a timezone where it is before 10:00 locally, and a 24 h plan whose cutover is two
+/// hours from now. Before 10:00 both starts fall on the same day (cutover ≤ 11:00, the second start ≤ 23:00), so the
+/// cutover, the earliest start (T1), is the first one. The business day is then yesterday's local date. Written by the
+/// ticket author claude/35271802 (fixed after gemini/studio-14 found the wrap past midnight on #6305).
+#[actix_web::test]
+async fn r4_with_no_day_the_report_opens_on_the_current_business_day() {
+    let d = Day::start().await;
+    let reader = d.person(Role::BranchManager).await;
+    let now = Utc::now();
+    let zone = [
+        "Asia/Bangkok",
+        "Europe/London",
+        "America/New_York",
+        "Pacific/Honolulu",
+        "Asia/Tokyo",
+    ]
+    .into_iter()
+    .find(|z| {
+        let tz: Tz = z.parse().unwrap();
+        now.with_timezone(&tz).hour() < 10
+    })
+    .expect("the five offsets (0, 7, 9, 14, 19 mod 24) leave no 10-hour gap, so one zone is before 10:00");
+    let tz: Tz = zone.parse().unwrap();
+    let local = now.with_timezone(&tz);
+    let cutover = local.hour() + 2;
+    let (a, b) = (
+        format!("{cutover:02}:00"),
+        format!("{:02}:00", (cutover + 12) % 24),
+    );
+    shift_plan_common::set_timezone(&d.db().pool, MAIN, zone).await;
+    shift_plan_common::set_plan(&d.db().pool, MAIN, &[("X", &a, &b), ("Y", &b, &a)]).await;
+
+    let report = d.report_today(&reader).await;
+
+    let calendar = local.date_naive();
+    let business = calendar.pred_opt().unwrap();
+    assert_eq!(
+        report["day"],
+        json!(business.to_string()),
+        "R4: at {local} in {zone} with cutover {a}, the business day is {business}, not the calendar {calendar}: {report}"
     );
     d.finish().await;
 }

@@ -14,6 +14,7 @@ export const th = {
   signedInAs: 'สวัสดี {name}',
   member: 'สมาชิก',
   rateAlerts: 'การแจ้งเตือนเรท',
+  signInNeeded: 'กรุณาเข้าสู่ระบบเพื่อดูหน้านี้',
 };
 
 export const en = {
@@ -29,6 +30,7 @@ export const en = {
   signedInAs: 'Hello {name}',
   member: 'Membership',
   rateAlerts: 'Rate Alerts',
+  signInNeeded: 'Please sign in to see this page',
 };
 
 export const zh = {
@@ -44,4 +46,5 @@ export const zh = {
   signedInAs: '您好，{name}',
   member: '会员',
   rateAlerts: '汇率提醒',
+  signInNeeded: '请登录后查看此页面',
 };

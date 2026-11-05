@@ -6,7 +6,7 @@
 //!   its three permissions is refused `RoleNotAllowed` by the core before `load`, so no figure is sent.
 //! - **The day:** sales match `value_date = day` and shifts match `business_date = day`. Reversals,
 //!   pending transactions, and safe counts use `[day 00:00, day+1 00:00)` in `branches.timezone`, converted
-//!   to UTC once (§B.3). No `day` = today's business date in that timezone (D-B3).
+//!   to UTC once (§B.3). No `day` = the current business day in that timezone (D-B3).
 //! - **LIVE only:** DEMO exchanges (and reversals of them) are in no figure.
 //! - Not versioned and never polled: the screen reads it on load and on a day change (D-B1, §B.4).
 
@@ -19,16 +19,20 @@ use actix_web::web;
 use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
 use sqlx::PgPool;
 use ts_rs::TS;
 use uuid::Uuid;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
+use xc_shift::application::shift_plan::service::ShiftPlanService;
 use xc_shift::domain::custody::entities::cash_exception::ExceptionStatus;
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::staff_daily_report::{
@@ -120,7 +124,21 @@ impl StaffDailyReportView {
             .parse()
             .map_err(|_| AppError::Internal(format!("branch timezone {timezone:?}")))?;
         let now = Utc::now();
-        let day = day.unwrap_or_else(|| now.with_timezone(&tz).date_naive());
+        let day = match day {
+            Some(d) => d,
+            None => {
+                let mut tx = self.pool.begin().await.map_err(db)?;
+                let plan = ShiftPlanService::new(
+                    Arc::new(PgShiftTemplateStore),
+                    BranchTx::new(Transactor::new(self.pool.clone())),
+                )
+                .plan_in(&mut tx, branch)
+                .await?;
+                tx.rollback().await.map_err(db)?;
+                plan.business_date_of(now)
+                    .unwrap_or_else(|| now.with_timezone(&tz).date_naive())
+            }
+        };
         let next = day
             .succ_opt()
             .ok_or_else(|| AppError::Internal("the day after".into()))?;

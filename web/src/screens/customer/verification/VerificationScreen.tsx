@@ -2,6 +2,7 @@ import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiError } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
+import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import {
   fetchMyVerification,
@@ -100,6 +101,7 @@ export function VerificationScreen(): JSX.Element {
   const [permitted, setPermitted] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [signedOut, setSignedOut] = createSignal(false);
   const [actionError, setActionError] = createSignal<string | null>(null);
   const [readiness, setReadiness] = createSignal<string>('NONE');
   const [currentCase, setCurrentCase] = createSignal<MyVerificationCaseDetail | null>(null);
@@ -133,6 +135,7 @@ export function VerificationScreen(): JSX.Element {
           setPermitted(false);
         } else {
           setPermitted(true);
+          setSignedOut(isSignedOut(err));
           setErrorMsg(formatRefusalError(err));
         }
       } finally {
@@ -325,7 +328,10 @@ export function VerificationScreen(): JSX.Element {
             </div>
           </Show>
 
-          <Show when={!loading() && errorMsg()}>
+          <Show when={!loading() && signedOut() && errorMsg()}>
+            {(msg) => <SignInNeeded message={msg()} />}
+          </Show>
+          <Show when={!loading() && !signedOut() && errorMsg()}>
             {(msg) => (
               <div class="xc-verification-error" role="alert">
                 <p class="xc-verification-error-message">{msg()}</p>

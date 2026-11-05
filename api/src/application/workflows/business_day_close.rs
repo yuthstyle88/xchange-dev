@@ -86,6 +86,13 @@ impl BusinessDayCloser {
                 }
             };
 
+            if ended > 0
+                && let Err(e) = BranchTx::lock_also(&mut tx, &branch).await
+            {
+                tracing::error!("business-day-close: version bump failed for {branch_str}: {e}");
+                continue;
+            }
+
             if let Err(e) = tx.commit().await {
                 tracing::error!("business-day-close: commit failed for {branch_str}: {e}");
                 continue;

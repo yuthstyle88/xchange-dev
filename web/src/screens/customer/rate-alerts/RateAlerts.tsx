@@ -26,6 +26,7 @@ import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error'
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { checkDecimal, numeric } from '../../../shared/ui/bounded';
 import { MoneyText } from '../../../shared/ui/MoneyText';
+import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import { AlertFacts } from './AlertFacts';
 import './rate-alerts.css';
@@ -95,6 +96,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   const [alerts, setAlerts] = createSignal<MyRateAlertItem[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [loadError, setLoadError] = createSignal<string | null>(null);
+  const [signedOut, setSignedOut] = createSignal(false);
 
   // Branches list from public API
   const [resolvedOrg, setResolvedOrg] = createSignal(props.org ?? '');
@@ -265,6 +267,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       const answer = await api.view<MyRateAlertsData>('my_rate_alerts', { since: sinceVersion });
       if (seq !== loadSeq) return;
       setLoadError(null);
+      setSignedOut(false);
       if (answer.changed && answer.data) {
         setAlerts(answer.data.alerts ?? []);
         sinceVersion = answer.version;
@@ -275,6 +278,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       // If changed === false, keep alerts as is per §8
     } catch (err: unknown) {
       if (seq !== loadSeq) return;
+      setSignedOut(isSignedOut(err));
       setLoadError(rateAlertsError(err));
     } finally {
       if (seq === loadSeq) {
@@ -435,133 +439,135 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       </header>
 
       {/* Create Alert Section */}
-      <section class="xc-create-alert-section" aria-labelledby="create-alert-heading">
-        <h2 id="create-alert-heading">{t('createTitle')}</h2>
-        <form class="xc-create-alert-form" onSubmit={handleCreate}>
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-branch">{t('branch')}</label>
-            <select
-              id="alert-branch"
-              class="xc-form-select"
-              value={branch()}
-              onChange={(e) => setBranch(e.currentTarget.value)}
-              required
-            >
-              <For each={branches()}>
-                {(b) => (
-                  <option value={b.id}>
-                    {b.name ? `${b.name} (${b.code})` : b.code}
-                  </option>
-                )}
-              </For>
-            </select>
-            <Show when={branchesError()}>
+      <Show when={!signedOut()}>
+        <section class="xc-create-alert-section" aria-labelledby="create-alert-heading">
+          <h2 id="create-alert-heading">{t('createTitle')}</h2>
+          <form class="xc-create-alert-form" onSubmit={handleCreate}>
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-branch">{t('branch')}</label>
+              <select
+                id="alert-branch"
+                class="xc-form-select"
+                value={branch()}
+                onChange={(e) => setBranch(e.currentTarget.value)}
+                required
+              >
+                <For each={branches()}>
+                  {(b) => (
+                    <option value={b.id}>
+                      {b.name ? `${b.name} (${b.code})` : b.code}
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Show when={branchesError()}>
+                <div class="xc-form-error" role="alert">
+                  {branchesError()}
+                </div>
+              </Show>
+              <Show when={createFieldErrors().branch}>
+                {(msg) => <span data-field-error="branch">{msg()}</span>}
+              </Show>
+            </div>
+
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-currency">{t('currency')}</label>
+              <select
+                id="alert-currency"
+                class="xc-form-select"
+                value={currency()}
+                onChange={(e) => setCurrency(e.currentTarget.value)}
+                required
+              >
+                <For each={currencies()}>
+                  {(code) => (
+                    // `selected` keeps the shown option equal to `currency()`: the options arrive after the value is set.
+                    <option value={code} selected={code === currency()}>
+                      {code}
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Show when={createFieldErrors().currency}>
+                {(msg) => <span data-field-error="currency">{msg()}</span>}
+              </Show>
+            </div>
+
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-side">{t('side')}</label>
+              <select
+                id="alert-side"
+                class="xc-form-select"
+                value={customerSide()}
+                onChange={(e) => setCustomerSide(e.currentTarget.value as 'CUSTOMER_BUY' | 'CUSTOMER_SELL')}
+              >
+                <option value="CUSTOMER_BUY">{t('sideBuy')}</option>
+                <option value="CUSTOMER_SELL">{t('sideSell')}</option>
+              </select>
+            </div>
+
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-condition">{t('condition')}</label>
+              <select
+                id="alert-condition"
+                class="xc-form-select"
+                value={condition()}
+                onChange={(e) => setCondition(e.currentTarget.value as 'ABOVE' | 'BELOW')}
+              >
+                <option value="ABOVE">{t('conditionAbove')}</option>
+                <option value="BELOW">{t('conditionBelow')}</option>
+              </select>
+            </div>
+
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-target">{t('target')}</label>
+              <input
+                id="alert-target"
+                class="xc-form-input"
+                type="text"
+                inputMode="decimal"
+                placeholder={t('targetPlaceholder')}
+                value={target()}
+                onInput={(e) => setTarget(e.currentTarget.value)}
+                required
+              />
+              <Show when={createFieldErrors().target}>
+                {(msg) => <span data-field-error="target">{msg()}</span>}
+              </Show>
+            </div>
+
+            <div class="xc-form-group">
+              <label class="xc-form-label" for="alert-expires">{t('expiresAt')}</label>
+              <input
+                id="alert-expires"
+                class="xc-form-input"
+                type="text"
+                value={expiresAt()}
+                onInput={(e) => setExpiresAt(e.currentTarget.value)}
+              />
+              <Show when={createFieldErrors().expiresAt}>
+                {(msg) => <span data-field-error="expiresAt">{msg()}</span>}
+              </Show>
+            </div>
+
+            <Show when={createError()}>
               <div class="xc-form-error" role="alert">
-                {branchesError()}
+                {createError()}
               </div>
             </Show>
-            <Show when={createFieldErrors().branch}>
-              {(msg) => <span data-field-error="branch">{msg()}</span>}
-            </Show>
-          </div>
 
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-currency">{t('currency')}</label>
-            <select
-              id="alert-currency"
-              class="xc-form-select"
-              value={currency()}
-              onChange={(e) => setCurrency(e.currentTarget.value)}
-              required
-            >
-              <For each={currencies()}>
-                {(code) => (
-                  // `selected` keeps the shown option equal to `currency()`: the options arrive after the value is set.
-                  <option value={code} selected={code === currency()}>
-                    {code}
-                  </option>
-                )}
-              </For>
-            </select>
-            <Show when={createFieldErrors().currency}>
-              {(msg) => <span data-field-error="currency">{msg()}</span>}
-            </Show>
-          </div>
-
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-side">{t('side')}</label>
-            <select
-              id="alert-side"
-              class="xc-form-select"
-              value={customerSide()}
-              onChange={(e) => setCustomerSide(e.currentTarget.value as 'CUSTOMER_BUY' | 'CUSTOMER_SELL')}
-            >
-              <option value="CUSTOMER_BUY">{t('sideBuy')}</option>
-              <option value="CUSTOMER_SELL">{t('sideSell')}</option>
-            </select>
-          </div>
-
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-condition">{t('condition')}</label>
-            <select
-              id="alert-condition"
-              class="xc-form-select"
-              value={condition()}
-              onChange={(e) => setCondition(e.currentTarget.value as 'ABOVE' | 'BELOW')}
-            >
-              <option value="ABOVE">{t('conditionAbove')}</option>
-              <option value="BELOW">{t('conditionBelow')}</option>
-            </select>
-          </div>
-
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-target">{t('target')}</label>
-            <input
-              id="alert-target"
-              class="xc-form-input"
-              type="text"
-              inputMode="decimal"
-              placeholder={t('targetPlaceholder')}
-              value={target()}
-              onInput={(e) => setTarget(e.currentTarget.value)}
-              required
-            />
-            <Show when={createFieldErrors().target}>
-              {(msg) => <span data-field-error="target">{msg()}</span>}
-            </Show>
-          </div>
-
-          <div class="xc-form-group">
-            <label class="xc-form-label" for="alert-expires">{t('expiresAt')}</label>
-            <input
-              id="alert-expires"
-              class="xc-form-input"
-              type="text"
-              value={expiresAt()}
-              onInput={(e) => setExpiresAt(e.currentTarget.value)}
-            />
-            <Show when={createFieldErrors().expiresAt}>
-              {(msg) => <span data-field-error="expiresAt">{msg()}</span>}
-            </Show>
-          </div>
-
-          <Show when={createError()}>
-            <div class="xc-form-error" role="alert">
-              {createError()}
+            <div class="xc-form-actions">
+              <button
+                type="submit"
+                class="xc-btn-primary"
+                disabled={isCreating()}
+              >
+                {isCreating() ? t('creating') : t('submitCreate')}
+              </button>
             </div>
-          </Show>
-
-          <div class="xc-form-actions">
-            <button
-              type="submit"
-              class="xc-btn-primary"
-              disabled={isCreating()}
-            >
-              {isCreating() ? t('creating') : t('submitCreate')}
-            </button>
-          </div>
-        </form>
-      </section>
+          </form>
+        </section>
+      </Show>
 
       {/* Action error banner */}
       <Show when={actionError()}>
@@ -578,7 +584,10 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       </Show>
 
       {/* Error State */}
-      <Show when={!loading() && loadError() && alerts().length === 0}>
+      <Show when={!loading() && signedOut() && loadError() && alerts().length === 0}>
+        <SignInNeeded message={loadError()!} />
+      </Show>
+      <Show when={!loading() && !signedOut() && loadError() && alerts().length === 0}>
         <div class="xc-alerts-error" role="alert">
           <p>{loadError()}</p>
           <button type="button" class="xc-alerts-retry-btn" onClick={handleRetry}>
