@@ -141,12 +141,22 @@ jobs:
 
       - name: Build the APK
         working-directory: app
-        run: flutter build apk --release
+        run: |
+          flutter build apk --release \
+            --dart-define=APP_VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)" \
+            --dart-define=BUILD_SHA="$(git rev-parse --short HEAD)" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --dart-define=CHANNEL="${{ startsWith(github.ref, 'refs/heads/release/') && 'release' || 'staging' }}"
 
       - name: Build the app bundle (signed builds only)
         if: ${{ steps.signing.outputs.signed == 'true' }}
         working-directory: app
-        run: flutter build appbundle --release
+        run: |
+          flutter build appbundle --release \
+            --dart-define=APP_VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)" \
+            --dart-define=BUILD_SHA="$(git rev-parse --short HEAD)" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --dart-define=CHANNEL="${{ startsWith(github.ref, 'refs/heads/release/') && 'release' || 'staging' }}"
 
       - name: Check the APK package id
         run: |
