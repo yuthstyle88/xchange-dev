@@ -1,53 +1,79 @@
-/* market-sources.css — styles for MarketSources.tsx (FE pricing-board, #564, #3760). */
+/* market-sources.css — MarketSources.tsx: one chip per market source (name, time, stale / error, refresh), in the
+   admin palette (FE pricing-board, #564, #3760; look 2026-11-05). */
 
-.xc-market-sources {
+.xc-admin .xc-content.xc-content .xc-market-sources {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 0 16px 2px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.xc-admin .xc-content.xc-content .xc-market-sources::-webkit-scrollbar {
+  display: none;
+}
+
+.xc-admin .xc-content.xc-content .xc-market-source-chip {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  scroll-snap-align: start;
+  white-space: nowrap;
   align-items: center;
+  gap: 2px 8px;
+  min-height: 44px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fcfafb;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
-.xc-market-source-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
-  background-color: var(--surface-2, #f3f4f6);
-  border: 1px solid var(--border, #e5e7eb);
-  font-size: 0.8125rem;
-  line-height: 1.25rem;
+.xc-admin .xc-content.xc-content .xc-source-name {
+  font-weight: 800;
+  color: var(--ink);
 }
 
-.xc-source-name {
-  font-weight: 600;
-  color: var(--text, #111827);
+.xc-admin .xc-content.xc-content .xc-source-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
-.xc-source-time {
-  color: var(--text-muted, #6b7280);
+.xc-admin .xc-content.xc-content .xc-source-stale {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fff9ec;
+  color: #795919;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.xc-source-stale {
-  color: var(--color-warning, #d97706);
-  font-weight: 500;
+.xc-admin .xc-content.xc-content .xc-source-error {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.xc-source-error {
-  color: var(--color-danger, #dc2626);
-  font-weight: 500;
+.xc-admin .xc-content.xc-content .xc-market-source-chip .xc-source-refresh-btn {
+  margin-left: auto;
+  min-height: 36px;
+  padding: 4px 12px;
+  border: 1px solid #edd4df;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
 }
 
-.xc-source-refresh-btn {
-  background: none;
-  border: none;
-  padding: 0 0.25rem;
-  font-size: 0.75rem;
-  color: var(--color-primary, #2563eb);
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.xc-source-refresh-btn:hover {
-  opacity: 0.8;
+.xc-admin .xc-content.xc-content .xc-market-source-chip .xc-source-refresh-btn:hover {
+  border-color: var(--brand);
+  background: var(--soft);
 }

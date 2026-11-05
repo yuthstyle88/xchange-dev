@@ -1,0 +1,153 @@
+@import url(xc-tokens.css);
+/* Kiosk screensaver (kiosk-attract.js). A fixed design stage (1920x1080 landscape or
+   1080x1920 portrait) scaled to the screen. Every class and id starts with xa- so kiosk.css
+   rules do not reach it. Text boxes marked .xa-fit have a fixed size; the script shrinks
+   their font until each language fits, and children size in em from that font. */
+#xa{position:fixed;inset:0;z-index:9999;background:#f6ece8;overflow:hidden;cursor:pointer;-webkit-user-select:none;user-select:none;touch-action:none}
+#xa[hidden]{display:none}
+.xa-stage{position:absolute;left:50%;top:50%;transform-origin:50% 50%;overflow:hidden;color:var(--xc-ink);font-family:var(--xc-font-sans,'Noto Sans Thai',Arial,Tahoma,sans-serif);line-height:1.25}
+.xa-land{width:1920px;height:1080px}
+.xa-port{width:1080px;height:1920px}
+.xa-stage *{box-sizing:border-box;margin:0;padding:0}
+.xa-fit{overflow:hidden}
+.xa-bg{position:absolute;inset:0;background:radial-gradient(1200px 900px at 50% -10%,#fff 0,rgba(255,255,255,0) 60%),linear-gradient(180deg,#fbf3f0 0,#f6ece8 100%)}
+.xa-band{position:absolute;left:0;right:0;top:0;background:linear-gradient(135deg,var(--xc-brand) 0,var(--xc-brand-strong) 100%)}
+.xa-brand{position:absolute;display:flex;align-items:center;color:var(--xc-on-brand)}
+.xa-logo{background:var(--xc-surface);display:grid;place-items:center;box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.xa-logo img{display:block;width:88%;height:auto}
+.xa-brand b{display:block;font-weight:800;letter-spacing:.04em;line-height:1}
+.xa-brand small{display:block;font-weight:700;letter-spacing:.18em;opacity:.85;margin-top:8px}
+.xa-top{position:absolute;display:flex;align-items:center;gap:26px}
+.xa-lang{color:var(--xc-on-brand);background:rgba(255,255,255,.16);border:2px solid rgba(255,255,255,.35);border-radius:999px;padding:8px 26px;font-size:30px;font-weight:700;white-space:nowrap}
+.xa-steps{display:flex;gap:18px}
+.xa-steps i{width:64px;height:64px;border-radius:50%;border:3px solid rgba(255,255,255,.55);color:var(--xc-on-brand);font-size:30px;font-weight:800;font-style:normal;display:grid;place-items:center}
+.xa-steps i.on{background:var(--xc-surface);color:var(--xc-brand);border-color:var(--xc-on-brand)}
+.xa-steps i.done{background:rgba(255,255,255,.25);border-color:rgba(255,255,255,.25)}
+.xa-scene{position:absolute;left:0;right:0;bottom:0;opacity:0}
+/* captions */
+.xa-cap{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:18px}
+.xa-tag{align-self:center;font-weight:800;font-size:28px;letter-spacing:.06em;color:var(--xc-brand);background:var(--xc-surface);border:2px solid var(--xc-line);border-radius:999px;padding:8px 26px;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.xa-h1{font-weight:800;font-size:78px;line-height:1.3}
+.xa-p{font-weight:600;font-size:42px;color:var(--xc-muted)}
+/* device mock */
+.xa-device{position:absolute;width:860px;height:990px;background:var(--xc-surface);border-radius:44px;box-shadow:0 30px 80px rgba(84,0,30,.18),0 0 0 14px #2b2327,0 0 0 16px #4a3f44;overflow:hidden}
+.xa-dhead{height:96px;background:var(--xc-brand);color:var(--xc-on-brand);display:flex;align-items:center;justify-content:space-between;gap:20px;padding:0 36px}
+.xa-dhead .xa-fit{font-size:30px;font-weight:700;height:44px;line-height:44px;white-space:nowrap;flex:1}
+.xa-ex{background:rgba(255,255,255,.18);border-radius:999px;padding:4px 16px;font-size:22px;font-weight:600;white-space:nowrap;flex:none}
+.xa-dbody{padding:34px 40px}
+.xa-dirs{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.xa-dir{height:124px;border:3px solid var(--xc-line);border-radius:22px;padding:14px 20px;font-size:29px;font-weight:700}
+.xa-dir small{display:block;font-weight:400;font-size:.72em;color:var(--xc-muted);margin-top:4px}
+.xa-dir.sel{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+.xa-lbl{height:44px;font-size:26px;color:var(--xc-muted);font-weight:600;margin:24px 0 12px;white-space:nowrap}
+.xa-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.xa-tile{height:78px;border:3px solid var(--xc-line);border-radius:20px;padding:0 18px;display:flex;align-items:center;gap:14px}
+.xa-sym{width:50px;height:50px;border-radius:50%;background:var(--xc-gray-100);color:var(--xc-brand);display:grid;place-items:center;font-size:28px;font-weight:800;flex:none}
+.xa-tile b{font-size:32px;font-weight:800}
+.xa-tile.sel{border-color:var(--xc-brand);background:var(--xc-brand-soft)}
+.xa-tile.sel .xa-sym{background:var(--xc-brand);color:var(--xc-on-brand)}
+.xa-amount{display:flex;gap:22px;align-items:stretch;direction:ltr}
+.xa-field{flex:1;border:3px solid var(--xc-line);border-radius:20px;padding:12px 24px;font-size:60px;font-weight:800;display:flex;align-items:center;justify-content:space-between}
+.xa-field .ph{color:var(--xc-gray-300)}
+.xa-field small{font-size:28px;color:var(--xc-muted)}
+.xa-field.focus{border-color:var(--xc-brand)}
+.xa-caret{display:inline-block;width:4px;height:58px;background:var(--xc-brand);margin-left:6px;vertical-align:middle}
+.xa-keys{display:grid;grid-template-columns:repeat(3,92px);gap:12px}
+.xa-key{height:66px;border-radius:16px;background:var(--xc-gray-100);display:grid;place-items:center;font-size:32px;font-weight:800}
+.xa-est{height:62px;margin-top:20px;font-size:30px;font-weight:600;line-height:62px;white-space:nowrap;color:var(--xc-brand)}
+.xa-btn{margin-top:18px;height:104px;border-radius:24px;background:var(--xc-brand);color:var(--xc-on-brand);font-weight:800;font-size:40px;display:flex;align-items:center;justify-content:center;padding:0 24px;white-space:nowrap}
+.xa-btn.off{background:var(--xc-gray-300)}
+.xa-h3{height:60px;font-size:40px;font-weight:800;margin-bottom:16px;white-space:nowrap}
+.xa-row{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:22px 0;border-bottom:2px dashed var(--xc-line)}
+.xa-row .xa-fit{flex:1;height:44px;line-height:44px;font-size:32px;color:var(--xc-muted);white-space:nowrap}
+.xa-row b{font-size:52px;font-weight:800;white-space:nowrap;direction:ltr}
+.xa-row.big b{font-size:68px;color:var(--xc-brand)}
+.xa-note{height:104px;font-size:24px;color:var(--xc-muted);margin-top:20px;line-height:1.45}
+.xa-two{display:grid;grid-template-columns:1fr 1.4fr;gap:18px;margin-top:26px}
+.xa-ghost{height:104px;border-radius:24px;border:3px solid var(--xc-line);display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;color:var(--xc-muted);white-space:nowrap;padding:0 18px}
+.xa-two .xa-btn{margin-top:0}
+.xa-ok{width:150px;height:150px;border-radius:50%;background:var(--xc-success);color:var(--xc-on-brand);display:grid;place-items:center;margin:16px auto 18px;font-size:92px;font-weight:800}
+.xa-sent{height:56px;line-height:56px;text-align:center;font-size:36px;font-weight:800;white-space:nowrap}
+.xa-queue{margin:30px auto 0;width:max-content;font-size:104px;font-weight:800;letter-spacing:.04em;color:var(--xc-brand);border:4px dashed var(--xc-brand);border-radius:28px;padding:6px 40px;background:var(--xc-brand-soft);direction:ltr}
+.xa-bring{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:40px}
+.xa-bring div{border-radius:26px;background:var(--xc-amber-50);border:2px solid #f0e2cc;padding:22px;display:grid;place-items:center}
+.xa-bring svg{width:170px;height:124px;display:block}
+.xa-req{height:70px;text-align:center;font-size:23px;color:var(--xc-muted);margin-top:22px;line-height:1.45}
+.xa-track{position:relative;margin-top:20px}
+.xa-trow{display:flex;align-items:center;gap:26px;padding:24px 0}
+.xa-dot{width:84px;height:84px;border-radius:50%;border:4px solid var(--xc-line);display:grid;place-items:center;font-size:36px;font-weight:800;color:var(--xc-gray-300);background:var(--xc-surface);flex:none;position:relative;z-index:1}
+.xa-dot.on{border-color:var(--xc-brand);color:var(--xc-brand)}
+.xa-dot.fin{background:var(--xc-success);border-color:var(--xc-success);color:var(--xc-on-brand)}
+.xa-trow .xa-fit{flex:1;height:96px;font-size:38px;font-weight:800}
+.xa-trow small{display:block;font-size:.63em;font-weight:500;color:var(--xc-muted)}
+.xa-bar{position:absolute;left:40px;width:4px;background:var(--xc-line)}
+.xa-bar i{display:block;width:100%;background:var(--xc-success);height:0}
+.xa-receipt{margin-top:26px;border-radius:26px;background:var(--xc-success-soft);border:2px solid #cfe9d9;padding:20px 28px;display:flex;align-items:center;gap:22px;color:var(--xc-success)}
+.xa-receipt svg{width:90px;height:90px;flex:none}
+.xa-receipt .xa-fit{flex:1;height:124px;font-size:30px;font-weight:700;display:flex;align-items:center}
+/* intro and outro */
+.xa-hero{position:absolute;display:flex;flex-direction:column;justify-content:center;gap:16px}
+.xa-big{font-weight:800;font-size:110px;line-height:1.3}
+.xa-mid{font-weight:800;font-size:80px;line-height:1.3;color:var(--xc-brand)}
+.xa-sub{font-weight:600;font-size:48px;color:var(--xc-muted)}
+.xa-trio{position:absolute;display:grid;gap:26px}
+.xa-trio>div{display:flex;align-items:center;gap:30px;background:var(--xc-surface);border-radius:30px;padding:24px 36px;box-shadow:0 14px 40px rgba(84,0,30,.10);opacity:0}
+.xa-trio i{width:96px;height:96px;border-radius:50%;background:var(--xc-brand);color:var(--xc-on-brand);font-size:48px;font-weight:800;display:grid;place-items:center;font-style:normal;flex:none}
+.xa-trio .xa-fit{flex:1;height:104px;font-size:42px;font-weight:800;display:flex;flex-direction:column;justify-content:center}
+.xa-trio small{font-size:.7em;font-weight:600;color:var(--xc-muted)}
+.xa-touch{position:absolute;width:420px;height:420px}
+.xa-touch .r{position:absolute;inset:0;border-radius:50%;border:6px solid var(--xc-brand);opacity:0}
+.xa-touch .c{position:absolute;left:110px;top:110px;width:200px;height:200px;border-radius:50%;background:var(--xc-brand);display:grid;place-items:center;box-shadow:0 20px 50px rgba(165,0,60,.35)}
+.xa-touch svg{width:110px;height:110px}
+.xa-langs{position:absolute;display:flex;flex-wrap:wrap;align-content:flex-start;gap:14px}
+.xa-chip{padding:10px 24px;border-radius:999px;background:var(--xc-surface);border:2px solid var(--xc-line);font-size:30px;font-weight:600;white-space:nowrap}
+.xa-chip.on{background:var(--xc-brand);border-color:var(--xc-brand);color:var(--xc-on-brand)}
+.xa-hint{position:absolute;display:flex;align-items:center;gap:16px;background:var(--xc-brand);color:var(--xc-on-brand);font-weight:800;border-radius:999px;padding:14px 40px 14px 26px;box-shadow:0 12px 30px rgba(165,0,60,.28)}
+.xa-hint svg{width:50px;height:50px;flex:none}
+.xa-hint .xa-fit{height:48px;line-height:48px;font-size:34px;white-space:nowrap}
+.xa-foot{position:absolute;font-weight:700;font-size:26px;letter-spacing:.2em;color:var(--xc-brand);opacity:.75;white-space:nowrap}
+#xa-cursor,#xa-ripple{position:absolute;width:86px;height:86px;margin:-43px 0 0 -43px;border-radius:50%;opacity:0;pointer-events:none}
+#xa-cursor{background:rgba(255,255,255,.85);border:5px solid var(--xc-brand);box-shadow:0 10px 26px rgba(0,0,0,.25);z-index:20}
+#xa-ripple{border:6px solid var(--xc-brand);z-index:19}
+
+/* portrait 1080x1920 */
+.xa-port .xa-band{height:250px}
+.xa-port .xa-brand{left:64px;top:58px;gap:26px}
+.xa-port .xa-logo{width:190px;height:132px;border-radius:22px}
+.xa-port .xa-brand b{font-size:58px}
+.xa-port .xa-brand small{font-size:24px}
+.xa-port .xa-top{right:64px;top:92px}
+.xa-port .xa-lang{position:absolute;right:0;top:-74px;font-size:26px;padding:4px 20px}
+.xa-port .xa-scene{top:250px}
+.xa-port .xa-device{left:110px;top:80px}
+.xa-port .xa-cap{left:60px;right:60px;bottom:210px;height:380px;text-align:center}
+.xa-port .xa-hero{left:70px;right:70px;top:110px;height:520px;text-align:center}
+.xa-port .xa-trio{left:90px;right:90px;top:700px}
+.xa-port .xa-touch{left:330px;top:560px}
+.xa-port .xa-langs{left:70px;right:70px;top:1060px;height:360px;justify-content:center}
+.xa-port .xa-hint{left:50%;bottom:96px;transform:translateX(-50%);max-width:960px}
+.xa-port .xa-foot{left:0;right:0;bottom:36px;text-align:center}
+
+/* landscape 1920x1080 */
+.xa-land .xa-band{height:150px}
+.xa-land .xa-brand{left:70px;top:22px;gap:22px}
+.xa-land .xa-logo{width:150px;height:106px;border-radius:18px}
+.xa-land .xa-brand b{font-size:52px}
+.xa-land .xa-brand small{font-size:22px}
+.xa-land .xa-top{right:80px;top:43px}
+.xa-land .xa-scene{top:150px}
+.xa-land .xa-device{left:170px;top:44px;zoom:.8}
+.xa-land .xa-cap{left:1010px;right:110px;top:60px;height:560px;text-align:left}
+.xa-land .xa-cap .xa-tag{align-self:flex-start}
+.xa-land .xa-h1{font-size:84px}
+.xa-land .xa-p{font-size:44px}
+.xa-land .xa-hero{left:120px;width:820px;top:60px;height:640px;text-align:left}
+.xa-land .xa-big{font-size:118px}
+.xa-land .xa-trio{left:1010px;right:110px;top:110px}
+.xa-land .xa-touch{right:230px;top:70px}
+.xa-land #xa-s5 .xa-hero{top:40px;height:430px;width:900px}
+.xa-land .xa-langs{left:120px;width:1080px;top:520px;height:260px}
+.xa-land .xa-chip{font-size:26px;padding:8px 20px}
+.xa-land .xa-hint{right:110px;bottom:84px;max-width:800px}
+.xa-land .xa-foot{right:110px;bottom:34px}
+[dir=rtl] .xa-land .xa-cap,[dir=rtl] .xa-land .xa-hero{text-align:right}

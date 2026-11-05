@@ -1,55 +1,318 @@
-/* pricing-row.css — styles for PricingRow.tsx (FE pricing-board, #564). */
+/* pricing-row.css — one currency card (PricingRow.tsx, CardLines): code + name + "ตั้งราคา", small grey labels on
+   the left, bold right-aligned figures, the source or the gap on the far right, status pills and notes. Follows the
+   shop board's pricing screen (owner 2026-11-05). */
 
-.pricing-row {
-  border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+.xc-admin .xc-content.xc-content .pricing-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px 14px 6px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04), 0 6px 18px rgba(23, 24, 27, 0.05);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.pricing-cell-select,
-.pricing-cell-code,
-.pricing-cell-quote-tt,
-.pricing-cell-quote-sr,
-.pricing-cell-quote-bot,
-.pricing-cell-current,
-.pricing-cell-suggested,
-.pricing-cell-status,
-.pricing-cell-flags {
-  padding: 0.5rem;
-  vertical-align: middle;
+.xc-admin .xc-content.xc-content .pricing-card:hover {
+  border-color: #e2e3e9;
+  box-shadow: 0 2px 4px rgba(23, 24, 27, 0.05), 0 10px 26px rgba(23, 24, 27, 0.08);
 }
 
-.pricing-btn-code {
-  font-weight: 600;
+.xc-admin .xc-content.xc-content .pricing-card-opened,
+.xc-admin .xc-content.xc-content .pricing-card-selected {
+  border-color: #edd4df;
+  background: linear-gradient(var(--soft), var(--soft)) top / 100% 64px no-repeat, #fff;
+}
+
+.xc-admin .xc-content.xc-content .pricing-card-rowless {
+  padding-left: 16px;
+  box-shadow: none;
+}
+
+/* 44 px touch target around the 22 px box */
+.xc-admin .xc-content.xc-content .pricing-card .pricing-cell-select {
+  display: grid;
+  flex: 0 0 44px;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: -2px 0 0;
   cursor: pointer;
-  background: none;
-  border: none;
+}
+
+.xc-admin .xc-content.xc-content .pricing-card-body {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+}
+
+.xc-admin .xc-content.xc-content .pricing-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+  row-gap: 0;
+  min-width: 0;
+}
+
+.xc-admin .xc-content.xc-content .pricing-card .pricing-btn-code,
+.xc-admin .xc-content.xc-content .pricing-card-code {
+  min-height: 0;
   padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.3;
+  letter-spacing: 0.3px;
 }
 
-.pricing-badge-overridden,
-.pricing-row-mode,
-.pricing-row-follow {
-  display: inline-block;
-  font-size: 0.75rem;
-  margin-left: 0.5rem;
+.xc-admin .xc-content.xc-content .pricing-card .pricing-btn-code:hover {
+  color: var(--brand);
 }
 
-.pricing-rate-buy {
+.xc-admin .xc-content.xc-content .pricing-card-name {
+  flex-basis: 100%;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .pricing-badge-overridden {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #eff0f4;
+  color: #4b4f5b;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Label / value lines ── */
+.xc-admin .xc-content.xc-content .pricing-lines {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: baseline;
+  column-gap: 10px;
+  min-height: 26px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line dt {
+  flex: 0 0 auto;
+  margin-right: auto;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line dd {
+  margin: 0;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line-value {
+  flex: 0 0 auto;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* the source or the gap sits at the far right; on a narrow card it drops under the figures, still right-aligned
+   (the line is justified to the end and the label takes the free space) */
+.xc-admin .xc-content.xc-content .pricing-line dd.pricing-line-aside {
+  flex: 0 0 auto;
+  min-width: 64px;
+  font-size: 11px;
+  color: var(--muted);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line-empty {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .pricing-line-sub {
+  min-height: 22px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line-sub dt,
+.xc-admin .xc-content.xc-content .pricing-line-others {
+  font-size: 11px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-line-others {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 2px 12px;
+  color: var(--muted);
+  white-space: normal;
+}
+
+.xc-admin .xc-content.xc-content .pricing-other-source {
+  display: inline-flex;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .pricing-other-name {
+  color: #8a8d95;
+}
+
+.xc-admin .xc-content.xc-content .pricing-pair {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .pricing-pair-strong {
+  font-weight: 800;
+}
+
+.xc-admin .xc-content.xc-content .pricing-rate-buy,
+.xc-admin .xc-content.xc-content .pricing-rate-sell {
   color: inherit;
 }
 
-.pricing-rate-sep {
-  margin: 0 0.25rem;
-  color: var(--text-muted, #6b7280);
+.xc-admin .xc-content.xc-content .pricing-rate-sep {
+  margin: 0 5px;
+  color: #c4c6cc;
+  font-weight: 400;
 }
 
-.pricing-rate-sell {
-  color: inherit;
+.xc-admin .xc-content.xc-content .pricing-gap {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.pricing-chip-status,
-.pricing-chip-flag {
-  display: inline-block;
-  padding: 0.125rem 0.375rem;
-  border-radius: 0.25rem;
-  font-size: 0.75rem;
+.xc-admin .xc-content.xc-content .pricing-gap-warn {
+  color: var(--brand);
+  font-weight: 700;
+}
+
+/* ── Status pills ── */
+.xc-admin .xc-content.xc-content .pricing-line-status {
+  align-items: center;
+  padding-top: 2px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: normal;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-status,
+.xc-admin .xc-content.xc-content .pricing-pill-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  background: #eff0f4;
+  color: #4b4f5b;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Tiers'],
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Pending'],
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Unpriced'] {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Current'] {
+  background: #eaf6ef;
+  color: #246446;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Review'] {
+  background: #fff9ec;
+  color: #795919;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Reference'] {
+  background: #f1f1f4;
+  color: #72747d;
+}
+
+.xc-admin .xc-content.xc-content .pricing-pill-follow {
+  background: var(--soft);
+  color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .pricing-dot {
+  opacity: 0.6;
+}
+
+.xc-admin .xc-content.xc-content .pricing-row-mode,
+.xc-admin .xc-content.xc-content .pricing-row-follow {
+  font: inherit;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-tag {
+  align-self: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ── Notes ── */
+.xc-admin .xc-content.xc-content .pricing-notes {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xc-admin .xc-content.xc-content .pricing-chip-flag {
+  font-size: 12px;
+  font-weight: 600;
+  color: #795919;
+}
+
+.xc-admin .xc-content.xc-content .pricing-note-red {
+  margin: 2px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+/* Hooks kept from the table layout (tests and other screens read them); the card rules above do the look. */
+.xc-admin .xc-content.xc-content .pricing-row .pricing-cell-code,
+.xc-admin .xc-content.xc-content .pricing-row .pricing-cell-status,
+.xc-admin .xc-content.xc-content .pricing-row .pricing-cell-flags {
+  min-width: 0;
+}
+
+.xc-admin .xc-content.xc-content .pricing-cell-current,
+.xc-admin .xc-content.xc-content .pricing-cell-suggested {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .pricing-row .pricing-check {
+  vertical-align: middle;
 }

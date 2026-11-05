@@ -116,6 +116,27 @@ fn compat_rate_json(rate: Rate, unit_size: UnitSize) -> AppResult<V2Json> {
 }
 
 pub fn rates_json(public_rates: &PublicRates, freshness: &RateFreshnessDto) -> AppResult<V2Json> {
+    rates_json_with_popular(public_rates, freshness, None)
+}
+
+/// What the customer kiosk's `rates` answer adds to the shared rates JSON (`/api/kiosk` `rates`).
+pub struct KioskRatesExtras<'a> {
+    /// The branch's ASK currencies (`branch_currencies.display = 'ASK'`): printed as `ask`, apart from
+    /// v2's `rates`, with no prices, so the kiosk can find them and word "contact staff". They are
+    /// never quoted (`application/workflows/exchange/quote.rs` refuses ASK off the desk).
+    pub ask: &'a [String],
+    /// The popular currencies, most popular first (`application::kiosk_popular`).
+    pub popular: &'a [String],
+    /// The branch's owner-set screen values (`application::kiosk_screen`).
+    pub screen: &'a Value,
+}
+
+/// `rates_json` plus, for the kiosk, its [`KioskRatesExtras`] (`popular`, `screen`, the ASK rows).
+pub fn rates_json_with_popular(
+    public_rates: &PublicRates,
+    freshness: &RateFreshnessDto,
+    extras: Option<KioskRatesExtras<'_>>,
+) -> AppResult<V2Json> {
     let mut rate_items = Vec::with_capacity(public_rates.rates.len());
     for rate in &public_rates.rates {
         let entry = CURRENCY_MAP.get(rate.code.as_str());
@@ -134,6 +155,25 @@ pub fn rates_json(public_rates: &PublicRates, freshness: &RateFreshnessDto) -> A
             ("sell", compat_rate_json(rate.sell, rate.unit_size)?),
         ]));
     }
+    let mut ask_items = Vec::new();
+    for code in extras.as_ref().map_or(&[][..], |e| e.ask) {
+        let entry = CURRENCY_MAP.get(code.as_str());
+        ask_items.push(V2Json::object(vec![
+            ("code", V2Json::text(code.as_str())),
+            ("name", V2Json::text(entry.map_or("", |e| e.name.as_str()))),
+            (
+                "nameEn",
+                V2Json::text(entry.map_or("", |e| e.name_en.as_str())),
+            ),
+            (
+                "countries",
+                entry.map_or_else(
+                    || V2Json::Array(vec![]),
+                    |e| V2Json::from_value(&e.countries),
+                ),
+            ),
+        ]));
+    }
 
     let freshness_json = V2Json::object(vec![
         ("stale", V2Json::Bool(freshness.stale)),
@@ -149,7 +189,7 @@ pub fn rates_json(public_rates: &PublicRates, freshness: &RateFreshnessDto) -> A
         ),
     ]);
 
-    Ok(V2Json::object(vec![
+    let mut fields = vec![
         ("branchId", V2Json::text(public_rates.branch_id.as_str())),
         ("branchName", V2Json::text(&public_rates.branch_name)),
         ("open", V2Json::Bool(public_rates.open)),
@@ -160,7 +200,16 @@ pub fn rates_json(public_rates: &PublicRates, freshness: &RateFreshnessDto) -> A
         ),
         ("simulation", V2Json::Bool(false)),
         ("freshness", freshness_json),
-    ]))
+    ];
+    if let Some(extras) = extras {
+        fields.push(("ask", V2Json::Array(ask_items)));
+        fields.push((
+            "popular",
+            V2Json::Array(extras.popular.iter().map(V2Json::text).collect()),
+        ));
+        fields.push(("screen", V2Json::from_value(extras.screen)));
+    }
+    Ok(V2Json::object(fields))
 }
 
 pub fn quote_json(

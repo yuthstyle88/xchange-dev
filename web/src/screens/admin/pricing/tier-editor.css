@@ -1,73 +1,190 @@
-/* tier-editor.css — styles for TierEditor.tsx (FE pricing-board, #564). */
+/* tier-editor.css — TierEditor.tsx: one block per tier ("ระดับ 1 ไม่เกิน 10,000 บาท", ร้านรับซื้อ / ร้านขาย inputs,
+   "แนะนำ x / y"), the shop board's layout (owner 2026-11-05). */
 
-.tier-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  background: #fff;
-  border: 1px solid var(--line, #e5e6ea);
-  border-radius: 8px;
+.xc-admin .xc-content.xc-content .tier-editor {
+  display: grid;
+  gap: 0;
 }
 
-.tier-editor-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.tier-editor-currency {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--ink, #17181b);
-}
-
-.tier-editor-empty {
+.xc-admin .xc-content.xc-content .tier-editor-empty {
+  margin: 14px 16px 0;
   font-size: 13px;
-  color: var(--muted, #676a73);
+  color: var(--muted);
 }
 
-.tier-editor-alert {
+.xc-admin .xc-content.xc-content .tier-editor-alert {
+  margin: 14px 16px 0;
   padding: 10px 12px;
-  border-radius: 6px;
-  background: var(--soft, #fbf0f4);
-  color: var(--brand, #a5003c);
+  border: 1px solid #edd4df;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--brand);
   font-size: 13px;
+  font-weight: 600;
 }
 
-.tier-editor-table {
-  width: 100%;
-  border-collapse: collapse;
+.xc-admin .xc-content.xc-content .tier-editor-tiers {
+  display: grid;
 }
 
-.tier-editor-band {
-  display: block;
-  font-size: 12px;
-  color: var(--muted, #676a73);
-  font-variant-numeric: tabular-nums;
+.xc-admin .xc-content.xc-content .tier-editor-tier {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-bottom: 1px solid #e8e2e5;
 }
 
-.tier-editor-input {
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.tier-editor-margin {
-  font-size: 13px;
-  color: var(--muted, #676a73);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
-
-.tier-editor-actions {
+.xc-admin .xc-content.xc-content .tier-editor-tier-title {
   display: flex;
-  justify-content: flex-end;
+  align-items: baseline;
+  gap: 8px;
+  float: left;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 0;
+  font-size: 15px;
+  color: var(--ink);
 }
 
-.tier-editor-approve {
-  background: var(--brand, #a5003c);
+.xc-admin .xc-content.xc-content .tier-editor-tier-title strong {
+  font-weight: 800;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-band {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-input {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #cdd0d7;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  box-shadow: inset 0 1px 2px rgba(23, 24, 27, 0.04);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-input:focus {
+  border-color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-input[aria-invalid='true'] {
+  border-color: var(--brand);
+  background: var(--soft);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-input:disabled {
+  background: #f1f1f4;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-input-text {
+  font-size: 15px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-error {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-hints {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 2px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-hint-rates {
+  font-size: 14px;
+  color: #4b4f5b;
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-margins {
+  font-size: 12px;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-margin {
+  font-variant-numeric: tabular-nums;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 14px 16px 0;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-approve {
+  min-height: 48px;
+  padding: 10px 22px;
+  border: 1px solid var(--brand);
+  border-radius: 12px;
+  background: var(--brand);
   color: #fff;
-  border-color: var(--brand, #a5003c);
+  font-size: 15px;
+  font-weight: 700;
+  box-shadow: 0 6px 16px rgba(165, 0, 60, 0.22);
 }
 
+.xc-admin .xc-content.xc-content .tier-editor .tier-editor-approve:hover {
+  background: #870032;
+}
+
+@media (min-width: 760px) {
+  .xc-admin .xc-content.xc-content .tier-editor-tier,
+  .xc-admin .xc-content.xc-content .tier-editor-actions {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+
+  .xc-admin .xc-content.xc-content .tier-editor-empty,
+  .xc-admin .xc-content.xc-content .tier-editor-alert {
+    margin-left: 24px;
+    margin-right: 24px;
+  }
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-hint {
+  white-space: nowrap;
+}
+
+.xc-admin .xc-content.xc-content .tier-editor-reason {
+  min-width: 0;
+}
