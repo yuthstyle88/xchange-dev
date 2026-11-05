@@ -1,56 +1,332 @@
-/* pricing.css — styles for Pricing.tsx (FE pricing-board, #564). */
+/* pricing.css — the tier-pricing screen (Pricing.tsx): toolbar, panels, the open-currency sheet and the shared
+   controls (outline button, checkbox). Look follows the shop board's pricing screen (owner 2026-11-05) in the admin
+   palette (admin.css `.xc-admin` tokens: --brand --ink --muted --line --bg --soft --green). Selectors carry the
+   admin content scope so they win over admin.css's generic button/input/label rules. */
 
-.pricing-screen {
+.xc-admin .xc-content.xc-content .pricing-screen {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 16px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
-.pricing-toolbar {
+/* ── Toolbar: sticky on a phone so search and filter stay at hand ── */
+.xc-admin .xc-content.xc-content .pricing-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: 8px;
+  margin: 0 -4px;
+  padding: 10px 4px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
 }
 
-.pricing-filter-label {
+.xc-admin .xc-content.xc-content .pricing-toolbar .pricing-search {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 12px 10px 36px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%23676a73' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m14 14-3.2-3.2'/%3E%3C/svg%3E")
+    no-repeat 12px center;
+  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04);
+  font-size: 15px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-toolbar .pricing-filter-label {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 0.5rem;
+  margin: 0;
 }
 
-.pricing-filter,
-.pricing-search {
-  padding: 0.375rem 0.625rem;
-  border: 1px solid currentColor;
-  border-radius: 0.375rem;
+.xc-admin .xc-content.xc-content .pricing-filter-caption {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
-.pricing-reload {
-  padding: 0.375rem 0.75rem;
-  border-radius: 0.375rem;
+.xc-admin .xc-content.xc-content .pricing-toolbar .pricing-filter {
+  width: auto;
+  max-width: 132px;
+  min-height: 44px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content.xc-content .pricing-toolbar .pricing-reload {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content.xc-content .pricing-toolbar .pricing-reload:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .pricing-error {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid #edd4df;
+  border-radius: 12px;
+  background: var(--soft);
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.xc-admin .xc-content.xc-content .pricing-loading {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* ── Panels (sources, settings) ── */
+.xc-admin .xc-content.xc-content .pricing-panel {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04), 0 6px 18px rgba(23, 24, 27, 0.04);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen .pricing-panel-title {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .pricing-side {
+  display: grid;
+  gap: 16px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-settings {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.xc-admin .xc-content.xc-content .pricing-settings-grid {
+  display: grid;
+  gap: 16px;
+}
+
+/* ── Shared controls ── */
+.xc-admin .xc-content.xc-content .pricing-screen .pricing-btn-outline {
+  flex: 0 0 auto;
+  min-height: 44px;
+  min-width: 76px;
+  padding: 8px 14px;
+  border: 1px solid #edd4df;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--brand);
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 1px 2px rgba(165, 0, 60, 0.06);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen .pricing-btn-outline:hover {
+  border-color: var(--brand);
+  background: var(--soft);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1.5px solid #cdd0d7;
+  border-radius: 6px;
+  background: #fff;
   cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
 }
 
-.pricing-error {
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox']::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: #fff;
+  clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 37% 70%);
+  transform: scale(0);
+  transition: transform 0.12s;
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox']:checked {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox']:checked::before {
+  transform: scale(1);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox']:disabled {
+  border-color: #e5e6ea;
+  background: #f1f1f4;
+  cursor: not-allowed;
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen input[type='checkbox']:focus-visible {
+  outline: 3px solid #ca5b85;
+  outline-offset: 2px;
+}
+
+/* ── Bulk approve: a bar that sticks to the bottom while something is selected ── */
+.xc-admin .xc-content.xc-content .pricing-bulk-bar {
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.xc-admin .xc-content.xc-content .pricing-bulk-bar-active {
+  position: sticky;
+  bottom: 12px;
+  z-index: 4;
+  border-color: #edd4df;
+  box-shadow: 0 10px 30px rgba(23, 24, 27, 0.16);
+}
+
+/* ── The open currency: a full sheet on a phone, a drawer on a wide screen ── */
+.xc-admin .xc-content.xc-content .pricing-detail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(23, 24, 27, 0.38);
+}
+
+.xc-admin .xc-content.xc-content .pricing-detail {
+  position: fixed;
+  inset: 0;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #f7f5f6;
+}
+
+.xc-admin .xc-content.xc-content .pricing-detail-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 8px;
+  background: var(--soft);
+}
+
+.xc-admin .xc-content.xc-content .pricing-screen .pricing-detail-code {
   margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: 0.3px;
+  color: var(--ink);
 }
 
-.pricing-loading {
-  margin: 0;
+.xc-admin .xc-content.xc-content .pricing-detail-summary {
+  padding: 0 16px 14px;
+  background: var(--soft);
+  border-bottom: 1px solid #edd4df;
 }
 
-.pricing-detail {
+.xc-admin .xc-content.xc-content .pricing-detail-body {
   display: grid;
-  gap: 1rem;
+  gap: 14px;
+  padding: 0 0 28px;
 }
 
-.pricing-side {
-  display: grid;
-  gap: 1rem;
+.xc-admin .xc-content.xc-content .pricing-detail-section {
+  margin: 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
 }
 
-.pricing-settings {
-  display: grid;
-  gap: 1rem;
+@media (min-width: 760px) {
+  .xc-admin .xc-content.xc-content .pricing-detail {
+    inset: 0 0 0 auto;
+    width: min(620px, 100vw);
+    border-left: 1px solid var(--line);
+    box-shadow: -24px 0 48px rgba(23, 24, 27, 0.18);
+  }
+
+  .xc-admin .xc-content.xc-content .pricing-detail-head {
+    padding: 22px 24px 8px;
+  }
+
+  .xc-admin .xc-content.xc-content .pricing-detail-summary {
+    padding: 0 24px 16px;
+  }
+
+  .xc-admin .xc-content.xc-content .pricing-detail-section {
+    margin: 0 24px;
+  }
+
+  .xc-admin .xc-content.xc-content .pricing-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .xc-admin .xc-content.xc-content .pricing-detail {
+    animation: pricing-sheet-in 0.2s ease-out;
+  }
+}
+
+@keyframes pricing-sheet-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.xc-admin .xc-content.xc-content .pricing-sources {
+  overflow: hidden;
+  padding-bottom: 12px;
 }

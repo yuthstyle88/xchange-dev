@@ -41,3 +41,47 @@
   margin: 0;
   font-size: 0.875rem;
 }
+
+/* ── Look 2026-11-05: brand button, 44 px controls (scoped to win over admin.css) ── */
+.xc-admin .xc-content.xc-content .bulk-approve {
+  gap: 10px;
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve-count {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve .bulk-approve-btn {
+  min-height: 44px;
+  padding: 8px 18px;
+  border: 1px solid var(--brand);
+  border-radius: 12px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 700;
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve .bulk-approve-cancel {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve-confirm {
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve-confirm input[name='reason'] {
+  min-height: 44px;
+  border-radius: 12px;
+}
+
+.xc-admin .xc-content.xc-content .bulk-approve-error {
+  color: var(--brand);
+  font-weight: 600;
+}
