@@ -122,7 +122,9 @@ async fn seed(db: &TestDb) {
     .await;
 }
 
-/// A LIVE COMPLETED BUY at MAIN settling 3,210.00 THB (fee 10), completed at `completed` (SQL).
+/// A LIVE COMPLETED BUY at MAIN settling 3,210.00 THB (fee 10), completed at `completed` (SQL), dated by the Bangkok
+/// date it completed on (CS-20, restated by claude/35271802: the window now follows `value_date`, which was
+/// `current_date` for every row, so the two-day-old sale looked like today's).
 async fn completed(db: &TestDb, n: u32, completed: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     db.exec(&format!(
@@ -130,7 +132,7 @@ async fn completed(db: &TestDb, n: u32, completed: &str) -> String {
             customer_name, nationality, staff_id, booking_no, notes, value_date, paid_at, recorded_at, \
             recorded_by, status, completed_at) \
          VALUES ('{id}', 'XC-R-{n:06}', 'MAIN', 'LIVE', 'SH-1', 'sub-{id}', 'h', 'CU-1', 'Somchai', 'THA', \
-            'EMP-001', 'WALK-IN', '', current_date, {completed}, {completed}, 'owner', 'COMPLETED', \
+            'EMP-001', 'WALK-IN', '', ({completed} AT TIME ZONE 'Asia/Bangkok')::date, {completed}, {completed}, 'owner', 'COMPLETED', \
             {completed})"
     ))
     .await;
