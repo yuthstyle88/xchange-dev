@@ -410,3 +410,16 @@ BC-0 is the skeleton and the migration, on `feat/board-currencies`, once this do
 ## 12. Rollout
 
 Deploy on an owner order only. After it the counter is unchanged, apart from the board's `more` list. To open a currency: an Executive adds its guard and line on #rates, publishes, then sets `SHOW` on kiosk-currencies. A line with no guard is out of bound (`rates-draftable-currencies.md` §1), so the guard numbers for up to 35 new currencies are part of Q1's work.
+
+## 13. As built
+
+Read on main at the merge `ba6ba7daa` (PR 6121). Where this differs from the sections above, this section is right.
+
+| Topic | Design said | As built | Where |
+|---|---|---|---|
+| Saving a display | `configure` takes `{code, group, display}` in place of `enabled` (§3) | A second path, `configure_display`, sits beside `configure`. The old `configure` and `set_switch_in` remain | `api/crates/xc-kiosk/src/application/kiosk/currencies.rs:31`, `:78` |
+| Board `more` | exactly the `ASK` rows (§4, §9) | The `ASK` rows with no shown line, and only when the branch lists the whole market (`allMarket`). Otherwise it is empty. Codes are bare and de-duplicated, so a variant row shows as its currency code | `api/src/presentation/http/v3/views/published_rates.rs:468` |
+| Desk picker | ticket BC-8 of its own (§10) | One filter in BC-3: `PgPublishedRates::sellable` drops `HIDE` and no-row lines, and the picker reads it | `api/src/presentation/http/v3/desk/config.rs:61` |
+| Admin screen | the display of a branch's rows is set here (§3) | The screen and the view handle group `ALL` only, so the five variant rows (`MYRS`, `CNYS`, `KRWS`, `INRS`, `SCP`) cannot be set from it | `web/src/screens/kiosk-currencies/KioskCurrenciesScreen.tsx` |
+| `SHOW` on a variant | variants are `ASK` only for now | `published_both_sides_in` checks the `ALL` line whatever the group, so the API accepts `SHOW` on a variant with no line of its own. The screen cannot send it | `api/crates/xc-kiosk/src/application/kiosk/currencies.rs` |
+| Screen wording | two languages | `SHOW`, `ASK` and `HIDE` are hard-coded English, and `displayOf` keeps a fallback to `enabled` that the server never triggers | `KioskCurrenciesScreen.tsx:30` |
