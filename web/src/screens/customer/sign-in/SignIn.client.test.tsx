@@ -17,6 +17,7 @@ import { en } from '../../../shared/i18n/en';
 import { th } from '../../../shared/i18n/th';
 import { warmModules } from '../../../shared/testing/warm-modules';
 import { SignIn } from './SignIn';
+import * as table from './i18n';
 
 interface RecordedCall {
   url: string;
@@ -319,18 +320,39 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     btn!.click();
   }
 
-  it('O1: nothing set -> the page offers Email and SMS in every language and shows default', () => {
+  it('O1: nothing set -> the page offers Email and SMS in every language, preselects first channel, and falls back to default while loading or on error', async () => {
     const navigate = vi.fn();
-    dispose = render(() => <SignIn navigate={navigate} />, host);
+    const calls: string[] = [];
+    const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      calls.push(url);
+      if (url === '/api/auth/otp/channels') {
+        return jsonResponse(500, { error: { code: 'serverError', message: 'fail' } });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
 
     const emailBtn = host.querySelector<HTMLButtonElement>('button[data-channel="email"]');
     const smsBtn = host.querySelector<HTMLButtonElement>('button[data-channel="sms"]');
     const defaultNote = host.querySelector<HTMLElement>('[data-default-note="true"]');
     expect(emailBtn, 'email option exists').not.toBeNull();
     expect(smsBtn, 'sms option exists').not.toBeNull();
+    expect(emailBtn?.getAttribute('aria-checked')).toBe('true');
+    expect(smsBtn?.getAttribute('aria-checked')).toBe('false');
     expect(defaultNote?.textContent).toBe('ค่าเริ่มต้น');
     expect(emailBtn?.textContent).toBe('อีเมล');
     expect(smsBtn?.textContent).toBe('SMS');
+
+    await vi.waitFor(() => {
+      expect(calls).toContain('/api/auth/otp/channels');
+    });
+    expect(emailBtn?.getAttribute('aria-checked')).toBe('true');
+    expect(defaultNote?.textContent).toBe('ค่าเริ่มต้น');
 
     setLang('en');
     expect(emailBtn?.textContent).toBe('Email');
@@ -414,7 +436,7 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     });
   });
 
-  it('O4: the owner allows only email -> no picker; email only', async () => {
+  it('O4: GET /api/auth/otp/channels allows only email -> no picker; email only; preselects first channel from server list', async () => {
     const navigate = vi.fn();
     const calls: RecordedCall[] = [];
     const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -423,6 +445,9 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
       const headers = new Headers(init?.headers);
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
       calls.push({ url, method, headers, body });
+      if (url === '/api/auth/otp/channels') {
+        return jsonResponse(200, { channels: ['email'], source: 'set' });
+      }
       if (url === '/api/auth/otp/request') {
         return jsonResponse(200, { challengeId: 'ch-only-email' });
       }
@@ -430,18 +455,13 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     });
 
     dispose = render(
-      () => (
-        <SignIn
-          navigate={navigate}
-          fetch={mockFetch as unknown as typeof fetch}
-          channels={['email']}
-          channelSource="set"
-        />
-      ),
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
       host,
     );
 
-    expect(host.querySelector('.xc-sign-in-channels')).toBeNull();
+    await vi.waitFor(() => {
+      expect(host.querySelector('[role="radiogroup"]')).toBeNull();
+    });
     expect(host.querySelector('button[data-channel="email"]')).toBeNull();
     expect(host.querySelector('button[data-channel="sms"]')).toBeNull();
     expect(host.querySelector('input[name="phone"]')).toBeNull();
@@ -451,11 +471,90 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     clickSubmit();
 
     await vi.waitFor(() => {
-      expect(calls).toHaveLength(1);
+      const req = calls.find((c) => c.url === '/api/auth/otp/request');
+      expect(req).toBeDefined();
     });
-    expect(calls[0]!.body).toEqual({
+    const req = calls.find((c) => c.url === '/api/auth/otp/request')!;
+    expect(req.body).toEqual({
       destination: 'only@example.com',
       channel: 'email',
     });
+  });
+
+  it('switching channel after a code was sent resets challenge, code and sent state, and returns to destination step', async () => {
+    const navigate = vi.fn();
+    const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/otp/channels') {
+        return jsonResponse(200, { channels: ['email', 'sms'], source: 'default' });
+      }
+      if (url === '/api/auth/otp/request') {
+        return jsonResponse(200, { challengeId: 'ch-sms-1' });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    pickChannel('sms');
+    typePhone('0812345678');
+    typeCode('123456');
+    clickSubmit();
+
+    const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    await vi.waitFor(() => {
+      expect(host.textContent).toContain(table.th.codeSent);
+      expect(submitBtn.textContent?.trim()).toBe(table.th.verify);
+    });
+
+    // Switch from SMS to Email after code was sent
+    pickChannel('email');
+
+    expect(host.querySelector('input[name="email"]')).not.toBeNull();
+    expect(host.querySelector('input[name="phone"]')).toBeNull();
+    expect(host.textContent).not.toContain(table.th.codeSent);
+    expect(host.textContent).not.toContain(table.en.codeSent);
+    expect(submitBtn.textContent?.trim()).toBe(table.th.requestCode);
+    expect(host.querySelector('.xc-sign-in-link')).toBeNull();
+    expect(host.querySelector<HTMLInputElement>('input[name="code"]')?.value).toBe('');
+  });
+
+  it('email channel shows email-specific code and codeSent wording in th, en, and zh', async () => {
+    const navigate = vi.fn();
+    const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/otp/request') {
+        return jsonResponse(200, { challengeId: 'ch-email-wording' });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    pickChannel('email');
+    typeEmail('customer@example.com');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(host.textContent).toContain(table.th.codeSentEmail);
+    });
+    expect(host.textContent).toContain(table.th.codeEmail);
+    expect(host.textContent).not.toContain(table.th.codeSent);
+
+    setLang('en');
+    expect(host.textContent).toContain(table.en.codeSentEmail);
+    expect(host.textContent).toContain(table.en.codeEmail);
+    expect(host.textContent).not.toContain(table.en.codeSent);
+
+    setLang('zh');
+    expect(host.textContent).toContain(table.zh.codeSentEmail);
+    expect(host.textContent).toContain(table.zh.codeEmail);
+    expect(host.textContent).not.toContain(table.zh.codeSent);
   });
 });

@@ -2,7 +2,7 @@
 // Two doors: OTP (default, unchanged: request -> verify) and password (POST /api/auth/login).
 // Only a `200` navigates to `/app` (or `next`).
 // The server claims this browser's anonymous drafts at verify (P6). No demo login and no fixed code.
-import { createSignal, Show, type JSX } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { screenT, t } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
@@ -52,18 +52,19 @@ export function SignIn(props: {
   const api = new ApiClient(props.fetch);
   const next = () => nextTarget(props.search);
   const [mode, setMode] = createSignal<'otp' | 'password'>('otp');
+  const [loadedChannels, setLoadedChannels] = createSignal<readonly OtpChannelChoice[] | undefined>();
+  const [loadedSource, setLoadedSource] = createSignal<'default' | 'set' | undefined>();
   const allowedChannels = () => {
-    const list = (props.channels ?? DEFAULT_CHANNELS).filter(
-      (c): c is OtpChannelChoice => c === 'email' || c === 'sms',
-    );
+    const raw = props.channels ?? loadedChannels() ?? DEFAULT_CHANNELS;
+    const list = raw.filter((c): c is OtpChannelChoice => c === 'email' || c === 'sms');
     return list.length > 0 ? list : DEFAULT_CHANNELS;
   };
-  const channelSource = () => props.channelSource ?? 'default';
-  const [pickedChannel, setPickedChannel] = createSignal<OtpChannelChoice>('sms');
+  const channelSource = () => props.channelSource ?? loadedSource() ?? 'default';
+  const [pickedChannel, setPickedChannel] = createSignal<OtpChannelChoice | undefined>();
   const activeChannel = (): OtpChannelChoice => {
     const allowed = allowedChannels();
     const picked = pickedChannel();
-    return allowed.includes(picked) ? picked : allowed[0]!;
+    return picked && allowed.includes(picked) ? picked : allowed[0]!;
   };
 
   // OTP mode state
@@ -82,6 +83,45 @@ export function SignIn(props: {
   let emailInput: HTMLInputElement | undefined;
   let codeInput: HTMLInputElement | undefined;
   let requesting: Promise<void> | undefined;
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+  onMount(() => {
+    if (props.channels) return;
+    queueMicrotask(() => {
+      if (disposed || mode() !== 'otp' || requesting || challenge() || phoneError() || emailError()) return;
+      void api
+        .publicGet<{ channels?: unknown; source?: unknown }>('/api/auth/otp/channels')
+        .then((res) => {
+          if (disposed) return;
+          const valid = Array.isArray(res?.channels)
+            ? res.channels.filter((c): c is OtpChannelChoice => c === 'email' || c === 'sms')
+            : [];
+          if (valid.length > 0) {
+            setLoadedChannels(valid);
+            setLoadedSource(res?.source === 'set' ? 'set' : 'default');
+          }
+        })
+        .catch(() => {});
+    });
+  });
+
+  const selectChannel = (ch: OtpChannelChoice) => {
+    setError('');
+    setPhoneError('');
+    setEmailError('');
+    setCodeError('');
+    if (activeChannel() !== ch) {
+      requesting = undefined;
+      setSending(false);
+      setChallenge(undefined);
+      setOtpCode('');
+      setHasCode(false);
+      if (codeInput) codeInput.value = '';
+    }
+    setPickedChannel(ch);
+  };
 
   // Password mode state
   const form = useForm();
@@ -105,7 +145,8 @@ export function SignIn(props: {
   };
 
   const showError = (err: unknown, defaultCodeTarget: 'phone' | 'code') => {
-    const fe = fieldError(err, { phone: tr('phone'), email: tr('email'), code: tr('code') });
+    const codeLabel = activeChannel() === 'email' ? tr('codeEmail') : tr('code');
+    const fe = fieldError(err, { phone: tr('phone'), email: tr('email'), code: codeLabel });
     let target = fe.field;
     if (!target && err instanceof ApiError && !isServerFailure(err)) {
       if (CODE_CODES.has(err.code)) target = 'code';
@@ -284,71 +325,29 @@ export function SignIn(props: {
       <Show when={mode() === 'otp'}>
         <form class="xc-sign-in-form" onSubmit={submit}>
           <Show when={allowedChannels().length > 1}>
-            <div class="xc-sign-in-channels" role="radiogroup" data-source={channelSource()}>
-              <button
-                type="button"
-                role="radio"
-                data-channel="email"
-                aria-checked={activeChannel() === 'email'}
-                class={activeChannel() === 'email' ? 'xc-sign-in-channel active' : 'xc-sign-in-channel'}
-                onClick={() => {
-                  setError('');
-                  setPhoneError('');
-                  setEmailError('');
-                  setPickedChannel('email');
-                }}
-              >
-                {tr('channelEmail')}
-              </button>
-              <button
-                type="button"
-                role="radio"
-                data-channel="sms"
-                aria-checked={activeChannel() === 'sms'}
-                class={activeChannel() === 'sms' ? 'xc-sign-in-channel active' : 'xc-sign-in-channel'}
-                onClick={() => {
-                  setError('');
-                  setPhoneError('');
-                  setEmailError('');
-                  setPickedChannel('sms');
-                }}
-              >
-                {tr('channelSms')}
-              </button>
+            <div class="xc-sign-in-mode" role="radiogroup" data-source={channelSource()}>
+              <For each={allowedChannels()}>
+                {(ch) => (
+                  <button
+                    type="button"
+                    role="radio"
+                    data-channel={ch}
+                    aria-checked={activeChannel() === ch}
+                    class={activeChannel() === ch ? 'xc-sign-in-tab active' : 'xc-sign-in-tab'}
+                    onClick={() => selectChannel(ch)}
+                  >
+                    {ch === 'email' ? tr('channelEmail') : tr('channelSms')}
+                  </button>
+                )}
+              </For>
               <Show when={channelSource() === 'default'}>
-                <span class="xc-sign-in-channel-default" data-default-note="true">
+                <span class="xc-sign-in-switch" data-default-note="true">
                   {tr('channelDefaultNote')}
                 </span>
               </Show>
             </div>
           </Show>
-          <Show
-            when={activeChannel() === 'email'}
-            fallback={
-              <label>
-                {tr('phone')}
-                <input
-                  ref={phoneInput}
-                  type="tel"
-                  name="phone"
-                  autocomplete="tel"
-                  inputmode="tel"
-                  value={otpPhone()}
-                  aria-invalid={phoneError() ? 'true' : undefined}
-                  aria-describedby={phoneError() ? 'phone-error' : undefined}
-                  onInput={(e) => {
-                    setOtpPhone(e.currentTarget.value);
-                    setPhoneError('');
-                  }}
-                />
-                <Show when={phoneError()}>
-                  <span id="phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
-                    {phoneError()}
-                  </span>
-                </Show>
-              </label>
-            }
-          >
+          <Show when={activeChannel() === 'email'}>
             <label>
               {tr('email')}
               <input
@@ -372,11 +371,38 @@ export function SignIn(props: {
               </Show>
             </label>
           </Show>
+          <Show when={allowedChannels().includes('sms') && (activeChannel() === 'sms' || pickedChannel() === undefined)}>
+            <label hidden={activeChannel() !== 'sms'}>
+              {tr('phone')}
+              <input
+                ref={phoneInput}
+                type="tel"
+                name="phone"
+                autocomplete="tel"
+                inputmode="tel"
+                value={otpPhone()}
+                aria-invalid={phoneError() ? 'true' : undefined}
+                aria-describedby={phoneError() ? 'phone-error' : undefined}
+                onInput={(e) => {
+                  if (pickedChannel() === undefined && allowedChannels().includes('sms')) {
+                    setPickedChannel('sms');
+                  }
+                  setOtpPhone(e.currentTarget.value);
+                  setPhoneError('');
+                }}
+              />
+              <Show when={phoneError()}>
+                <span id="phone-error" role="alert" class="xc-sign-in-error" data-field-error="phone">
+                  {phoneError()}
+                </span>
+              </Show>
+            </label>
+          </Show>
           <Show when={challenge()}>
-            <p>{tr('codeSent')}</p>
+            <p>{activeChannel() === 'email' ? tr('codeSentEmail') : tr('codeSent')}</p>
           </Show>
           <label>
-            {tr('code')}
+            {activeChannel() === 'email' ? tr('codeEmail') : tr('code')}
             <input
               ref={codeInput}
               type="text"

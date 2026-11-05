@@ -75,8 +75,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.service(
         web::resource("/api/auth/otp/channels")
             .app_data(body())
-            .route(web::get().to(v3_otp_channels))
-            .route(web::post().to(v3_otp_channels)),
+            .route(web::get().to(v3_otp_channels)),
     );
     cfg.service(
         web::resource("/api/auth/login")
