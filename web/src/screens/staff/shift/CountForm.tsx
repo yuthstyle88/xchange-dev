@@ -204,6 +204,11 @@ export function CountForm(p: CountFormProps): JSX.Element {
     }
     setLineErrors({});
 
+    if (lines.length === 0) {
+      p.onError(t('countNeedsALine'));
+      return;
+    }
+
     const body: CountSubmitInput = {
       branch: p.ctx.me.branchId,
       kind: p.kind,
