@@ -6,7 +6,9 @@ mod common;
 mod identity_signin_common;
 
 use actix_web::{App as ActixApp, http::header, test, web};
-use identity_signin_common::{BROWSER_ADDRESS, FakeIdentity, HOST, ORIGIN, identity_env, state_with};
+use identity_signin_common::{
+    BROWSER_ADDRESS, FakeIdentity, HOST, ORIGIN, identity_env, state_with,
+};
 use serde_json::{Value, json};
 use sqlx::PgPool;
 use xchange::presentation::http::auth::{AllowedOtpChannels, DEFAULT_OTP_CHANNELS};
@@ -62,7 +64,11 @@ async fn o1_default_offers_email_and_sms() {
             .set_payload(json!({ "destination": destination, "channel": channel }).to_string())
             .to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status().as_u16(), 200, "channel {channel} allowed by default");
+        assert_eq!(
+            resp.status().as_u16(),
+            200,
+            "channel {channel} allowed by default"
+        );
     }
     assert_eq!(identity.received("/auth/otp/request").len(), 2);
 }
@@ -131,7 +137,9 @@ async fn o4_owner_allows_only_email_refuses_sms_with_400_invalid_request() {
         .insert_header((header::ORIGIN, ORIGIN))
         .insert_header(("x-xchange-request", "1"))
         .insert_header((header::CONTENT_TYPE, "application/json"))
-        .set_payload(json!({ "destination": "customer@example.com", "channel": "email" }).to_string())
+        .set_payload(
+            json!({ "destination": "customer@example.com", "channel": "email" }).to_string(),
+        )
         .to_request();
     let email_resp = test::call_service(&app, email_req).await;
     assert_eq!(email_resp.status().as_u16(), 200);
