@@ -64,8 +64,8 @@ impl BranchView for ApprovalRequestsBranchView {
                            r.policy_version, r.proposed_payload, r.requested_by, r.requested_at, r.status, \
                            r.idempotency_key, d.approver_id, d.outcome, d.reason, d.at, \
                            r.organization_id::text, \
-                           NULLIF(btrim(u.name), '') AS requested_by_name, \
-                           NULLIF(btrim(ua.name), '') AS approver_name \
+                           COALESCE(NULLIF(btrim(u.name), ''), CASE WHEN r.requested_by LIKE 'SYSTEM:%' THEN r.requested_by END) AS requested_by_name, \
+                           COALESCE(NULLIF(btrim(ua.name), ''), CASE WHEN d.approver_id LIKE 'SYSTEM:%' THEN d.approver_id END) AS approver_name \
                            FROM approval_requests r \
                            LEFT JOIN approval_decisions d ON d.request_id = r.id \
                            LEFT JOIN users u ON u.id::text = r.requested_by \
