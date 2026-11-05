@@ -6,8 +6,8 @@
   min-height: 100vh;
   box-sizing: border-box;
   padding: 1.25rem 1.5rem;
-  background-color: var(--xc-bg, #f8fafc);
-  color: var(--xc-text, #0f172a);
+  background-color: var(--xc-bg);
+  color: var(--xc-text);
   font-family: inherit;
   gap: 1.5rem;
 }
@@ -17,21 +17,19 @@
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--xc-border, #e2e8f0);
 }
 
 .xc-journey-title-group h1 {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .xc-journey-subtitle {
   margin: 0.25rem 0 0;
   font-size: 0.875rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .xc-journey-actions {
@@ -56,22 +54,22 @@
   margin: 0;
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .xc-journey-card {
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e2e8f0);
-  border-radius: 0.75rem;
+  background: var(--xc-surface);
+  border: 0;
+  border-radius: var(--xc-radius-card);
   padding: 1.25rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-journey-ticket-card {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  border-left: 4px solid var(--xc-primary, #2563eb);
+  border-left: 4px solid var(--xc-primary);
 }
 
 .xc-journey-ticket-header {
@@ -84,7 +82,7 @@
 .xc-journey-ticket-number {
   font-size: 2rem;
   font-weight: 800;
-  color: var(--xc-primary, #2563eb);
+  color: var(--xc-primary);
   letter-spacing: 0.05em;
 }
 
@@ -99,29 +97,29 @@
 }
 
 .xc-journey-badge-waiting {
-  background-color: #fef3c7;
-  color: #92400e;
+  background-color: var(--xc-warning-bg);
+  color: var(--xc-warning-text);
 }
 
 .xc-journey-badge-called {
-  background-color: #dbeafe;
-  color: #1e40af;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand);
 }
 
 .xc-journey-badge-serving {
-  background-color: #dcfce7;
-  color: #166534;
+  background-color: var(--xc-success-bg);
+  color: var(--xc-success-text);
 }
 
 .xc-journey-badge-completed {
-  background-color: #f1f5f9;
-  color: #475569;
+  background-color: var(--xc-surface-subtle);
+  color: var(--xc-text-muted);
 }
 
 .xc-journey-badge-cancelled,
 .xc-journey-badge-no-show {
-  background-color: #fee2e2;
-  color: #991b1b;
+  background-color: var(--xc-danger-bg);
+  color: var(--xc-danger);
 }
 
 .xc-journey-grid {
@@ -138,30 +136,30 @@
 
 .xc-journey-field-label {
   font-size: 0.75rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   font-weight: 500;
 }
 
 .xc-journey-field-value {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .ticket-branch {
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .ticket-service-type {
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .tickets-ahead {
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .wait-estimate {
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .xc-journey-loading,
@@ -171,10 +169,10 @@
   align-items: center;
   padding: 2rem 1rem;
   font-size: 1rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   text-align: center;
-  background: var(--xc-surface, #ffffff);
-  border: 1px dashed var(--xc-border, #cbd5e1);
+  background: var(--xc-surface);
+  border: 1px dashed var(--xc-border);
   border-radius: 0.75rem;
 }
 
@@ -185,11 +183,11 @@
   align-items: center;
   gap: 0.75rem;
   padding: 1.5rem 1rem;
-  color: var(--xc-danger, #ef4444);
+  color: var(--xc-danger);
   font-size: 0.9375rem;
   text-align: center;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--xc-danger-bg);
+  border: 1px solid var(--xc-danger-border);
   border-radius: 0.75rem;
 }
 
@@ -198,17 +196,18 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  border-radius: 0.375rem;
-  border: 1px solid var(--xc-border, #cbd5e1);
-  background: var(--xc-surface, #ffffff);
-  color: var(--xc-text, #0f172a);
+  border-radius: var(--xc-radius-lg);
+  border: 2px solid var(--xc-border);
+  background: var(--xc-surface);
+  color: var(--xc-text);
   cursor: pointer;
   transition: background-color 0.15s ease;
+  min-height: 44px;
 }
 
 .xc-journey-retry-btn:hover,
 .xc-journey-refresh-btn:hover {
-  background: var(--xc-surface-hover, #f1f5f9);
+  background: var(--xc-surface-hover);
 }
 
 .xc-journey-drafts-list {
@@ -221,11 +220,12 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e2e8f0);
-  border-radius: 0.75rem;
+  background: var(--xc-surface);
+  border: 0;
+  border-radius: var(--xc-radius-card);
   padding: 1rem 1.25rem;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-journey-draft-header {
@@ -237,22 +237,22 @@
 .xc-journey-draft-side {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--xc-primary, #2563eb);
+  color: var(--xc-primary);
 }
 
 .xc-journey-draft-currency {
   font-size: 0.875rem;
   font-weight: 700;
   padding: 0.125rem 0.5rem;
-  background: #f1f5f9;
+  background: var(--xc-surface-subtle);
   border-radius: 0.25rem;
-  color: #334155;
+  color: var(--xc-text);
 }
 
 .xc-journey-draft-amount {
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--xc-text, #0f172a);
+  color: var(--xc-text);
 }
 
 .xc-journey-draft-footer {
@@ -260,17 +260,17 @@
   justify-content: space-between;
   align-items: center;
   font-size: 0.75rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   padding-top: 0.5rem;
-  border-top: 1px solid var(--xc-border, #f1f5f9);
+  border-top: 1px solid var(--xc-border);
 }
 
 .draft-branch {
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .draft-expires {
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .xc-journey-bookings-list {

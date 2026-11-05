@@ -36,6 +36,7 @@ import { IndicativeBenefit } from '../benefit-estimate/IndicativeBenefit';
 import { formatSlotTime, getTodayInTimezone } from '../book/Book';
 import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
+import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import './bookings.css';
 
@@ -97,6 +98,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const [bookings, setBookings] = createSignal<MyBookingItemDto[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [loadError, setLoadError] = createSignal<string | null>(null);
+  const [signedOut, setSignedOut] = createSignal(false);
 
   // Command states
   const [commandLoading, setCommandLoading] = createSignal(false);
@@ -235,6 +237,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   const fetchBookings = async () => {
     setLoading(true);
     setLoadError(null);
+    setSignedOut(false);
     try {
       const [res] = await Promise.all([
         api.view<MyBookingsData>('my_bookings'),
@@ -246,6 +249,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
         setLoadError(t('error.loadFailed'));
       }
     } catch (err: any) {
+      setSignedOut(isSignedOut(err));
       setLoadError(getWordedError(err));
     } finally {
       setLoading(false);
@@ -433,7 +437,10 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
       </Show>
 
       {/* Initial load error state */}
-      <Show when={!loading() && loadError()}>
+      <Show when={!loading() && loadError() && signedOut()}>
+        <SignInNeeded message={loadError()!} />
+      </Show>
+      <Show when={!loading() && loadError() && !signedOut()}>
         <div class="xc-bookings-error">
           <p>{loadError()}</p>
           <button

@@ -12,9 +12,9 @@
   width: 100%;
   padding: 2rem;
   text-align: center;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--xc-surface);
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-request-qr-title {
@@ -25,7 +25,7 @@
 
 .xc-request-qr-instruction {
   font-size: 1.125rem;
-  color: #333333;
+  color: var(--xc-text);
   margin-bottom: 1.5rem;
 }
 
@@ -36,6 +36,12 @@
 }
 
 .xc-request-qr-error {
-  color: #d32f2f;
+  color: var(--xc-danger);
   font-size: 1rem;
+}
+
+/* The QR's box has no size of its own; inside the centring flex row it collapsed to 0 px wide. */
+.xc-request-qr-code [role='img'] {
+  width: min(72vw, 260px);
+  aspect-ratio: 1;
 }

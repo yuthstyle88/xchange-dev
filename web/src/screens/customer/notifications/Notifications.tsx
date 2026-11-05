@@ -1,8 +1,9 @@
-import { For, Show, type JSX } from 'solid-js';
+import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { locale, screenT } from '../../../shared/i18n';
 import { createNotifications } from '../../../shared/notifications';
 import type { MyNotificationObject } from '../../../shared/api/generated/my_notifications';
+import { SignInNeeded, watchSignedOut } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import './Notifications.css';
 
@@ -24,7 +25,8 @@ export interface NotificationsScreenProps {
 }
 
 export function NotificationsScreen(props: NotificationsScreenProps): JSX.Element {
-  const api = props.api ?? new ApiClient();
+  const [signedOut, setSignedOut] = createSignal(false);
+  const api = watchSignedOut(props.api ?? new ApiClient(), () => setSignedOut(true));
   const {
     items,
     loading,
@@ -76,7 +78,10 @@ export function NotificationsScreen(props: NotificationsScreenProps): JSX.Elemen
         <div class="xc-notifications-loading">{t('loading')}</div>
       </Show>
 
-      <Show when={!loading() && loadError()}>
+      <Show when={!loading() && loadError() && signedOut()}>
+        <SignInNeeded message={loadError()!} />
+      </Show>
+      <Show when={!loading() && loadError() && !signedOut()}>
         <div class="xc-notifications-error">
           <span class="xc-notifications-error-message">{loadError()}</span>
           <button type="button" class="xc-notifications-retry-btn" onClick={refetch}>
