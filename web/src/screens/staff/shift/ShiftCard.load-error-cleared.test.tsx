@@ -163,6 +163,14 @@ function q<T extends Element = HTMLElement>(sel: string): T | null {
   return host.querySelector<T>(sel);
 }
 
+// F35 (#564, #6326): restated by the sub-controller claude/33691c06. An empty count is now refused on the client, so a
+// test that needs the server's answer types one quantity first.
+function fillOneLine(): void {
+  const input = must<HTMLInputElement>('input[data-denomination-id]');
+  input.value = '0';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function must<T extends Element = HTMLElement>(sel: string): T {
   const el = q<T>(sel);
   expect(el, sel).not.toBeNull();
@@ -293,6 +301,7 @@ describe('Staff Shift card: a background read\'s error banner is cleared upon su
     must(tid('shift-close-count')).click();
     await settle();
 
+    fillOneLine();
     must(tid('shift-count-save')).click();
     await vi.waitFor(() => expect(q(tid('shift-error'))).not.toBeNull());
     expect(q(tid('shift-error'))!.textContent?.trim()).toBe(
@@ -364,6 +373,7 @@ describe('Staff Shift card: a background read\'s error banner is cleared upon su
       // Open Close count form and submit; count-submit fails
       must(tid('shift-close-count')).click();
       await settle();
+      fillOneLine();
       must(tid('shift-count-save')).click();
       await vi.waitFor(() =>
         expect(q(tid('shift-error'))!.textContent?.trim()).toBe('Count submit failed'),
