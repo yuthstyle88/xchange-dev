@@ -668,8 +668,10 @@ async fn r2c_the_status_counts_the_shifts_of_the_business_date() {
 /// R4 (CS-12b, re-review of PR 6274 out-of-scope item 2, ruled by the lane controller claude/022a7453): with no `day`,
 /// the report opens on the current **business** day, `ShiftPlan::business_date_of(now)`, not the calendar date. Between
 /// midnight and the cutover those differ. The view reads the real clock, so the test makes "now is before the cutover"
-/// true whatever the time: MAIN takes a timezone where it is before 20:00 locally, and a 24 h plan whose cutover is two
-/// hours from now. The business day is then yesterday's local date. Written by the ticket author claude/35271802.
+/// true whatever the time: MAIN takes a timezone where it is before 10:00 locally, and a 24 h plan whose cutover is two
+/// hours from now. Before 10:00 both starts fall on the same day (cutover ≤ 11:00, the second start ≤ 23:00), so the
+/// cutover, the earliest start (T1), is the first one. The business day is then yesterday's local date. Written by the
+/// ticket author claude/35271802 (fixed after gemini/studio-14 found the wrap past midnight on #6305).
 #[actix_web::test]
 async fn r4_with_no_day_the_report_opens_on_the_current_business_day() {
     let d = Day::start().await;
@@ -685,9 +687,9 @@ async fn r4_with_no_day_the_report_opens_on_the_current_business_day() {
     .into_iter()
     .find(|z| {
         let tz: Tz = z.parse().unwrap();
-        now.with_timezone(&tz).hour() < 20
+        now.with_timezone(&tz).hour() < 10
     })
-    .expect("one of five zones spread over the globe is before 20:00");
+    .expect("the five offsets (0, 7, 9, 14, 19 mod 24) leave no 10-hour gap, so one zone is before 10:00");
     let tz: Tz = zone.parse().unwrap();
     let local = now.with_timezone(&tz);
     let cutover = local.hour() + 2;
