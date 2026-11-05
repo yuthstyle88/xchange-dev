@@ -82,8 +82,9 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 | T1 | **Cutover.** Owner 2026-11-04: *"มาตรฐานการทำงาน 24 ชม ไม่มีพัก"*, *"ให้มัน คร 24"*: every plan covers all 24 hours (T5), so the cutover `S0` is the **earliest template start**: 06:00 with the defaults. It is derived, not a stored column; the settings screen shows it (§2.9). |
 | T2 | **Offsets.** A template's start offset is `(start − S0) mod 24 h`; its duration is `end − start`, plus 24 h when `end <= start` (crosses midnight). End offset = start offset + duration. |
 | T3 | **Business date.** The instance of template `t` on business date `d` runs from `d + S0 + startOffset(t)` to `d + S0 + endOffset(t)`. With the first table: A = d 10:00–19:00, B = d 15:00–d+1 00:00, C = d 19:00–d+1 04:00. With the defaults: A = d 06:00–14:00, B = d 14:00–22:00, C = d 22:00–d+1 06:00. This is rule 2 of the brief ("a shift that crosses midnight belongs to the business date it started on"), generalised so a template that starts after midnight inside the night (D 00:30–06:00 next to C 19–04) belongs to the date before. |
+| T3b | **Daylight saving.** A boundary whose local time falls in a DST gap starts at the end of the gap; an ambiguous local time (the hour repeated in autumn) takes the earlier instant. So the shift ending in a gap ends exactly where the next one starts. Bangkok has no DST; this only keeps a custom plan in a DST zone from moving by hours (CS-1c). |
 | T4 | **Business day.** Business date `d` is the 24 hours `[d + S0, d + S0 + 24 h)`. A shift straddling the cutover (C 22–07 with `S0` = 06:00) belongs to the day it started (T3), so its instance may end after the business day does. This span **replaces** `opening_hours` as the gate for start, begin and save. |
-| T5 | **Plan validity.** Names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively; `start != end`; a break, when set, lies strictly inside its shift (it may not start at the shift's start or end at its end); 1 to 12 templates; and **the plan covers all 24 hours**. The first uncovered window going forward from `S0` is refused as `PlanRefusal::Gap { from, to }` (wire `shiftPlanInvalid:gap:04:00-06:00`, message *"ช่วง 04:00–06:00 ไม่มีกะ"*). Overlaps are allowed. |
+| T5 | **Plan validity.** Names are trimmed, non-empty, ≤ 40 characters and unique case-insensitively; `start != end`; a break, when set, lies strictly inside its shift (it may not start at the shift's start or end at its end: such a break is only a shorter shift, so the Owner sets the shift's hours instead; sub-controller's decision 2026-11-05 on the review of PR 6171); 1 to 12 templates; and **the plan covers all 24 hours**. The first uncovered window going forward from `S0` is refused as `PlanRefusal::Gap { from, to }` (wire `shiftPlanInvalid:gap:04:00-06:00`, message *"ช่วง 04:00–06:00 ไม่มีกะ"*). Overlaps are allowed. |
 | T6 | **Covering now.** Template `t` covers `now` when `start(t, d) <= now < end(t, d)` for `d` = local today, yesterday or the day before (a long shift reaches two days). Each covering instance carries its own `d`. |
 | T7 | **Business date of an instant.** The `d` (yesterday or today) whose business day holds it; always defined for a non-empty plan. |
 | T8 | **Weekdays.** The plan applies every day. Per-weekday shifts are out of scope (Q4 = A). |
@@ -108,8 +109,10 @@ All times are local wall-clock times in `branches.timezone` (Asia/Bangkok has no
 - `[required]` **Every count carries a business date** (reconciliation dates counts by it, §2.11), written at submit:
   OPEN = the chosen instance's date; CLOSE and HANDOVER_OUT = their shift's `business_date`; SAFE and SAFE_OPEN =
   `ShiftPlan::business_date_of(counted_at)`, else the date of `span_for(counted_at)` (a count in a gap belongs to the next span).
-- `[required]` **Every production writer names the date itself.** The `BEFORE INSERT` triggers (§5) exist for test fixtures and
-  pre-feature rows; a production writer that omits the date would silently get the calendar date. Each writer ticket (CS-7,
+- `[required]` **Every production writer that knows the shift names the date itself.** The `BEFORE INSERT` triggers (§5) exist
+  for test fixtures and pre-feature rows; a production writer that omits the date silently gets the calendar date, which is
+  wrong for a night shift. Until its writer ticket lands, a path may still rely on the trigger (the handover path did until
+  CS-19); that is the gap each writer ticket closes. Each writer ticket (CS-7,
   CS-19) states this and has a test that would go red under the calendar rule (O1, K1).
   The writer is `PgCashCountRepository`'s insert (`xc-cash/src/infrastructure/repository.rs:160`) and `CashCount`
   (`xc-cash/src/domain/count/cash_count.rs:40`) gains `shift_template_id` and `business_date`: both in CS-7's File scope.
@@ -250,10 +253,16 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
   `branch_service_status.queue_version` (`xc-queue/src/application/status/status_service.rs:141-200`). The cutover method calls
   `refresh_in` only when it ended at least one ticket or kiosk request; otherwise every polled queue client would refetch
   every minute (fleet rule: polled endpoints send only what changed).
+- **Follow-up, not in this branch (needs the owner's approval: a migration):** the sweep runs every 60 s on every branch and
+  `queue_tickets`'s indexes that lead with `branch_id` are the two `UNIQUE` constraints and two partial indexes
+  (`20261101100000_queue.sql:23-24,30`, `20261219140000_queue_one_active_app_ticket.sql:5`); none covers `CALLED` with
+  `issued_at`, so the `CALLED` arm reads all of the branch's rows and filters them. The index that fits is
+  `(branch_id, issued_at) WHERE status IN ('WAITING','CALLED')`. Measure the table before deciding (review note on PR 6170).
 - `[required]` The branch-day close keeps calling `on_day_closed` unchanged (it fires only after a cut-off with no shift open, as today).
 - Files and tickets:
-  - **CS-22a** (logic, Argon): `QueueDayHook::on_business_day_end(tx, branch, cutover)` in
-    `xc-queue/src/application/day/queue_day_hook.rs` (tickets with `issued_at < cutover`), and
+  - **CS-22a** (logic, Argon): `QueueDayHook::on_business_day_end(tx, branch, cutover, held_before, now) -> AppResult<usize>`
+    in `xc-queue/src/application/day/queue_day_hook.rs` (`WAITING` tickets with `issued_at < cutover`, `CALLED` ones with
+    `issued_at < held_before`), and
     `KioskDayClose::close_before_in(tx, branch, waiting_before, held_before, now)` in `xc-kernel/src/kiosk_day_close.rs` +
     its implementation in `xc-kiosk/src/application/kiosk/day_close.rs` (`WAITING` requests created before `waiting_before`;
     `ACCEPTED`/`ID_CHECKED` before `held_before`). They reuse the existing per-row cancel paths; the existing methods keep
