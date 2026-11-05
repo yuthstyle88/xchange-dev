@@ -4,6 +4,7 @@ import type { OpenShiftChoice, OpenShiftChoices } from '../../../shared/api/gene
 import { screenT } from '../../../shared/i18n';
 import type { StaffCtx } from '../cards';
 import { en, th } from './i18n';
+import './shift.css';
 
 const TIME_FMT = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Bangkok',

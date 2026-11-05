@@ -10,7 +10,7 @@ import {
   makeStaffMeView,
 } from '../../../shared/testing/fixtures';
 import { ShiftPicker, formatChoiceLabel, shiftChosenOrUnneeded } from './ShiftPicker';
-import type { OpenShiftChoices } from '../../../shared/api/generated/open_shift_choices';
+import type { OpenShiftChoices } from '../../../shared/testing/fixtures/open_shift_choices';
 
 const BRANCH = 'MAIN';
 const ME = '00000000-0000-4000-8000-0000000000a1';

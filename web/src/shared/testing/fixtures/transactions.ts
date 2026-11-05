@@ -37,7 +37,6 @@ export function makeTransactionCreateInput(o: Partial<TransactionCreateInput> = 
     staffDraftId: null,
     passport: makeUploadRef(),
     payment: makeTransactionPaymentInput(),
-    valueDate: '2026-01-01',
     notes: 'notes',
     countConfirmed: false,
     ...o,
