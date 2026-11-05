@@ -45,11 +45,18 @@ fn time_at(anchor: NaiveTime, offset: i64) -> NaiveTime {
     NaiveTime::from_num_seconds_from_midnight_opt(total, 0).expect("a valid wall-clock time")
 }
 
+/// Converts a branch-local wall-clock time to UTC; a boundary inside a DST gap starts at the end of the gap.
 fn local_to_utc(tz: &Tz, naive: &NaiveDateTime) -> DateTime<Utc> {
     match tz.from_local_datetime(naive) {
         LocalResult::Single(dt) => dt.with_timezone(&Utc),
         LocalResult::Ambiguous(earliest, _) => earliest.with_timezone(&Utc),
-        LocalResult::None => naive.and_utc(),
+        LocalResult::None => (1..=24 * 60)
+            .find_map(|m| {
+                tz.from_local_datetime(&(*naive + TimeDelta::minutes(m)))
+                    .earliest()
+            })
+            .expect("DST gap shorter than 24 hours")
+            .with_timezone(&Utc),
     }
 }
 
