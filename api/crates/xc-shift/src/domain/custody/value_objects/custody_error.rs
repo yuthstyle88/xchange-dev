@@ -218,29 +218,10 @@ pub enum CustodyError {
     SaveNotCustodian,
 }
 
-fn format_service_not_ready(window: &ServiceWindow, utc_offset_minutes: i32) -> String {
+fn format_service_not_ready(window: &ServiceWindow, _utc_offset_minutes: i32) -> String {
     match window {
-        ServiceWindow::NotSet => "สาขานี้ยังไม่ได้ตั้งเวลาทำการ ให้ผู้ดูแลตั้งเวลาก่อนเปิดบริการ".to_string(),
+        ServiceWindow::NotSet => "สาขานี้ยังไม่ได้ตั้งกะ ให้ผู้ดูแลตั้งกะก่อนเปิดบริการ".to_string(),
         ServiceWindow::Closed => "วันนี้สาขาปิด".to_string(),
-        ServiceWindow::Open { open, close } => {
-            let open_millis = open.epoch_millis();
-            let close_millis = close.epoch_millis();
-            let last_start_millis = close_millis - 10 * 60 * 1000;
-
-            let open_local_sec = (open_millis + utc_offset_minutes as i64 * 60 * 1000) / 1000;
-            let open_min = (open_local_sec / 60).rem_euclid(1440);
-            let open_h = open_min / 60;
-            let open_m = open_min % 60;
-
-            let last_start_local_sec =
-                (last_start_millis + utc_offset_minutes as i64 * 60 * 1000) / 1000;
-            let last_start_min = (last_start_local_sec / 60).rem_euclid(1440);
-            let last_start_h = last_start_min / 60;
-            let last_start_m = last_start_min % 60;
-
-            format!(
-                "เปิดบริการได้หลังเตรียมกะเสร็จ ระหว่าง {open_h:02}:{open_m:02}–{last_start_h:02}:{last_start_m:02}"
-            )
-        }
+        ServiceWindow::Open { .. } => "เปิดบริการได้หลังเตรียมกะเสร็จ".to_string(),
     }
 }
