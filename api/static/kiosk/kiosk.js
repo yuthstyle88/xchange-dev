@@ -184,7 +184,7 @@ function paymentName(value){return t({'Credit Card':'creditCard',Cash:'cash','Ba
 function renderLanguageOptions(){
  const q=$('language-search').value.trim().toLocaleLowerCase();
  const matches=LANGS.filter(l=>[l.name,l.code,l.search].join(' ').toLocaleLowerCase().includes(q));
- $('lang').replaceChildren(...matches.map(l=>new Option(l.name+(l.rank?' · #'+l.rank:''),l.code)));
+ $('lang').replaceChildren(...matches.map(l=>new Option(l.name,l.code)));
  if(matches.some(l=>l.code===lang))$('lang').value=lang;else $('lang').selectedIndex=-1;
 }
 $('language-search').oninput=renderLanguageOptions;
