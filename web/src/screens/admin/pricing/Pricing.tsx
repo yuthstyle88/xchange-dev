@@ -12,7 +12,7 @@ import type {
   RateReferenceFetchOutput,
 } from '../../../shared/api/generated/rate_reference_fetch';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { screenT } from '../../../shared/i18n';
+import { lang, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { ViewPoller } from '../../../shared/live/view-poller';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
@@ -32,7 +32,9 @@ import {
   type PricingFilter,
   type RowStatusCode,
 } from './pricing-labels';
+import { currencyName } from './pricing-format';
 import { PricingGrid } from './PricingGrid';
+import { CardLines } from './PricingRow';
 import { PricingMode } from './PricingMode';
 import { PricingPolicy } from './PricingPolicy';
 import { Recommendations } from './Recommendations';
@@ -210,11 +212,26 @@ export function Pricing(props: PricingProps): JSX.Element {
       .catch((err) => setError(wordedError(err)));
   }
 
+  let closeRef: HTMLButtonElement | undefined;
+  createEffect(() => {
+    if (openedCurrency() !== null) queueMicrotask(() => closeRef?.focus());
+  });
+
   return (
-    <section class="pricing-screen">
-      <div class="pricing-toolbar">
+    <section class="pricing-screen" classList={{ 'pricing-screen-detail-open': openedRow() !== null }}>
+      <div class="pricing-toolbar" role="search">
+        <input
+          class="pricing-search"
+          type="search"
+          name="search"
+          placeholder={t('search')}
+          aria-label={t('search')}
+          value={search()}
+          onInput={(e) => setSearch(e.currentTarget.value)}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+        />
         <label class="pricing-filter-label">
-          <span>{t('filter')}</span>
+          <span class="pricing-filter-caption">{t('filter')}</span>
           <select
             class="pricing-filter"
             name="filter"
@@ -228,122 +245,164 @@ export function Pricing(props: PricingProps): JSX.Element {
             <option value="current">{t('filterCurrent')}</option>
           </select>
         </label>
-        <input
-          class="pricing-search"
-          type="search"
-          name="search"
-          placeholder={t('search')}
-          aria-label={t('search')}
-          value={search()}
-          onInput={(e) => setSearch(e.currentTarget.value)}
-          onChange={(e) => setSearch(e.currentTarget.value)}
-        />
         <button class="pricing-reload" type="button" name="reload" onClick={() => void loadBoard()}>
           {t('reload')}
         </button>
       </div>
 
       <PermissionsUnavailable error={meError()} onRetry={() => void loadMe()} busy={meBusy()} />
-      <Show when={error()}>{(msg) => <p class="pricing-error">{msg()}</p>}</Show>
+      <Show when={error()}>{(msg) => <p class="pricing-error" role="alert">{msg()}</p>}</Show>
       <Show when={loading() && !board()}>
         <p class="pricing-loading">{t('loading')}</p>
       </Show>
 
-      <MarketSources
-        sources={board()?.sources ?? []}
-        canRefresh={canRefresh()}
-        disabledReason={disabledReason()}
-        onRefresh={handleRefreshSource}
-      />
+      <section class="pricing-panel pricing-sources" aria-label={t('sourcesTitle')}>
+        <h3 class="pricing-panel-title">{t('sourcesTitle')}</h3>
+        <MarketSources
+          sources={board()?.sources ?? []}
+          canRefresh={canRefresh()}
+          disabledReason={disabledReason()}
+          onRefresh={handleRefreshSource}
+        />
+      </section>
 
       <PricingGrid
         rows={filteredRows()}
         selected={selected()}
         onToggle={toggleRow}
         onOpen={(currency) => setOpenedCurrency(currency)}
+        recommendations={board()?.recommendations ?? []}
+        opened={openedCurrency()}
       />
 
-      <BulkApprove
-        api={api}
-        branch={props.branch()}
-        policyVersionId={board()?.policyVersionId ?? ''}
-        rows={selectedRows()}
-        onApproved={() => void loadBoard()}
-      />
-
-      <Show when={openedRow()}>
-        {(row) => (
-          <div class="pricing-detail">
-            <button type="button" name="close-detail" onClick={() => setOpenedCurrency(null)}>
-              {t('closeDetail')}
-            </button>
-            <TierEditor
-              api={api}
-              branch={props.branch()}
-              policyVersionId={board()?.policyVersionId ?? ''}
-              row={row()}
-              bands={board()?.bands ?? []}
-              onApproved={() => void loadBoard()}
-            />
-            <PricingPolicy
-              api={api}
-              branch={props.branch()}
-              policyVersionId={board()?.policyVersionId ?? ''}
-              row={row()}
-              mayEdit={mayEditPolicy()}
-              disabledReason={disabledReason()}
-              onSaved={() => void loadBoard()}
-            />
-            <PricingMode
-              api={api}
-              branch={props.branch()}
-              row={row()}
-              isMain={board()?.isMain ?? false}
-              mayEdit={mayEditPolicy()}
-              disabledReason={disabledReason()}
-              onSaved={() => void loadBoard()}
-            />
-            <BranchPolicy
-              api={api}
-              branch={props.branch()}
-              row={row()}
-              isMain={board()?.isMain ?? false}
-              mayEdit={mayEditPolicy()}
-              disabledReason={disabledReason()}
-              onSaved={() => void loadBoard()}
-            />
-          </div>
-        )}
-      </Show>
-
-      <Show when={board()}>
-        {(b) => (
-          <div class="pricing-settings">
-            <BranchDefault
-              api={api}
-              branch={props.branch()}
-              value={b().branchDefault}
-              mayEdit={mayEditPolicy()}
-              disabledReason={disabledReason()}
-              onSaved={() => void loadBoard()}
-            />
-            <DisplaySettings
-              api={api}
-              branch={props.branch()}
-              value={b().display}
-              currencies={b().rows.map((r) => r.currency)}
-              mayEdit={mayEditPolicy()}
-              disabledReason={disabledReason()}
-              onSaved={() => void loadBoard()}
-            />
-          </div>
-        )}
-      </Show>
+      <div class="pricing-bulk-bar" classList={{ 'pricing-bulk-bar-active': selected().size > 0 }}>
+        <BulkApprove
+          api={api}
+          branch={props.branch()}
+          policyVersionId={board()?.policyVersionId ?? ''}
+          rows={selectedRows()}
+          onApproved={() => void loadBoard()}
+        />
+      </div>
 
       <div class="pricing-side">
         <Recommendations items={board()?.recommendations ?? []} />
         {/* hidden until the order-reference view exists (design §7) */}
       </div>
+
+      <Show when={openedRow()}>
+        {(row) => (
+          <>
+            <div class="pricing-detail-backdrop" aria-hidden="true" onClick={() => setOpenedCurrency(null)} />
+            <div
+              class="pricing-detail"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="pricing-detail-title"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setOpenedCurrency(null);
+              }}
+            >
+              <header class="pricing-detail-head">
+                <div class="pricing-card-title">
+                  <h3 class="pricing-detail-code" id="pricing-detail-title">
+                    {row().currency}
+                  </h3>
+                  <Show when={currencyName(row().currency, lang())}>
+                    {(n) => <span class="pricing-card-name">{n()}</span>}
+                  </Show>
+                </div>
+                <button
+                  ref={(el) => (closeRef = el)}
+                  type="button"
+                  name="close-detail"
+                  class="pricing-btn-outline"
+                  onClick={() => setOpenedCurrency(null)}
+                >
+                  {t('closeDetail')}
+                </button>
+              </header>
+              <div class="pricing-detail-summary">
+                <CardLines row={row()} />
+              </div>
+              <div class="pricing-detail-body">
+                <TierEditor
+                  api={api}
+                  branch={props.branch()}
+                  policyVersionId={board()?.policyVersionId ?? ''}
+                  row={row()}
+                  bands={board()?.bands ?? []}
+                  onApproved={() => void loadBoard()}
+                />
+                <div class="pricing-detail-section">
+                  <PricingPolicy
+                    api={api}
+                    branch={props.branch()}
+                    policyVersionId={board()?.policyVersionId ?? ''}
+                    row={row()}
+                    mayEdit={mayEditPolicy()}
+                    disabledReason={disabledReason()}
+                    onSaved={() => void loadBoard()}
+                  />
+                </div>
+                <div class="pricing-detail-section">
+                  <PricingMode
+                    api={api}
+                    branch={props.branch()}
+                    row={row()}
+                    isMain={board()?.isMain ?? false}
+                    mayEdit={mayEditPolicy()}
+                    disabledReason={disabledReason()}
+                    onSaved={() => void loadBoard()}
+                  />
+                </div>
+                <div class="pricing-detail-section">
+                  <BranchPolicy
+                    api={api}
+                    branch={props.branch()}
+                    row={row()}
+                    isMain={board()?.isMain ?? false}
+                    mayEdit={mayEditPolicy()}
+                    disabledReason={disabledReason()}
+                    onSaved={() => void loadBoard()}
+                  />
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </Show>
+
+      <Show when={board()}>
+        {(b) => (
+          <section class="pricing-settings" aria-label={t('settingsTitle')}>
+            <h3 class="pricing-panel-title">{t('settingsTitle')}</h3>
+            <div class="pricing-settings-grid">
+              <div class="pricing-panel">
+                <BranchDefault
+                  api={api}
+                  branch={props.branch()}
+                  value={b().branchDefault}
+                  mayEdit={mayEditPolicy()}
+                  disabledReason={disabledReason()}
+                  onSaved={() => void loadBoard()}
+                />
+              </div>
+              <div class="pricing-panel">
+                <DisplaySettings
+                  api={api}
+                  branch={props.branch()}
+                  value={b().display}
+                  currencies={b().rows.map((r) => r.currency)}
+                  mayEdit={mayEditPolicy()}
+                  disabledReason={disabledReason()}
+                  onSaved={() => void loadBoard()}
+                />
+              </div>
+            </div>
+          </section>
+        )}
+      </Show>
     </section>
   );
 }

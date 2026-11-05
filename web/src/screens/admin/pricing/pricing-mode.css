@@ -78,3 +78,64 @@
 .pricing-mode-tier-rates {
   font-variant-numeric: tabular-nums;
 }
+
+/* ── Look 2026-11-05: pills and the brand switch (scoped to win over admin.css) ── */
+.xc-admin .xc-content.xc-content .pricing-mode-title,
+.xc-admin .xc-content.xc-content .pricing-mode-subtitle {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-badge,
+.xc-admin .xc-content.xc-content .pricing-mode-source,
+.xc-admin .xc-content.xc-content .pricing-mode-follow-status,
+.xc-admin .xc-content.xc-content .pricing-mode-follow-reason {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-follow-reason {
+  background: #fff9ec;
+  color: #795919;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-alert {
+  border-color: #edd4df;
+  border-radius: 10px;
+  background: var(--soft);
+  color: var(--brand);
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode .pricing-mode-switch {
+  min-height: 44px;
+  border: 1px solid #edd4df;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--brand);
+  font-weight: 700;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode .pricing-mode-switch:hover {
+  border-color: var(--brand);
+  background: var(--soft);
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-main-only,
+.xc-admin .xc-content.xc-content .pricing-mode-empty,
+.xc-admin .xc-content.xc-content .pricing-mode-approved,
+.xc-admin .xc-content.xc-content .pricing-mode-follow-planned {
+  color: var(--muted);
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-tier {
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: #fcfafb;
+}
+
+.xc-admin .xc-content.xc-content .pricing-mode-tier-rates {
+  font-weight: 700;
+}
