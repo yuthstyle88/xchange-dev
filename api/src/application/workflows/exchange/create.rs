@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
+use xc_booking::domain::booking::booking_error::BookingError;
 use xc_customer::application::customer::service::CustomerService;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::exchange::value_objects::transaction_form::{
@@ -323,18 +324,21 @@ impl CreateTransaction {
             }
         }
         if let Some(booking_id) = req.booking_id.as_deref() {
-            let exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS (SELECT 1 FROM bookings WHERE branch_id = $1 AND id = $2)",
+            let booking_customer: Option<String> = sqlx::query_scalar(
+                "SELECT customer_id FROM bookings WHERE id = $1 AND branch_id = $2",
             )
-            .bind(req.branch_id.as_str())
             .bind(booking_id)
-            .fetch_one(&mut **tx)
+            .bind(req.branch_id.as_str())
+            .fetch_optional(&mut **tx)
             .await
             .map_err(AppError::Database)?;
-            if !exists {
+            let Some(booking_customer) = booking_customer else {
                 return Err(AppError::Domain(format!(
                     "validationFailed:bookingId: booking {booking_id} does not exist"
                 )));
+            };
+            if booking_customer != req.customer_id {
+                return Err(BookingError::BookingNotThisCustomer.into());
             }
         }
 
