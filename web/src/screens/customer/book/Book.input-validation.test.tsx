@@ -183,7 +183,10 @@ describe('#4904 Customer Book input validation (K1–K7)', () => {
     return top?.textContent?.trim() || null;
   }
 
-  it('K1: pick BUY, type 100 → preview body customerSide CUSTOMER_BUY and amount.quantity "100"', async () => {
+  // F33 (#564 issuecomment-6657891388): restated by the sub-controller claude/33691c06. The select's value is the
+  // shop's side (`shopSide`, what the booking stores); the customer's side is its opposite. K1/K2 used to pin
+  // shop BUY → CUSTOMER_BUY, which stored every booking on the side opposite to its sale.
+  it('K1: pick shop BUY, type 100 → preview body customerSide CUSTOMER_SELL and amount.quantity "100"', async () => {
     const { qtyInput, sideSel } = await mount();
     pickSide(sideSel, 'BUY');
     typeQty(qtyInput, '100');
@@ -191,18 +194,18 @@ describe('#4904 Customer Book input validation (K1–K7)', () => {
 
     expect(previewBodies.length, 'a preview is asked for').toBeGreaterThan(0);
     const last = previewBodies[previewBodies.length - 1]!;
-    expect(last.customerSide).toBe('CUSTOMER_BUY');
+    expect(last.customerSide).toBe('CUSTOMER_SELL');
     expect(last.amount).toEqual({ quantity: '100' });
   });
 
-  it('K2: pick SELL → preview body customerSide CUSTOMER_SELL', async () => {
+  it('K2: pick shop SELL → preview body customerSide CUSTOMER_BUY', async () => {
     const { qtyInput, sideSel } = await mount();
     pickSide(sideSel, 'SELL');
     typeQty(qtyInput, '100');
     await flush();
 
     expect(previewBodies.length, 'a preview is asked for').toBeGreaterThan(0);
-    expect(previewBodies[previewBodies.length - 1]!.customerSide).toBe('CUSTOMER_SELL');
+    expect(previewBodies[previewBodies.length - 1]!.customerSide).toBe('CUSTOMER_BUY');
   });
 
   it('K3: quantity 1.23456 (5 decimals), submit → worded line at quantity; no POST /api/bookings', async () => {
