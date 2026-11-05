@@ -346,6 +346,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     }
   };
 
+  const denominationText = (id: number): string => {
+    const d = denominations().find((row) => row.id === id);
+    return d ? `${d.currency} ${d.faceValue}` : `#${id}`;
+  };
+
   const handleOpenReceive = (row: CashTransferRow) => {
     setActiveReceive(row);
     setReceiveQuantities({});
@@ -361,22 +366,24 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     const lines: CashReceivedLineInput[] = [];
     const nextLineErrors: Record<number, string> = {};
     const labels: Record<string, string> = {};
-    const lineDenomIds: number[] = [];
-    for (const d of denominations()) {
-      const qStr = (receiveQuantities()[d.id] ?? '').trim();
-      if (qStr === '') continue;
-      const check = checkInteger(qStr, 0, 2147483647);
-      if (!check.ok) {
-        nextLineErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+    for (let i = 0; i < row.lines.length; i++) {
+      const l = row.lines[i]!;
+      const qStr = (receiveQuantities()[l.denominationId] ?? '').trim();
+      const label = denominationText(l.denominationId);
+      labels[`lines[${i}].qty`] = label;
+      labels[`lines[${i}].qtyReceived`] = label;
+      if (qStr === '') {
+        nextLineErrors[l.denominationId] = t('countEveryLine');
         continue;
       }
-      const idx = lines.length;
-      labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
-      labels[`lines[${idx}].qtyReceived`] = `${d.currency} ${d.faceValue}`;
-      lineDenomIds.push(d.id);
+      const check = checkInteger(qStr, 0, 2147483647);
+      if (!check.ok) {
+        nextLineErrors[l.denominationId] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+        continue;
+      }
       lines.push({
-        currency: d.currency,
-        denominationId: d.id,
+        currency: l.currency,
+        denominationId: l.denominationId,
         qtyReceived: check.text,
       });
     }
@@ -420,7 +427,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setNotice(null);
       const fe = fieldError(err, labels);
       const match = fe.field?.match(/^lines\[(\d+)\]\.(?:qty|qtyReceived)$/);
-      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      const denomId = match ? row.lines[+match[1]!]?.denominationId : undefined;
       if (denomId !== undefined) {
         setReceiveLineErrors({ [denomId]: fe.message });
       } else {
@@ -626,26 +633,27 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             <h3 title={row().id}>
               {t('receive')}: {shortId(row().id)}
             </h3>
+            <p class="xc-transfers-note">{t('receiveNote')}</p>
             <div class="xc-transfers-denoms">
               <label>{t('lines')}</label>
-              <For each={denominations()}>
-                {(d) => (
+              <For each={row().lines}>
+                {(line) => (
                   <div data-denomination-row class="xc-transfer-denom-row">
                     <span>
-                      {d.currency} {d.faceValue}
+                      {denominationText(line.denominationId)}
                     </span>
                     <input
                       type="text"
                       inputMode="numeric"
-                      data-denomination-id={String(d.id)}
-                      value={receiveQuantities()[d.id] ?? ''}
+                      data-denomination-id={String(line.denominationId)}
+                      value={receiveQuantities()[line.denominationId] ?? ''}
                       onInput={(e) => {
                         const val = e.currentTarget.value;
-                        setReceiveQuantities((prev) => ({ ...prev, [d.id]: val }));
+                        setReceiveQuantities((prev) => ({ ...prev, [line.denominationId]: val }));
                       }}
                     />
-                    <Show when={receiveLineErrors()[d.id]}>
-                      {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                    <Show when={receiveLineErrors()[line.denominationId]}>
+                      {(msg) => <span data-field-error={`lines.${line.denominationId}.qty`}>{msg()}</span>}
                     </Show>
                   </div>
                 )}
