@@ -522,6 +522,65 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     expect(host.querySelector<HTMLInputElement>('input[name="code"]')?.value).toBe('');
   });
 
+  it('a code request still in flight when the customer switches channel does not leak into the new channel', async () => {
+    const navigate = vi.fn();
+    const bodies: Array<{ channel?: string }> = [];
+    const answers: Array<(r: Response) => void> = [];
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/otp/channels') {
+        return jsonResponse(200, { channels: ['email', 'sms'], source: 'default' });
+      }
+      if (url === '/api/auth/otp/request') {
+        bodies.push(typeof init?.body === 'string' ? JSON.parse(init.body) : {});
+        return new Promise<Response>((resolve) => answers.push(resolve));
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    // An SMS request whose answer has not arrived yet.
+    pickChannel('sms');
+    typePhone('0812345678');
+    clickSubmit();
+    await vi.waitFor(() => expect(answers).toHaveLength(1));
+
+    // The customer switches to Email and asks for an email code; it is in flight too.
+    pickChannel('email');
+    typeEmail('customer@example.com');
+    clickSubmit();
+    await vi.waitFor(() => expect(answers).toHaveLength(2));
+    expect(bodies.map((b) => b.channel)).toEqual(['sms', 'email']);
+    const submitBtn = host.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(submitBtn.disabled, 'the email request is sending').toBe(true);
+
+    // The stale SMS answer arrives: no "sent to your email" for an SMS code, and the email request still holds the
+    // sending state (no double submit).
+    answers[0]!(jsonResponse(200, { challengeId: 'ch-sms-stale' }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(host.textContent).not.toContain(table.th.codeSentEmail);
+    expect(submitBtn.textContent?.trim()).toBe(table.th.requestCode);
+    expect(submitBtn.disabled, 'still sending the email request').toBe(true);
+
+    // The email answer arrives: its challenge is the one the page uses.
+    answers[1]!(jsonResponse(200, { challengeId: 'ch-email' }));
+    await vi.waitFor(() => {
+      expect(host.textContent).toContain(table.th.codeSentEmail);
+      expect(submitBtn.textContent?.trim()).toBe(table.th.verify);
+    });
+    typeCode('123456');
+    clickSubmit();
+    await vi.waitFor(() => {
+      const verify = mockFetch.mock.calls.find(([u]) => u === '/api/auth/otp/verify');
+      expect(verify, 'verify was posted').toBeDefined();
+      expect(JSON.parse(String(verify![1]?.body)).challengeId).toBe('ch-email');
+    });
+  });
+
   it('email channel shows email-specific code and codeSent wording in th, en, and zh', async () => {
     const navigate = vi.fn();
     const mockFetch = vi.fn(async (input: RequestInfo | URL) => {

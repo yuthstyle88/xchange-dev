@@ -83,6 +83,9 @@ export function SignIn(props: {
   let emailInput: HTMLInputElement | undefined;
   let codeInput: HTMLInputElement | undefined;
   let requesting: Promise<void> | undefined;
+  // Bumped when the customer switches channel: a code request started before the switch is stale, and its answer
+  // (challenge, error) and its `finally` must not touch the new channel's state (review of PR 6272 at 18c173c).
+  let requestGeneration = 0;
   let disposed = false;
   onCleanup(() => {
     disposed = true;
@@ -113,6 +116,7 @@ export function SignIn(props: {
     setEmailError('');
     setCodeError('');
     if (activeChannel() !== ch) {
+      requestGeneration += 1;
       requesting = undefined;
       setSending(false);
       setChallenge(undefined);
@@ -200,6 +204,8 @@ export function SignIn(props: {
     setEmailError('');
     setCodeError('');
     setSending(true);
+    const generation = requestGeneration;
+    const current = () => !disposed && generation === requestGeneration;
     const run = (async () => {
       try {
         const json = await api.post<
@@ -209,16 +215,19 @@ export function SignIn(props: {
           destination,
           channel: ch,
         });
+        if (!current()) return;
         if (json?.challengeId) {
           setChallenge(json.challengeId);
         } else {
           setError(tr('requestFailed'));
         }
       } catch (err: unknown) {
-        showError(err, 'phone');
+        if (current()) showError(err, 'phone');
       } finally {
-        requesting = undefined;
-        setSending(false);
+        if (current()) {
+          requesting = undefined;
+          setSending(false);
+        }
       }
     })();
     requesting = run;
