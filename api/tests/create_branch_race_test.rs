@@ -240,6 +240,14 @@ impl TestDb {
     /// Remove the branch a round created, so that the next round is not the
     /// twenty-first branch.
     async fn forget_branch_of(&self, id: &str) {
+        sqlx::query(
+            "DELETE FROM shift_templates WHERE (organization_id, branch_id) IN \
+             (SELECT organization_id, id FROM branches WHERE request_id = $1)",
+        )
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .expect("delete the round's templates");
         sqlx::query("DELETE FROM branches WHERE request_id = $1")
             .bind(id)
             .execute(&self.pool)
