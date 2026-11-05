@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../shared/ui/version_stamp.dart';
 import '../controllers/queue_machine_controller.dart';
 import 'queue_machine_home_page.dart';
 
@@ -72,6 +73,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
           onPressed: _submit,
           child: Text(queueMachineText(ref, 'sign_in_submit')),
         ),
+        const SizedBox(height: 16),
+        const VersionStamp(),
       ],
     );
   }
