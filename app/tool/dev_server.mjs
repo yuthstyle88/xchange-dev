@@ -1,4 +1,4 @@
-// Serves build/web and forwards POST /api/kiosk to a running XCHANGE server,
+// Serves build/web and forwards POST /api/kiosk and GET /health/ready to a running XCHANGE server,
 // so the kiosk and its API share one origin the way they do behind nginx.
 //   node tool/dev_server.mjs [port=8094] [api=http://127.0.0.1:8093]
 import http from 'node:http';
@@ -13,9 +13,9 @@ const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
-  if (req.method === 'POST' && url.pathname === '/api/kiosk') {
+  if ((req.method === 'POST' && url.pathname === '/api/kiosk') || (req.method === 'GET' && url.pathname === '/health/ready')) {
     // Host is passed through unchanged: the server compares Origin with it.
-    const upstream = http.request({ host: api.hostname, port: api.port, path: '/api/kiosk', method: 'POST', headers: req.headers }, (r) => {
+    const upstream = http.request({ host: api.hostname, port: api.port, path: url.pathname, method: req.method, headers: req.headers }, (r) => {
       res.writeHead(r.statusCode, r.headers);
       r.pipe(res);
     });
