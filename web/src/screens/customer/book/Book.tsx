@@ -377,7 +377,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       >('compute', 'planner_preview', {
         branch: b,
         currency: c,
-        customerSide: s === 'BUY' ? 'CUSTOMER_BUY' : 'CUSTOMER_SELL',
+        customerSide: s === 'BUY' ? 'CUSTOMER_SELL' : 'CUSTOMER_BUY',
         amount: { quantity: checked.text },
       });
       if (seq !== previewSeq) return;
@@ -732,8 +732,8 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               void updatePreview();
             }}
           >
-            <option value="BUY">{t('buy')}</option>
-            <option value="SELL">{t('sell')}</option>
+            <option value="SELL">{t('buy')}</option>
+            <option value="BUY">{t('sell')}</option>
           </select>
         </div>
 
