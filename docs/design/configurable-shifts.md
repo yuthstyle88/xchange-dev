@@ -254,8 +254,9 @@ Owner, 2026-11-04 (lane controller's comment on #6149): *"Yes, at cutover"*.
   `refresh_in` only when it ended at least one ticket or kiosk request; otherwise every polled queue client would refetch
   every minute (fleet rule: polled endpoints send only what changed).
 - **Follow-up, not in this branch (needs the owner's approval: a migration):** the sweep runs every 60 s on every branch and
-  `queue_tickets` has only `queue_tickets_waiting (branch_id, service_date, service_type, sequence) WHERE status = 'WAITING'`
-  (`20261101100000_queue.sql:30`), so the `CALLED` arm reads the branch's rows without an index. The index that fits is
+  `queue_tickets`'s indexes that lead with `branch_id` are the two `UNIQUE` constraints and two partial indexes
+  (`20261101100000_queue.sql:23-24,30`, `20261219140000_queue_one_active_app_ticket.sql:5`); none covers `CALLED` with
+  `issued_at`, so the `CALLED` arm reads all of the branch's rows and filters them. The index that fits is
   `(branch_id, issued_at) WHERE status IN ('WAITING','CALLED')`. Measure the table before deciding (review note on PR 6170).
 - `[required]` The branch-day close keeps calling `on_day_closed` unchanged (it fires only after a cut-off with no shift open, as today).
 - Files and tickets:
