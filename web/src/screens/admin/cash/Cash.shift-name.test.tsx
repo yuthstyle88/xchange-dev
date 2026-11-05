@@ -5,7 +5,6 @@ import { setLang } from '../../../shared/i18n';
 import {
   makeAdminCashData,
   makeAdminShiftRow,
-  type AdminShiftRow,
 } from '../../../shared/testing/fixtures';
 import type { AdminMenu, AdminMenuProps } from '../menus';
 import { Dialog, closeDialog } from '../parts/Dialog';
@@ -33,7 +32,7 @@ type Reply = { status: number; body: unknown };
 
 class Server {
   version = 1;
-  shifts: AdminShiftRow[] = [];
+  shifts: ReturnType<typeof makeAdminShiftRow>[] = [];
 
   fetch = async (input: string, init?: RequestInit): Promise<Response> => {
     const url = new URL(String(input), 'http://localhost');

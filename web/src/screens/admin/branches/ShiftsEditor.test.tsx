@@ -2,41 +2,44 @@
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../../shared/api/client';
-import type { BranchShiftsData } from '../../../shared/api/generated/branch_shifts';
+import {
+  makeBranchShiftsData,
+  makeShiftTemplateViewRow,
+} from '../../../shared/testing/fixtures';
 import { setLang } from '../../../shared/i18n';
 import { BranchesScreen } from './BranchesScreen';
 import { ShiftsEditor } from './ShiftsEditor';
 
-const DEFAULT_SHIFTS_DATA: BranchShiftsData = {
+const DEFAULT_SHIFTS_DATA = makeBranchShiftsData({
   templates: [
-    {
+    makeShiftTemplateViewRow({
       id: 'shift-a',
       name: 'A',
       startsAt: '06:00',
       endsAt: '14:00',
       breakStartsAt: null,
       breakEndsAt: null,
-    },
-    {
+    }),
+    makeShiftTemplateViewRow({
       id: 'shift-b',
       name: 'B',
       startsAt: '14:00',
       endsAt: '22:00',
       breakStartsAt: null,
       breakEndsAt: null,
-    },
-    {
+    }),
+    makeShiftTemplateViewRow({
       id: 'shift-c',
       name: 'C',
       startsAt: '22:00',
       endsAt: '06:00',
       breakStartsAt: null,
       breakEndsAt: null,
-    },
+    }),
   ],
   cutover: '06:00',
   defaultShiftHours: 8,
-};
+});
 
 function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
@@ -184,36 +187,36 @@ describe('ShiftsEditor (CS-14b #6215)', () => {
       }
       if (url.endsWith('/api/branches/shifts') && init?.method === 'PUT') {
         putBodies.push(JSON.parse(String(init.body)));
-        const updated: BranchShiftsData = {
+        const updated = makeBranchShiftsData({
           templates: [
-            {
+            makeShiftTemplateViewRow({
               id: 'shift-a',
               name: 'กะเช้า',
               startsAt: '06:00',
               endsAt: '14:00',
               breakStartsAt: '10:00',
               breakEndsAt: '10:30',
-            },
-            {
+            }),
+            makeShiftTemplateViewRow({
               id: 'shift-b',
               name: 'กะบ่าย',
               startsAt: '14:00',
               endsAt: '22:00',
               breakStartsAt: null,
               breakEndsAt: null,
-            },
-            {
+            }),
+            makeShiftTemplateViewRow({
               id: 'shift-c',
               name: 'กะดึก',
               startsAt: '22:00',
               endsAt: '06:00',
               breakStartsAt: null,
               breakEndsAt: null,
-            },
+            }),
           ],
           cutover: '06:00',
           defaultShiftHours: 8,
-        };
+        });
         return new Response(JSON.stringify(updated), {
           status: 200,
           headers: { 'content-type': 'application/json' },
