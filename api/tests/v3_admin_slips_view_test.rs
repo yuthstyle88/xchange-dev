@@ -411,7 +411,8 @@ impl Room {
             reference_rate: None,
         };
         if !spec.demo {
-            shift_date_common::date_open_shifts(&self.desk.db.pool, spec.branch, spec.value_date).await;
+            shift_date_common::date_open_shifts(&self.desk.db.pool, spec.branch, spec.value_date)
+                .await;
         }
         let saved = self
             .desk

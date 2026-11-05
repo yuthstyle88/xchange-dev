@@ -27,11 +27,13 @@ type TemplateRow<'a> = (&'a str, &'a str, &'a str, Option<&'a str>, Option<&'a s
 
 /// Replaces MAIN's live plan with overlap24 (B has a break 18:00–19:00).
 async fn overlap24(shop: &Shop) {
-    sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL")
-        .bind(MAIN)
-        .execute(&shop.pool)
-        .await
-        .expect("retire MAIN's plan");
+    sqlx::query(
+        "UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL",
+    )
+    .bind(MAIN)
+    .execute(&shop.pool)
+    .await
+    .expect("retire MAIN's plan");
     sqlx::query("UPDATE branches SET timezone = 'Asia/Bangkok' WHERE id = $1")
         .bind(MAIN)
         .execute(&shop.pool)
@@ -176,13 +178,21 @@ async fn f2_my_shift_names_its_shift_and_date_and_is_on_break_only_inside_its_br
     let floor = floor_at(&shop, &b_teller, "2026-11-04T11:30:00Z").await;
     let mine = &floor["myShift"];
     assert_eq!(mine["id"], json!(b_shift), "{floor}");
-    assert_eq!(mine["shiftName"], json!("B"), "F2: the shift's name: {floor}");
+    assert_eq!(
+        mine["shiftName"],
+        json!("B"),
+        "F2: the shift's name: {floor}"
+    );
     assert_eq!(
         mine["businessDate"],
         json!("2026-11-04"),
         "F2: the shift's business date: {floor}"
     );
-    assert_eq!(mine["onBreak"], json!(true), "F2: B at 18:30 is on break: {floor}");
+    assert_eq!(
+        mine["onBreak"],
+        json!(true),
+        "F2: B at 18:30 is on break: {floor}"
+    );
 
     // 14:30 Bangkok: B has started, its break has not.
     let floor = floor_at(&shop, &b_teller, "2026-11-04T07:30:00Z").await;

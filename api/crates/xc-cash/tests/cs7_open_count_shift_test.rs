@@ -102,9 +102,13 @@ async fn floor() -> Floor {
         .execute(&pool)
         .await
         .expect("retire the defaults");
-    for (i, (name, start, end)) in [("A", "06:00", "15:00"), ("B", "14:00", "23:00"), ("C", "22:00", "07:00")]
-        .iter()
-        .enumerate()
+    for (i, (name, start, end)) in [
+        ("A", "06:00", "15:00"),
+        ("B", "14:00", "23:00"),
+        ("C", "22:00", "07:00"),
+    ]
+    .iter()
+    .enumerate()
     {
         sqlx::query(
             "INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position) \
@@ -228,7 +232,9 @@ impl Floor {
         };
         let counts = CashCountService::pg(self.pool.clone());
         let mut tx = self.pool.begin().await.unwrap();
-        let got = counts.submit_chosen_in(&mut tx, who, cmd, template, now).await;
+        let got = counts
+            .submit_chosen_in(&mut tx, who, cmd, template, now)
+            .await;
         if got.is_ok() {
             tx.commit().await.unwrap();
         }
@@ -250,19 +256,23 @@ impl Floor {
     }
 
     async fn count_row(&self, id: &str) -> (Option<String>, NaiveDate) {
-        sqlx::query_as("SELECT shift_template_id::text, business_date FROM cash_counts WHERE id = $1::uuid")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .expect("the count row")
+        sqlx::query_as(
+            "SELECT shift_template_id::text, business_date FROM cash_counts WHERE id = $1::uuid",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("the count row")
     }
 
     async fn shift_row(&self, id: &str) -> (Option<String>, Option<String>, NaiveDate) {
-        sqlx::query_as("SELECT template_id::text, template_name, business_date FROM shifts WHERE id = $1")
-            .bind(id)
-            .fetch_one(&self.pool)
-            .await
-            .expect("the shift row")
+        sqlx::query_as(
+            "SELECT template_id::text, template_name, business_date FROM shifts WHERE id = $1",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .expect("the shift row")
     }
 
     async fn counts(&self) -> i64 {
@@ -290,11 +300,13 @@ async fn c1_c3_a_chosen_shift_that_does_not_cover_now_is_refused_and_nothing_is_
     let b = f.template_id("B").await;
     let c = f.template_id("C").await;
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 10, 0)).await,
+        f.submit(&f.teller, CountKind::Open, None, Some(&b), bkk(4, 10, 0))
+            .await,
         ShiftError::OutsideShiftWindow,
     );
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, Some(&c), bkk(4, 12, 0)).await,
+        f.submit(&f.teller, CountKind::Open, None, Some(&c), bkk(4, 12, 0))
+            .await,
         ShiftError::OutsideShiftWindow,
     );
     assert_eq!(f.counts().await, 0);
@@ -321,7 +333,8 @@ async fn c2_c5_a_chosen_covering_shift_is_stored_and_opens_the_shift_with_its_na
 async fn c4_no_choice_takes_the_only_covering_shift_and_refuses_when_two_cover() {
     let f = floor().await;
     refused_with(
-        f.submit(&f.teller, CountKind::Open, None, None, bkk(4, 14, 30)).await,
+        f.submit(&f.teller, CountKind::Open, None, None, bkk(4, 14, 30))
+            .await,
         ShiftError::ShiftNotChosen,
     );
     let a = f.template_id("A").await;
@@ -348,7 +361,13 @@ async fn c6_k1_the_night_shift_and_its_close_count_belong_to_the_day_it_started(
     );
     // K1: the CLOSE count at 07:10, after C has ended and after the 06:00 cutover, carries the shift's business date.
     let close = f
-        .submit(&f.teller, CountKind::Close, Some(shift), None, bkk(5, 7, 10))
+        .submit(
+            &f.teller,
+            CountKind::Close,
+            Some(shift),
+            None,
+            bkk(5, 7, 10),
+        )
         .await
         .expect("a CLOSE count");
     assert_eq!(f.count_row(&close.id).await, (None, nov(4)));
@@ -361,7 +380,11 @@ async fn k2_a_safe_count_takes_the_business_date_of_its_moment() {
         .submit(&f.manager, CountKind::Safe, None, None, bkk(5, 5, 0))
         .await
         .expect("a SAFE count needs no shift");
-    assert_eq!(f.count_row(&night.id).await, (None, nov(4)), "05:00 is before the 06:00 cutover");
+    assert_eq!(
+        f.count_row(&night.id).await,
+        (None, nov(4)),
+        "05:00 is before the 06:00 cutover"
+    );
     let morning = f
         .submit(&f.manager, CountKind::Safe, None, None, bkk(5, 6, 30))
         .await

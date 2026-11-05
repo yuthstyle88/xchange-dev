@@ -39,11 +39,13 @@ async fn window(shop: &Shop, now: &str) -> ServiceWindow {
 
 /// Replaces MAIN's live plan with `rows` of `(name, start, end)`.
 async fn set_plan(shop: &Shop, rows: &[(&str, &str, &str)]) {
-    sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL")
-        .bind(MAIN)
-        .execute(&shop.pool)
-        .await
-        .expect("retire MAIN's plan");
+    sqlx::query(
+        "UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1 AND retired_at IS NULL",
+    )
+    .bind(MAIN)
+    .execute(&shop.pool)
+    .await
+    .expect("retire MAIN's plan");
     for (i, (name, start, end)) in rows.iter().enumerate() {
         sqlx::query(
             "INSERT INTO shift_templates (organization_id, branch_id, name, starts_at, ends_at, position) \
@@ -64,7 +66,11 @@ async fn set_plan(shop: &Shop, rows: &[(&str, &str, &str)]) {
 async fn overlapping(shop: &Shop) {
     set_plan(
         shop,
-        &[("A", "06:00", "15:00"), ("B", "14:00", "23:00"), ("C", "22:00", "07:00")],
+        &[
+            ("A", "06:00", "15:00"),
+            ("B", "14:00", "23:00"),
+            ("C", "22:00", "07:00"),
+        ],
     )
     .await;
 }
@@ -107,7 +113,10 @@ async fn w5_opening_hours_no_longer_gate_custody() {
     // 4 Nov 20:00 Bangkok: outside 12–18, inside the plan's business day
     let now = "2026-11-04T13:00:00.000Z";
     let w = window(&shop, now).await;
-    assert_eq!(w, open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z"));
+    assert_eq!(
+        w,
+        open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z")
+    );
     assert!(w.allows_begin(ct(now)));
     shop.finish().await;
 }
@@ -119,8 +128,14 @@ async fn w6_a_twenty_four_hour_plan_joins_days_so_selling_never_pauses() {
     // 5 Nov 05:55 Bangkok: the 4 Nov span (06:00 → 06:00) joined with the 5 Nov span.
     let now = "2026-11-04T22:55:00.000Z";
     let w = window(&shop, now).await;
-    assert_eq!(w, open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z"));
-    assert!(w.allows_begin(ct(now)), "no 05:50–06:00 pause (owner Q7 = A)");
+    assert_eq!(
+        w,
+        open("2026-11-03T23:00:00.000Z", "2026-11-05T23:00:00.000Z")
+    );
+    assert!(
+        w.allows_begin(ct(now)),
+        "no 05:50–06:00 pause (owner Q7 = A)"
+    );
     // 5 Nov 06:00 Bangkok: the 5 Nov span joined with the 6 Nov span.
     assert_eq!(
         window(&shop, "2026-11-04T23:00:00.000Z").await,

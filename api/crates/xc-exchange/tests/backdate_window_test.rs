@@ -41,7 +41,14 @@ fn cal(t: DateTime<Utc>) -> NaiveDate {
 #[test]
 fn w1_today_earlier_and_not_closed_is_allowed() {
     assert_eq!(
-        BackdateWindow::check(ict(4, 13, 23), day(4), now(), cal(ict(4, 13, 23)), cal(now()), false),
+        BackdateWindow::check(
+            ict(4, 13, 23),
+            day(4),
+            now(),
+            cal(ict(4, 13, 23)),
+            cal(now()),
+            false
+        ),
         Ok(())
     );
 }
@@ -50,7 +57,14 @@ fn w1_today_earlier_and_not_closed_is_allowed() {
 #[test]
 fn w2_an_earlier_day_not_closed_is_allowed() {
     assert_eq!(
-        BackdateWindow::check(ict(2, 9, 0), day(2), now(), cal(ict(2, 9, 0)), cal(now()), false),
+        BackdateWindow::check(
+            ict(2, 9, 0),
+            day(2),
+            now(),
+            cal(ict(2, 9, 0)),
+            cal(now()),
+            false
+        ),
         Ok(())
     );
 }
@@ -93,7 +107,14 @@ fn w5_value_date_must_be_the_business_date_of_paid_at() {
 #[test]
 fn w6_value_date_after_today_is_refused() {
     assert_eq!(
-        BackdateWindow::check(ict(4, 10, 0), day(5), now(), cal(ict(4, 10, 0)), cal(now()), false),
+        BackdateWindow::check(
+            ict(4, 10, 0),
+            day(5),
+            now(),
+            cal(ict(4, 10, 0)),
+            cal(now()),
+            false
+        ),
         Err(BackdateRefusal::ValueDateNotPaidDate)
     );
     // At 2026-11-04 23:59 ICT now, a value date of today is fine; tomorrow can never match a past paid_at.
@@ -108,7 +129,14 @@ fn w6_value_date_after_today_is_refused() {
 #[test]
 fn w7_a_closed_day_is_refused() {
     assert_eq!(
-        BackdateWindow::check(ict(2, 9, 0), day(2), now(), cal(ict(2, 9, 0)), cal(now()), true),
+        BackdateWindow::check(
+            ict(2, 9, 0),
+            day(2),
+            now(),
+            cal(ict(2, 9, 0)),
+            cal(now()),
+            true
+        ),
         Err(BackdateRefusal::DayClosed)
     );
 }
@@ -117,7 +145,14 @@ fn w7_a_closed_day_is_refused() {
 #[test]
 fn w8_a_wrong_date_is_named_before_a_closed_day() {
     assert_eq!(
-        BackdateWindow::check(ict(2, 9, 0), day(1), now(), cal(ict(2, 9, 0)), cal(now()), true),
+        BackdateWindow::check(
+            ict(2, 9, 0),
+            day(1),
+            now(),
+            cal(ict(2, 9, 0)),
+            cal(now()),
+            true
+        ),
         Err(BackdateRefusal::ValueDateNotPaidDate)
     );
 }

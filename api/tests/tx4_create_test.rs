@@ -1011,7 +1011,10 @@ async fn cs8_d1_a_live_sale_takes_its_shifts_business_date_not_the_clients() {
 
     let four_nov = NaiveDate::from_ymd_opt(2026, 11, 4).unwrap();
     assert_eq!(made.shift_id.as_deref(), Some(shift.as_str()));
-    assert_eq!(made.value_date, four_nov, "the answer carries the shift's business date");
+    assert_eq!(
+        made.value_date, four_nov,
+        "the answer carries the shift's business date"
+    );
     assert_eq!(
         c.desk.stored(made.id).await.value_date,
         four_nov,

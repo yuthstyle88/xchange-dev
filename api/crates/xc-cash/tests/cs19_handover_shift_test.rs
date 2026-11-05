@@ -296,12 +296,11 @@ impl Floor {
 
     /// The hand-over's status and R's OPEN shifts.
     async fn after_refusal(&self, handover: &Handover) -> (String, i64) {
-        let status: String =
-            sqlx::query_scalar("SELECT status FROM handovers WHERE id = $1::uuid")
-                .bind(&handover.id)
-                .fetch_one(&self.pool)
-                .await
-                .expect("the hand-over");
+        let status: String = sqlx::query_scalar("SELECT status FROM handovers WHERE id = $1::uuid")
+            .bind(&handover.id)
+            .fetch_one(&self.pool)
+            .await
+            .expect("the hand-over");
         let open: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM shifts WHERE teller_id = $1::uuid AND status = 'OPEN'",
         )
@@ -315,7 +314,9 @@ impl Floor {
 
 fn accepted_shift(got: pos_error::AppResult<HandoverAccepted>) -> String {
     match got {
-        Ok(HandoverAccepted::Accepted(h)) => h.to_shift_id.expect("an accepted hand-over names R's shift"),
+        Ok(HandoverAccepted::Accepted(h)) => h
+            .to_shift_id
+            .expect("an accepted hand-over names R's shift"),
         Ok(other) => panic!("the hand-over is accepted, got {other:?}"),
         Err(e) => panic!("the hand-over is accepted, got {e}"),
     }

@@ -242,9 +242,8 @@ async fn cs23_v1_demo_sale_without_value_date() {
     let q = desk.quote("MAIN", Side::Buy, "100", None, now).await;
 
     // Verify MAIN's shift plan yields the business date of now under the defaults (06/14/22)
-    let expected = (now.with_timezone(&chrono_tz::Asia::Bangkok)
-        - chrono::TimeDelta::hours(6))
-    .date_naive();
+    let expected =
+        (now.with_timezone(&chrono_tz::Asia::Bangkok) - chrono::TimeDelta::hours(6)).date_naive();
     let mut tx = desk.db.pool.begin().await.unwrap();
     let plan = ShiftPlanService::new(
         Arc::new(PgShiftTemplateStore),

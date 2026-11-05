@@ -161,8 +161,14 @@ fn p8_a_business_day_is_the_24_hours_from_the_cutover() {
 #[test]
 fn p9_span_for_is_the_span_of_the_business_date_of_now() {
     let plan = overlap24();
-    assert_eq!(plan.span_for(bkk(5, 2, 0)), Some((bkk(4, 6, 0), bkk(5, 6, 0))));
-    assert_eq!(plan.span_for(bkk(5, 6, 0)), Some((bkk(5, 6, 0), bkk(6, 6, 0))));
+    assert_eq!(
+        plan.span_for(bkk(5, 2, 0)),
+        Some((bkk(4, 6, 0), bkk(5, 6, 0)))
+    );
+    assert_eq!(
+        plan.span_for(bkk(5, 6, 0)),
+        Some((bkk(5, 6, 0), bkk(6, 6, 0)))
+    );
 }
 
 #[test]
@@ -171,7 +177,10 @@ fn p10_on_break_only_where_a_break_is_set() {
     assert!(plan.on_break("B", bkk(4, 18, 30)));
     assert!(!plan.on_break("B", bkk(4, 19, 0)));
     assert!(!plan.on_break("A", bkk(4, 14, 30)), "A has no break");
-    assert!(!owner_defaults().on_break("C", bkk(5, 2, 0)), "the defaults have no breaks");
+    assert!(
+        !owner_defaults().on_break("C", bkk(5, 2, 0)),
+        "the defaults have no breaks"
+    );
 }
 
 #[test]
@@ -192,7 +201,11 @@ fn p12_validate_refuses_each_broken_list() {
     let night = || input("N", hm(18, 0), hm(6, 0));
     assert_eq!(ShiftPlan::validate(vec![]), Err(PlanRefusal::None));
     assert_eq!(
-        ShiftPlan::validate((0..13).map(|i| input(&format!("S{i}"), hm(i, 0), hm((i + 12) % 24, 0))).collect()),
+        ShiftPlan::validate(
+            (0..13)
+                .map(|i| input(&format!("S{i}"), hm(i, 0), hm((i + 12) % 24, 0)))
+                .collect()
+        ),
         Err(PlanRefusal::TooMany)
     );
     assert_eq!(
@@ -266,8 +279,14 @@ fn p12b_a_gap_is_refused_and_named() {
 
 #[test]
 fn p12c_exact_and_overlapping_24_hour_plans_pass() {
-    assert!(ShiftPlan::validate(ShiftPlan::defaults()).is_ok(), "exact 3 × 8 h");
-    assert!(ShiftPlan::validate(overlap24_inputs()).is_ok(), "overlapping");
+    assert!(
+        ShiftPlan::validate(ShiftPlan::defaults()).is_ok(),
+        "exact 3 × 8 h"
+    );
+    assert!(
+        ShiftPlan::validate(overlap24_inputs()).is_ok(),
+        "overlapping"
+    );
     assert!(
         ShiftPlan::validate(vec![
             input("Day", hm(8, 0), hm(20, 0)),
@@ -355,6 +374,12 @@ fn p19_defaults_date_the_night_by_the_day_it_started_and_cut_over_at_six() {
 #[test]
 fn p20_defaults_run_twenty_four_hours_from_six() {
     let plan = owner_defaults();
-    assert_eq!(plan.service_span(date(4)), Some((bkk(4, 6, 0), bkk(5, 6, 0))));
-    assert_eq!(plan.span_for(bkk(5, 2, 0)), Some((bkk(4, 6, 0), bkk(5, 6, 0))));
+    assert_eq!(
+        plan.service_span(date(4)),
+        Some((bkk(4, 6, 0), bkk(5, 6, 0)))
+    );
+    assert_eq!(
+        plan.span_for(bkk(5, 2, 0)),
+        Some((bkk(4, 6, 0), bkk(5, 6, 0)))
+    );
 }

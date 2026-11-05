@@ -86,7 +86,10 @@ async fn v1_an_invalid_list_is_refused_with_its_reason_and_index_and_nothing_is_
             &mut tx,
             &branch,
             ORG,
-            vec![row("A", hm(6, 0), hm(18, 0)), row("  ", hm(18, 0), hm(6, 0))],
+            vec![
+                row("A", hm(6, 0), hm(18, 0)),
+                row("  ", hm(18, 0), hm(6, 0)),
+            ],
             Utc::now(),
         )
         .await;
@@ -111,7 +114,10 @@ async fn v1_an_invalid_list_is_refused_with_its_reason_and_index_and_nothing_is_
             &mut tx,
             &branch,
             ORG,
-            vec![row("A", hm(6, 0), hm(14, 0)), row("B", hm(14, 0), hm(22, 0))],
+            vec![
+                row("A", hm(6, 0), hm(14, 0)),
+                row("B", hm(14, 0), hm(22, 0)),
+            ],
             Utc::now(),
         )
         .await;
@@ -130,9 +136,15 @@ async fn v2_two_shifts_covering_now_preselect_nothing() {
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(4, 14, 30)).await.unwrap();
+    let got = svc
+        .choices_in(&mut tx, &branch, bkk(4, 14, 30))
+        .await
+        .unwrap();
     assert_eq!(
-        got.choices.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+        got.choices
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
         vec!["A", "B"]
     );
     assert_eq!(got.preselect, None);
@@ -146,10 +158,16 @@ async fn v3_one_shift_covering_now_is_preselected() {
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(4, 10, 0)).await.unwrap();
+    let got = svc
+        .choices_in(&mut tx, &branch, bkk(4, 10, 0))
+        .await
+        .unwrap();
     assert_eq!(got.choices.len(), 1);
     assert_eq!(got.choices[0].name, "A");
-    assert_eq!(got.preselect.as_deref(), Some(got.choices[0].template_id.as_str()));
+    assert_eq!(
+        got.preselect.as_deref(),
+        Some(got.choices[0].template_id.as_str())
+    );
     drop(tx);
     db.drop_schema().await;
 }
@@ -160,7 +178,10 @@ async fn v4_two_am_offers_only_last_nights_shift() {
     let svc = service(&db);
     let branch = branch_with_plan(&db, &svc).await;
     let mut tx = db.pool.begin().await.unwrap();
-    let got = svc.choices_in(&mut tx, &branch, bkk(5, 2, 0)).await.unwrap();
+    let got = svc
+        .choices_in(&mut tx, &branch, bkk(5, 2, 0))
+        .await
+        .unwrap();
     assert_eq!(
         got.choices
             .iter()
@@ -168,7 +189,10 @@ async fn v4_two_am_offers_only_last_nights_shift() {
             .collect::<Vec<_>>(),
         vec![("C", chrono::NaiveDate::from_ymd_opt(2026, 11, 4).unwrap())]
     );
-    assert_eq!(got.preselect.as_deref(), Some(got.choices[0].template_id.as_str()));
+    assert_eq!(
+        got.preselect.as_deref(),
+        Some(got.choices[0].template_id.as_str())
+    );
     drop(tx);
     db.drop_schema().await;
 }
@@ -187,9 +211,15 @@ async fn v5_the_plan_uses_the_branchs_timezone() {
     let plan = svc.plan_in(&mut tx, &branch).await.unwrap();
     assert_eq!(plan.timezone(), chrono_tz::Asia::Tokyo);
     // 10:00 Tokyo = 08:00 Bangkok: A covers it.
-    let got = svc.choices_in(&mut tx, &branch, bkk(4, 8, 0)).await.unwrap();
+    let got = svc
+        .choices_in(&mut tx, &branch, bkk(4, 8, 0))
+        .await
+        .unwrap();
     assert_eq!(
-        got.choices.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+        got.choices
+            .iter()
+            .map(|c| c.name.as_str())
+            .collect::<Vec<_>>(),
         vec!["A"]
     );
     drop(tx);
@@ -202,15 +232,24 @@ async fn v6_seed_defaults_is_idempotent_and_save_returns_the_stored_plan() {
     let svc = service(&db);
     let branch = db.branch("CS3").await;
     // The `branches_default_shift_templates` trigger already seeded it: seeding again is a no-op.
-    assert!(!svc.seed_defaults(&branch, ORG).await.unwrap(), "a seeded branch is left alone");
+    assert!(
+        !svc.seed_defaults(&branch, ORG).await.unwrap(),
+        "a seeded branch is left alone"
+    );
     assert_eq!(live_names(&db, &branch).await, vec!["A", "B", "C"]);
     sqlx::query("UPDATE shift_templates SET retired_at = now() WHERE branch_id = $1")
         .bind(branch.as_str())
         .execute(&db.pool)
         .await
         .unwrap();
-    assert!(svc.seed_defaults(&branch, ORG).await.unwrap(), "first seed inserts");
-    assert!(!svc.seed_defaults(&branch, ORG).await.unwrap(), "second seed is a no-op");
+    assert!(
+        svc.seed_defaults(&branch, ORG).await.unwrap(),
+        "first seed inserts"
+    );
+    assert!(
+        !svc.seed_defaults(&branch, ORG).await.unwrap(),
+        "second seed is a no-op"
+    );
     assert_eq!(live_names(&db, &branch).await, vec!["A", "B", "C"]);
 
     let mut tx = db.pool.begin().await.unwrap();

@@ -651,14 +651,16 @@ async fn staff_floor_hours_come_from_the_branchs_shift_plan_and_are_absent_witho
         xc_shift::domain::shift_plan::shift_plan::ShiftPlan::defaults()
             .into_iter()
             .enumerate()
-            .map(|(i, t)| xc_shift::domain::shift_plan::shift_template::ShiftTemplate {
-                id: t.name.clone(),
-                name: t.name,
-                starts_at: t.starts_at,
-                ends_at: t.ends_at,
-                break_window: t.break_window,
-                position: i as i16,
-            })
+            .map(
+                |(i, t)| xc_shift::domain::shift_plan::shift_template::ShiftTemplate {
+                    id: t.name.clone(),
+                    name: t.name,
+                    starts_at: t.starts_at,
+                    ends_at: t.ends_at,
+                    break_window: t.break_window,
+                    position: i as i16,
+                },
+            )
             .collect(),
         Tz::Asia__Bangkok,
     );
