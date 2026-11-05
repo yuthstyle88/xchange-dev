@@ -304,4 +304,158 @@ describe('SignIn ApiClient.post and wordedError (RW-4 #2012 §9)', () => {
     expect(calls[1]!.body).toEqual({ challengeId: 'ch-row-5', code: '654321' });
     expect(navigate).toHaveBeenCalledWith('/app');
   });
+
+  function typeEmail(email: string): void {
+    const emailInput = host.querySelector<HTMLInputElement>('input[name="email"]');
+    expect(emailInput, 'email input exists').not.toBeNull();
+    emailInput!.value = email;
+    emailInput!.dispatchEvent(new Event('input', { bubbles: true }));
+    emailInput!.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function pickChannel(channel: 'email' | 'sms'): void {
+    const btn = host.querySelector<HTMLButtonElement>(`button[data-channel="${channel}"]`);
+    expect(btn, `${channel} channel button exists`).not.toBeNull();
+    btn!.click();
+  }
+
+  it('O1: nothing set -> the page offers Email and SMS in every language and shows default', () => {
+    const navigate = vi.fn();
+    dispose = render(() => <SignIn navigate={navigate} />, host);
+
+    const emailBtn = host.querySelector<HTMLButtonElement>('button[data-channel="email"]');
+    const smsBtn = host.querySelector<HTMLButtonElement>('button[data-channel="sms"]');
+    const defaultNote = host.querySelector<HTMLElement>('[data-default-note="true"]');
+    expect(emailBtn, 'email option exists').not.toBeNull();
+    expect(smsBtn, 'sms option exists').not.toBeNull();
+    expect(defaultNote?.textContent).toBe('ค่าเริ่มต้น');
+    expect(emailBtn?.textContent).toBe('อีเมล');
+    expect(smsBtn?.textContent).toBe('SMS');
+
+    setLang('en');
+    expect(emailBtn?.textContent).toBe('Email');
+    expect(smsBtn?.textContent).toBe('SMS');
+    expect(defaultNote?.textContent).toBe('Default');
+
+    setLang('zh');
+    expect(emailBtn?.textContent).toBe('电子邮箱');
+    expect(smsBtn?.textContent).toBe('短信');
+    expect(defaultNote?.textContent).toBe('默认');
+  });
+
+  it('O2: the customer picks Email -> the request body has channel:"email" and destination = the email', async () => {
+    const navigate = vi.fn();
+    const calls: RecordedCall[] = [];
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const headers = new Headers(init?.headers);
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ url, method, headers, body });
+      if (url === '/api/auth/otp/request') {
+        return jsonResponse(200, { challengeId: 'ch-email-o2' });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    pickChannel('email');
+    expect(host.querySelector('input[name="phone"]')).toBeNull();
+    typeEmail('customer@example.com');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]!.url).toBe('/api/auth/otp/request');
+    expect(calls[0]!.body).toEqual({
+      destination: 'customer@example.com',
+      channel: 'email',
+    });
+  });
+
+  it('O3: the customer picks SMS -> channel:"sms" and the phone, as today', async () => {
+    const navigate = vi.fn();
+    const calls: RecordedCall[] = [];
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const headers = new Headers(init?.headers);
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ url, method, headers, body });
+      if (url === '/api/auth/otp/request') {
+        return jsonResponse(200, { challengeId: 'ch-sms-o3' });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => <SignIn navigate={navigate} fetch={mockFetch as unknown as typeof fetch} />,
+      host,
+    );
+
+    pickChannel('email');
+    pickChannel('sms');
+    expect(host.querySelector('input[name="email"]')).toBeNull();
+    typePhone('0812345678');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]!.url).toBe('/api/auth/otp/request');
+    expect(calls[0]!.body).toEqual({
+      destination: '+66812345678',
+      channel: 'sms',
+    });
+  });
+
+  it('O4: the owner allows only email -> no picker; email only', async () => {
+    const navigate = vi.fn();
+    const calls: RecordedCall[] = [];
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      const headers = new Headers(init?.headers);
+      const body = typeof init?.body === 'string' ? JSON.parse(init.body) : undefined;
+      calls.push({ url, method, headers, body });
+      if (url === '/api/auth/otp/request') {
+        return jsonResponse(200, { challengeId: 'ch-only-email' });
+      }
+      return jsonResponse(404, {});
+    });
+
+    dispose = render(
+      () => (
+        <SignIn
+          navigate={navigate}
+          fetch={mockFetch as unknown as typeof fetch}
+          channels={['email']}
+          channelSource="set"
+        />
+      ),
+      host,
+    );
+
+    expect(host.querySelector('.xc-sign-in-channels')).toBeNull();
+    expect(host.querySelector('button[data-channel="email"]')).toBeNull();
+    expect(host.querySelector('button[data-channel="sms"]')).toBeNull();
+    expect(host.querySelector('input[name="phone"]')).toBeNull();
+    expect(host.querySelector('input[name="email"]')).not.toBeNull();
+
+    typeEmail('only@example.com');
+    clickSubmit();
+
+    await vi.waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]!.body).toEqual({
+      destination: 'only@example.com',
+      channel: 'email',
+    });
+  });
 });
