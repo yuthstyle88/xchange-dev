@@ -19,6 +19,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
 use crate::bootstrap::AppState;
+use crate::presentation::dto::kiosk::queue_of;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::queue_board::{
     QueueBoardCalled, QueueBoardCounter, QueueBoardData, QueueBoardWaiting,
@@ -29,7 +30,7 @@ pub struct QueueBoardView {
     pool: PgPool,
 }
 
-type WaitingRow = (String, String, String, i32, DateTime<Utc>);
+type WaitingRow = (String, String, String, i32, DateTime<Utc>, Option<String>);
 type CalledRow = (
     String,
     String,
@@ -38,6 +39,7 @@ type CalledRow = (
     Option<String>,
     Option<String>,
     Option<DateTime<Utc>>,
+    Option<String>,
 );
 
 impl BranchView for QueueBoardView {
@@ -77,7 +79,7 @@ impl BranchView for QueueBoardView {
         async move {
             // Call order (Q6, `CallOrder`): BOOKING before WALK_IN, then the lowest sequence.
             let waiting: Vec<WaitingRow> = sqlx::query_as(
-                "SELECT id::text, display_number, service_type, sequence, issued_at \
+                "SELECT id::text, display_number, service_type, sequence, issued_at, kiosk_request_id \
                    FROM queue_tickets \
                   WHERE branch_id = $1 AND status = 'WAITING' \
                   ORDER BY CASE service_type WHEN 'BOOKING' THEN 0 ELSE 1 END, sequence, issued_at",
@@ -87,7 +89,7 @@ impl BranchView for QueueBoardView {
             .await?;
             let called: Vec<CalledRow> = sqlx::query_as(
                 "SELECT t.id::text, t.display_number, t.service_type, t.status, t.counter_teller_id::text, \
-                        NULLIF(btrim(u.name), ''), t.called_at \
+                        NULLIF(btrim(u.name), ''), t.called_at, t.kiosk_request_id \
                    FROM queue_tickets t LEFT JOIN users u ON u.id = t.counter_teller_id \
                   WHERE t.branch_id = $1 AND t.status IN ('CALLED', 'SERVING') \
                   ORDER BY t.called_at, t.display_number",
@@ -105,15 +107,18 @@ impl BranchView for QueueBoardView {
             Ok(QueueBoardData {
                 waiting: waiting
                     .into_iter()
-                    .map(|(id, display_number, service_type, sequence, issued_at)| {
-                        QueueBoardWaiting {
-                            id,
-                            display_number,
-                            service_type,
-                            sequence,
-                            issued_at: issued_at.to_rfc3339(),
-                        }
-                    })
+                    .map(
+                        |(id, display_number, service_type, sequence, issued_at, kiosk_request_id)| {
+                            QueueBoardWaiting {
+                                id,
+                                display_number,
+                                service_type,
+                                sequence,
+                                issued_at: issued_at.to_rfc3339(),
+                                kiosk_code: kiosk_request_id.as_deref().map(queue_of),
+                            }
+                        },
+                    )
                     .collect(),
                 called: called
                     .into_iter()
@@ -126,6 +131,7 @@ impl BranchView for QueueBoardView {
                             teller_id,
                             teller_name,
                             called_at,
+                            kiosk_request_id,
                         )| {
                             QueueBoardCalled {
                                 id,
@@ -135,6 +141,7 @@ impl BranchView for QueueBoardView {
                                 teller_id,
                                 teller_name,
                                 called_at: called_at.map(|t| t.to_rfc3339()),
+                                kiosk_code: kiosk_request_id.as_deref().map(queue_of),
                             }
                         },
                     )

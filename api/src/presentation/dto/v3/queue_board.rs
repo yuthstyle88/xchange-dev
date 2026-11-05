@@ -15,6 +15,7 @@ pub struct QueueBoardWaiting {
     pub service_type: String,
     pub sequence: i32,
     pub issued_at: String,
+    pub kiosk_code: Option<String>,
 }
 
 /// A CALLED or SERVING ticket and the teller whose counter holds it.
@@ -32,6 +33,7 @@ pub struct QueueBoardCalled {
     /// `users.name` of the teller; `null` when there is no teller or the name is empty. Never the id.
     pub teller_name: Option<String>,
     pub called_at: Option<String>,
+    pub kiosk_code: Option<String>,
 }
 
 /// The caller's own counter.
