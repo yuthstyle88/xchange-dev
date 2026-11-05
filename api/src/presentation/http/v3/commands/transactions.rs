@@ -194,6 +194,7 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
             "idempotencyConflict" => ("idempotencyConflict", StatusCode::CONFLICT),
             "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
             "countFirst" => ("countFirst", StatusCode::CONFLICT),
+            "dayClosed" => ("dayClosed", StatusCode::CONFLICT),
             _ => ("validationFailed", StatusCode::BAD_REQUEST),
         }
     };

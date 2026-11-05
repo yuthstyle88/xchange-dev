@@ -36,6 +36,7 @@ use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 use crate::application::workflows::save_step::SaveActor;
 use crate::application::workflows::save_transaction::ATTACHMENT_NOT_FOUND;
 use crate::infrastructure::files::file_service::FileService;
+use crate::infrastructure::finance::closed_days::ClosedDays;
 use serde_json::json;
 use xc_approval::domain::audit_log::{AuditEvent, AuditLog};
 use xc_approval::infrastructure::audit_log::PgAuditLog;
@@ -365,6 +366,11 @@ impl CreateTransaction {
             }
             Mode::Demo => (None, req.value_date),
         };
+        if mode == Mode::Live && ClosedDays::is_closed_in(tx, &req.branch_id, value_date).await? {
+            return Err(AppError::Domain(format!(
+                "dayClosed: business date {value_date} is closed"
+            )));
+        }
 
         // 3. The passport and slip files, as today
         if !req.payment.method.is_cash() {
