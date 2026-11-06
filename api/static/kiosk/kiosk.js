@@ -15,7 +15,7 @@ let kioskValues={...NOT_SET_FALLBACK,...window.XC_KIOSK_SCREEN};
 const LANGS=window.KIOSK_LANGS,TEXT=window.KIOSK_TEXT,ERRORS=window.KIOSK_ERRORS;
 let touchAmount='';
 let lastRatesAt=0,ratesLoading=false,rateGeneration=0;
-let model,type='BUY',quote,lastStatus,timer,seconds=0,idle,successReset,busy=false,screen='select';
+let model,type='BUY',amountIn='THB',quote,lastStatus,timer,seconds=0,idle,successReset,busy=false,screen='select';
 // Phone mode: a customer who scanned the rate board QR (?via=qr) queues from their own phone, so the
 // queue survives a reload, the screen never resets on idle, and the phone alerts when staff take the queue.
 const personal=new URLSearchParams(location.search).get('via')==='qr',MINE='xc.kiosk.queue.'+branch,baseTitle=document.title;
@@ -70,15 +70,18 @@ function refresh(){
  $('rates').replaceChildren();const d=document.createElement('div'),b=ltr(document.createElement('strong'));
  d.textContent=t(buy?'weBuy':'weSell');b.textContent=v>0?`1 ${symbol(code)} ${code} = ${v.toLocaleString('en-US',{minimumFractionDigits:4,maximumFractionDigits:5,useGrouping:false})} ฿ THB`:t('notAvailable');d.append(b);$('rates').append(d);
  for(const o of $('payment-method').options){const rule=model?.paymentMethods?.find(m=>m.id===o.value);o.disabled=!o.value||!rule?.enabled||!rule[buy?'buy':'sell'];o.hidden=!!o.value&&o.disabled;}if(!$('payment-method').selectedOptions[0]||$('payment-method').selectedOptions[0].disabled)pickPayment(); // xchange: never an empty choice
- const give=buy?code:'THB',receive=buy?'THB':code;
- $('amount-label').textContent=t('amountLabel',{code:currencyFlag(give)+' '+give});
- $('amount-code').textContent=give; // xchange: the code inside the amount field on a phone (kiosk-xchange.css)
+ const give=buy?code:'THB',receive=buy?'THB':code,wantForeign=!buy&&amountIn==='FOREIGN',typed=wantForeign?code:give;
+ $('amount-in').hidden=buy;$('quick-amounts').hidden=wantForeign;
+ $('amount-in-thb').textContent=t('amountInThb');$('amount-in-foreign').textContent=t('amountInForeign',{code});
+ for(const [id,val] of [['amount-in-thb','THB'],['amount-in-foreign','FOREIGN']]){const on=(buy?'THB':amountIn)===val;$(id).classList.toggle('selected',on);$(id).setAttribute('aria-pressed',String(on));}
+ $('amount-label').textContent=t(wantForeign?'amountWant':'amountLabel',{code:currencyFlag(typed)+' '+typed});
+ $('amount-code').textContent=typed; // xchange: the code inside the amount field on a phone (kiosk-xchange.css)
  $('receive-label').textContent=t('youReceive')+' ('+currencyFlag(receive)+' '+receive+')';
  const amount=Number($('amount').value),valid=Number.isFinite(amount)&&amount>0&&amount<=10000000&&v>0;
- const foreign=buy?Math.round(amount*100)/100:Math.floor(amount/v*100)/100;
- const total=buy?Math.round(foreign*v*100)/100:foreign;
- $('receive').value=valid?symbol(receive)+' '+fmt(total)+' '+receive:'';
- $('estimate').textContent=valid?t('estimate',{amount:fmt(total)+' '+receive}):'';
+ const foreign=buy||wantForeign?Math.round(amount*100)/100:Math.floor(amount/v*100)/100;
+ const total=buy||wantForeign?Math.round(foreign*v*100)/100:foreign;
+ $('receive').value=valid?symbol(receive)+' '+fmt(wantForeign?foreign:total)+' '+receive:'';
+ $('estimate').textContent=valid?(wantForeign?t('estimatePay',{amount:fmt(total)+' THB'}):t('estimate',{amount:fmt(total)+' '+receive})):'';
  let note=$('payment-instruction');if(!note){note=document.createElement('p');note.id='payment-instruction';note.className='small';note.setAttribute('role','status');$('payment-method').after(note);}
  const selected=model?.paymentMethods?.find(m=>m.id===$('payment-method').value);
  const displayOnly=r?.quoteEnabled===false;
@@ -92,14 +95,15 @@ function refresh(){
 }
 async function reset(){
  rateGeneration++;touchAmount='';document.title=baseTitle;lastRatesAt=0;model=null;$('customer-receipt')?.remove();
- clearTimeout(successReset);successReset=null;clearInterval(timer);quote=null;lastStatus=null;type='BUY';$('language-search').value='';$('payment-method').value='';$('amount').value='';
+ clearTimeout(successReset);successReset=null;clearInterval(timer);quote=null;lastStatus=null;type='BUY';amountIn='THB';$('language-search').value='';$('payment-method').value='';$('amount').value='';
  $('buy').classList.add('selected');$('sell').classList.remove('selected');$('buy').setAttribute('aria-pressed','true');$('sell').setAttribute('aria-pressed','false');
  if(!fixedBranch){branch='';$('branch-search').value='';} // xchange: a picked branch is the last customer's
  markQuickAmount(''); // xchange: no quick amount is chosen on a fresh screen
  screen='select';setLang(defaultLang);show('select');
  $('currency-search').value='';await loadRates();
 }
-for(const [id,value] of [['buy','BUY'],['sell','SELL']])$(id).onclick=()=>{type=value;for(const name of ['buy','sell']){$(name).classList.toggle('selected',name===id);$(name).setAttribute('aria-pressed',String(name===id));}refresh();pickPayment();refresh();}; // xchange: a new side takes its default method
+for(const [id,value] of [['buy','BUY'],['sell','SELL']])$(id).onclick=()=>{type=value;amountIn='THB';for(const name of ['buy','sell']){$(name).classList.toggle('selected',name===id);$(name).setAttribute('aria-pressed',String(name===id));}refresh();pickPayment();refresh();}; // xchange: a new side takes its default method
+for(const [id,value] of [['amount-in-thb','THB'],['amount-in-foreign','FOREIGN']])$(id).onclick=()=>{if(amountIn===value)return;amountIn=value;touchAmount='';$('amount').value='';markQuickAmount('');refresh();};
 $('amount').oninput=refresh;$('currency').onchange=refresh;
 
 function renderQuote(target){
@@ -111,7 +115,7 @@ function countdownLabel(){$('confirm-button').textContent=seconds>0?t('wait',{n:
 $('form').onsubmit=async e=>{e.preventDefault();if(busy||$('review').disabled)return;
  if(!amountReady()){$('error').textContent=t('errAmount');return;} // xchange: the worded error, in the screen's language
  busy=true;$('review').disabled=true;
- try{quote=await api('quote',{type,currency:$('currency').value,amount:$('amount').value,paymentMethod:$('payment-method').value});lastStatus=null;show('confirm');renderIdentity(quote,'review-identity');renderQuote('quote');
+ try{const payload={type,currency:$('currency').value,amount:$('amount').value,paymentMethod:$('payment-method').value};if(type==='SELL'&&amountIn==='FOREIGN')payload.amountIn='FOREIGN';quote=await api('quote',payload);lastStatus=null;show('confirm');renderIdentity(quote,'review-identity');renderQuote('quote');
   seconds=kioskValues.reviewSeconds??0;$('confirm-button').disabled=true; // xchange: owner-set
  countdownLabel();clearInterval(timer);
   timer=setInterval(()=>{seconds--;countdownLabel();if(seconds<=0){clearInterval(timer);$('confirm-button').disabled=false;}},1000);}
@@ -335,7 +339,7 @@ $('amount').addEventListener('input',()=>markQuickAmount(''));
 // xchange: what refresh() used to require of the amount before Review could be pressed.
 function amountReady(){const r=rate(),v=Number(r?.[type==='BUY'?'buy':'sell']),amount=Number($('amount').value);
  if(!(Number.isFinite(amount)&&amount>0&&amount<=10000000&&v>0))return false;
- return (type==='BUY'?Math.round(amount*100)/100:Math.floor(amount/v*100)/100)>0;}
+ return (type==='BUY'||amountIn==='FOREIGN'?Math.round(amount*100)/100:Math.floor(amount/v*100)/100)>0;}
 
 // xchange: the tiles (owner 2026-11-05: popular currencies from the branch's trading history). With no
 // search, the branch's quotable (SHOW) currencies only: its popular ones first (`popular` of the rates

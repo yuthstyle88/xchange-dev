@@ -4,8 +4,9 @@ use xc_kernel::money::{CurrencyUnits, ExchangeArithmetic, ForeignAmount, Money, 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
 use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::value_objects::amount_in::AmountIn;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
-use crate::domain::kiosk::value_objects::counter_facts::CounterFacts;
+use crate::domain::kiosk::value_objects::counter_facts::{CounterFacts, CounterLine};
 use crate::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use crate::domain::kiosk::value_objects::kiosk_error::KioskError;
 use crate::domain::kiosk::value_objects::kiosk_event_kind::KioskEventKind;
@@ -22,9 +23,40 @@ use crate::domain::kiosk::value_objects::transition::Transition;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct KioskMachine;
 
+fn quote_from_foreign(
+    amount: Money,
+    units: &CurrencyUnits,
+    line: &CounterLine,
+) -> Result<(Money, Money), KioskError> {
+    let dp = u32::from(units.minor_unit().get());
+    let dec = Decimal::from_i128_with_scale(amount.minor_i128(), 2);
+    let rounded = dec.round_dp_with_strategy(dp, RoundingStrategy::MidpointAwayFromZero);
+    if rounded.is_zero() {
+        return Err(KioskError::AmountTooSmall);
+    }
+    let mut dec_money = rounded;
+    dec_money.rescale(2);
+    let foreign = Money::try_from_minor_i128(dec_money.mantissa())
+        .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
+    let foreign_amt = ForeignAmount::from_decimal(rounded);
+    let thb = ExchangeArithmetic::try_thb(foreign_amt, line.rate, line.unit_size)
+        .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
+    Ok((foreign, thb))
+}
+
 impl KioskMachine {
     pub fn quote(
         input: &QuoteInput,
+        facts: &CounterFacts,
+        new_id: &str,
+        now: KioskTime,
+    ) -> Result<KioskRequest, KioskError> {
+        Self::quote_in(input, None, facts, new_id, now)
+    }
+
+    pub fn quote_in(
+        input: &QuoteInput,
+        amount_in: Option<AmountIn>,
         facts: &CounterFacts,
         new_id: &str,
         now: KioskTime,
@@ -48,25 +80,12 @@ impl KioskMachine {
 
         // 4. Compute
         let units = CurrencyUnits::new(currency, line.unit_size, line.minor_unit);
-        let (foreign, thb) = match side {
-            Side::Buy => {
-                let dp = u32::from(units.minor_unit().get());
-                let dec = Decimal::from_i128_with_scale(amount.minor_i128(), 2);
-                let rounded =
-                    dec.round_dp_with_strategy(dp, RoundingStrategy::MidpointAwayFromZero);
-                if rounded.is_zero() {
-                    return Err(KioskError::AmountTooSmall);
-                }
-                let mut dec_money = rounded;
-                dec_money.rescale(2);
-                let foreign = Money::try_from_minor_i128(dec_money.mantissa())
-                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                let foreign_amt = ForeignAmount::from_decimal(rounded);
-                let thb = ExchangeArithmetic::try_thb(foreign_amt, line.rate, line.unit_size)
-                    .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
-                (foreign, thb)
+        let (foreign, thb) = match (side, amount_in) {
+            (Side::Buy, Some(AmountIn::Thb)) => return Err(KioskError::AmountOrCurrencyInvalid),
+            (Side::Buy, None | Some(AmountIn::Foreign)) | (Side::Sell, Some(AmountIn::Foreign)) => {
+                quote_from_foreign(amount, &units, &line)?
             }
-            Side::Sell => {
+            (Side::Sell, None | Some(AmountIn::Thb)) => {
                 let foreign_amt =
                     ExchangeArithmetic::try_foreign_for_thb(amount, line.rate, &units)
                         .map_err(|_| KioskError::AmountOrCurrencyInvalid)?;
