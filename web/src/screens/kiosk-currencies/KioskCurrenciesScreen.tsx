@@ -19,6 +19,7 @@ import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
 import { matches } from './filter';
 import * as screenI18n from './i18n';
+import { KioskScreenSettings } from './KioskScreenSettings';
 import { configure, type CurrencyDisplay } from './kiosk-api';
 import './kiosk-currencies.css';
 
@@ -188,7 +189,7 @@ function CurrencyCard(props: CardProps): JSX.Element {
 }
 
 export function KioskCurrenciesScreen(props: {
-  api: Pick<ApiClient, 'view' | 'post'>;
+  api: Pick<ApiClient, 'view' | 'post'> & Partial<Pick<ApiClient, 'command'>>;
   branch?: string;
 }): JSX.Element {
   const t = screenT('kiosk-currencies', screenI18n);
@@ -585,6 +586,12 @@ export function KioskCurrenciesScreen(props: {
           </div>
         </div>
       </section>
+
+      <KioskScreenSettings
+        api={props.api}
+        branch={props.branch}
+        autoLoad={typeof props.api.command === 'function'}
+      />
 
       <div>
         <label for="kiosk-search">{t('searchLabel')}</label>
