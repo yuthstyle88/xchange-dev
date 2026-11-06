@@ -1,6 +1,6 @@
 // V2-parts (#476): transaction table component (ticket §7, design §12.2, P1)
 
-import { For, type JSX } from 'solid-js';
+import { For, Show, type JSX } from 'solid-js';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { screenT } from '../../../shared/i18n';
 import { formatRate } from '../../../shared/ui/rate';
@@ -92,6 +92,11 @@ export function TransactionTable(props: TransactionTableProps): JSX.Element {
               >
                 {statusName(row.status)}
               </span>
+              <Show when={row.backdated}>
+                <span class="pill" data-backdated="true">
+                  {t('backdated')}
+                </span>
+              </Show>
             </td>
           </tr>
         )}
