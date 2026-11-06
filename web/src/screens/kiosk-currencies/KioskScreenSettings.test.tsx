@@ -23,17 +23,23 @@ const ALL_FIELDS = [
   'defaultPaymentMethod',
 ];
 
+const SERVER_DEFAULTS = {
+  quickAmounts: [100, 500, 1000, 5000],
+  tiles: 6,
+  popularDays: 30,
+  idleSeconds: 120,
+  reviewSeconds: 3,
+  refreshSeconds: 10,
+  defaultPaymentMethod: 'Cash',
+};
+
 function unsetScreen(branch = 'MAIN'): KioskScreenData {
   return makeKioskScreenData({
     branch,
-    quickAmounts: [100, 500, 1000, 5000],
-    tiles: 6,
-    popularDays: 30,
-    idleSeconds: 120,
-    reviewSeconds: 3,
-    refreshSeconds: 10,
-    defaultPaymentMethod: 'Cash',
+    ...SERVER_DEFAULTS,
     defaults: [...ALL_FIELDS],
+    defaultValues: { ...SERVER_DEFAULTS },
+    paymentMethods: ['Cash', 'PromptPay', 'Bank Transfer'],
     version: null,
   });
 }
@@ -93,16 +99,20 @@ function createFakeApi(options?: {
       if (input.defaultPaymentMethod === null) {
         nextDefaults.push('defaultPaymentMethod');
       }
+      const def = current.defaultValues;
       current = makeKioskScreenData({
         branch: input.branch,
-        quickAmounts: input.quickAmounts ?? [100, 500, 1000, 5000],
-        tiles: input.tiles ?? 6,
-        popularDays: input.popularDays ?? 30,
-        idleSeconds: input.idleSeconds ?? 120,
-        reviewSeconds: input.reviewSeconds ?? 3,
-        refreshSeconds: input.refreshSeconds ?? 10,
-        defaultPaymentMethod: input.defaultPaymentMethod ?? 'Cash',
+        quickAmounts: input.quickAmounts ?? def.quickAmounts,
+        tiles: input.tiles ?? def.tiles,
+        popularDays: input.popularDays ?? def.popularDays,
+        idleSeconds: input.idleSeconds ?? def.idleSeconds,
+        reviewSeconds: input.reviewSeconds ?? def.reviewSeconds,
+        refreshSeconds: input.refreshSeconds ?? def.refreshSeconds,
+        defaultPaymentMethod:
+          input.defaultPaymentMethod ?? def.defaultPaymentMethod,
         defaults: nextDefaults,
+        defaultValues: def,
+        paymentMethods: current.paymentMethods,
         version: (input.expectedVersion ?? 0) + 1,
       });
       return current as any;
@@ -137,7 +147,7 @@ describe('KioskScreenSettings (#6273)', () => {
     setLang('th');
   });
 
-  it('shows "หน้าจอ kiosk" on KioskCurrenciesScreen with "ค่าเริ่มต้น" beside every unset field and TH/EN labels', async () => {
+  it('shows "หน้าจอ kiosk" on KioskCurrenciesScreen with "ค่าเริ่มต้น" beside every unset field, server payment methods, and TH/EN labels', async () => {
     const fake = createFakeApi();
     dispose = render(
       () => <KioskCurrenciesScreen api={fake.api} branch="MAIN" />,
@@ -157,6 +167,16 @@ describe('KioskScreenSettings (#6273)', () => {
     );
     expect(section).not.toBeNull();
     expect(section!.querySelector('h2')?.textContent).toBe('หน้าจอ kiosk');
+
+    const methodSelect = section!.querySelector<HTMLSelectElement>(
+      'select[name="defaultPaymentMethod"]',
+    )!;
+    await vi.waitFor(() => {
+      const options = [...methodSelect.querySelectorAll('option')].map(
+        (o) => o.value,
+      );
+      expect(options).toEqual(['Cash', 'PromptPay', 'Bank Transfer']);
+    });
 
     for (const field of ALL_FIELDS) {
       const badge = section!.querySelector<HTMLElement>(
@@ -183,7 +203,11 @@ describe('KioskScreenSettings (#6273)', () => {
     });
   });
 
-  it('saves edited fields and resets one field back to default ("กลับค่าเริ่มต้น")', async () => {
+  it('saves edited fields and resets one field back to the server default ("กลับค่าเริ่มต้น")', async () => {
+    const customServerDefaults = {
+      ...SERVER_DEFAULTS,
+      tiles: 9,
+    };
     const fake = createFakeApi({
       initial: makeKioskScreenData({
         branch: 'MAIN',
@@ -195,6 +219,8 @@ describe('KioskScreenSettings (#6273)', () => {
         refreshSeconds: 15,
         defaultPaymentMethod: 'PromptPay',
         defaults: [],
+        defaultValues: customServerDefaults,
+        paymentMethods: ['Cash', 'PromptPay'],
         version: 2,
       }),
     });
@@ -212,13 +238,13 @@ describe('KioskScreenSettings (#6273)', () => {
     });
     expect(host.querySelector('[data-default-field="tiles"]')).toBeNull();
 
-    // Reset tiles to default
+    // Reset tiles to the server's default (9)
     const resetTiles = host.querySelector<HTMLButtonElement>(
       'button[name="reset_tiles"]',
     )!;
     resetTiles.click();
 
-    expect(tilesInput().value).toBe('6');
+    expect(tilesInput().value).toBe('9');
     expect(
       host.querySelector('[data-default-field="tiles"]')?.textContent,
     ).toBe('ค่าเริ่มต้น');
@@ -246,11 +272,19 @@ describe('KioskScreenSettings (#6273)', () => {
     });
   });
 
-  it('validates bounds before sending and reloads on 409 staleVersion', async () => {
-    let shouldConflict = true;
+  it('maps server field-named 400 validationFailed to the field error and reloads on 409 staleVersion', async () => {
+    let mode: 'invalid' | 'conflict' | 'ok' = 'invalid';
     const fake = createFakeApi({
       onSave: async (input) => {
-        if (shouldConflict) {
+        if (mode === 'invalid') {
+          throw new ApiError({
+            status: 400,
+            code: 'validationFailed',
+            field: 'refreshSeconds',
+            message: 'refreshSeconds out of range',
+          });
+        }
+        if (mode === 'conflict') {
           throw new ApiError({
             status: 409,
             code: 'staleVersion',
@@ -258,15 +292,8 @@ describe('KioskScreenSettings (#6273)', () => {
           });
         }
         return makeKioskScreenData({
-          branch: input.branch,
-          quickAmounts: input.quickAmounts ?? [100, 500, 1000, 5000],
-          tiles: input.tiles ?? 6,
-          popularDays: 30,
-          idleSeconds: 120,
-          reviewSeconds: 3,
-          refreshSeconds: 10,
-          defaultPaymentMethod: 'Cash',
-          defaults: ['popularDays', 'idleSeconds', 'reviewSeconds', 'refreshSeconds', 'defaultPaymentMethod'],
+          ...unsetScreen(input.branch),
+          quickAmounts: input.quickAmounts ?? SERVER_DEFAULTS.quickAmounts,
           version: 5,
         });
       },
@@ -285,19 +312,22 @@ describe('KioskScreenSettings (#6273)', () => {
       expect(chipsInput().disabled).toBe(false);
     });
 
-    // Out-of-range refreshSeconds (20 > MAX_REFRESH_SECONDS 19) is blocked before command
     refreshInput().value = '20';
     refreshInput().dispatchEvent(new Event('input', { bubbles: true }));
     host
       .querySelector<HTMLButtonElement>('button[name="save_kiosk_screen"]')!
       .click();
 
-    expect(fake.commands).toHaveLength(0);
-    expect(
-      host.querySelector('[data-error-field="refreshSeconds"]')?.textContent,
-    ).toContain('5–19');
+    await vi.waitFor(() => {
+      expect(fake.commands).toHaveLength(1);
+      expect(
+        host.querySelector('[data-error-field="refreshSeconds"]'),
+      ).not.toBeNull();
+      expect(refreshInput().getAttribute('aria-invalid')).toBe('true');
+    });
 
-    // Reset refreshSeconds and set valid chips, then trigger 409 staleVersion -> reloads view
+    // Reset refreshSeconds, set chips, and trigger 409 staleVersion -> reloads view
+    mode = 'conflict';
     host
       .querySelector<HTMLButtonElement>('button[name="reset_refreshSeconds"]')!
       .click();
@@ -316,11 +346,11 @@ describe('KioskScreenSettings (#6273)', () => {
       .click();
 
     await vi.waitFor(() => {
-      expect(fake.commands).toHaveLength(1);
+      expect(fake.commands).toHaveLength(2);
       expect(fake.views.filter((v) => v.name === 'kiosk_screen').length).toBe(2);
       expect(chipsInput().value).toBe('200, 400');
     });
 
-    shouldConflict = false;
+    mode = 'ok';
   });
 });

@@ -35,49 +35,33 @@ const ALL_FIELDS: readonly KioskScreenField[] = [
   'defaultPaymentMethod',
 ];
 
-const PAYMENT_METHODS = [
-  'Cash',
-  'Credit Card',
-  'Alipay',
-  'PromptPay',
-  'Bank Transfer',
-] as const;
-
-const DEFAULT_VALUES: Record<KioskScreenField, string> = {
-  quickAmounts: '100, 500, 1000, 5000',
-  tiles: '6',
-  popularDays: '30',
-  idleSeconds: '120',
-  reviewSeconds: '3',
-  refreshSeconds: '10',
-  defaultPaymentMethod: 'Cash',
+const EMPTY_VALUES: Record<KioskScreenField, string> = {
+  quickAmounts: '',
+  tiles: '',
+  popularDays: '',
+  idleSeconds: '',
+  reviewSeconds: '',
+  refreshSeconds: '',
+  defaultPaymentMethod: '',
 };
 
-function parseWholeInRange(
-  raw: string,
-  min: number,
-  max: number,
-): number | null {
+function parseInteger(raw: string): number {
   const trimmed = raw.trim();
-  if (!/^[0-9]+$/.test(trimmed)) return null;
+  if (!/^-?[0-9]+$/.test(trimmed)) return -1;
   const n = Number(trimmed);
-  if (!Number.isSafeInteger(n) || n < min || n > max) return null;
-  return n;
+  return Number.isSafeInteger(n) ? n : -1;
 }
 
-function parseQuickAmounts(raw: string): number[] | null {
+function parseQuickAmountsInput(raw: string): number[] {
   const parts = raw
     .split(/[,;\s]+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  if (parts.length < 1 || parts.length > 8) return null;
-  const nums: number[] = [];
-  for (const part of parts) {
-    const n = parseWholeInRange(part, 1, 10_000_000);
-    if (n === null) return null;
-    nums.push(n);
-  }
-  return nums;
+  return parts.map((p) => {
+    if (!/^-?[0-9]+$/.test(p)) return 0;
+    const n = Number(p);
+    return Number.isSafeInteger(n) ? n : 0;
+  });
 }
 
 export function KioskScreenSettings(props: {
@@ -98,8 +82,14 @@ export function KioskScreenSettings(props: {
   );
 
   const [values, setValues] = createSignal<Record<KioskScreenField, string>>({
-    ...DEFAULT_VALUES,
+    ...EMPTY_VALUES,
   });
+  const [serverDefaults, setServerDefaults] = createSignal<
+    Record<KioskScreenField, string>
+  >({
+    ...EMPTY_VALUES,
+  });
+  const [paymentMethods, setPaymentMethods] = createSignal<string[]>([]);
   const [defaults, setDefaults] = createSignal<Set<KioskScreenField>>(
     new Set(ALL_FIELDS),
   );
@@ -118,6 +108,16 @@ export function KioskScreenSettings(props: {
   let readSeq = 0;
 
   const applyData = (data: KioskScreenData) => {
+    setPaymentMethods(data.paymentMethods);
+    setServerDefaults({
+      quickAmounts: data.defaultValues.quickAmounts.join(', '),
+      tiles: String(data.defaultValues.tiles),
+      popularDays: String(data.defaultValues.popularDays),
+      idleSeconds: String(data.defaultValues.idleSeconds),
+      reviewSeconds: String(data.defaultValues.reviewSeconds),
+      refreshSeconds: String(data.defaultValues.refreshSeconds),
+      defaultPaymentMethod: data.defaultValues.defaultPaymentMethod,
+    });
     setValues({
       quickAmounts: data.quickAmounts.join(', '),
       tiles: String(data.tiles),
@@ -146,14 +146,17 @@ export function KioskScreenSettings(props: {
       if (activeBranch !== branchId || seq !== readSeq) return;
       if (data) {
         applyData(data);
+        setLoaded(true);
       } else {
-        setValues({ ...DEFAULT_VALUES });
+        setValues({ ...EMPTY_VALUES });
+        setServerDefaults({ ...EMPTY_VALUES });
+        setPaymentMethods([]);
         setDefaults(new Set(ALL_FIELDS));
         setVersion(null);
+        setLoaded(false);
       }
       setFieldErrors({});
       setError(undefined);
-      setLoaded(true);
     } catch (err: unknown) {
       if (activeBranch !== branchId || seq !== readSeq) return;
       setError(wordedError(err));
@@ -166,7 +169,9 @@ export function KioskScreenSettings(props: {
     activeBranch = b;
     readSeq += 1;
     saveWrite.reset();
-    setValues({ ...DEFAULT_VALUES });
+    setValues({ ...EMPTY_VALUES });
+    setServerDefaults({ ...EMPTY_VALUES });
+    setPaymentMethods([]);
     setDefaults(new Set(ALL_FIELDS));
     setVersion(null);
     setLoaded(false);
@@ -198,7 +203,7 @@ export function KioskScreenSettings(props: {
   };
 
   const resetField = (field: KioskScreenField) => {
-    setValues((prev) => ({ ...prev, [field]: DEFAULT_VALUES[field] }));
+    setValues((prev) => ({ ...prev, [field]: serverDefaults()[field] }));
     setDefaults((prev) => {
       const next = new Set(prev);
       next.add(field);
@@ -223,87 +228,36 @@ export function KioskScreenSettings(props: {
 
     setError(undefined);
     setSavedNotice(undefined);
-    const nextErrors: Partial<Record<KioskScreenField, string>> = {};
+    setFieldErrors({});
     const curValues = values();
     const curDefaults = defaults();
 
-    let quickAmounts: number[] | null = null;
-    if (!curDefaults.has('quickAmounts')) {
-      quickAmounts = parseQuickAmounts(curValues.quickAmounts);
-      if (quickAmounts === null) {
-        nextErrors.quickAmounts = t('quickAmountsRange');
-      }
-    }
-
-    let tiles: number | null = null;
-    if (!curDefaults.has('tiles')) {
-      tiles = parseWholeInRange(curValues.tiles, 1, 12);
-      if (tiles === null) {
-        nextErrors.tiles = t('tilesRange');
-      }
-    }
-
-    let popularDays: number | null = null;
-    if (!curDefaults.has('popularDays')) {
-      popularDays = parseWholeInRange(curValues.popularDays, 1, 365);
-      if (popularDays === null) {
-        nextErrors.popularDays = t('popularDaysRange');
-      }
-    }
-
-    let idleSeconds: number | null = null;
-    if (!curDefaults.has('idleSeconds')) {
-      idleSeconds = parseWholeInRange(curValues.idleSeconds, 30, 1800);
-      if (idleSeconds === null) {
-        nextErrors.idleSeconds = t('idleSecondsRange');
-      }
-    }
-
-    let reviewSeconds: number | null = null;
-    if (!curDefaults.has('reviewSeconds')) {
-      reviewSeconds = parseWholeInRange(curValues.reviewSeconds, 0, 10);
-      if (reviewSeconds === null) {
-        nextErrors.reviewSeconds = t('reviewSecondsRange');
-      }
-    }
-
-    let refreshSeconds: number | null = null;
-    if (!curDefaults.has('refreshSeconds')) {
-      refreshSeconds = parseWholeInRange(curValues.refreshSeconds, 5, 19);
-      if (refreshSeconds === null) {
-        nextErrors.refreshSeconds = t('refreshSecondsRange');
-      }
-    }
-
-    let defaultPaymentMethod: string | null = null;
-    if (!curDefaults.has('defaultPaymentMethod')) {
-      const m = curValues.defaultPaymentMethod.trim();
-      if (!m) {
-        nextErrors.defaultPaymentMethod = t('defaultPaymentMethodInvalid');
-      } else {
-        defaultPaymentMethod = m;
-      }
-    }
-
-    if (Object.keys(nextErrors).length > 0) {
-      setFieldErrors(nextErrors);
-      return;
-    }
-
-    setFieldErrors({});
-    setSaving(true);
-    const seq = ++readSeq;
     const input: KioskScreenSaveInput = {
       branch: branchId,
-      quickAmounts,
-      tiles,
-      idleSeconds,
-      reviewSeconds,
-      refreshSeconds,
-      popularDays,
-      defaultPaymentMethod,
+      quickAmounts: curDefaults.has('quickAmounts')
+        ? null
+        : parseQuickAmountsInput(curValues.quickAmounts),
+      tiles: curDefaults.has('tiles') ? null : parseInteger(curValues.tiles),
+      idleSeconds: curDefaults.has('idleSeconds')
+        ? null
+        : parseInteger(curValues.idleSeconds),
+      reviewSeconds: curDefaults.has('reviewSeconds')
+        ? null
+        : parseInteger(curValues.reviewSeconds),
+      refreshSeconds: curDefaults.has('refreshSeconds')
+        ? null
+        : parseInteger(curValues.refreshSeconds),
+      popularDays: curDefaults.has('popularDays')
+        ? null
+        : parseInteger(curValues.popularDays),
+      defaultPaymentMethod: curDefaults.has('defaultPaymentMethod')
+        ? null
+        : curValues.defaultPaymentMethod.trim(),
       expectedVersion: version(),
     };
+
+    setSaving(true);
+    const seq = ++readSeq;
 
     try {
       const saved = await saveWrite.send(input);
@@ -475,7 +429,7 @@ export function KioskScreenSettings(props: {
               updateField('defaultPaymentMethod', e.currentTarget.value)
             }
           >
-            <For each={PAYMENT_METHODS}>
+            <For each={paymentMethods()}>
               {(m) => <option value={m}>{m}</option>}
             </For>
           </select>
