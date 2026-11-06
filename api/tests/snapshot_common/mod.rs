@@ -278,6 +278,8 @@ pub async fn publish_rate_per_one(
 /// - The kiosk swap (owner 2026-11-05; `api/src/application/kiosk_popular.rs`, `kiosk_screen.rs`): the
 ///   kiosk `rates` answer appends `ask` (the ASK currencies, no prices), `popular` (a list of codes;
 ///   `["[]"]` below marks a list) and `screen` (the owner-set screen values).
+/// - F28 (#564, owner ruling R9 (A) 2026-11-06): the kiosk `confirm` and `status` answers append
+///   `ticketNumber` (the queue ticket's `display_number`, or `null` when none).
 pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
     (
         "/api/kiosk",
@@ -306,6 +308,9 @@ pub const V3_ADDED_KEYS: &[(&str, &str, &str, &[&str])] = &[
     ),
     ("/api/kiosk", "get", "quoteId", &[]),
     ("/api/kiosk", "confirm", "cancelToken", &[]),
+    ("/api/kiosk", "confirm", "ticketNumber", &[]),
+    ("/api/kiosk", "status", "ticketNumber", &[]),
+    ("/api/kiosk", "identityChecked", "ticketNumber", &[]),
 ];
 
 /// `actual` without the keys [`V3_ADDED_KEYS`] allows on this route and action,

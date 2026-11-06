@@ -7,4 +7,5 @@ pub struct RequestIdentity {
     pub order_no: String,
     pub transaction_no: Option<String>,
     pub status: KioskStatus,
+    pub ticket_number: Option<String>,
 }

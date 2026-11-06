@@ -290,6 +290,7 @@ impl KioskMachine {
             order_no,
             transaction_no,
             status,
+            ticket_number: None,
         })
     }
 

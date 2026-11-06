@@ -391,6 +391,7 @@ pub fn identity(i: &IdentityJson) -> RequestIdentity {
         order_no: i.order_no.clone(),
         transaction_no: i.transaction_no.clone(),
         status: status(&i.status),
+        ticket_number: None,
     }
 }
 

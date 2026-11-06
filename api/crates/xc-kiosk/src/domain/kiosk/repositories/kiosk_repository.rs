@@ -222,6 +222,20 @@ pub trait KioskRepository: Send + Sync {
         id: &str,
     ) -> impl Future<Output = AppResult<WorkTimes>> + Send;
 
+    /// The `display_number` of the request's queue ticket (latest `issued_at` if several).
+    fn ticket_number(
+        &self,
+        branch: &BranchId,
+        request_id: &str,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
+    fn ticket_number_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        request_id: &str,
+    ) -> impl Future<Output = AppResult<Option<String>>> + Send;
+
     fn switches(
         &self,
         branch: &BranchId,
