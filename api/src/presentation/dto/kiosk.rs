@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CompatRate, Rate, Side, UnitSize};
-use xc_kiosk::domain::kiosk::entities::kiosk_request::KioskRequest;
+use xc_kiosk::domain::kiosk::entities::kiosk_request::{KioskRequest, queue_label};
 use xc_kiosk::domain::kiosk::value_objects::currency_switch::CurrencySwitch;
 use xc_kiosk::domain::kiosk::value_objects::customer_receipt::CustomerReceipt;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_status::KioskStatus;
@@ -87,8 +87,7 @@ fn work_times_json(times: &WorkTimes) -> [(&'static str, V2Json); 3] {
 
 /// v2's queue label: `K-` and the first eight characters of the id, upper-cased.
 pub(crate) fn queue_of(id: &str) -> String {
-    let first_eight: String = id.chars().take(8).collect();
-    format!("K-{}", first_eight.to_uppercase())
+    queue_label(id, None)
 }
 
 #[derive(Debug, Clone)]
@@ -311,7 +310,10 @@ pub fn notifications_json(
         .map(|item| {
             V2Json::object(vec![
                 ("id", V2Json::text(&item.id)),
-                ("queue", V2Json::text(queue_of(&item.id))),
+                (
+                    "queue",
+                    V2Json::text(queue_label(&item.id, item.ticket_number.as_deref())),
+                ),
                 ("staff", V2Json::text(username_of(&item.staff))),
                 ("startedAt", optional(item.started_at, kiosk_time_json)),
                 ("status", V2Json::text(item.status.as_str())),
@@ -443,7 +445,7 @@ pub fn get_json(
     branch_name: &str,
     quote_id: Option<&str>,
 ) -> AppResult<V2Json> {
-    let queue = queue_of(&req.id);
+    let queue = queue_label(&req.id, req.ticket_number.as_deref());
     let rate_v2 = compat_rate_json(req.quote.rate, req.quote.unit_size)?;
     Ok(V2Json::object(vec![
         (
