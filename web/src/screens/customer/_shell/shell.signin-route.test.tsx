@@ -1,11 +1,36 @@
 // APP-7 (#6314) Sign-in and register route behavior in CustomerShell
 // S1: /app/sign-in -> no "เข้าสู่ระบบ" chip in the header; no tab has aria-current
 // S2: /app (home), signed out -> the chip shows and Home is current, as today
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { ApiClient } from '../../../shared/api/client';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { CustomerShell } from './Shell';
+
+interface NodeFs {
+  readFileSync(file: string, encoding: string): string;
+}
+
+interface NodePath {
+  resolve(...segments: string[]): string;
+  dirname(p: string): string;
+}
+
+let fs: NodeFs;
+let path: NodePath;
+let dir = '';
+
+beforeAll(async () => {
+  const fsName = 'node:fs';
+  const pathName = 'node:path';
+  const urlName = 'node:url';
+  fs = (await import(/* @vite-ignore */ fsName)) as unknown as NodeFs;
+  path = (await import(/* @vite-ignore */ pathName)) as unknown as NodePath;
+  const { fileURLToPath } = (await import(/* @vite-ignore */ urlName)) as unknown as {
+    fileURLToPath: (u: string) => string;
+  };
+  dir = path.dirname(fileURLToPath(import.meta.url)) + '/';
+});
 
 describe('CustomerShell sign-in route (#6314)', () => {
   let host: HTMLDivElement;
@@ -27,6 +52,10 @@ describe('CustomerShell sign-in route (#6314)', () => {
   it('S1: /app/sign-in when signed out has no sign-in chip and marks no tab as current', async () => {
     vi.spyOn(ApiClient.prototype, 'view').mockRejectedValue({ status: 401 });
 
+    const homeHost = document.createElement('div');
+    document.body.appendChild(homeHost);
+    const homeDispose = render(() => <CustomerShell route="/app" />, homeHost);
+
     dispose = render(
       () => (
         <CustomerShell route="/app/sign-in">
@@ -36,13 +65,13 @@ describe('CustomerShell sign-in route (#6314)', () => {
       host,
     );
 
-    // Wait for profile resource to resolve to signed out
+    // Wait until profile has resolved to signed out (proven by control /app rendering the sign-in chip)
     await vi.waitFor(() => {
-      const bar = host.querySelector('.xc-customer-bar');
-      expect(bar).not.toBeNull();
+      const homeSignInChip = homeHost.querySelector('a.xc-customer-signin');
+      expect(homeSignInChip, 'control /app renders sign-in chip when signed out').not.toBeNull();
     });
 
-    // Check that there is no sign-in chip in header
+    // Check that there is no sign-in chip in header on /app/sign-in
     const signInChip = host.querySelector('a.xc-customer-signin');
     expect(signInChip, 'no sign-in chip in the header on /app/sign-in').toBeNull();
 
@@ -51,6 +80,9 @@ describe('CustomerShell sign-in route (#6314)', () => {
     expect(nav, 'bottom nav exists').not.toBeNull();
     const currentTabs = nav!.querySelectorAll('a[aria-current]');
     expect(currentTabs.length, 'no tab has aria-current on /app/sign-in').toBe(0);
+
+    homeDispose();
+    homeHost.remove();
   });
 
   it('S2: /app (home) when signed out shows sign-in chip and marks Home as current', async () => {
@@ -85,6 +117,10 @@ describe('CustomerShell sign-in route (#6314)', () => {
   it('register page /app/sign-up when signed out has no sign-in chip and marks no tab as current', async () => {
     vi.spyOn(ApiClient.prototype, 'view').mockRejectedValue({ status: 401 });
 
+    const homeHost = document.createElement('div');
+    document.body.appendChild(homeHost);
+    const homeDispose = render(() => <CustomerShell route="/app" />, homeHost);
+
     dispose = render(
       () => (
         <CustomerShell route="/app/sign-up">
@@ -95,8 +131,8 @@ describe('CustomerShell sign-in route (#6314)', () => {
     );
 
     await vi.waitFor(() => {
-      const bar = host.querySelector('.xc-customer-bar');
-      expect(bar).not.toBeNull();
+      const homeSignInChip = homeHost.querySelector('a.xc-customer-signin');
+      expect(homeSignInChip).not.toBeNull();
     });
 
     const signInChip = host.querySelector('a.xc-customer-signin');
@@ -106,6 +142,9 @@ describe('CustomerShell sign-in route (#6314)', () => {
     expect(nav, 'bottom nav exists').not.toBeNull();
     const currentTabs = nav!.querySelectorAll('a[aria-current]');
     expect(currentTabs.length, 'no tab has aria-current on /app/sign-up').toBe(0);
+
+    homeDispose();
+    homeHost.remove();
   });
 
   it('marks no tab as current on /app/sign-in even when customer profile is signed in', async () => {
@@ -132,5 +171,15 @@ describe('CustomerShell sign-in route (#6314)', () => {
     const nav = host.querySelector('nav.xc-customer-nav');
     const currentTabs = nav!.querySelectorAll('a[aria-current]');
     expect(currentTabs.length, 'no tab has aria-current').toBe(0);
+  });
+
+  it('sign-in main.tsx mounts CustomerShell with route="/app/sign-in"', () => {
+    const src = fs.readFileSync(path.resolve(dir, '../sign-in/main.tsx'), 'utf-8');
+    expect(src).toMatch(/<CustomerShell\s+[^>]*route=["']\/app\/sign-in["']/);
+  });
+
+  it('sign-in sign-up-main.tsx mounts CustomerShell with route="/app/sign-up"', () => {
+    const src = fs.readFileSync(path.resolve(dir, '../sign-in/sign-up-main.tsx'), 'utf-8');
+    expect(src).toMatch(/<CustomerShell\s+[^>]*route=["']\/app\/sign-up["']/);
   });
 });
