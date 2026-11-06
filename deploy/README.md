@@ -516,8 +516,8 @@ Cloudflare connects to the customer host over HTTPS (origin TLS on port 443 with
 Build the Flutter web client in release mode:
 
 ```bash
-cd app && flutter build web --release \
-  --dart-define=APP_VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)" \
+cd app && v=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml) && flutter build web --release \
+  --dart-define=APP_VERSION="${v%%+*}" \
   --dart-define=BUILD_SHA="$(git rev-parse --short HEAD)" \
   --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   --dart-define=CHANNEL=staging
