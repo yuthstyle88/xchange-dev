@@ -23,6 +23,12 @@
   border-radius: 0.375rem;
 }
 
+.xc-transfers-note {
+  margin: 0;
+  color: #4b5563;
+  font-size: 0.875rem;
+}
+
 .xc-transfers-error {
   padding: 0.75rem 1rem;
   background-color: #fef2f2;

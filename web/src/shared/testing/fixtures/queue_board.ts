@@ -14,7 +14,6 @@ export function makeQueueBoardCalled(o: Partial<QueueBoardCalled> = {}): QueueBo
     tellerId: null,
     tellerName: null,
     calledAt: null,
-    kioskCode: null,
     ...o,
   };
 }
@@ -42,7 +41,6 @@ export function makeQueueBoardWaiting(o: Partial<QueueBoardWaiting> = {}): Queue
     serviceType: 'serviceType',
     sequence: 0,
     issuedAt: '2026-01-01T00:00:00Z',
-    kioskCode: null,
     ...o,
   };
 }
