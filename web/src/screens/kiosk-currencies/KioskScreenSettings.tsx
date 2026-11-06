@@ -12,6 +12,7 @@ import type {
 } from '../../shared/api/generated/kiosk_screen';
 import { keyedWrite } from '../../shared/api/keyed-write';
 import { screenT } from '../../shared/i18n';
+import { fieldError } from '../../shared/i18n/field-error';
 import { wordedError } from '../../shared/i18n/worded-error';
 import * as screenI18n from './i18n';
 import { KIOSK_SCREEN_SAVE_PATH, readKioskScreen } from './kiosk-api';
@@ -266,15 +267,19 @@ export function KioskScreenSettings(props: {
       setSavedNotice(t('screenSaved'));
     } catch (err: unknown) {
       if (props.branch !== branchId || seq !== readSeq) return;
-      if (
-        err instanceof ApiError &&
-        err.field &&
-        (ALL_FIELDS as readonly string[]).includes(err.field)
-      ) {
-        const f = err.field as KioskScreenField;
-        setFieldErrors({ [f]: wordedError(err) });
+      const refusal = fieldError(err, {
+        quickAmounts: t('quickAmountsLabel'),
+        tiles: t('tilesLabel'),
+        popularDays: t('popularDaysLabel'),
+        idleSeconds: t('idleSecondsLabel'),
+        reviewSeconds: t('reviewSecondsLabel'),
+        refreshSeconds: t('refreshSecondsLabel'),
+        defaultPaymentMethod: t('defaultPaymentMethodLabel'),
+      });
+      if (refusal.field) {
+        setFieldErrors({ [refusal.field]: refusal.message });
       } else {
-        setError(wordedError(err));
+        setError(refusal.message);
       }
       if (err instanceof ApiError && err.code === 'staleVersion') {
         await loadScreen(branchId);

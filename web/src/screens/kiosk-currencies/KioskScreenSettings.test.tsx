@@ -325,6 +325,10 @@ describe('KioskScreenSettings (#6273)', () => {
       ).not.toBeNull();
       expect(refreshInput().getAttribute('aria-invalid')).toBe('true');
     });
+    // The owner reads the field's own label, never the server's English `message`.
+    const refusal = host.querySelector('[data-error-field="refreshSeconds"]')!.textContent;
+    expect(refusal).not.toContain('out of range');
+    expect(refusal).toContain(host.querySelector('label[for="kiosk-refresh-seconds"]')!.textContent!);
 
     // Reset refreshSeconds, set chips, and trigger 409 staleVersion -> reloads view
     mode = 'conflict';
