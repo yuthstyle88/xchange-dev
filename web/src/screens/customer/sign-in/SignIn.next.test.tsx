@@ -48,6 +48,9 @@ describe('APP-7c: sign-in returns to ?next=', () => {
   });
 
   function type(name: string, value: string): void {
+    if (name === 'phone' && !host.querySelector('input[name="phone"]')) {
+      host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
+    }
     const input = host.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
     input.value = value;
     input.dispatchEvent(new Event('input', { bubbles: true }));

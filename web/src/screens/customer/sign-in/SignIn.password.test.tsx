@@ -55,6 +55,9 @@ describe('SignIn password door (ticket #5958 P1–P8)', () => {
   }
 
   function typePhone(phone: string): void {
+    if (!host.querySelector('input[name="phone"]')) {
+      host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
+    }
     const phoneInput = host.querySelector<HTMLInputElement>('input[name="phone"]');
     expect(phoneInput, 'phone input exists').not.toBeNull();
     phoneInput!.value = phone;
@@ -88,8 +91,8 @@ describe('SignIn password door (ticket #5958 P1–P8)', () => {
     const navigate = vi.fn();
     dispose = render(() => <SignIn navigate={navigate} />, host);
 
-    // Default mode is OTP: phone and code inputs exist, no password input
-    expect(host.querySelector('input[name="phone"]')).not.toBeNull();
+    // Default mode is OTP: email (or phone when SMS picked) and code inputs exist, no password input
+    expect(host.querySelector('input[name="email"]')).not.toBeNull();
     expect(host.querySelector('input[name="code"]')).not.toBeNull();
     expect(host.querySelector('input[name="password"]')).toBeNull();
 
