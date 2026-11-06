@@ -61,13 +61,16 @@ const STAFF_VIEW: &str = "staff_desk_config";
 const MAIN: &str = "MAIN";
 const B9: &str = "B9";
 
-const DATA_FIELDS: [&str; 6] = [
+// Restated by the ticket author (claude/33691c06) to owner ruling R5 (A) on #564, issuecomment-6673699296:
+// the desk also reads the kiosk's owner-set `defaultPaymentMethod` (F38), so the data carries a seventh field.
+const DATA_FIELDS: [&str; 7] = [
     "branchId",
     "branchName",
     "shiftOpen",
     "adminUrl",
     "rates",
     "paymentMethods",
+    "defaultPaymentMethod",
 ];
 const RATE_FIELDS: [&str; 5] = ["code", "unitSize", "buy", "sell", "publication"];
 const METHOD_FIELDS: [&str; 6] = ["id", "enabled", "buy", "sell", "account", "instruction"];
@@ -532,7 +535,8 @@ async fn the_owner_reads_the_branch_named_and_front_their_own() {
 
 // ── what it answers ──────────────────────────────────────────────────────────
 
-/// §4.1: exactly the six fields; no custody log, no shift id; both paths answer the same data.
+/// §4.1: exactly the six fields (seven since owner ruling R5 (A) on #564, issuecomment-6673699296:
+/// `defaultPaymentMethod`); no custody log, no shift id; both paths answer the same data.
 #[actix_web::test]
 async fn the_data_is_the_six_fields_without_the_custody_log_on_both_paths() {
     let room = Room::open().await;
