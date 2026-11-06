@@ -128,7 +128,7 @@ of its area, before and after, before the merge.
 
 | Wave | Ticket | Files | Done when |
 |---|---|---|---|
-| 1 (foundation) | OL-1 | `xc-theme.css`, `AppShell.tsx`, `AuthLayout.tsx`, the 8 `shared/ui/*.css`, `one-look.test.ts` (up-front, by the controller), plus one marker line on every other current offender | the sign-in page, shell, inputs, buttons and cards use §2.3; G1–G4 are green |
+| 1 (foundation) | OL-1 | `xc-theme.css`, `AppShell.tsx`, `AuthLayout.tsx`, `shared/i18n/LangSwitch.tsx`, the 8 top-level `shared/ui/*.css`, `one-look.test.ts` (up-front, by the controller), the OL-1 tests restated in §3, plus one marker line on every other current offender | the sign-in page, shell, inputs, buttons, cards and language switch use §2.3; G0–G5 are green |
 | 2 | OL-2 desk | `screens/desk/**`, `screens/desk-transaction/**`, `screens/desk-backdated/**` (css only) | no marker left in those folders |
 | 2 | OL-3 staff | `screens/staff/**`, `screens/staff-report/**`, `screens/staff-guide/**` | the same |
 | 2 | OL-4 admin | `screens/admin/**` (43 css) | the same; may split per sub-folder if it runs long |
