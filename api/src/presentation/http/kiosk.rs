@@ -435,7 +435,7 @@ async fn handle_kiosk(
     let service = KioskService::new(branch_tx, ports);
 
     match action {
-        KioskAction::Rates => match service.public_rates(&branch).await {
+        KioskAction::Rates => match service.public_rates_at(&branch, now).await {
             Ok(public_rates) => {
                 let freshness = match publication_freshness(pool, &branch).await {
                     Ok(f) => f,

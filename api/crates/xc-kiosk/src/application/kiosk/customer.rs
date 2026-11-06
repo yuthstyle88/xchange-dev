@@ -43,9 +43,18 @@ use super::service::{
 impl KioskService {
     /// `rates`: what the kiosk offers now.
     pub async fn public_rates(&self, branch: &BranchId) -> AppResult<PublicRates> {
+        self.public_rates_at(branch, Utc::now()).await
+    }
+
+    /// `rates` at `now`: what the kiosk offers now, gated by the branch's opening hours at `now`.
+    pub async fn public_rates_at(
+        &self,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<PublicRates> {
         let view = self
             .ports
-            .counter(branch)
+            .counter(branch, cut_to_millis(now))
             .await?
             .ok_or_else(no_such_branch)?;
         let currencies = KioskCurrencies::new(&self.repo.switches(branch).await?);
@@ -105,7 +114,10 @@ impl KioskService {
         let at = cut_to_millis(now);
         let now = time(now);
         let (repo, ports, b) = (&self.repo, &self.ports, branch);
-        let view = ports.counter_in(tx, b).await?.ok_or_else(no_such_branch)?;
+        let view = ports
+            .counter_in(tx, b, at)
+            .await?
+            .ok_or_else(no_such_branch)?;
         let mut facts = match (cmd.input.currency, cmd.input.side) {
             (Some(currency), Some(side)) => {
                 let currencies = KioskCurrencies::new(&repo.switches_in(tx, b).await?);
@@ -565,7 +577,7 @@ async fn confirm_in(
     let facts = match stored {
         Some(request) => {
             let view = ports
-                .counter_in(tx, branch)
+                .counter_in(tx, branch, at)
                 .await?
                 .ok_or_else(no_such_branch)?;
             let currencies = KioskCurrencies::new(&repo.switches_in(tx, branch).await?);

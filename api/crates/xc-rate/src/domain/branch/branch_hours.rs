@@ -181,4 +181,44 @@ impl BranchHours {
             close: close_utc,
         }
     }
+
+    pub fn is_open_at(&self, now: DateTime<Utc>) -> bool {
+        let today = now.with_timezone(&self.timezone).date_naive();
+        [Some(today), today.pred_opt()]
+            .into_iter()
+            .flatten()
+            .any(|d| {
+                matches!(
+                    self.window(d),
+                    HoursWindow::Open { open, close } if open <= now && now < close
+                )
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn branch_hours_is_open_at_checks_today_and_overnight_yesterday() {
+        let hours = BranchHours::new(
+            "Asia/Bangkok",
+            Some(&json!({ "tue": [{ "open": "18:00", "close": "02:00" }] })),
+        )
+        .unwrap();
+        let tue_20 = DateTime::parse_from_rfc3339("2026-10-06T13:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let wed_01 = DateTime::parse_from_rfc3339("2026-10-06T18:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let wed_02 = DateTime::parse_from_rfc3339("2026-10-06T19:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert!(hours.is_open_at(tue_20));
+        assert!(hours.is_open_at(wed_01));
+        assert!(!hours.is_open_at(wed_02));
+    }
 }
