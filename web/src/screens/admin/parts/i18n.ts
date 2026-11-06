@@ -87,6 +87,8 @@ export const th = {
     'เปิดหน้าทำรายการเดิมเพื่อยืนยันลูกค้า เอกสาร และการรับ–จ่ายเงิน เมื่อ เซิร์ฟเวอร์ ยืนยันการบันทึก สต็อกในกะนี้จะปรับตามรายการ',
   openDeskLink: 'เปิดหน้าทำรายการ ↗',
   shiftStateReadError: 'อ่านสถานะกะไม่สำเร็จ',
+  backdated: 'ย้อนหลัง',
+  backdatedYes: 'ใช่ — คีย์ย้อนหลัง',
 } as const;
 
 export type Key = keyof typeof th;
@@ -170,4 +172,6 @@ export const en: Record<Key, string> = {
     'Open the original transaction screen to verify customer, documents, and payment. Once the server confirms the save, this shift stock will adjust accordingly',
   openDeskLink: 'Open desk ↗',
   shiftStateReadError: 'Failed to read shift state',
+  backdated: 'Backdated',
+  backdatedYes: 'Yes, keyed after the fact',
 };
