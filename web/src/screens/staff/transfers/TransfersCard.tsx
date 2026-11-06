@@ -36,6 +36,18 @@ const KINDS = [
   'EXTERNAL_OUT',
 ];
 
+const SHIFT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function formatShiftTime(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : SHIFT_TIME_FMT.format(d);
+}
+
 export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const t = screenT('staff.transfers', { th, en });
 
@@ -73,10 +85,12 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [showCreate, setShowCreate] = createSignal(false);
   const [kind, setKind] = createSignal('BRANCH');
   const [toBranchId, setToBranchId] = createSignal('');
+  const [toShiftId, setToShiftId] = createSignal('');
   const [note, setNote] = createSignal('');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
   const [createLineErrors, setCreateLineErrors] = createSignal<Record<number, string>>({});
   const [toBranchError, setToBranchError] = createSignal<string | null>(null);
+  const [toShiftError, setToShiftError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
 
   // Active command references for create/submit retry
@@ -115,6 +129,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
 
   const hasOpenShift = () => Boolean(props.ctx.floor?.myShift?.id);
   const teller = () => !can(props.ctx.me, 'CashManage');
+  const openShifts = () => (!teller() ? (props.ctx.floor?.openShifts ?? []) : []);
+  const useShiftPicker = () => !teller() && openShifts().length > 0;
+  const canSafeToDrawer = () => useShiftPicker() || hasOpenShift();
 
   const loadIncoming = async () => {
     try {
@@ -191,6 +208,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     setShowCreate(true);
     setCreateLineErrors({});
     setToBranchError(null);
+    setToShiftError(null);
     setNotice(null);
     setError(null);
   };
@@ -198,6 +216,12 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const handleCreateSubmit = async (e: Event) => {
     e.preventDefault();
     if (isCreateSaveDisabled()) return;
+
+    if (kind() === 'SAFE_TO_DRAWER' && useShiftPicker() && !toShiftId()) {
+      setToShiftError(t('pickTellerShift'));
+      setError(t('pickTellerShift'));
+      return;
+    }
 
     const lines: CashLineInput[] = [];
     const nextLineErrors: Record<number, string> = {};
@@ -231,6 +255,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     }
     setCreateLineErrors({});
     setToBranchError(null);
+    setToShiftError(null);
 
     const api = new ApiClient();
     setSubmitting(true);
@@ -243,7 +268,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         fromShiftId:
           kind() === 'DRAWER_TO_SAFE' ? props.ctx.floor?.myShift?.id ?? null : null,
         toShiftId:
-          kind() === 'SAFE_TO_DRAWER' ? props.ctx.floor?.myShift?.id ?? null : null,
+          kind() === 'SAFE_TO_DRAWER'
+            ? (useShiftPicker() ? toShiftId() || null : props.ctx.floor?.myShift?.id ?? null)
+            : null,
         lines,
         note: note(),
       };
@@ -293,7 +320,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setQuantities({});
       setCreateLineErrors({});
       setToBranchError(null);
+      setToShiftError(null);
       setToBranchId('');
+      setToShiftId('');
       setKind('BRANCH');
       setError(null);
       setNotice(t('saved'));
@@ -308,6 +337,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         setCreateLineErrors({ [denomId]: fe.message });
       } else if (fe.field === 'toBranch') {
         setToBranchError(fe.message);
+      } else if (fe.field === 'toShift') {
+        setToShiftError(fe.message);
       } else {
         setError(fe.message);
       }
@@ -512,23 +543,29 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             <select
               data-testid="transfer-kind"
               value={kind()}
-              onChange={(e) => setKind(e.currentTarget.value)}
+              onChange={(e) => {
+                setKind(e.currentTarget.value);
+                setToShiftError(null);
+              }}
             >
               <For each={KINDS}>
                 {(k) => {
-                  const isDrawerMove =
-                    k === 'DRAWER_TO_SAFE' || k === 'SAFE_TO_DRAWER';
-                  const disabled = isDrawerMove && !hasOpenShift();
+                  const disabled = () =>
+                    k === 'DRAWER_TO_SAFE'
+                      ? !hasOpenShift()
+                      : k === 'SAFE_TO_DRAWER'
+                        ? !canSafeToDrawer()
+                        : false;
                   const label = t(('kind_' + k) as any);
                   return (
-                    <option value={k} disabled={disabled}>
-                      {disabled ? `${label} (${t('noOpenShift')})` : label}
+                    <option value={k} disabled={disabled()}>
+                      {disabled() ? `${label} (${t('noOpenShift')})` : label}
                     </option>
                   );
                 }}
               </For>
             </select>
-            <Show when={!hasOpenShift()}>
+            <Show when={!hasOpenShift() && !useShiftPicker()}>
               <span class="xc-transfers-no-shift">{t('noOpenShift')}</span>
             </Show>
           </div>
@@ -551,6 +588,33 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               </select>
               <Show when={toBranchError()}>
                 {(msg) => <span data-field-error="toBranch">{msg()}</span>}
+              </Show>
+            </div>
+          </Show>
+
+          <Show when={kind() === 'SAFE_TO_DRAWER' && useShiftPicker()}>
+            <div class="xc-transfers-form-field">
+              <label>{t('pickTellerShift')}</label>
+              <select
+                data-testid="transfer-to-shift"
+                value={toShiftId()}
+                onChange={(e) => {
+                  setToShiftId(e.currentTarget.value);
+                  setToShiftError(null);
+                  setError(null);
+                }}
+              >
+                <option value="">{t('pickTellerShift')}</option>
+                <For each={openShifts()}>
+                  {(s) => (
+                    <option value={s.shiftId}>
+                      {`${s.tellerName} · ${formatShiftTime(s.openedAt)}`}
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Show when={toShiftError()}>
+                {(msg) => <span data-field-error="toShift">{msg()}</span>}
               </Show>
             </div>
           </Show>
@@ -612,7 +676,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 setQuantities({});
                 setCreateLineErrors({});
                 setToBranchError(null);
+                setToShiftError(null);
                 setToBranchId('');
+                setToShiftId('');
                 setKind('BRANCH');
                 setError(null);
               }}
