@@ -35,6 +35,11 @@ pub trait ApprovalPolicy: Send + Sync {
     /// The core has already verified that `who` is not the proposer.
     fn may_decide(&self, who: &Actor, request: &ApprovalRequest) -> Result<(), Refusal>;
 
+    /// Whether `who` may see `request` in the approval queue.
+    fn may_view(&self, who: &Actor, request: &ApprovalRequest) -> bool {
+        self.may_decide(who, request).is_ok()
+    }
+
     /// Whether the proposer `who` may close their own request at submit (A5).
     ///
     /// Defaults to `false`.

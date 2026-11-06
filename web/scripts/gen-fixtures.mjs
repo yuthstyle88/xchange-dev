@@ -29,6 +29,10 @@ const GENERICS = {
 
 const MONEY_NAME = /(amount|price|rate|fee|total|balance|quantity|limit|thb|share)$/i;
 
+const FIELD_DEFAULTS = {
+  'ApprovalRequestItemDto.canDecide': 'true',
+};
+
 // ---------- parsing ----------
 
 function stripComments(s) {
@@ -128,6 +132,8 @@ class Gen {
 
   /** The default expression for a field of TS type `type` named `field` in object type `owner`. */
   value(type, field, owner, ctx, seen) {
+    const override = FIELD_DEFAULTS[`${owner}.${field}`];
+    if (override !== undefined) return override;
     const t = type.trim();
     const alts = splitTop(t, '|');
     if (alts.length > 1) {

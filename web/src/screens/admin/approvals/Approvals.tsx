@@ -430,42 +430,47 @@ function RequestCard(props: RequestCardProps): JSX.Element {
             </div>
           }
         >
-          <div class="approval-decision-form">
-            <label>
-              {t('decisionReason')}
-              <input
-                type="text"
-                value={reason()}
-                maxLength={500}
-                onInput={(e) => setReason(e.currentTarget.value)}
-                disabled={busy()}
-              />
-            </label>
-            <div>{reason().length} / 500</div>
+          <Show
+            when={props.request.canDecide}
+            fallback={<div class="approval-proposer">{t('waitingForApprover')}</div>}
+          >
+            <div class="approval-decision-form">
+              <label>
+                {t('decisionReason')}
+                <input
+                  type="text"
+                  value={reason()}
+                  maxLength={500}
+                  onInput={(e) => setReason(e.currentTarget.value)}
+                  disabled={busy()}
+                />
+              </label>
+              <div>{reason().length} / 500</div>
 
-            <Show when={error()}>
-              <div class="error" role="alert">{error()}</div>
-            </Show>
+              <Show when={error()}>
+                <div class="error" role="alert">{error()}</div>
+              </Show>
 
-            <CardActions>
-              <button
-                type="button"
-                class="danger"
-                onClick={handleReject}
-                disabled={busy()}
-              >
-                {t('reject')}
-              </button>
-              <button
-                type="button"
-                class="primary"
-                onClick={handleApprove}
-                disabled={busy()}
-              >
-                {t('approve')}
-              </button>
-            </CardActions>
-          </div>
+              <CardActions>
+                <button
+                  type="button"
+                  class="danger"
+                  onClick={handleReject}
+                  disabled={busy()}
+                >
+                  {t('reject')}
+                </button>
+                <button
+                  type="button"
+                  class="primary"
+                  onClick={handleApprove}
+                  disabled={busy()}
+                >
+                  {t('approve')}
+                </button>
+              </CardActions>
+            </div>
+          </Show>
         </Show>
       </Card>
     </div>
