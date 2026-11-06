@@ -20,14 +20,18 @@ pub trait KioskPorts: Send + Sync {
     fn branch_name<'a>(&'a self, branch: &'a BranchId) -> BoxFuture<'a, AppResult<Option<String>>>;
 
     /// The branch's counter as committed; `None` when there is no such branch.
-    fn counter<'a>(&'a self, branch: &'a BranchId)
-    -> BoxFuture<'a, AppResult<Option<CounterView>>>;
+    fn counter<'a>(
+        &'a self,
+        branch: &'a BranchId,
+        now: DateTime<Utc>,
+    ) -> BoxFuture<'a, AppResult<Option<CounterView>>>;
 
     /// The same, read inside the caller's transaction.
     fn counter_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>>;
 
     /// Writes one audit line inside the caller's transaction.

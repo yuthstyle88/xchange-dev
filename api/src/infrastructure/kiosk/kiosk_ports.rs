@@ -22,6 +22,7 @@ use xc_kiosk::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use xc_kiosk::domain::kiosk::value_objects::audit_line::{AuditLine, CUSTOMER_KIOSK, KioskAudit};
 use xc_kiosk::domain::kiosk::value_objects::counter_facts::{CounterLine, LineId};
 use xc_kiosk::domain::kiosk::value_objects::counter_view::{CounterRate, CounterView};
+use xc_rate::domain::branch::branch_hours::BranchHours;
 use xc_rate::domain::publication::published_rates::{
     LineSelector, PublishedRateLineId, PublishedRates,
 };
@@ -233,25 +234,31 @@ impl KioskPorts for PgKioskPorts {
     fn counter<'a>(
         &'a self,
         branch: &'a BranchId,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
-            let branch_row: Option<(String, Option<uuid::Uuid>)> =
-                sqlx::query_as("SELECT name, current_publication_id FROM branches WHERE id = $1")
-                    .bind(branch.as_str())
-                    .fetch_optional(&self.pool)
-                    .await
-                    .map_err(AppError::Database)?;
-            let Some((branch_name, current_pub_id)) = branch_row else {
+            let branch_row: Option<(String, Option<uuid::Uuid>, String, Option<Value>)> =
+                sqlx::query_as(
+                    "SELECT name, current_publication_id, timezone, opening_hours FROM branches WHERE id = $1",
+                )
+                .bind(branch.as_str())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(AppError::Database)?;
+            let Some((branch_name, current_pub_id, timezone, opening_hours)) = branch_row else {
                 return Ok(None);
             };
 
-            let open: bool = sqlx::query_scalar(
+            let shift_open: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM shifts WHERE branch_id = $1 AND status = 'OPEN')",
             )
             .bind(branch.as_str())
             .fetch_one(&self.pool)
             .await
             .map_err(AppError::Database)?;
+            let open = shift_open
+                && BranchHours::new(&timezone, opening_hours.as_ref())
+                    .is_ok_and(|h| h.is_open_at(now));
 
             let rates = match current_pub_id {
                 Some(pub_id) => {
@@ -282,25 +289,31 @@ impl KioskPorts for PgKioskPorts {
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
-            let branch_row: Option<(String, Option<uuid::Uuid>)> =
-                sqlx::query_as("SELECT name, current_publication_id FROM branches WHERE id = $1")
-                    .bind(branch.as_str())
-                    .fetch_optional(&mut **tx)
-                    .await
-                    .map_err(AppError::Database)?;
-            let Some((branch_name, current_pub_id)) = branch_row else {
+            let branch_row: Option<(String, Option<uuid::Uuid>, String, Option<Value>)> =
+                sqlx::query_as(
+                    "SELECT name, current_publication_id, timezone, opening_hours FROM branches WHERE id = $1",
+                )
+                .bind(branch.as_str())
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(AppError::Database)?;
+            let Some((branch_name, current_pub_id, timezone, opening_hours)) = branch_row else {
                 return Ok(None);
             };
 
-            let open: bool = sqlx::query_scalar(
+            let shift_open: bool = sqlx::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM shifts WHERE branch_id = $1 AND status = 'OPEN')",
             )
             .bind(branch.as_str())
             .fetch_one(&mut **tx)
             .await
             .map_err(AppError::Database)?;
+            let open = shift_open
+                && BranchHours::new(&timezone, opening_hours.as_ref())
+                    .is_ok_and(|h| h.is_open_at(now));
 
             let rates = match current_pub_id {
                 Some(pub_id) => {

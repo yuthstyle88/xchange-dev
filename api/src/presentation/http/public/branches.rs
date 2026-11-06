@@ -6,11 +6,13 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+use xc_rate::domain::branch::branch_hours::BranchHours;
 
 use crate::bootstrap::AppState;
 use crate::presentation::dto::public_branches::{PublicBranchDto, PublicBranchesData};
 use crate::presentation::http::public::etag::if_none_match_hits;
 use crate::presentation::http::public::not_found_response;
+use crate::presentation::http::rpc::RpcClock;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.app_data(web::Data::new(state.db.clone()))
@@ -23,6 +25,9 @@ async fn handle(
     path: web::Path<String>,
 ) -> HttpResponse {
     let org_code = path.into_inner();
+    let now = req
+        .app_data::<web::Data<dyn RpcClock>>()
+        .map_or_else(Utc::now, |c| c.now());
 
     let etag_row = sqlx::query(
         "SELECT \
@@ -55,18 +60,6 @@ async fn handle(
         }
     };
 
-    let max_ts = max_created_at.map_or(0, |t| {
-        t.timestamp_nanos_opt()
-            .unwrap_or_else(|| t.timestamp_micros())
-    });
-    let etag = format!("\"c{count}-v{sum_version}-t{max_ts}\"");
-
-    if if_none_match_hits(req.headers(), &etag) {
-        return HttpResponse::NotModified()
-            .insert_header((header::ETAG, etag))
-            .finish();
-    }
-
     let rows = match sqlx::query(
         "SELECT \
             b.id, \
@@ -95,17 +88,41 @@ async fn handle(
 
     let branches: Vec<PublicBranchDto> = rows
         .into_iter()
-        .map(|r| PublicBranchDto {
-            id: r.get("id"),
-            code: r.get("code"),
-            name: r.get("name"),
-            address: r.get("address"),
-            opening_hours: r.get("opening_hours"),
-            timezone: r.get("timezone"),
-            booking_enabled: r.get("booking_enabled"),
-            queue_open: r.get("queue_open"),
+        .map(|r| {
+            let opening_hours: Option<serde_json::Value> = r.get("opening_hours");
+            let timezone: String = r.get("timezone");
+            let stored_queue_open: bool = r.get("queue_open");
+            let queue_open = stored_queue_open
+                && BranchHours::new(&timezone, opening_hours.as_ref())
+                    .is_ok_and(|h| h.is_open_at(now));
+            PublicBranchDto {
+                id: r.get("id"),
+                code: r.get("code"),
+                name: r.get("name"),
+                address: r.get("address"),
+                opening_hours,
+                timezone,
+                booking_enabled: r.get("booking_enabled"),
+                queue_open,
+            }
         })
         .collect();
+
+    let max_ts = max_created_at.map_or(0, |t| {
+        t.timestamp_nanos_opt()
+            .unwrap_or_else(|| t.timestamp_micros())
+    });
+    let open_bits: String = branches
+        .iter()
+        .map(|b| if b.queue_open { '1' } else { '0' })
+        .collect();
+    let etag = format!("\"c{count}-v{sum_version}-t{max_ts}-q{open_bits}\"");
+
+    if if_none_match_hits(req.headers(), &etag) {
+        return HttpResponse::NotModified()
+            .insert_header((header::ETAG, etag))
+            .finish();
+    }
 
     HttpResponse::Ok()
         .insert_header((header::CACHE_CONTROL, "no-cache"))
