@@ -288,3 +288,41 @@
     transform: none;
   }
 }
+
+.xc-kiosk .kiosk-screen-settings {
+  margin: 24px 0;
+  padding: 18px 22px;
+  background: #fbfafb;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.xc-kiosk .kiosk-screen-field {
+  margin-bottom: 14px;
+}
+
+.xc-kiosk .kiosk-screen-field-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xc-kiosk .kiosk-screen-field-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.xc-kiosk .kiosk-default-badge {
+  font-size: 14px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: var(--brand);
+}
+
+.xc-kiosk .kiosk-screen-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

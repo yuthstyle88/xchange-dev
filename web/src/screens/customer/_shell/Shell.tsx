@@ -27,7 +27,9 @@ export type CustomerRoute =
   | '/app/rate-alerts'
   | '/app/notifications'
   | '/app/member'
-  | '/app/profile';
+  | '/app/profile'
+  | '/app/sign-in'
+  | '/app/sign-up';
 
 type NavKey = 'home' | 'branches' | 'bookings' | 'history' | 'assistant';
 
@@ -79,6 +81,8 @@ const NAV_OF: Record<CustomerRoute, CustomerRoute | undefined> = {
   '/app/notifications': undefined,
   '/app/member': undefined,
   '/app/profile': undefined,
+  '/app/sign-in': undefined,
+  '/app/sign-up': undefined,
 };
 
 type Profile = { signedIn: true; name: string } | { signedIn: false };
@@ -126,9 +130,11 @@ export function CustomerShell(props: {
                 <Show
                   when={p().signedIn ? (p() as { signedIn: true; name: string }) : undefined}
                   fallback={
-                    <a class="xc-customer-signin" href="/app/sign-in">
-                      {tr('signIn')}
-                    </a>
+                    <Show when={props.route !== '/app/sign-in' && props.route !== '/app/sign-up'}>
+                      <a class="xc-customer-signin" href="/app/sign-in">
+                        {tr('signIn')}
+                      </a>
+                    </Show>
                   }
                 >
                   {(signedIn) => (

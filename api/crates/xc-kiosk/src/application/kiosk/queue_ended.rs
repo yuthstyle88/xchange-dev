@@ -40,14 +40,15 @@ impl KioskQueueEnded {
 
     /// The request's cancel reason for how the ticket ended (`kiosk-cancel.md` §3.7):
     /// - `Skipped` ⇒ `CUSTOMER_LEFT` with no note (a skip is the queue's `NO_SHOW`, §2);
-    /// - `Cancelled` whose reason is a staff code (`CUSTOMER_LEFT`, `CUSTOMER_CHANGED_MIND`, `DUPLICATE`) ⇒
-    ///   that code with no note;
+    /// - `Cancelled` whose reason is a staff code (`CUSTOMER_LEFT`, `STOCK_SHORT`, `CUSTOMER_CHANGED_MIND`,
+    ///   `DUPLICATE`) ⇒ that code with no note;
     /// - any other `Cancelled` reason ⇒ `OTHER` with the reason, trimmed, as its note.
     pub fn reason_for(end: &KioskTicketEnd) -> CancelReason {
         match end {
             KioskTicketEnd::Skipped => CancelReason::CustomerLeft { note: None },
             KioskTicketEnd::Cancelled { reason } => match reason.as_str() {
                 "CUSTOMER_LEFT" => CancelReason::CustomerLeft { note: None },
+                "STOCK_SHORT" => CancelReason::StockShort { note: None },
                 "CUSTOMER_CHANGED_MIND" => CancelReason::CustomerChangedMind { note: None },
                 "DUPLICATE" => CancelReason::Duplicate { note: None },
                 other => CancelReason::Other {

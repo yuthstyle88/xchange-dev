@@ -61,6 +61,8 @@ const SAVES: &[&str] = &[
     "branchExchangeLimitSave",
     // Customers/Full today: RATE_MANAGER and BRANCH_MANAGER held it (the controller's ruling: a setting).
     "consentPolicy",
+    // #6273: the kiosk screen values (`SystemSettings`), added by the #6273 test writer claude/37e371ca.
+    "kioskScreenSave",
 ];
 
 /// Every settings read (`SettingsRead`).
@@ -73,6 +75,8 @@ const READS: &[&str] = &[
     "exchangeSettingsRead",
     "marginGuardRead",
     "consentTexts",
+    // #6273: the kiosk screen values' view (`SettingsRead`).
+    "kioskScreen",
 ];
 
 /// The built-in staff groups: every built-in group but CUSTOMER.

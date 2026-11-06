@@ -2,12 +2,16 @@
 // dialog, the shared cancel call, and the `kioskCancel.*` texts. Written before the implementation by the
 // sub-controller claude/36d9dc6a. Do not edit, delete or weaken these tests; add tests in a file of your own.
 //
+// Restated for #6094 (F5) by its ticket author claude/01TxaRJG, on the owner's approval (#6094
+// issuecomment-6627165045): a fifth staff code `STOCK_SHORT` follows `CUSTOMER_LEFT` (kiosk-cancel.md §2 as amended).
+// Only `STAFF_CODES`, the type line, the count words and row 1's title changed; every assertion is as before.
+//
 // The API these tests pin:
 //
 //   web/src/shared/ui/CancelReasonDialog.tsx
-//     export type StaffCancelReason = 'CUSTOMER_LEFT' | 'CUSTOMER_CHANGED_MIND' | 'DUPLICATE' | 'OTHER';
+//     export type StaffCancelReason = 'CUSTOMER_LEFT' | 'STOCK_SHORT' | 'CUSTOMER_CHANGED_MIND' | 'DUPLICATE' | 'OTHER';
 //     export type KioskCancelReason = StaffCancelReason | 'CUSTOMER_CANCELLED' | 'DAY_CLOSED';
-//     export const STAFF_CANCEL_REASONS: readonly StaffCancelReason[]   // the four, in this order
+//     export const STAFF_CANCEL_REASONS: readonly StaffCancelReason[]   // the five, in this order
 //     export interface CancelReasonDialogProps {
 //       open: boolean;
 //       onConfirm: (choice: { reason: StaffCancelReason; note?: string }) => void;
@@ -41,7 +45,13 @@ import { th } from '../i18n/th';
 import { zh } from '../i18n/zh';
 import { CancelReasonDialog, STAFF_CANCEL_REASONS, type StaffCancelReason } from './CancelReasonDialog';
 
-const STAFF_CODES: readonly StaffCancelReason[] = ['CUSTOMER_LEFT', 'CUSTOMER_CHANGED_MIND', 'DUPLICATE', 'OTHER'];
+const STAFF_CODES: readonly StaffCancelReason[] = [
+  'CUSTOMER_LEFT',
+  'STOCK_SHORT',
+  'CUSTOMER_CHANGED_MIND',
+  'DUPLICATE',
+  'OTHER',
+];
 const HISTORY_ONLY = ['CUSTOMER_CANCELLED', 'DAY_CLOSED'] as const;
 const ALL_CODES = [...STAFF_CODES, ...HISTORY_ONLY];
 
@@ -131,7 +141,7 @@ describe('CancelReasonDialog (KC-R, kiosk-cancel.md §2 reason table, §3.5)', (
     return { setOpen, onConfirm, onCancel };
   }
 
-  it('row 1: lists exactly the four staff codes in order, defaulting to CUSTOMER_LEFT, each with its kioskCancel label', () => {
+  it('row 1: lists exactly the five staff codes in order, defaulting to CUSTOMER_LEFT, each with its kioskCancel label', () => {
     mount();
     const options = Array.from(select(host).querySelectorAll('option'));
     expect(options.map((o) => o.value)).toEqual([...STAFF_CODES]);
@@ -205,7 +215,7 @@ describe('CancelReasonDialog (KC-R, kiosk-cancel.md §2 reason table, §3.5)', (
 });
 
 describe('kioskCancel.* texts (KC-R: web/src/shared/i18n/{th,en,zh}.ts)', () => {
-  it('row 8: all six reason codes have a label in th, en and zh, including the two history-only codes', () => {
+  it('row 8: all seven reason codes have a label in th, en and zh, including the two history-only codes', () => {
     for (const lang of [th, en, zh]) {
       for (const code of ALL_CODES) {
         const label = table(lang)[reasonKey(code)];

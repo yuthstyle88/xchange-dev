@@ -136,6 +136,7 @@ export const en: Record<Key, string> = {
   'kioskCancel.confirm': 'Confirm',
   'kioskCancel.dismiss': 'Close',
   'kioskCancel.reason.customerLeft': 'Customer left',
+  'kioskCancel.reason.stockShort': 'Not enough cash in the drawer',
   'kioskCancel.reason.customerCancelled': 'Customer cancelled at kiosk',
   'kioskCancel.reason.dayClosed': 'Day closed',
   'kioskCancel.reason.customerChangedMind': 'Customer changed mind',

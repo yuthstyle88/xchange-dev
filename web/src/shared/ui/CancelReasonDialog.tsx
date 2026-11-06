@@ -2,11 +2,12 @@ import { createEffect, createSignal, For, on, Show, type JSX } from 'solid-js';
 import { t } from '../i18n';
 import type { Key } from '../i18n/th';
 
-export type StaffCancelReason = 'CUSTOMER_LEFT' | 'CUSTOMER_CHANGED_MIND' | 'DUPLICATE' | 'OTHER';
+export type StaffCancelReason = 'CUSTOMER_LEFT' | 'STOCK_SHORT' | 'CUSTOMER_CHANGED_MIND' | 'DUPLICATE' | 'OTHER';
 export type KioskCancelReason = StaffCancelReason | 'CUSTOMER_CANCELLED' | 'DAY_CLOSED';
 
 export const STAFF_CANCEL_REASONS: readonly StaffCancelReason[] = [
   'CUSTOMER_LEFT',
+  'STOCK_SHORT',
   'CUSTOMER_CHANGED_MIND',
   'DUPLICATE',
   'OTHER',
@@ -14,6 +15,7 @@ export const STAFF_CANCEL_REASONS: readonly StaffCancelReason[] = [
 
 const REASON_KEY: Record<StaffCancelReason, Key> = {
   CUSTOMER_LEFT: 'kioskCancel.reason.customerLeft',
+  STOCK_SHORT: 'kioskCancel.reason.stockShort',
   CUSTOMER_CHANGED_MIND: 'kioskCancel.reason.customerChangedMind',
   DUPLICATE: 'kioskCancel.reason.duplicate',
   OTHER: 'kioskCancel.reason.other',
