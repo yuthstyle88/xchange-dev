@@ -16,12 +16,16 @@ use xc_shift::domain::custody::branch_day::BranchDay;
 use xc_shift::domain::custody::entities::customer_hold::HoldStatus;
 use xc_shift::domain::custody::repositories::custody_pages::CustodyPages;
 use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
+use xc_shift::domain::custody::value_objects::phase::Phase;
+use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
+use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::day::local_day_start;
 use super::directory::StaffDirectory;
+use crate::presentation::dto::v3::common::OpenShiftDto;
 use crate::presentation::dto::v3::staff_attendance::StaffAttendanceRow;
 use crate::presentation::dto::v3::staff_floor::{
     StaffFloor, StaffFloorCutoff, StaffFloorHours, StaffFloorMyShift, StaffFloorTarget,
@@ -81,18 +85,29 @@ impl StaffFloorReader {
         let facts = self.pages.floor(branch, &actor.user_id).await?;
         let target = Target::new(&actor.organization_id, Some(branch.clone()), None);
 
-        let phase = facts
-            .ops
-            .as_ref()
-            .map(|o| {
-                BranchDay::read_phase(o.phase, facts.open_shifts)
-                    .as_str()
-                    .to_string()
-            })
-            .unwrap_or_else(|| "CLOSED".to_string());
-
         let plan = self.load_plan(branch).await?;
         let hours = Self::read_hours(&plan, now);
+
+        let phase = match facts.ops.as_ref() {
+            None => "NOT_OPENED".to_string(),
+            Some(o) if o.phase == Phase::Closed => "NOT_OPENED".to_string(),
+            Some(o) if o.phase == Phase::CutOff && facts.open_shifts == 0 => {
+                let closed_before_today = o
+                    .cutoff
+                    .as_ref()
+                    .and_then(|c| Utc.timestamp_millis_opt(c.at.epoch_millis()).single())
+                    .and_then(|at| plan.business_date_of(at).zip(plan.business_date_of(now)))
+                    .is_some_and(|(cutoff_date, now_date)| cutoff_date < now_date);
+                if closed_before_today {
+                    "NOT_OPENED".to_string()
+                } else {
+                    "CLOSED".to_string()
+                }
+            }
+            Some(o) => BranchDay::read_phase(o.phase, facts.open_shifts)
+                .as_str()
+                .to_string(),
+        };
 
         let my_clock_in = facts.my_open_attendance.as_ref().map(|a| {
             Utc.timestamp_millis_opt(a.clock_in.epoch_millis())
@@ -118,10 +133,23 @@ impl StaffFloorReader {
                 pending_count: c.pending.len(),
             });
 
+        let has_cash_manage =
+            Authorizer::check(Some(actor), Permission::CashManage, &target, now).is_ok();
         let has_cash_permission =
             Authorizer::check(Some(actor), Permission::BranchDayOperate, &target, now).is_ok()
                 || Authorizer::check(Some(actor), Permission::CashTargetSet, &target, now).is_ok()
-                || Authorizer::check(Some(actor), Permission::CashManage, &target, now).is_ok();
+                || has_cash_manage;
+
+        let open_shifts = if has_cash_manage {
+            PgShiftRepository::new(self.pool.clone())
+                .open_of_branch(branch)
+                .await?
+                .into_iter()
+                .map(OpenShiftDto::from)
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let (target_dto, safe_dto) = if has_cash_permission {
             let minor_units: HashMap<String, i16> =
@@ -179,6 +207,7 @@ impl StaffFloorReader {
             cutoff,
             target: target_dto,
             safe: safe_dto,
+            open_shifts,
         })
     }
 
