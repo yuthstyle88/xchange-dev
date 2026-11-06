@@ -245,9 +245,6 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
       ]);
       const items = res.data?.bookings ?? [];
       setBookings(items);
-      if (items.some((b) => !branchTimezone(b.branchId))) {
-        setLoadError(t('error.loadFailed'));
-      }
     } catch (err: any) {
       setSignedOut(isSignedOut(err));
       setLoadError(getWordedError(err));
@@ -481,9 +478,13 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                   <div class="xc-booking-body">
                     <div class="xc-booking-info">
                       <p class="xc-booking-branch">{branchNames().get(booking.branchId) ?? booking.branchId}</p>
-                      <p class="xc-booking-time">
-                        {formatSlotTime(booking.startAt, booking.endAt, branchTimezone(booking.branchId))}
-                      </p>
+                      <Show when={branchTimezone(booking.branchId)}>
+                        {(tz) => (
+                          <p class="xc-booking-time">
+                            {formatSlotTime(booking.startAt, booking.endAt, tz())}
+                          </p>
+                        )}
+                      </Show>
                       <Show when={booking.ticketNumber}>
                         <p class="xc-booking-ticket">{booking.ticketNumber}</p>
                       </Show>
