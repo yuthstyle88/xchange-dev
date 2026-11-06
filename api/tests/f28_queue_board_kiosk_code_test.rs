@@ -23,7 +23,7 @@ use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
 
 fn queue_of(id: &str) -> String {
-    format!("K-{}", &id[..8].to_ascii_uppercase())
+    format!("K-{}", id[..8].to_ascii_uppercase())
 }
 
 const MUST_FINISH: Duration = Duration::from_secs(30);
