@@ -324,6 +324,9 @@ impl PgKioskRepository {
 const SELECT_SWITCHES: &str = "SELECT currency_code::text, display = 'SHOW' FROM branch_currencies \
      WHERE branch_id = $1 AND group_code = 'ALL' ORDER BY currency_code";
 
+const SELECT_TICKET_NUMBER: &str = "SELECT display_number FROM queue_tickets \
+     WHERE branch_id = $1 AND kiosk_request_id = $2 ORDER BY issued_at DESC, id DESC LIMIT 1";
+
 impl KioskRepository for PgKioskRepository {
     async fn find(&self, branch: &BranchId, id: &str) -> AppResult<Option<KioskRequest>> {
         sqlx::query_as::<_, RequestRow>(SELECT_ONE)
@@ -781,6 +784,33 @@ impl KioskRepository for PgKioskRepository {
             }),
             None => Ok(WorkTimes::default()),
         }
+    }
+
+    async fn ticket_number(
+        &self,
+        branch: &BranchId,
+        request_id: &str,
+    ) -> AppResult<Option<String>> {
+        let number = sqlx::query_scalar(SELECT_TICKET_NUMBER)
+            .bind(branch.as_str())
+            .bind(request_id)
+            .fetch_optional(&self.pool)
+            .await?;
+        Ok(number)
+    }
+
+    async fn ticket_number_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+        request_id: &str,
+    ) -> AppResult<Option<String>> {
+        let number = sqlx::query_scalar(SELECT_TICKET_NUMBER)
+            .bind(branch.as_str())
+            .bind(request_id)
+            .fetch_optional(&mut **tx)
+            .await?;
+        Ok(number)
     }
 
     async fn switches(&self, branch: &BranchId) -> AppResult<Vec<CurrencySwitch>> {

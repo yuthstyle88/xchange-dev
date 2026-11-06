@@ -118,7 +118,7 @@ $('form').onsubmit=async e=>{e.preventDefault();if(busy||$('review').disabled)re
  catch(err){$('error').textContent=errText(err.message);}finally{busy=false;refresh();}};
 $('back').onclick=()=>{clearInterval(timer);quote=null;lastStatus=null;show('select');};
 $('confirm-button').onclick=async()=>{if(busy||!quote)return;busy=true;$('confirm-button').disabled=true;prepareAlert();
- try{const d=await api('confirm',{id:quote.id});lastStatus=d;if(personal)remember();$('queue').textContent=d.queue;show('done');renderIdentity(d,'done-identity');renderProgress(d);renderQuote('done-summary');}
+ try{const d=await api('confirm',{id:quote.id});lastStatus=d;if(personal)remember();$('queue').textContent=d.ticketNumber||d.queue;show('done');renderIdentity(d,'done-identity');renderProgress(d);renderQuote('done-summary');}
  catch(e){$('error').textContent=errText(e.message);$('confirm-button').disabled=false;}finally{busy=false;}};
 // After 2 minutes without a touch the screen resets and the screensaver (kiosk-attract.js) starts;
 // a tap on it returns to the start screen. It never covers a queue number on the done screen.
@@ -177,7 +177,7 @@ async function restore(){
  if(!personal)return;let saved;try{saved=JSON.parse(localStorage.getItem(MINE)||'null');}catch{}
  if(!saved?.quote?.id||Date.now()-saved.at>43200000){forget();return;}
  try{const d=await api('status',{id:saved.quote.id});if(!['WAITING','ACCEPTED','ID_CHECKED','COMPLETED'].includes(d.status)){forget();return;}
-  quote=saved.quote;lastStatus=d;$('queue').textContent=d.queue;show('done');renderIdentity(d,'done-identity');renderProgress(d);renderQuote('done-summary');}
+  quote=saved.quote;lastStatus=d;$('queue').textContent=d.ticketNumber||d.queue;show('done');renderIdentity(d,'done-identity');renderProgress(d);renderQuote('done-summary');}
  catch{}
 }
 function paymentName(value){return t({'Credit Card':'creditCard',Cash:'cash','Bank Transfer':'transfer'}[value]||value);}

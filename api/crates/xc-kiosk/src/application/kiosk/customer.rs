@@ -391,6 +391,7 @@ impl KioskService {
                     let moved =
                         confirm_in(tx, &repo, &*ports, &b, stored.as_ref(), at, now).await?;
                     let mut minted = false;
+                    let mut ticket_number = None;
                     if moved.event.is_some() && moved.request.status == KioskStatus::Waiting {
                         if let Some(token) = &cancel_token {
                             repo.set_cancel_token_in(tx, &b, &id, token).await?;
@@ -400,14 +401,18 @@ impl KioskService {
                             let source = QueueTicketSource::Kiosk {
                                 request_id: id.clone(),
                             };
-                            queue
+                            let issued = queue
                                 .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
                                 .await
                                 .map_err(queue_refusal)?;
+                            ticket_number = Some(issued.display_number);
                         }
+                    } else {
+                        ticket_number = repo.ticket_number_in(tx, &b, &id).await?;
                     }
-                    let identity =
+                    let mut identity =
                         KioskMachine::identity(Some(&moved.request), now).map_err(refuse)?;
+                    identity.ticket_number = ticket_number;
                     Ok((identity, minted))
                 })
             })
@@ -490,7 +495,9 @@ impl KioskService {
     ) -> AppResult<RequestIdentity> {
         self.branch_name(branch).await?;
         let stored = self.repo.find(branch, id).await?;
-        KioskMachine::identity(stored.as_ref(), time(now)).map_err(refuse)
+        let mut identity = KioskMachine::identity(stored.as_ref(), time(now)).map_err(refuse)?;
+        identity.ticket_number = self.repo.ticket_number(branch, id).await?;
+        Ok(identity)
     }
 
     /// `customerReceipt`: the same, with the published picture while it is readable.
@@ -503,7 +510,8 @@ impl KioskService {
         let now = time(now);
         self.branch_name(branch).await?;
         let stored = self.repo.find(branch, id).await?;
-        let identity = KioskMachine::identity(stored.as_ref(), now).map_err(refuse)?;
+        let mut identity = KioskMachine::identity(stored.as_ref(), now).map_err(refuse)?;
+        identity.ticket_number = self.repo.ticket_number(branch, id).await?;
         let image = self
             .repo
             .receipt(branch, id)
