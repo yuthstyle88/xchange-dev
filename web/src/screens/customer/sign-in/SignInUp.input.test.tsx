@@ -103,6 +103,7 @@ describe('Customer SignIn / SignUp input validation (#4924)', () => {
       host,
     );
 
+    host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
     const phoneInput = host.querySelector<HTMLInputElement>('input[name="phone"]')!;
     phoneInput.value = '   ';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -133,6 +134,7 @@ describe('Customer SignIn / SignUp input validation (#4924)', () => {
       host,
     );
 
+    host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
     const phoneInput = host.querySelector<HTMLInputElement>('input[name="phone"]')!;
     phoneInput.value = '0812345678';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -189,6 +191,7 @@ describe('Customer SignIn / SignUp input validation (#4924)', () => {
       host,
     );
 
+    host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
     const phoneInput = host.querySelector<HTMLInputElement>('input[name="phone"]')!;
     phoneInput.value = '0812345678';
     phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
