@@ -20,7 +20,6 @@ use xc_shift::domain::custody::value_objects::phase::Phase;
 use xc_shift::domain::shift::repositories::shift_repository::ShiftRepository;
 use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
 use xc_shift::infrastructure::custody::custody_pages::PgCustodyPages;
-use xc_shift::infrastructure::shift::shift_repository::PgShiftRepository;
 use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::day::local_day_start;
@@ -141,12 +140,14 @@ impl StaffFloorReader {
                 || has_cash_manage;
 
         let open_shifts = if has_cash_manage {
-            PgShiftRepository::new(self.pool.clone())
-                .open_of_branch(branch)
-                .await?
-                .into_iter()
-                .map(OpenShiftDto::from)
-                .collect()
+            xc_cash::infrastructure::ledger::ledger_shift_repository::ledger_shift_repository(
+                self.pool.clone(),
+            )
+            .open_of_branch(branch)
+            .await?
+            .into_iter()
+            .map(OpenShiftDto::from)
+            .collect()
         } else {
             Vec::new()
         };
