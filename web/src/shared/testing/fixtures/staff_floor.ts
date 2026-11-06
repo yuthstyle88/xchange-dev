@@ -40,6 +40,7 @@ export function makeStaffFloorTarget(o: Partial<StaffFloorTarget> = {}): StaffFl
 export function makeStaffFloorView(o: Partial<StaffFloorView> = {}): StaffFloorView {
   return {
     phase: 'phase',
+    openShifts: [],
     ...o,
   };
 }

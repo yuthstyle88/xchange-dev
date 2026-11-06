@@ -406,7 +406,7 @@ The options were C1, C2 (the save takes the booking's customer) and C3 (`desk_bo
 | C1.4 | **Passport rule** (the scanned passport's lookup hash, under today's advisory lock on that hash):<br>• on no customer, and the booker has no ACTIVE PASSPORT ⇒ **attached** to the booker (one `customer_identities` row, sealed as today with AAD `<customerId>PASSPORT`);<br>• on the booker already ⇒ accepted, nothing written;<br>• on another customer, or the booker holds a different one ⇒ `bookingNotThisCustomer`, worded `พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง`, named on `passportNo` (an RF-D3 field refusal). | Owner's C1. Naming `passportNo` puts the sentence on the field the teller has to recheck. |
 | C1.5 | **Nothing is written on any refusal.** The booker's customer row is locked (`FOR UPDATE`) before the identity is read, so two desks cannot attach two passports to one booker. | One passport per customer (`customer_identities_one_active` guards only one hash per organisation). |
 | C1.6 | **The desk's customer step reads the held ticket itself** (`readHeldTicket`, W4a.1) before `reserveCustomer` and sends `heldBooking.bookingId`. A `booking` read is kept as `heldBooking`, so the booking step skips both its own read and `serve` (`steps/booking/step.tsx:59`). | The customer step (index 1) runs **before** the booking step (index 2), where W4a reads the held ticket. The earlier note here that the ticket "is read when the sale starts" was wrong; this row replaces it. |
-| C1.7 | **The customer step sends no `bookingId`, and reads nothing, when:** the sale has an entry key (`bookingId`, `onlineBookingId` or `kioskRequestId`), the teller has no id, or the clerk skips (WALK-IN). Any other read (walk-in, none, unmatched, unknown) sends today's payload; the booking step then behaves as W4a says. | A skip would attach the placeholder passport `WALKIN` to the booker. |
+| C1.7 | **The customer step sends no `bookingId`, and reads nothing, when:** the sale has an entry key (`bookingId`, `onlineBookingId` or `kioskRequestId`) or the teller has no id. Any other read (walk-in, none, unmatched, unknown) sends today's payload; the booking step then behaves as W4a says. **The skip (WALK-IN) is refused while a booking is held** (`heldBooking`, an entry `bookingId`, or a `booking` read): the step stays and says `skipNotOnBooking` (owner ruling R7 A on #564, issuecomment-6673699296, 2026-11-06). | A skip would attach the placeholder passport `WALKIN` to the booker, and F32 (#564) showed the skip dropping the booking while the sale still finished its ticket. |
 
 #### C1 behaviour table (pinned by the two tickets' up-front tests)
 
@@ -430,7 +430,7 @@ Desk customer step (`steps/customer/step.tsx`):
 | F2 | `heldBooking` already set | + its `bookingId`; no board read | step 2 |
 | F3 | held walk-in, none, another teller's, unmatched, board unreadable | today's six keys, no `bookingId` | `heldBooking` unset, step 2 |
 | F4 | entry key `kioskRequestId` | no `bookingId`; no board read | step 2 |
-| F5 | skip (WALK-IN) | `passportNo: WALKIN`, no `bookingId`; no board read | as today |
+| F5 | skip (WALK-IN) with a booking held | no `reserveCustomer`; `skipNotOnBooking` shown; step stays (R7, 2026-11-06) | was: as today |
 | F6 | server refuses `bookingNotThisCustomer` on `passportNo` | — | sentence shown, stays on step 1, no customer id |
 | F7 | no signed-in teller id | no `bookingId`; no board read | step 2 |
 

@@ -1,5 +1,6 @@
 // S-4 #577 staff floor card texts (SD:S8).
 export const th = {
+  'phase.NOT_OPENED': 'ยังไม่เปิดวันทำการ',
   'phase.READY': 'เตรียมกะแล้ว · รอยืนยันเปิดบริการ',
   'phase.OPEN': 'เปิดรับรายการ',
   'phase.CUT_OFF': 'ตัดรายการแล้ว / รอนับ',
@@ -17,6 +18,7 @@ export const th = {
 };
 
 export const en = {
+  'phase.NOT_OPENED': 'Not opened yet',
   'phase.READY': 'Ready · Confirm to Open',
   'phase.OPEN': 'Open',
   'phase.CUT_OFF': 'Cut-off / Counting',

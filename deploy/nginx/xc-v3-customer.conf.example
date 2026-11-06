@@ -7,9 +7,11 @@
 # set as the v3 server needs them. Until v3's /api/kiosk is on main and
 # installed, xc-customer.conf is the file in use — do not apply this one.
 #
-# Host split: this host serves the kiosk files and POST /api/kiosk only. No
-# other path reaches the server from here; sign-in, desk and admin live on the
-# desk host (xc-v3-desk.conf.example).
+# Host split: this host serves the kiosk files, POST /api/kiosk, and the three
+# queue-machine sign-in paths (POST /api/auth/login, /api/auth/refresh,
+# /api/auth/logout for staff_session.dart). No other path reaches the server
+# from here; other sign-in, desk and admin live on the desk host
+# (xc-v3-desk.conf.example).
 #
 # Replace before use: server_name, certificate paths, the port, the web root. Behind Cloudflare,
 # the http-level realip configuration is required (cloudflare-realip.conf.example).
@@ -84,6 +86,72 @@ server {
 
         # The server uses this to build its origin (https://<host>) and redirects.
         # On port 443 it is "https"; on port 80 plain HTTP is redirected before proxying.
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location = /api/auth/login {
+        if ($scheme = http) {
+            return 301 https://$host$request_uri;
+        }
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+
+        proxy_pass http://127.0.0.1:8094/api/auth/login;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location = /api/auth/refresh {
+        if ($scheme = http) {
+            return 301 https://$host$request_uri;
+        }
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+
+        proxy_pass http://127.0.0.1:8094/api/auth/refresh;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+
+    location = /api/auth/logout {
+        if ($scheme = http) {
+            return 301 https://$host$request_uri;
+        }
+        if ($request_method != POST) {
+            return 405;
+        }
+
+        proxy_cache off;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+
+        proxy_pass http://127.0.0.1:8094/api/auth/logout;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header CF-Connecting-IP "";
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 60s;
     }

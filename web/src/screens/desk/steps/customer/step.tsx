@@ -218,6 +218,33 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
     if (sending()) return;
     setSending(true);
     setError(undefined);
+    setFieldErrors({});
+    const extras = store.entry()?.payloadExtras();
+    if (store.heldBooking() || extras?.bookingId || extras?.onlineBookingId) {
+      setError(t('skipNotOnBooking'));
+      setSending(false);
+      return;
+    }
+    if (!hasEntryKey(store) && store.meId() !== '') {
+      const held = await readHeldTicket(store.api, store.branch(), store.meId(), bangkokToday());
+      if (!alive) return;
+      if (held.kind === 'booking') {
+        store.setHeldBooking(held.booking);
+        setError(t('skipNotOnBooking'));
+        setSending(false);
+        return;
+      }
+      if (held.kind === 'bookingUnmatched') {
+        setError(t('skipNotOnBooking'));
+        setSending(false);
+        return;
+      }
+      if (held.kind === 'unknown') {
+        setError(t('skipFailed', { reason: wordedError(undefined) }));
+        setSending(false);
+        return;
+      }
+    }
     try {
       const img = await noPassportImage();
       if (!alive) return;

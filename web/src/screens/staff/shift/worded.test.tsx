@@ -157,6 +157,14 @@ function q<T extends Element = HTMLElement>(sel: string): T | null {
   return host.querySelector<T>(sel);
 }
 
+// F35 (#564, #6326): restated by the sub-controller claude/33691c06. An empty count is now refused on the client, so a
+// test that needs the server's answer types one quantity first.
+function fillOneLine(): void {
+  const input = must<HTMLInputElement>('input[data-denomination-id]');
+  input.value = '0';
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
 function must<T extends Element = HTMLElement>(sel: string): T {
   const el = q<T>(sel);
   expect(el, sel).not.toBeNull();
@@ -374,6 +382,7 @@ describe('WE-43: screens/staff/shift/ worded errors (web-worded-error.md §4.2)'
       await settle();
       must('[data-testid="shift-close-count"]').click();
       await settle();
+      fillOneLine();
       must('[data-testid="shift-count-save"]').click();
       await vi.waitFor(() => expect(q('[data-testid="shift-error"]')).not.toBeNull());
       expect(must('[data-testid="shift-error"]').textContent?.trim()).toBe(th['error.network']);
@@ -385,6 +394,7 @@ describe('WE-43: screens/staff/shift/ worded errors (web-worded-error.md §4.2)'
       await settle();
       must('[data-testid="shift-close-count"]').click();
       await settle();
+      fillOneLine();
       must('[data-testid="shift-count-save"]').click();
       await vi.waitFor(() => expect(q('[data-testid="shift-error"]')).not.toBeNull());
       expect(must('[data-testid="shift-error"]').textContent?.trim()).toBe(en['error.network']);
@@ -401,6 +411,7 @@ describe('WE-43: screens/staff/shift/ worded errors (web-worded-error.md §4.2)'
       await settle();
       must('[data-testid="shift-close-count"]').click();
       await settle();
+      fillOneLine();
       must('[data-testid="shift-count-save"]').click();
       await vi.waitFor(() => expect(q('[data-testid="shift-error"]')).not.toBeNull());
       expect(must('[data-testid="shift-error"]').textContent?.trim()).toBe(th['error.serverError']);
@@ -417,6 +428,7 @@ describe('WE-43: screens/staff/shift/ worded errors (web-worded-error.md §4.2)'
       await settle();
       must('[data-testid="shift-close-count"]').click();
       await settle();
+      fillOneLine();
       must('[data-testid="shift-count-save"]').click();
       await vi.waitFor(() => expect(q('[data-testid="shift-error"]')).not.toBeNull());
       expect(must('[data-testid="shift-error"]').textContent?.trim()).toBe(UNKEYED_MESSAGE);

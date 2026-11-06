@@ -265,6 +265,12 @@ pub fn confirm_json(identity: &RequestIdentity, cancel_token: Option<&str>) -> V
             }),
         ),
         ("status", V2Json::text(identity.status.as_str())),
+        (
+            "ticketNumber",
+            optional(identity.ticket_number.as_ref(), |t| {
+                V2Json::text(t.as_str())
+            }),
+        ),
     ];
     if let Some(token) = cancel_token {
         pairs.push(("cancelToken", V2Json::text(token)));

@@ -67,6 +67,8 @@ export const th = {
   'error.notBound': 'บัญชีนี้ยังเข้าระบบไม่ได้ ให้เปิดใช้งานก่อน',
   'error.userNotActive': 'บัญชีนี้ไม่ได้ใช้งานอยู่',
   'error.ticketStillServing': 'ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)',
+  'error.bookingNotThisCustomer': 'พาสปอร์ตนี้ไม่ใช่ของลูกค้าที่จองคิวนี้ กรุณาตรวจพาสปอร์ตอีกครั้ง',
+  'error.bookingNotUsable': 'ใช้การจองนี้ไม่ได้ กรุณาตรวจคิวจองอีกครั้ง',
   'queue.state.waiting': 'รอรับเรื่อง',
   'queue.state.working': 'กำลังทำรายการ',
   'queue.state.completed': 'เสร็จสิ้น',

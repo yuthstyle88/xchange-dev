@@ -138,11 +138,11 @@ impl BranchView for ApprovalRequestsBranchView {
                     idempotency_key,
                 };
 
-                let allowed = registry
+                if let Some(can_decide) = registry
                     .get(&type_name)
-                    .is_some_and(|(_subject, policy)| policy.may_decide(&who, &request).is_ok());
-
-                if allowed {
+                    .filter(|(_subject, policy)| policy.may_view(&who, &request))
+                    .map(|(_subject, policy)| policy.may_decide(&who, &request).is_ok())
+                {
                     if let Ok(obj_uuid) = Uuid::parse_str(&obj_id) {
                         if type_name == "TRANSACTION_REVERSAL" {
                             reversal_ids.push(obj_uuid);
@@ -183,6 +183,7 @@ impl BranchView for ApprovalRequestsBranchView {
                         status,
                         decision,
                         subject: None,
+                        can_decide,
                     });
                 }
             }

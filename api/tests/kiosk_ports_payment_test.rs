@@ -160,6 +160,12 @@ async fn each_branch_kiosk_reads_its_own_switch() {
     xc_testdb::seed_branch_currencies(&counter.desk.db.pool, &airport, &["USD"])
         .await
         .expect("seed branch currencies");
+    // Restated for R2/F29 by the ticket author (claude/33691c06), owner ruling R2 (A) on #564,
+    // issuecomment-6673699296: a new branch has no opening hours, and the kiosk is open only inside
+    // them (NULL = closed). The airport is opened all day so its kiosk answers as it did.
+    xc_testdb::open_all_day(&counter.desk.db.pool, &airport)
+        .await
+        .expect("open the airport all day");
     kiosk_http_common::rates_re4_common::publish(
         &counter.desk.db.pool,
         &airport,

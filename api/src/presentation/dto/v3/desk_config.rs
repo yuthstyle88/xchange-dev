@@ -38,6 +38,7 @@ pub struct DeskConfig {
     pub admin_url: String,
     pub rates: Vec<DeskRate>,
     pub payment_methods: Vec<DeskPaymentMethod>,
+    pub default_payment_method: String,
 }
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {

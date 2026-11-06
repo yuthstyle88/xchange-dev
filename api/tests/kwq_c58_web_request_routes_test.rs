@@ -172,6 +172,12 @@ impl TestDb {
         xc_testdb::seed_branch_currencies(&pool, B01, &["USD"])
             .await
             .expect("seed branch currencies");
+        // Restated for R2/F29 by the ticket author (claude/33691c06), owner ruling R2 (A) on #564,
+        // issuecomment-6673699296: the kiosk is open only inside the branch's opening hours (NULL =
+        // closed). This branch is opened all day so the answers below are as they were.
+        xc_testdb::open_all_day(&pool, B01)
+            .await
+            .expect("open B01 all day");
 
         // Seed counter rate for USD per RE-7
         rates_re4c_common::set_counter_rate(&pool, B01, "USD", "35.0", "36.0").await;

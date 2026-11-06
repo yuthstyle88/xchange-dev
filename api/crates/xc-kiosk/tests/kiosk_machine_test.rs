@@ -1075,6 +1075,7 @@ fn the_customer_is_shown_a_queue_number_an_order_number_and_later_the_document_n
             order_no: "ORD-3FA9C1D2-7E57-4000-8000-00000000BEEF".into(),
             transaction_no: None,
             status: S::Quoted,
+            ticket_number: None,
         })
     );
     let short = KioskRequest {

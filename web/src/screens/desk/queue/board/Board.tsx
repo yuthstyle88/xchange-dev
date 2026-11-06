@@ -41,7 +41,15 @@ export function Board(props: BoardProps): JSX.Element {
                   <For each={s().waiting}>
                     {(w) => (
                       <li data-ticket={w.id}>
-                        <span>{w.displayNumber}</span>{' '}
+                        <span>{w.displayNumber}</span>
+                        <Show when={w.kioskCode}>
+                          {(code) => (
+                            <span data-kiosk-code={code()}>
+                              {' · '}
+                              {code()}
+                            </span>
+                          )}
+                        </Show>{' '}
                         <span>{w.serviceType === 'BOOKING' ? t('booking') : t('walkIn')}</span>
                         <TicketActions
                           ticket={{
@@ -67,7 +75,15 @@ export function Board(props: BoardProps): JSX.Element {
                   <For each={s().called}>
                     {(c) => (
                       <li data-ticket={c.id}>
-                        <span>{c.displayNumber}</span>{' '}
+                        <span>{c.displayNumber}</span>
+                        <Show when={c.kioskCode}>
+                          {(code) => (
+                            <span data-kiosk-code={code()}>
+                              {' · '}
+                              {code()}
+                            </span>
+                          )}
+                        </Show>{' '}
                         <span>{c.status === 'CALLED' ? t('called') : c.status === 'SERVING' ? t('serving') : c.status}</span>{' '}
                         <Show when={c.tellerId === props.me.userId}>
                           <span>{t('mine')}</span>

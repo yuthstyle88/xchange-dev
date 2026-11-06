@@ -73,6 +73,11 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
 
     // Identity BFF routes (POST with JSON)
     cfg.service(
+        web::resource("/api/auth/otp/channels")
+            .app_data(body())
+            .route(web::get().to(v3_otp_channels)),
+    );
+    cfg.service(
         web::resource("/api/auth/login")
             .app_data(body())
             .route(web::post().to(v3_login)),
@@ -199,10 +204,39 @@ async fn v3_login(
     }
 }
 
+// owner-set: pending settings migration
+pub const DEFAULT_OTP_CHANNELS: &[&str] = &["email", "sms"];
+
+#[derive(Debug, Clone)]
+pub struct AllowedOtpChannels {
+    pub channels: Vec<String>,
+    pub source: &'static str,
+}
+
+impl Default for AllowedOtpChannels {
+    fn default() -> Self {
+        Self {
+            channels: DEFAULT_OTP_CHANNELS.iter().map(|&s| s.to_owned()).collect(),
+            source: "default",
+        }
+    }
+}
+
+async fn v3_otp_channels(allowed: Option<web::Data<AllowedOtpChannels>>) -> HttpResponse {
+    let cfg = allowed.map(|d| d.get_ref().clone()).unwrap_or_default();
+    HttpResponse::Ok()
+        .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+        .json(json!({
+            "channels": cfg.channels,
+            "source": cfg.source,
+        }))
+}
+
 async fn v3_otp_request(
     req: HttpRequest,
     bytes: web::Bytes,
     session: web::Data<SessionService>,
+    allowed: Option<web::Data<AllowedOtpChannels>>,
 ) -> HttpResponse {
     if !same_origin(&req) {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
@@ -228,6 +262,13 @@ async fn v3_otp_request(
     let Some(otp_channel) = OtpChannel::parse(channel) else {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     };
+    let is_allowed = match &allowed {
+        Some(d) => d.channels.iter().any(|c| c == channel),
+        None => DEFAULT_OTP_CHANNELS.contains(&channel),
+    };
+    if !is_allowed {
+        return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
+    }
     if destination.is_empty() {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     }

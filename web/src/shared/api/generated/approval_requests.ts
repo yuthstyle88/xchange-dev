@@ -3,7 +3,7 @@ import type { ReversalSubject } from "./common";
 
 export type ApprovalDecisionDto = { approverId: string, approverName: string | null, outcome: string, reason: string, at: string, };
 
-export type ApprovalRequestItemDto = { id: string, type: string, branchId: string | null, objectId: string, objectVersionHash: string, policyVersion: string, proposedPayload: any, requestedBy: string, requestedByName: string | null, requestedAt: string, status: string, decision: ApprovalDecisionDto | null, subject: ApprovalSubject | null, };
+export type ApprovalRequestItemDto = { id: string, type: string, branchId: string | null, objectId: string, objectVersionHash: string, policyVersion: string, proposedPayload: any, requestedBy: string, requestedByName: string | null, requestedAt: string, status: string, decision: ApprovalDecisionDto | null, subject: ApprovalSubject | null, canDecide: boolean, };
 
 export type ApprovalRequestsData = { requests: Array<ApprovalRequestItemDto>, };
 

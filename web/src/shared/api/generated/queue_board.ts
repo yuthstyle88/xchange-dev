@@ -15,7 +15,7 @@ tellerId: string | null,
 /**
  * `users.name` of the teller; `null` when there is no teller or the name is empty. Never the id.
  */
-tellerName: string | null, calledAt: string | null, };
+tellerName: string | null, calledAt: string | null, kioskCode?: string | null, };
 
 /**
  * The caller's own counter.
@@ -39,4 +39,4 @@ export type QueueBoardWaiting = { id: string, displayNumber: string,
 /**
  * `WALK_IN` or `BOOKING`.
  */
-serviceType: string, sequence: number, issuedAt: string, };
+serviceType: string, sequence: number, issuedAt: string, kioskCode?: string | null, };

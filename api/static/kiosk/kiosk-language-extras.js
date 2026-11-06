@@ -124,3 +124,25 @@ const branchTexts={
  ar:['الفرع','ابحث عن فرع','اختر الفرع']
 };
 for(const [code,values] of Object.entries(branchTexts))Object.assign(window.KIOSK_TEXT[code],{branchLabel:values[0],branchSearch:values[1],chooseBranch:values[2]});
+
+// xchange: foreign-amount entry on SELL (R6/F27): [amountInThb, amountInForeign, amountWant, estimatePay].
+// Draft translations: have money/fee wording checked by a native speaker before relying on it.
+const amountInTexts={
+ en:['Pay in THB','Want {code}','Amount you want ({code})','Estimated amount you pay: {amount}'],
+ th:['ระบุเงินบาท','ระบุ {code}','จำนวนที่คุณต้องการ ({code})','ยอดที่คาดว่าจะต้องจ่าย: {amount}'],
+ ms:['Bayar dalam THB','Mahu {code}','Jumlah anda mahu ({code})','Anggaran perlu dibayar: {amount}'],
+ zh:['输入泰铢','输入 {code}','您想要的金额（{code}）','预计您需要支付：{amount}'],
+ 'zh-HK':['輸入泰銖','輸入 {code}','您想要的金額（{code}）','預計您需要支付：{amount}'],
+ hi:['थाई बाट में','{code} में','आप जो राशि चाहते हैं ({code})','आपको लगभग देना होगा: {amount}'],
+ ru:['Сумма в батах','Сумма в {code}','Вы хотите получить ({code})','Вы отдадите примерно: {amount}'],
+ ko:['바트 금액','{code} 금액','원하시는 금액 ({code})','예상 지불액: {amount}'],
+ ja:['バーツで指定','{code} で指定','ご希望の金額（{code}）','お支払い予定額：{amount}'],
+ de:['Betrag in THB','Betrag in {code}','Gewünschter Betrag ({code})','Voraussichtlich zu zahlen: {amount}'],
+ lo:['ລະບຸເງິນບາດ','ລະບຸ {code}','ຈຳນວນທີ່ທ່ານຕ້ອງການ ({code})','ຍອດທີ່ຄາດວ່າຈະຕ້ອງຈ່າຍ: {amount}'],
+ fr:['Montant en THB','Montant en {code}','Montant souhaité ({code})','Montant estimé à payer : {amount}'],
+ id:['Jumlah THB','Jumlah {code}','Jumlah yang Anda inginkan ({code})','Perkiraan yang harus dibayar: {amount}'],
+ my:['ထိုင်းဘတ်ဖြင့်','{code} ဖြင့်','သင်လိုချင်သည့် ပမာဏ ({code})','ခန့်မှန်း ပေးချေရမည့်ငွေ: {amount}'],
+ vi:['Nhập Baht Thái','Nhập {code}','Số tiền bạn muốn nhận ({code})','Số tiền dự kiến phải trả: {amount}'],
+ ar:['المبلغ بالبات','المبلغ بـ {code}','المبلغ الذي تريده ({code})','المبلغ التقريبي الذي ستدفعه: {amount}']
+};
+for(const [code,values] of Object.entries(amountInTexts))Object.assign(window.KIOSK_TEXT[code],{amountInThb:values[0],amountInForeign:values[1],amountWant:values[2],estimatePay:values[3]});

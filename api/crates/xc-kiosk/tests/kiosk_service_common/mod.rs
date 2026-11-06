@@ -408,6 +408,7 @@ impl KioskPorts for FakePorts {
     fn counter<'a>(
         &'a self,
         branch: &'a BranchId,
+        _now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
             let mut world = self.world();
@@ -420,6 +421,7 @@ impl KioskPorts for FakePorts {
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
+        _now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
         Box::pin(async move {
             let view = {

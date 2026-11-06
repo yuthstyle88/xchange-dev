@@ -44,6 +44,9 @@ describe('Customer SignIn OTP request in-flight guard (#2240)', () => {
   });
 
   function typePhone(phone: string): HTMLInputElement {
+    if (!host.querySelector('input[name="phone"]')) {
+      host.querySelector<HTMLButtonElement>('button[data-channel="sms"]')?.click();
+    }
     const phoneInput = host.querySelector<HTMLInputElement>('input[name="phone"]');
     expect(phoneInput, 'phone input exists').not.toBeNull();
     phoneInput!.value = phone;

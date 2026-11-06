@@ -3,6 +3,7 @@ import { render } from "solid-js/web";
 import type { JSX } from "solid-js";
 import { errorText, setLang } from "../../../shared/i18n";
 import {
+  makeCashTransferLineRow,
   makeCashTransferRow,
   makeDenominationRow,
   makeStaffFloorView,
@@ -85,7 +86,8 @@ const T_RECEIVED = "e0000000-0000-4000-8000-000000000005";
 const TRANSFERS = [
   transfer(T_APPROVED_A, "APPROVED"),
   transfer(T_APPROVED_B, "APPROVED"),
-  transfer(T_IN, "DISPATCHED", "BRANCH", ELSEWHERE, BRANCH),
+  // F26 (#564, #6320): restated by the sub-controller claude/33691c06; the receive form lists only the sent lines.
+  { ...transfer(T_IN, "DISPATCHED", "BRANCH", ELSEWHERE, BRANCH), lines: [makeCashTransferLineRow({ currency: "USD", denominationId: 21, qtySent: "2" })] },
   transfer(T_RECEIVED, "RECEIVED", "BRANCH", ELSEWHERE, BRANCH),
 ];
 

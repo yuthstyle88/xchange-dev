@@ -168,6 +168,14 @@ impl ApprovalPolicy for TransferApprovalPolicy {
         Ok(())
     }
 
+    fn may_view(&self, who: &Actor, request: &ApprovalRequest) -> bool {
+        let from_branch = request
+            .proposed_payload
+            .get("from_branch")
+            .and_then(|v| v.as_str());
+        ApprovalDecider::holds_on(who, Permission::ApprovalsDecide, from_branch)
+    }
+
     fn policy_version(&self) -> String {
         self.version.clone()
     }

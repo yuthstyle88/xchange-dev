@@ -16,6 +16,12 @@
 //! through `published_rates_data`, the one reader the view and the route share.
 //!
 //! Needs `TEST_DATABASE_URL` for every test but the TS one; nothing here skips.
+//!
+//! Restated by the ticket author of R2/F29 (claude/33691c06), on owner ruling R2 (A) on #564,
+//! issuecomment-6673699296 ("branches.opening_hours governs everything a customer sees"): the
+//! list's `queueOpen` is the stored open queue only inside the branch's opening hours, read at the
+//! route's `RpcClock`. So every request here carries a fixed clock, `CLOCK` (Monday 10:00 ICT),
+//! which `b-alpha`'s Monday 09:00-17:00 window covers; no expected answer changed.
 
 mod common;
 mod quote_common;
@@ -25,7 +31,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use actix_web::http::{StatusCode, header};
-use actix_web::{App, test as atest};
+use actix_web::{App, test as atest, web};
+use chrono::{DateTime, Utc};
 use quote_common::{Line, TestDb};
 use serde_json::Value;
 use xc_kernel::ids::BranchId;
@@ -38,6 +45,18 @@ const XC: &str = "XC";
 /// A second organisation, made by `other_organisation`.
 const YY: &str = "YY";
 const YY_ID: &str = "00000000-0000-0000-0000-0000000000a2";
+
+/// The instant every request is made at (R2/F29): Monday 2026-10-05 10:00 ICT.
+const CLOCK: &str = "2026-10-05T03:00:00Z";
+
+/// The route's clock, fixed at [`CLOCK`].
+struct FixedClock(DateTime<Utc>);
+
+impl xchange::presentation::http::rpc::RpcClock for FixedClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.0
+    }
+}
 
 struct Answer {
     status: StatusCode,
@@ -61,9 +80,17 @@ impl Answer {
 /// One GET through the whole route table, with `headers`.
 async fn get(db: &TestDb, uri: &str, headers: &[(&str, &str)]) -> Answer {
     let state = AppState::new(Arc::new(common::settings(&[])), db.pool.clone());
-    let app =
-        atest::init_service(App::new().configure(move |cfg| bootstrap::configure(cfg, state)))
-            .await;
+    let clock: Arc<dyn xchange::presentation::http::rpc::RpcClock> = Arc::new(FixedClock(
+        DateTime::parse_from_rfc3339(CLOCK)
+            .expect("CLOCK is RFC 3339")
+            .with_timezone(&Utc),
+    ));
+    let app = atest::init_service(
+        App::new()
+            .configure(move |cfg| bootstrap::configure(cfg, state))
+            .app_data(web::Data::from(clock)),
+    )
+    .await;
     let mut req = atest::TestRequest::get()
         .uri(uri)
         .insert_header((header::HOST, "xc.test"));
