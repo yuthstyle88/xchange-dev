@@ -14,10 +14,14 @@ use ts_rs::TS;
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
+use xc_kernel::payment::PaymentRules;
 
+use crate::application::kiosk_screen::{self, KioskScreen};
+use crate::application::settings::payment_json::rules_from_json;
 use crate::bootstrap::AppState;
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::common::NoFilter;
-use crate::presentation::dto::v3::kiosk_screen::KioskScreenData;
+use crate::presentation::dto::v3::kiosk_screen::{KioskScreenData, KioskScreenDefaults};
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
 
 pub struct KioskScreenView {
@@ -39,14 +43,53 @@ impl BranchView for KioskScreenView {
 
     fn load(
         &self,
-        _branch: &BranchId,
+        branch: &BranchId,
         _who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let branch = branch.clone();
         async move {
-            let _ = pool;
-            todo!("#6273: read kiosk_screen::SETTING through BranchSettingStore")
+            let store = BranchSettingStore::new(pool);
+            let stored = store.read(&branch, kiosk_screen::SETTING).await?;
+            let (screen, version) = match stored {
+                Some(s) => (KioskScreen::from_body(&s.body), Some(s.version)),
+                None => (KioskScreen::not_set(), None),
+            };
+            let rules = match store.read(&branch, "paymentMethods").await? {
+                Some(s) => rules_from_json(&s.body).unwrap_or_else(PaymentRules::defaults),
+                None => PaymentRules::defaults(),
+            };
+            let payment_methods = rules
+                .rows()
+                .iter()
+                .filter(|r| r.enabled && (r.buy || r.sell))
+                .map(|r| r.id.clone())
+                .collect();
+            let not_set = KioskScreen::not_set();
+            let default_values = KioskScreenDefaults {
+                quick_amounts: not_set.quick_amounts,
+                tiles: not_set.tiles,
+                idle_seconds: not_set.idle_seconds,
+                review_seconds: not_set.review_seconds,
+                refresh_seconds: not_set.refresh_seconds,
+                popular_days: not_set.popular_days,
+                default_payment_method: not_set.default_payment_method,
+            };
+            Ok(KioskScreenData {
+                branch: branch.as_str().to_owned(),
+                quick_amounts: screen.quick_amounts,
+                tiles: screen.tiles,
+                idle_seconds: screen.idle_seconds,
+                review_seconds: screen.review_seconds,
+                refresh_seconds: screen.refresh_seconds,
+                popular_days: screen.popular_days,
+                default_payment_method: screen.default_payment_method,
+                defaults: screen.defaults.into_iter().map(str::to_owned).collect(),
+                default_values,
+                payment_methods,
+                version,
+            })
         }
     }
 }
@@ -57,6 +100,7 @@ pub fn register(cfg: &mut web::ServiceConfig, state: &AppState) {
 
 pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     let cfg = ts_rs::Config::new().with_out_dir(dir);
+    KioskScreenDefaults::export_all(&cfg)?;
     KioskScreenData::export_all(&cfg)?;
     Ok(())
 }

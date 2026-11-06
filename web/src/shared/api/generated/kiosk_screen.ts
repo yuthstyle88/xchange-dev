@@ -2,10 +2,16 @@
 
 /**
  * A branch's kiosk screen values as the admin screen reads them: each value the kiosk is given, the fields
- * answering their default (`defaults`, so the screen can show "ค่าเริ่มต้น" beside them), and the row's
- * `version` (`null` while the branch has no saved row).
+ * answering their default (`defaults`, so the screen can show "ค่าเริ่มต้น" beside them), the server's
+ * `defaultValues` and enabled `paymentMethods`, and the row's `version` (`null` while the branch has no saved row).
  */
-export type KioskScreenData = { branch: string, quickAmounts: Array<number>, tiles: number, idleSeconds: number, reviewSeconds: number, refreshSeconds: number, popularDays: number, defaultPaymentMethod: string, defaults: Array<string>, version: number | null, };
+export type KioskScreenData = { branch: string, quickAmounts: Array<number>, tiles: number, idleSeconds: number, reviewSeconds: number, refreshSeconds: number, popularDays: number, defaultPaymentMethod: string, defaults: Array<string>, defaultValues: KioskScreenDefaults, paymentMethods: Array<string>, version: number | null, };
+
+/**
+ * The server's not-set default values from `application::kiosk_screen`, so the admin screen can reset a field
+ * without restating any default in TypeScript.
+ */
+export type KioskScreenDefaults = { quickAmounts: Array<number>, tiles: number, idleSeconds: number, reviewSeconds: number, refreshSeconds: number, popularDays: number, defaultPaymentMethod: string, };
 
 /**
  * The save: every field the owner sets. A field sent `null` (or left out) is not set, so it answers its

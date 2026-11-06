@@ -5,9 +5,24 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The server's not-set default values from `application::kiosk_screen`, so the admin screen can reset a field
+/// without restating any default in TypeScript.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "kiosk_screen.ts")]
+pub struct KioskScreenDefaults {
+    pub quick_amounts: Vec<u32>,
+    pub tiles: u32,
+    pub idle_seconds: u32,
+    pub review_seconds: u32,
+    pub refresh_seconds: u32,
+    pub popular_days: u32,
+    pub default_payment_method: String,
+}
+
 /// A branch's kiosk screen values as the admin screen reads them: each value the kiosk is given, the fields
-/// answering their default (`defaults`, so the screen can show "ค่าเริ่มต้น" beside them), and the row's
-/// `version` (`null` while the branch has no saved row).
+/// answering their default (`defaults`, so the screen can show "ค่าเริ่มต้น" beside them), the server's
+/// `defaultValues` and enabled `paymentMethods`, and the row's `version` (`null` while the branch has no saved row).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "kiosk_screen.ts")]
@@ -21,6 +36,8 @@ pub struct KioskScreenData {
     pub popular_days: u32,
     pub default_payment_method: String,
     pub defaults: Vec<String>,
+    pub default_values: KioskScreenDefaults,
+    pub payment_methods: Vec<String>,
     #[ts(type = "number | null")]
     pub version: Option<i64>,
 }
