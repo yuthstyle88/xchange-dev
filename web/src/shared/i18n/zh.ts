@@ -69,6 +69,8 @@ export const zh: Record<Key, string> = {
   'error.notBound': '此账户尚不能登录，请先启用',
   'error.userNotActive': '此账户未在使用中',
   'error.ticketStillServing': 'ปิดกะไม่ได้ ยังมีคิวที่เรียกหรือกำลังให้บริการค้างอยู่ กรุณาจบคิวนั้นก่อน (เสร็จสิ้น ไม่มีการขาย หรือข้ามคิว)',
+  'error.bookingNotThisCustomer': '此护照与预约该排号的客户不符，请重新核对护照。',
+  'error.bookingNotUsable': '无法使用此预约，请重新检查预约排号。',
   'queue.state.waiting': '等待处理',
   'queue.state.working': '正在处理',
   'queue.state.completed': '已完成',
