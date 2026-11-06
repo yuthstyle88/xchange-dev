@@ -123,7 +123,9 @@ async fn another_enabled_method(counter: &Counter) -> String {
         .to_owned()
 }
 
-/// K1: the owner saves the chips [100, 200, 500]; the kiosk `rates` answer serves them, marked as set.
+/// K1: the owner saves the chips [100, 200, 500]; the kiosk `rates` answer serves them, marked as the owner's.
+/// Restated on the ticket author's ruling (#6273, controller claude/022a7453): `source` is `"owner"`, the string
+/// PR 6270 already ships, not the ticket's first wording `"set"`.
 #[actix_web::test]
 async fn k1_owner_saves_chips() {
     let counter = counter().await;
@@ -137,11 +139,13 @@ async fn k1_owner_saves_chips() {
 
     let screen = screen(&counter).await;
     assert_eq!(screen["quickAmounts"], json!([100, 200, 500]), "{screen}");
-    assert_eq!(screen["source"], json!("set"), "{screen}");
+    assert_eq!(screen["source"], json!("owner"), "{screen}");
     counter.finish().await;
 }
 
-/// K2: every staff role but EXECUTIVE is refused 403, and nothing is written.
+/// K2: every staff role but EXECUTIVE is refused, and nothing is written. Restated on the ticket author's ruling
+/// (#6273, controller claude/022a7453): the refusal is `400 roleNotAllowedHere`, as every settings save refuses, not
+/// the ticket's first wording 403.
 #[actix_web::test]
 async fn k2_a_non_owner_saves() {
     let counter = counter().await;
@@ -152,7 +156,13 @@ async fn k2_a_non_owner_saves() {
             with(unset(), json!({ "quickAmounts": [100, 200, 500] })),
         )
         .await;
-        assert_eq!(refused.status, 403, "{who}: {}", refused.text);
+        assert_eq!(refused.status, 400, "{who}: {}", refused.text);
+        assert_eq!(
+            code(&refused),
+            json!("roleNotAllowedHere"),
+            "{who}: {}",
+            refused.text
+        );
     }
     assert_eq!(stored_version(&counter).await, None, "nothing written");
     assert_eq!(
