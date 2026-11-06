@@ -9,29 +9,31 @@
 .xc-history-loading {
   text-align: center;
   padding: 2rem;
-  color: #666;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-error {
   text-align: center;
   padding: 2rem;
-  color: #c00;
+  color: var(--xc-danger);
 }
 
 .xc-history-retry-btn {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
-  border-radius: 4px;
-  background-color: #0066cc;
-  color: #fff;
+  border-radius: var(--xc-radius-lg);
+  background-color: var(--xc-brand);
+  color: var(--xc-on-brand);
   border: none;
   cursor: pointer;
+  min-height: 48px;
+  font-weight: 800;
 }
 
 .xc-history-empty {
   text-align: center;
   padding: 2rem;
-  color: #888;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-list {
@@ -41,10 +43,11 @@
 }
 
 .xc-history-item {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--xc-radius-card);
   padding: 1rem;
-  background: #fff;
+  background: var(--xc-surface);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-history-item-header {
@@ -53,7 +56,7 @@
   align-items: center;
   margin-bottom: 0.5rem;
   font-size: 0.875rem;
-  color: #555;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-date {
@@ -61,20 +64,20 @@
 }
 
 .xc-history-branch {
-  color: #666;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-status {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
-  background: #e6f4ea;
-  color: #137333;
+  background: var(--xc-success-bg);
+  color: var(--xc-success-text);
 }
 
 .xc-history-status-reversed {
-  background: #fce8e6;
-  color: #c5221f;
+  background: var(--xc-danger-bg);
+  color: var(--xc-danger);
 }
 
 .xc-history-item-details {
@@ -103,11 +106,11 @@
   display: flex;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: #555;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-label {
-  color: #777;
+  color: var(--xc-text-muted);
 }
 
 .xc-history-receipt-row {
@@ -116,6 +119,6 @@
 }
 
 .xc-history-receipt-link {
-  color: #1a73e8;
+  color: var(--xc-brand);
   text-decoration: none;
 }

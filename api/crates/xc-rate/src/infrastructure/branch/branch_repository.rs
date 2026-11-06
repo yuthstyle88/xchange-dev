@@ -201,7 +201,7 @@ impl BranchRepository for PgBranchRepository {
     ) -> AppResult<()> {
         sqlx::query(
             "INSERT INTO branch_currencies (branch_id, organization_id, currency_code, group_code, display, sort_order) \
-             SELECT $2, organization_id, currency_code, group_code, 'HIDE', sort_order \
+             SELECT $2, organization_id, currency_code, group_code, display, sort_order \
              FROM branch_currencies \
              WHERE branch_id = $1",
         )

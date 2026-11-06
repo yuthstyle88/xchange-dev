@@ -9,6 +9,8 @@ pub mod customer_otp_sign_in;
 pub mod customer_signup;
 pub mod executive;
 pub mod finance;
+pub mod kiosk_popular;
+pub mod kiosk_screen;
 pub mod otp_challenge_seal;
 pub mod passport_read;
 pub mod settings;

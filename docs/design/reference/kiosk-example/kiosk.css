@@ -1,0 +1,315 @@
+@import url(xc-tokens.css);*{box-sizing:border-box}body{margin:0;background:var(--xc-canvas);color:var(--xc-teal-900);font:20px/1.6 var(--xc-font-sans)}header{padding:24px 5%;background:var(--xc-teal-900);color:white;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}header strong{font-size:var(--xc-text-5xl)}header span{color:#ffd88c}header p{margin:0}header small{font-size:var(--xc-text-base)}main{max-width:960px;margin:36px auto;padding:0 28px}.step{font-size:var(--xc-text-lg);letter-spacing:2px;color:#866529}h1{font-size:var(--xc-text-7xl);line-height:1.3}h1 span{font-size:var(--xc-text-4xl);color:#60717c;font-weight:400}h2{font-size:var(--xc-text-5xl)}.directions{display:flex;gap:16px;margin:20px 0}.directions>*{flex:1}button,select,input{font:inherit;border-radius:var(--xc-radius-xl);border:2px solid var(--xc-gray-300);min-height:68px;padding:16px;background:white;color:inherit}button{cursor:pointer;font-weight:bold}button:disabled{opacity:.5;cursor:default}button small{display:block;font-weight:normal;font-size:var(--xc-text-lg)}button.selected{border-color:var(--xc-amber-700);background:var(--xc-amber-50)}.primary{background:var(--xc-teal-900);color:white;border-color:var(--xc-teal-900)}label{display:block;margin:22px 0 8px}select,input{width:100%}.rates,.quote{padding:24px;background:white;border-radius:var(--xc-radius-2xl);margin:20px 0}.rates{display:flex;gap:24px;flex-wrap:wrap}.rates strong{display:block;font-size:var(--xc-text-4xl)}.quote div{display:flex;justify-content:space-between;gap:20px;padding:10px 0;border-bottom:1px solid var(--xc-gray-100)}#review{width:100%}#done{text-align:center}#queue{font-size:var(--xc-text-7xl);display:block;color:var(--xc-amber-700)}.success{font-size:var(--xc-text-9xl);color:var(--xc-green-700)}footer{font-size:var(--xc-text-base);color:#64717a;margin:32px 0}#error{color:#aa263c}button:focus-visible,input:focus-visible,select:focus-visible{outline:4px solid var(--xc-amber-500);outline-offset:3px}[hidden]{display:none!important}@media(max-width:650px){.directions{flex-direction:column}h1{font-size:var(--xc-text-6xl)}body{font-size:var(--xc-text-xl)}}
+/* XCHANGE customer counter theme */
+
+body{background:var(--xc-gray-50);color:var(--ink);font-family:var(--xc-font-sans)}header{background:var(--xc-surface);color:var(--ink);border-bottom:1px solid var(--line);padding:18px max(28px,5vw)}.kiosk-brand{display:flex;align-items:center;gap:22px}.kiosk-brand img{width:145px;height:92px;object-fit:contain}.kiosk-brand span{border-left:1px solid var(--line);padding-left:22px;color:var(--muted);font-size:var(--xc-text-sm);letter-spacing:1.6px;max-width:160px}header p{font-size:var(--xc-text-xl);font-weight:600}header small{border:1px solid var(--xc-brand-200);background:var(--soft);color:var(--xc);border-radius:30px;padding:7px 14px;font-size:var(--xc-text-sm);font-weight:700}main{max-width:980px;margin:24px auto 40px}.step{color:var(--xc);font-weight:700;margin:0 0 12px}h1{font-size:var(--xc-text-7xl);letter-spacing:-1px;margin:0 0 24px}h1 span{font-size:var(--xc-text-3xl);letter-spacing:0;color:var(--muted)}.directions{gap:16px}button{transition:background .15s,border-color .15s;border-color:var(--line);border-radius:var(--xc-radius-2xl)}button.selected{background:var(--xc);border-color:var(--xc);color:var(--xc-gray-0);box-shadow:var(--xc-shadow-brand)}button.selected small{color:var(--xc-brand-100)}button small{color:var(--muted);margin-top:5px}.primary{background:var(--xc);border-color:var(--xc);color:white}.primary:hover:not(:disabled){background:var(--xc-brand-strong);border-color:var(--xc-brand-strong)}button:active:not(:disabled){transform:translateY(1px)}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--xc);outline-offset:4px}form#form{padding:24px 28px 28px;border:1px solid var(--line);border-radius:var(--xc-radius-3xl);background:white}label{font-size:var(--xc-text-xl);font-weight:600;margin-top:12px}select,input{border-color:var(--line);background:var(--xc-paper);border-radius:var(--xc-radius-lg)}#amount{font-size:var(--xc-text-6xl);font-weight:600;letter-spacing:1px}.rates{background:var(--xc-gray-50);border:1px solid var(--line);padding:18px 22px;margin:22px 0;gap:20px}.rates>div{flex:1;min-width:220px;color:var(--muted);font-size:var(--xc-text-base)}.rates strong{color:var(--ink);font-size:var(--xc-text-4xl);margin-top:5px;font-variant-numeric:tabular-nums}#estimate{min-height:36px;color:var(--xc);font-weight:700;font-size:var(--xc-text-3xl);margin:20px 0}#review{min-height:70px}#confirm,#done{background:white;border:1px solid var(--line);border-radius:var(--xc-radius-3xl);padding:24px 30px}.quote{border:1px solid var(--line);background:var(--xc-paper)}.quote div:last-child{border:0;color:var(--xc);font-size:var(--xc-text-4xl)}#confirm>p,#done>p{font-size:var(--xc-text-xl);color:var(--muted)}#queue{color:var(--xc);padding:14px 0;font-variant-numeric:tabular-nums}.success{color:var(--xc)}footer{text-align:center;font-size:var(--xc-text-md);color:var(--muted);line-height:1.8}#error:empty{display:none}#error:not(:empty){padding:16px;border:1px solid var(--xc-brand-300);background:var(--soft);border-radius:var(--xc-radius-lg);color:var(--xc-brand-strong)}
+@media(min-width:900px) and (max-height:850px){header{padding-top:10px;padding-bottom:10px}.kiosk-brand img{height:64px;width:115px}main{margin-top:16px}h1{font-size:var(--xc-text-6xl);margin-bottom:16px}h1 span{font-size:var(--xc-text-2xl)}.directions{margin:14px 0}form#form{padding:18px 24px}button,select,input{padding:12px;min-height:60px}.rates{margin:16px 0;padding:12px 18px}footer{margin:20px 0}}
+@media(max-width:650px){header{padding:16px 20px;gap:10px}.kiosk-brand img{width:115px;height:72px}.kiosk-brand span{display:none}header p{font-size:var(--xc-text-lg)}header small{font-size:var(--xc-text-2xs)}main{padding:0 18px;margin-top:22px}h1{font-size:var(--xc-text-6xl)}h1 span{font-size:var(--xc-text-2xl)}form#form,#confirm,#done{padding:18px}.rates strong{font-size:var(--xc-text-3xl)}.rates>div{min-width:0;flex-basis:100%}.quote div{flex-direction:column;gap:3px}#estimate{font-size:var(--xc-text-2xl)}.directions button{min-height:82px}}
+@media(prefers-reduced-motion:reduce){button{transition:none}button:active:not(:disabled){transform:none}}
+
+.order-identity{padding:16px 20px;border:1px solid var(--line);background:var(--xc-surface);border-radius:var(--xc-radius-xl);margin:18px 0;text-align:left}.order-identity div{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,2fr);gap:14px;padding:8px 0;font-size:var(--xc-text-lg)}.order-identity strong{overflow-wrap:anywhere;text-align:right}.order-identity div:last-child strong{color:var(--xc)}@media(max-width:600px){.order-identity div{grid-template-columns:1fr;gap:3px}.order-identity strong{text-align:left}}
+
+.order-progress{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;list-style:none;padding:0;margin:32px 0}.order-progress li{padding:18px 8px;border:2px solid var(--xc-gray-200);border-radius:var(--xc-radius-2xl);color:var(--xc-muted);text-align:center}.order-progress :is(.active,[aria-pressed=true],[aria-selected=true],[aria-current=page],[aria-current=step]){background:var(--xc-brand);color:white;border-color:var(--xc-brand)}.order-progress .finished{border-color:var(--xc-green-700);color:var(--xc-green-700)}.telegram-card{display:flex;align-items:center;gap:24px;padding:24px;border:1px solid var(--xc-gray-200);border-radius:var(--xc-radius-3xl);margin-top:28px;text-align:left}.telegram-card img{width:180px;height:180px;object-fit:contain}.telegram-card a{color:var(--xc-brand);font-weight:700}@media(max-width:600px){.telegram-card{flex-direction:column}.order-progress{gap:4px;font-size:var(--xc-text-lg)}}
+
+#receive{background:var(--xc-gray-50);color:var(--xc-brand);font-weight:700;border-color:var(--xc-brand-200)}#rates.rates{grid-template-columns:1fr}
+
+/* XC touch screen — spacious controls, a clear quote, one primary action. */
+body{background:radial-gradient(ellipse at 95% 5%,var(--xc-gray-150) 0,transparent 45%),var(--xc-gray-50);font-size:var(--xc-text-xl);line-height:1.5;color:var(--xc-ink)}
+header{padding:12px 4vw;min-height:98px}.kiosk-brand{gap:18px}.kiosk-brand img{width:130px;height:76px}.kiosk-brand span{font-size:var(--xc-text-2xs);letter-spacing:1.4px}header p{margin-left:auto;font-size:var(--xc-text-lg)}header small{font-size:var(--xc-text-2xs);letter-spacing:.6px}
+main{max-width:1200px;padding:0 32px;margin:28px auto 36px}h1{font-size:clamp(32px,4vw,48px);letter-spacing:-1.6px;line-height:1.12;margin-bottom:24px}h1 span{display:inline-block;font-size:var(--xc-text-xl);letter-spacing:0;margin-top:10px}.step{font-size:var(--xc-text-sm);letter-spacing:1.8px;margin-bottom:14px}
+.directions{gap:14px;margin:18px 0 22px}.directions button{min-height:90px;padding:18px 24px;text-align:left;font-size:var(--xc-text-3xl);border-radius:var(--xc-radius-3xl);position:relative}.directions button.selected:after{content:'✓';position:absolute;right:18px;top:12px;font-size:var(--xc-text-xl)}.directions button small{font-size:var(--xc-text-base)}.directions button.selected{box-shadow:var(--xc-shadow-brand);background:linear-gradient(120deg,var(--xc-brand),var(--xc-brand-strong))}
+form#form{display:grid;grid-template-columns:1.05fr 1fr;gap:0 32px;padding:30px;border-radius:24px;box-shadow:var(--xc-shadow-lg);border-color:var(--xc-line)}
+.currency-pane{grid-column:1;grid-row:1 / span 6;border-right:1px solid var(--line);padding-right:30px}.currency-pane>label{margin:0 0 12px;font-size:var(--xc-text-xl)}.field-hint{font-size:var(--xc-text-md);color:var(--muted);margin:0 0 18px}#currency-search{font-size:var(--xc-text-lg);min-height:54px;padding:13px 16px;background:var(--xc-gray-50)}#currency{font-size:var(--xc-text-lg);margin-top:14px;min-height:60px;background:white}
+.currency-shortcuts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}.currency-shortcuts button{padding:12px 6px;min-height:76px;border-radius:var(--xc-radius-2xl);font-size:var(--xc-text-xl);background:white}.currency-shortcuts button span{display:block;font-size:var(--xc-text-sm);color:var(--xc-muted);margin-top:4px}.currency-shortcuts button.selected{background:var(--xc-gray-50);color:var(--xc);border-color:var(--xc);box-shadow:none}.currency-shortcuts button.selected span{color:var(--xc)}
+#rates{grid-column:2;margin:0 0 16px;padding:12px 16px;border:0;border-radius:var(--xc-radius-xl);background:var(--xc-canvas)}#rates>div{font-size:var(--xc-text-sm)}#rates strong{font-size:var(--xc-text-2xl);margin-top:2px}#amount-label,#receive-label{grid-column:2;font-size:var(--xc-text-base);margin:0 0 8px}#amount,#receive{grid-column:2;height:72px;font-size:var(--xc-text-6xl);padding:12px 18px;letter-spacing:0;font-variant-numeric:tabular-nums}#amount{margin-bottom:20px;background:white;border-color:var(--xc-gray-200)}#receive{background:var(--xc-gray-50);border-color:var(--xc-brand-200);font-size:var(--xc-text-5xl)}#estimate{grid-column:2;font-size:var(--xc-text-sm);font-weight:400;color:var(--muted);min-height:0;margin:10px 0 18px}#review{grid-column:2;font-size:var(--xc-text-xl);min-height:60px;border-radius:var(--xc-radius-2xl);box-shadow:var(--xc-shadow-brand)}
+#confirm,#done{max-width:880px;margin:auto;box-shadow:var(--xc-shadow-lg);padding:30px}#confirm h2,#done h2{font-size:var(--xc-text-4xl)}#confirm .directions button{text-align:center;min-height:64px;font-size:var(--xc-text-xl)}.quote{padding:18px 22px}.order-identity{background:var(--xc-gray-50);border:0}.order-identity div{font-size:var(--xc-text-md)}.success{width:64px;height:64px;border-radius:50%;background:var(--xc-gray-50);font-size:var(--xc-text-7xl);margin:0 auto}#queue{font-size:44px;letter-spacing:2px}footer{margin:24px 0;font-size:var(--xc-text-sm)}.telegram-card{background:var(--xc-gray-50);border-color:var(--line)}.telegram-card img{width:120px;height:120px}.telegram-card h2{font-size:var(--xc-text-2xl)!important}#customer-receipt{border-top:1px solid var(--line);margin-top:30px;padding-top:20px}
+@media(max-width:760px){header{padding:10px 18px;gap:8px}.kiosk-brand img{width:100px;height:62px}.kiosk-brand span{display:none}header p{font-size:var(--xc-text-base)}header small{font-size:var(--xc-text-2xs)}main{padding:0 16px;margin-top:22px}.directions{flex-direction:row;gap:10px}.directions button{padding:16px 12px;font-size:var(--xc-text-lg);min-height:106px}.directions button small{font-size:var(--xc-text-sm)}.directions button.selected:after{top:4px;right:8px;font-size:var(--xc-text-md)}form#form{display:block;padding:20px}.currency-pane{border:0;padding:0;margin-bottom:20px}.currency-shortcuts{grid-template-columns:repeat(3,1fr)}.currency-shortcuts button{min-height:62px}#amount,#receive{font-size:26px;height:68px}#rates{margin-bottom:16px}#confirm,#done{padding:20px}.quote div:last-child{font-size:var(--xc-text-3xl)}#confirm .directions{flex-direction:column}h1 span{font-size:var(--xc-text-xl)}}
+
+#payment-choice{grid-column:2;margin-bottom:16px}#payment-choice select{font-size:var(--xc-text-lg);min-height:56px}#payment-choice .field-hint{margin:8px 0 0;font-size:var(--xc-text-sm)}
+
+.kiosk-lang{display:block;margin:0;max-width:270px;font-size:var(--xc-text-sm)}.kiosk-lang input,.kiosk-lang select{min-height:40px;padding:8px 12px;font-size:var(--xc-text-base);margin-top:4px}html[dir=rtl] .currency-pane{border-right:0;border-left:1px solid var(--line);padding-right:0;padding-left:30px}html[dir=rtl] .directions button{text-align:right}#amount,#receive{direction:ltr} @media(max-width:760px){.kiosk-lang{max-width:none;width:100%;display:grid;grid-template-columns:1fr 1fr;gap:6px}.kiosk-lang>span{grid-column:1/-1}html[dir=rtl] .currency-pane{border:0;padding:0}}
+/* Kept from xc-desk-v2: complex scripts, right-to-left, touch sizes, language label. */
+:is(:lang(ar),:lang(hi),:lang(lo),:lang(my)) :is(.step,h1,header small){letter-spacing:0}[dir=rtl] .rates strong{text-align:right}[dir=rtl] input,[dir=rtl] select{text-align:right}[dir=rtl] input[type=number],[dir=rtl] #receive{text-align:left;direction:ltr}.kiosk-lang span{white-space:nowrap}@media (pointer:coarse){input[type=checkbox]{width:24px;height:24px}button,select,input:not([type=checkbox]){min-height:44px}}
+
+.amount-keypad{grid-column:2;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 20px}.amount-keypad button{min-height:56px;padding:8px;font-size:var(--xc-text-4xl);touch-action:manipulation}#next-customer{width:100%;margin-bottom:20px}.currency-pane{grid-row:1 / span 10}#amount{margin-bottom:10px}
+/* Landscape tablet, fixed to the screen (owner request 2026-10-18): no page scroll; step 1 is
+   currency | amount & payment | keypad, the review and done steps flow into columns. */
+@media (orientation:landscape) and (min-width:900px) and (max-height:1100px){
+html,body{height:100%;overflow:hidden;overscroll-behavior:none}
+body{display:flex;flex-direction:column;height:100dvh;font-size:16px;touch-action:manipulation}
+header{flex:none;min-height:0;padding:6px 24px;gap:16px;flex-wrap:nowrap}
+.kiosk-brand img{width:96px;height:50px}.kiosk-brand span{font-size:9px}
+header p{font-size:15px}
+.kiosk-lang{display:flex;align-items:center;gap:8px;max-width:none}.kiosk-lang>span{display:none}
+.kiosk-lang input,.kiosk-lang select{width:190px;min-height:38px;margin:0;padding:6px 10px;font-size:13px}
+main{flex:1;min-height:0;width:100%;max-width:none;margin:0;padding:10px 24px 6px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto auto}
+.step{margin:0;font-size:11px}
+h1{font-size:26px;letter-spacing:-.5px;margin:2px 0 8px;line-height:1.2}h1 br{display:none}h1 span{font-size:16px;margin:0 0 0 12px}
+#select{min-height:0;display:flex;flex-direction:column}
+#select>.directions{flex:none;margin:0 0 10px;gap:10px}
+.directions button{min-height:0;padding:10px 16px;font-size:18px;border-radius:14px}.directions button small{font-size:12px;margin-top:2px}
+form#form{flex:1;min-height:0;grid-template-columns:1.15fr 1fr .85fr;grid-template-rows:repeat(9,min-content) minmax(0,1fr);gap:0 20px;padding:14px 18px;border-radius:18px;overflow:hidden}
+.currency-pane{grid-column:1;grid-row:1 / -1;min-height:0;display:flex;flex-direction:column;padding-right:18px}
+.currency-pane>label{margin:0 0 6px;font-size:15px}
+#currency-search{min-height:44px;padding:8px 12px}#currency{min-height:46px;margin-top:8px;font-size:14px;padding:8px 12px}
+.currency-shortcuts{flex:1;min-height:0;overflow-y:auto;align-content:start;margin-top:10px;gap:8px;-webkit-overflow-scrolling:touch}
+.currency-shortcuts button{min-height:62px;padding:8px 4px;font-size:16px}.currency-shortcuts button span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#rates{margin:0 0 8px;padding:8px 12px}#rates>div{min-width:0}#rates strong{font-size:18px}
+#amount-label,#receive-label{margin:0 0 4px;font-size:13px}
+#amount,#receive{height:54px;font-size:24px;padding:8px 14px}#amount{margin-bottom:8px}
+#estimate{margin:6px 0;font-size:12px;min-height:0}
+#payment-choice{margin-bottom:8px}#payment-choice label{margin:0 0 4px;font-size:13px}#payment-choice select{min-height:46px;padding:8px 12px;font-size:15px}#payment-choice .field-hint{margin:4px 0 0;font-size:11px}
+#review{min-height:56px;font-size:18px}
+.amount-keypad{grid-column:3;grid-row:1 / -1;margin:0;gap:8px;grid-template-rows:repeat(4,1fr);height:100%}
+.amount-keypad button{min-height:0;height:100%;font-size:30px;padding:0}
+#confirm,#done{min-height:0;max-width:none;width:100%;margin:0;padding:16px 24px;overflow:auto;-webkit-overflow-scrolling:touch}
+#confirm{display:grid;grid-template-columns:1fr 1fr;gap:0 24px;align-content:start}
+#confirm>h2,#confirm>p,#confirm>.directions{grid-column:1 / -1}#confirm>h2{margin:0 0 8px;font-size:22px}
+#confirm .order-identity,#confirm .quote{margin:8px 0}#confirm .directions{margin:8px 0 0}#confirm .directions button{min-height:56px}
+#done{columns:2 340px;column-gap:32px;column-fill:auto;text-align:center}
+#done>*{break-inside:avoid}#done h2{font-size:19px;margin:8px 0}#done>p{margin:6px 0;font-size:14px}
+.success{width:48px;height:48px;font-size:30px}#queue{font-size:36px;padding:6px 0}
+.order-identity{margin:8px 0;padding:10px 14px}.order-progress{margin:12px 0;gap:8px}.order-progress li{padding:10px 6px;font-size:14px}
+#next-customer{min-height:52px;margin-bottom:10px}.telegram-card{margin-top:12px;padding:12px;gap:14px}.telegram-card img{width:96px;height:96px}
+#error:not(:empty){margin:6px 0 0;padding:8px 12px;font-size:14px}
+footer{margin:4px 0 0;font-size:11px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+}
+
+/* Boarding-pass theme (owner request 2026-10-18), matching rate.xc-th.work: a cream ticket on a
+   night background, ticket-field labels, perforated tear lines, barcode stubs. CSS only. */
+:root{--pass-red:#a5003c;--pass-red-dark:#6e0028;--pass-paper:#fffdf8;--night:#17141c;--perf:#d8cfc4;--field:#7a7178}
+body.customer-kiosk{background:radial-gradient(ellipse at 15% 0,#3a1426 0,transparent 55%),var(--night)}
+body.customer-kiosk header{position:relative;background:var(--pass-paper);border-bottom:0;border-radius:0 0 22px 22px;box-shadow:0 10px 30px #0006}
+body.customer-kiosk header:after{content:"BOARDING PASS · บัตรแลกเงิน";position:absolute;left:0;right:0;bottom:0;height:22px;line-height:22px;padding-left:max(28px,4vw);font-size:10px;font-weight:800;letter-spacing:.32em;color:#ffe3ed;background:linear-gradient(90deg,var(--pass-red),var(--pass-red-dark));border-radius:0 0 22px 22px}
+body.customer-kiosk header{padding-bottom:30px}
+body.customer-kiosk main{position:relative;background:var(--pass-paper);border-radius:28px;box-shadow:0 24px 60px #0007;padding-top:22px;padding-bottom:12px}
+.step{display:inline-block;justify-self:start;width:max-content;background:var(--pass-red);color:#fff;border-radius:999px;padding:4px 12px;letter-spacing:.2em}
+h1 span{color:var(--field)}
+/* ticket field labels */
+.currency-pane>label,#amount-label,#receive-label,#payment-choice>label,.rates>div{text-transform:uppercase;letter-spacing:.14em;font-size:12px;font-weight:800;color:var(--field)}
+#amount,#receive{font-family:"SFMono-Regular",Menlo,Consolas,monospace;letter-spacing:.04em}
+form#form{background:#fff;border:1px solid #ece4da;box-shadow:none;position:relative}
+#select>.directions{position:relative;padding-top:16px;border-top:3px dashed var(--perf)}
+.directions button:not(.primary){border:1px solid #ece4da;background:#fff}
+#confirm .primary{background:linear-gradient(120deg,var(--pass-red),var(--pass-red-dark));color:#fff;border-color:var(--pass-red)}
+.directions button.selected{background:linear-gradient(120deg,var(--pass-red),var(--pass-red-dark));border-color:var(--pass-red)}
+.directions button bdi:after{content:"  ✈";opacity:.55;font-size:.8em}
+.currency-shortcuts button{border:1px dashed #e3d8cc;background:#fffaf3}
+.currency-shortcuts button.selected{border-style:solid}
+.amount-keypad button{background:#fffaf3;border:1px solid #ece4da;font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+#review{background:linear-gradient(120deg,var(--pass-red),var(--pass-red-dark));letter-spacing:.06em}
+/* review = boarding pass with a tear line and barcode */
+#confirm,#done{background:#fff;border:1px solid #ece4da;box-shadow:none;position:relative}
+#confirm>h2,#done>h2:first-of-type{text-transform:uppercase;letter-spacing:.12em;font-size:18px;color:var(--pass-red)}
+.quote{background:var(--pass-paper);border:1px solid #ece4da}
+.quote div{border-bottom:2px dashed #eadfd3}
+.quote div:last-child{font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+#quote:after,#done-summary:after{content:"";display:block;height:46px;margin-top:12px;background:repeating-linear-gradient(90deg,#1b1a1f 0 3px,transparent 3px 6px,#1b1a1f 6px 7px,transparent 7px 11px,#1b1a1f 11px 15px,transparent 15px 17px);opacity:.85}
+/* done = issued pass: queue shown like a gate / seat block */
+#queue{display:inline-block;border:2px dashed var(--pass-red);border-radius:16px;padding:8px 26px;background:var(--pass-paper);font-family:"SFMono-Regular",Menlo,Consolas,monospace}
+#queue:before{content:"QUEUE · คิว";display:block;font-family:Arial,sans-serif;font-size:11px;letter-spacing:.3em;color:var(--field);font-weight:800}
+.order-progress li{border-style:dashed}
+footer{color:var(--field)}
+@media (orientation:landscape) and (min-width:900px) and (max-height:1100px){
+body.customer-kiosk header{padding-bottom:26px}body.customer-kiosk header:after{height:18px;line-height:18px;font-size:9px}
+body.customer-kiosk main{margin:10px 14px 12px;width:auto;padding:12px 22px 6px}
+/* side notches on the tear line above the direction buttons */
+body.customer-kiosk main:before,body.customer-kiosk main:after{content:"";position:absolute;top:58px;width:26px;height:26px;border-radius:50%;background:var(--night)}
+body.customer-kiosk main:before{left:-13px}body.customer-kiosk main:after{right:-13px}
+#select>.directions{padding-top:12px}
+.step{padding:2px 10px;font-size:10px}
+#quote:after,#done-summary:after{height:36px;margin-top:8px}
+#queue{padding:4px 20px}
+}
+/* Top-demand currencies highlighted on /pricing (tourist statistics) */
+.currency-shortcuts button.featured{position:relative;border-color:var(--pass-red,#a5003c);box-shadow:inset 0 0 0 1px var(--pass-red,#a5003c)}
+.currency-shortcuts button.featured::after{content:'★';position:absolute;top:6px;right:10px;font-size:var(--xc-text-sm);color:var(--pass-red,#a5003c)}
+/* Queue position on the done screen; "your turn" pulses on phones that queued from the rate board QR. */
+.queue-ahead{margin:10px auto 6px;padding:14px 20px;max-width:560px;border-radius:var(--xc-radius-2xl);background:var(--xc-brand-50);color:var(--xc-brand-800);font-size:var(--xc-text-2xl);font-weight:700;line-height:1.35;text-align:center}
+.queue-ahead.turn{background:var(--xc-brand);color:var(--xc-on-brand);box-shadow:var(--xc-shadow-brand);animation:xc-turn 1.2s var(--xc-ease) infinite alternate}
+.keep-open{color:var(--xc-muted);font-size:var(--xc-text-sm)}
+@keyframes xc-turn{from{transform:scale(1)}to{transform:scale(1.03)}}
+@media (prefers-reduced-motion:reduce){.queue-ahead.turn{animation:none}}
+
+/* Compact customer entry on phones; retain the physical kiosk keypad on tablets. */
+@media (max-width:760px){
+  body.customer-kiosk header{padding:8px 16px 26px;gap:6px}
+  .kiosk-brand img{width:86px;height:48px}
+  .kiosk-lang input,.kiosk-lang select{min-width:0;min-height:44px;font-size:16px}
+  body.customer-kiosk main{margin:12px auto 20px;padding:16px 12px 8px;border-radius:var(--xc-radius-2xl)}
+  .step{max-width:100%;width:fit-content;letter-spacing:.04em;font-size:var(--xc-text-sm)}
+  h1{font-size:28px;letter-spacing:0;margin-bottom:12px}
+  h1 span{font-size:var(--xc-text-base);margin-top:4px}
+  #select>.directions{margin:10px 0 12px;padding-top:10px;gap:8px}
+  .directions button{min-width:0;min-height:84px;padding:16px 10px 10px;font-size:var(--xc-text-base);overflow-wrap:anywhere}
+  .directions button small{font-size:var(--xc-text-sm)}
+  form#form{padding:14px;border-radius:var(--xc-radius-2xl)}
+  .currency-pane{margin-bottom:12px}
+  #currency-search,#currency{min-height:48px;padding:10px 12px;font-size:16px}
+  #currency{margin-top:8px}
+  .currency-shortcuts{max-height:154px;overflow-y:auto;overscroll-behavior:contain;gap:8px;margin-top:10px;padding:4px}
+  .currency-shortcuts button{min-width:0;min-height:64px;padding:8px 4px;font-size:var(--xc-text-lg)}
+  .currency-shortcuts button span{overflow-wrap:anywhere;font-size:var(--xc-text-sm)}
+  #rates{padding:10px 12px;margin-bottom:12px}
+  #amount,#receive{min-width:0;height:56px;min-height:56px;padding:10px 12px;font-size:clamp(18px,5vw,26px);letter-spacing:0}
+  #amount-label,#receive-label,#payment-choice>label{letter-spacing:.03em;line-height:1.5}
+  #estimate{margin:6px 0 12px;overflow-wrap:anywhere}
+  #payment-choice{margin-bottom:12px}
+  #payment-choice select{min-height:48px;padding:10px 12px;font-size:16px}
+  #review{min-height:56px;letter-spacing:0}
+  #confirm,#done{padding:16px;min-width:0}
+  .quote{padding:12px;overflow-wrap:anywhere}
+  footer{margin:14px 0;font-size:var(--xc-text-sm);white-space:normal}
+}
+@media (max-width:600px){
+  /* The amount input already uses inputmode=decimal and remains editable. */
+  #amount-keypad{display:none}
+}
+/* Short landscape windows must scroll rather than clip payment and review controls. */
+@media (orientation:landscape) and (min-width:900px) and (max-height:740px){
+  html,body{height:auto;overflow:auto;overscroll-behavior:auto}
+  body{min-height:100dvh;height:auto}
+  main{flex:none;display:block}
+  form#form{min-height:440px;overflow:visible}
+  .currency-shortcuts{max-height:300px}
+}
+.kiosk-lang>span{color:var(--xc-muted)}
+
+/* Layout 2: UI only; retain all existing IDs, translations and event handlers. */
+body.customer-kiosk{background:var(--xc-gray-50);height:auto;min-height:100dvh;overflow:auto}
+body.customer-kiosk header{border-radius:0;box-shadow:none;border-bottom:1px solid var(--xc-line);padding:12px 24px}
+body.customer-kiosk header:after,body.customer-kiosk main:before,body.customer-kiosk main:after,#quote:after,#done-summary:after{display:none}
+body.customer-kiosk main{display:block;max-width:1440px;width:100%;margin:0 auto;padding:24px;background:transparent;border-radius:0;box-shadow:none}
+body.customer-kiosk .step{background:var(--xc-brand-50);color:var(--xc-brand);border:1px solid var(--xc-brand-200);border-radius:6px;letter-spacing:.03em;padding:4px 10px;max-width:100%;width:fit-content}
+body.customer-kiosk h1{font-size:30px;margin:10px 0 18px;letter-spacing:0;line-height:1.35}
+body.customer-kiosk h1 span{font-size:16px;margin:6px 0 0}
+body.customer-kiosk #select>.directions{border:0;padding:0;margin:0 0 18px;gap:0}
+body.customer-kiosk .directions button{min-height:64px;font-size:18px;border-radius:12px;padding:12px 18px}
+body.customer-kiosk .directions button bdi:after{display:none}
+body.customer-kiosk .directions button.selected{background:var(--xc-brand);color:var(--xc-on-brand)}
+body.customer-kiosk form#form{display:grid;grid-template-columns:1fr;gap:16px;padding:0;border:0;background:transparent;box-shadow:none;overflow:visible;min-height:0}
+body.customer-kiosk .currency-pane,body.customer-kiosk .layout-amount,body.customer-kiosk .layout-result{grid-column:auto;grid-row:auto;min-width:0;border:0;background:var(--xc-surface);padding:20px;border-radius:18px;margin:0}
+body.customer-kiosk .currency-pane{display:block}
+body.customer-kiosk .currency-pane>label,body.customer-kiosk #amount-label,body.customer-kiosk #receive-label,body.customer-kiosk #payment-choice>label{font-size:16px;letter-spacing:0;text-transform:none;margin:0 0 10px;color:var(--xc-muted)}
+body.customer-kiosk #amount,body.customer-kiosk #receive{width:100%;min-width:0;min-height:64px;height:64px;font-size:clamp(22px,2.6vw,36px);font-family:inherit;letter-spacing:0;padding:10px 12px;margin:0;font-variant-numeric:tabular-nums}
+body.customer-kiosk #amount{background:var(--xc-gray-50);border-color:var(--xc-brand);text-align:right}
+body.customer-kiosk #rates{background:transparent;padding:0;margin:12px 0 16px;border:0}
+body.customer-kiosk #rates>div{min-width:0;font-size:13px;letter-spacing:0;text-transform:none}
+body.customer-kiosk #rates strong{font-size:16px;overflow-wrap:anywhere}
+body.customer-kiosk .amount-keypad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(4,56px);gap:8px;height:auto;margin:16px 0 0}
+body.customer-kiosk .amount-keypad button{min-height:56px;height:auto;padding:0;background:var(--xc-gray-50);border:1px solid var(--xc-line);font:700 28px var(--xc-font-sans);border-radius:12px;touch-action:manipulation}
+body.customer-kiosk .currency-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));max-height:300px;overflow-y:auto;gap:10px;padding:4px;margin-top:16px}
+body.customer-kiosk .currency-shortcuts button{min-width:0;min-height:64px;background:var(--xc-gray-50);border:1px dashed var(--xc-line);padding:10px;font-size:18px}
+body.customer-kiosk .currency-shortcuts button.selected{background:var(--xc-brand-50);border:1px solid var(--xc-brand);color:var(--xc-brand)}
+body.customer-kiosk .currency-shortcuts button span{white-space:normal;overflow-wrap:anywhere;font-size:13px}
+body.customer-kiosk #currency-search,body.customer-kiosk #currency{width:100%;min-height:52px;font-size:16px;padding:10px 12px}
+body.customer-kiosk .layout-result{display:flex;flex-direction:column}
+body.customer-kiosk #receive-label{background:var(--xc-brand-50);border-radius:12px 12px 0 0;padding:16px 14px;margin:0}
+body.customer-kiosk #receive{background:var(--xc-brand-50);border:0;border-radius:0;color:var(--xc-brand);font-weight:800}
+body.customer-kiosk #estimate{background:var(--xc-brand-50);padding:12px 14px 18px;margin:0 0 24px;border-radius:0 0 12px 12px;font-size:14px;overflow-wrap:anywhere;color:var(--xc-muted)}
+body.customer-kiosk #payment-choice{margin:0 0 20px}
+body.customer-kiosk #payment-choice select{min-height:52px;padding:10px 12px;font-size:16px}
+body.customer-kiosk #payment-choice .field-hint,body.customer-kiosk #payment-instruction{font-size:14px;overflow-wrap:anywhere}
+body.customer-kiosk #review{margin-top:auto;min-height:58px;background:var(--xc-brand);font-size:18px;letter-spacing:0}
+body.customer-kiosk #confirm,body.customer-kiosk #done{max-width:1200px;padding:24px;border:0;border-radius:18px;overflow:visible;columns:auto;box-shadow:none}
+body.customer-kiosk #confirm{display:block}
+body.customer-kiosk #confirm h2,body.customer-kiosk #done h2{font-size:22px;letter-spacing:0;text-transform:none}
+body.customer-kiosk .quote{background:var(--xc-surface);border:0;padding:12px 0}
+body.customer-kiosk .quote div{border-bottom:1px dashed var(--xc-brand-200);font-size:18px;overflow-wrap:anywhere}
+body.customer-kiosk .quote div:last-child{font-family:inherit;color:var(--xc-brand);font-size:24px}
+body.customer-kiosk #done{background:transparent;text-align:start}
+body.customer-kiosk .layout-ticket,body.customer-kiosk .layout-next,body.customer-kiosk .layout-summary{min-width:0;background:var(--xc-surface);border-radius:18px;padding:24px;margin-bottom:16px}
+body.customer-kiosk .layout-ticket{text-align:center;border-bottom:2px dashed var(--xc-brand-200)}
+body.customer-kiosk #queue{display:block;font-size:clamp(48px,8vw,100px);border:0;background:transparent;padding:12px 0;overflow-wrap:anywhere}
+body.customer-kiosk #queue:before{display:none}
+body.customer-kiosk .queue-ahead{font-size:22px}
+body.customer-kiosk .queue-ahead.turn{background:var(--xc-green-700);color:var(--xc-on-brand);animation:none}
+body.customer-kiosk .layout-ticket:has(.queue-ahead.turn) #queue{color:var(--xc-green-700)}
+body.customer-kiosk footer{white-space:normal;overflow:visible;font-size:13px;margin:20px 0}
+@media(min-width:900px) and (orientation:landscape){
+ body.customer-kiosk form#form{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr) minmax(0,1fr);grid-template-rows:auto;align-items:stretch}
+ body.customer-kiosk .layout-amount{grid-column:1;grid-row:1}
+ body.customer-kiosk .currency-pane{grid-column:2;grid-row:1}
+ body.customer-kiosk .layout-result{grid-column:3;grid-row:1}
+ body.customer-kiosk .currency-shortcuts{grid-template-columns:1fr;max-height:310px}
+ body.customer-kiosk #select>.directions{max-width:600px;margin-inline-start:auto}
+ body.customer-kiosk #done{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
+ body.customer-kiosk .layout-ticket{grid-column:1;grid-row:1 / span 2}
+ body.customer-kiosk .layout-next,body.customer-kiosk .layout-summary{grid-column:2;margin:0}
+ body.customer-kiosk #done>.telegram-card,body.customer-kiosk #customer-receipt{grid-column:1/-1}
+ body.customer-kiosk #quote{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px 24px}
+ body.customer-kiosk #quote div{display:flex;flex-direction:column;gap:8px}
+}
+@media(max-width:600px){
+ body.customer-kiosk main{padding:16px 12px}
+ body.customer-kiosk .amount-keypad{display:none}
+ body.customer-kiosk .directions button{font-size:16px;padding:12px 8px}
+ body.customer-kiosk #confirm .directions{flex-direction:column}
+ body.customer-kiosk #confirm,body.customer-kiosk #done{padding:16px 0}
+}
+/* Separate the subtitle from the heading without changing translated copy. */
+body.customer-kiosk h1 span{display:block}
+
+/* Compact screen fit: let content determine card height, never reserve empty rows. */
+body.customer-kiosk main{max-width:none;padding:12px 16px}
+body.customer-kiosk header{padding:8px 16px;gap:12px;min-height:0}
+body.customer-kiosk .kiosk-brand img{width:92px;height:52px}
+body.customer-kiosk h1{font-size:26px;margin:6px 0 10px}
+body.customer-kiosk h1 span{font-size:14px;margin-top:4px}
+body.customer-kiosk form#form{gap:12px;align-items:start}
+body.customer-kiosk .currency-pane,body.customer-kiosk .layout-amount,body.customer-kiosk .layout-result{padding:14px;border-radius:14px}
+body.customer-kiosk #select>.directions{margin-bottom:12px}
+body.customer-kiosk .directions button{min-height:54px;padding:8px 12px;font-size:16px}
+body.customer-kiosk .directions button small{font-size:12px}
+body.customer-kiosk #rates{margin:0 0 10px}
+body.customer-kiosk #amount-label,body.customer-kiosk .currency-pane>label,body.customer-kiosk #payment-choice>label{margin-bottom:6px;font-size:15px}
+body.customer-kiosk #amount,body.customer-kiosk #receive{height:56px;min-height:56px;font-size:clamp(20px,2.5vw,32px)}
+body.customer-kiosk #receive-label{padding:12px 12px 4px;font-size:15px}
+body.customer-kiosk #estimate{padding:4px 12px 12px;margin-bottom:14px;font-size:13px}
+body.customer-kiosk #payment-choice{margin:0 0 10px}
+body.customer-kiosk #payment-choice .field-hint,body.customer-kiosk #payment-instruction{margin:6px 0;font-size:13px}
+body.customer-kiosk #payment-instruction:empty{display:none}
+body.customer-kiosk #review{margin-top:0;min-height:52px}
+body.customer-kiosk .amount-keypad{margin-top:10px;gap:6px;grid-template-rows:repeat(4,48px)}
+body.customer-kiosk .amount-keypad button{min-height:48px;font-size:26px}
+body.customer-kiosk .currency-shortcuts{margin-top:10px;gap:8px;max-height:240px}
+body.customer-kiosk .currency-shortcuts button{min-height:56px;padding:8px}
+body.customer-kiosk #currency-search,body.customer-kiosk #currency,body.customer-kiosk #payment-choice select{min-height:48px;padding:8px 10px}
+body.customer-kiosk #currency{margin-top:8px}
+body.customer-kiosk footer{margin:10px 0 0;font-size:12px}
+body.customer-kiosk #confirm,body.customer-kiosk #done{max-width:none;padding:16px}
+body.customer-kiosk .layout-ticket,body.customer-kiosk .layout-next,body.customer-kiosk .layout-summary{padding:16px;margin-bottom:12px}
+@media(min-width:900px) and (orientation:landscape){
+ body.customer-kiosk main:has(#select:not([hidden])){display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,1fr);gap:4px 16px}
+ body.customer-kiosk main:has(#select:not([hidden]))>.step{grid-column:1;grid-row:1}
+ body.customer-kiosk main:has(#select:not([hidden]))>h1{grid-column:1;grid-row:2;margin:0 0 10px}
+ body.customer-kiosk #select{display:contents}
+ body.customer-kiosk #select>.directions{grid-column:2;grid-row:1 / span 2;align-self:center;width:100%;max-width:none;margin:0 0 10px}
+ body.customer-kiosk form#form,body.customer-kiosk #error,body.customer-kiosk footer{grid-column:1/-1}
+ body.customer-kiosk form#form{align-items:start}
+}
+@media(min-width:600px) and (max-width:899px){
+ body.customer-kiosk form#form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+ body.customer-kiosk .currency-pane{grid-column:1/-1}
+ body.customer-kiosk .currency-shortcuts{grid-template-columns:repeat(3,minmax(0,1fr));max-height:140px}
+ body.customer-kiosk .layout-amount{grid-column:1}
+ body.customer-kiosk .layout-result{grid-column:2}
+}
+@media(max-width:599px){
+ body.customer-kiosk main{padding:10px}
+ body.customer-kiosk header{padding:8px 10px}
+ body.customer-kiosk .kiosk-brand img{width:76px;height:44px}
+ body.customer-kiosk h1{font-size:24px}
+ body.customer-kiosk form#form{gap:8px}
+ body.customer-kiosk .currency-pane,body.customer-kiosk .layout-amount,body.customer-kiosk .layout-result{padding:12px}
+ body.customer-kiosk .currency-shortcuts{max-height:76px}
+ body.customer-kiosk #receive{font-size:26px}
+}
+@media(min-width:900px) and (orientation:landscape){
+ body.customer-kiosk main:has(#select:not([hidden])){grid-template-rows:auto auto auto auto auto;align-content:start;flex:none}
+}
+/* Currency tiles: flag + ISO code, with full localized names kept for assistive technology. */
+body.customer-kiosk .currency-shortcuts button{display:flex;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:wrap;text-align:start;padding:10px 14px}
+body.customer-kiosk .currency-shortcuts button .currency-flag{display:inline-flex;align-items:center;justify-content:center;flex:0 0 40px;width:40px;height:40px;margin:0;font-size:32px;line-height:1;font-family:'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji',sans-serif}
+body.customer-kiosk .currency-shortcuts button bdi{font-size:20px}
+body.customer-kiosk .currency-shortcuts button small{flex-basis:100%;font-size:12px;margin:0}
+@media(max-width:599px){body.customer-kiosk .currency-shortcuts button{gap:6px;padding:8px;justify-content:center}body.customer-kiosk .currency-shortcuts button .currency-flag{flex-basis:30px;width:30px;height:30px;font-size:26px}body.customer-kiosk .currency-shortcuts button bdi{font-size:17px}}

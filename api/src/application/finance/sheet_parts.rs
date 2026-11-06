@@ -60,10 +60,9 @@ impl SheetPartsPort for SheetParts {
             let count_rows = sqlx::query(
                 "SELECT c.id, c.kind, c.counted_by, c.verified_by \
                  FROM cash_counts c \
-                 JOIN branches b ON b.id = c.branch_id \
                  WHERE c.branch_id = $1 \
                    AND c.verified_at IS NOT NULL \
-                   AND (c.counted_at AT TIME ZONE b.timezone)::date = $2 \
+                   AND c.business_date = $2 \
                  ORDER BY c.counted_at ASC, c.id ASC",
             )
             .bind(branch.as_str())

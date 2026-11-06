@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../app/app.dart';
+import '../../../../shared/ui/version_stamp.dart';
 import '../controllers/queue_machine_controller.dart';
 import 'issued_page.dart';
 import 'scanner_page.dart';
@@ -142,6 +143,10 @@ class _QueueMachineHomePageState extends ConsumerState<QueueMachineHomePage> {
                     QmScreen.scanner => const ScannerPage(),
                     QmScreen.issued => const IssuedPage(),
                   },
+                  if (s.screen != QmScreen.signIn) ...[
+                    const SizedBox(height: 16),
+                    const VersionStamp(),
+                  ],
                 ],
               ),
             ),

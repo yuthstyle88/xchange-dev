@@ -32,3 +32,11 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ── Look 2026-11-05 ── */
+.xc-admin .xc-content.xc-content .approve-results {
+  margin: 0 16px;
+  border-color: var(--line);
+  border-radius: 12px;
+  background: #fff;
+}

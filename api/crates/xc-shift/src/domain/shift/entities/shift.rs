@@ -1,6 +1,6 @@
 //! Shift entity.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use xc_kernel::ids::BranchId;
 
 use crate::domain::shift::value_objects::balances::Balances;
@@ -28,4 +28,9 @@ pub struct Shift {
     pub note: String,
     pub open_request_id: String,
     pub close_request_id: Option<String>,
+    /// The template the teller opened as (configurable-shifts.md §2.3); `None` before the feature.
+    pub template_id: Option<String>,
+    /// The template's name at opening.
+    pub template_name: Option<String>,
+    pub business_date: NaiveDate,
 }

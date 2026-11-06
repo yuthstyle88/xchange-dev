@@ -18,6 +18,7 @@ import {
   modeLabel,
   tierSetSourceLabel,
 } from './pricing-labels';
+import { rateAt, rowDigits } from './pricing-format';
 import './pricing-mode.css';
 
 export interface PricingModeProps {
@@ -147,7 +148,7 @@ export function PricingMode(props: PricingModeProps): JSX.Element {
                     <div class="pricing-mode-tier">
                       <span class="pricing-mode-tier-label">{t('tier', { n: tier.tierNo })}</span>
                       <span class="pricing-mode-tier-rates">
-                        {tier.buy ?? '—'} / {tier.sell ?? '—'}
+                        {rateAt(tier.buy, rowDigits(props.row))} / {rateAt(tier.sell, rowDigits(props.row))}
                       </span>
                     </div>
                   )}

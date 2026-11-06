@@ -34,6 +34,10 @@ pub enum ShiftError {
     DifferenceNeedsNote,
     #[error("ไม่พบผู้เปิดกะในรายชื่อผู้ใช้")]
     TellerUnknown,
+    #[error("ขณะนี้อยู่นอกเวลากะที่เลือก กรุณาเลือกกะที่ตรงกับเวลาปัจจุบัน")]
+    OutsideShiftWindow,
+    #[error("กรุณาเลือกกะก่อนเปิดกะ")]
+    ShiftNotChosen,
 }
 
 impl From<ShiftError> for pos_error::AppError {

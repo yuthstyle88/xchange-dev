@@ -34,7 +34,9 @@ use xc_kiosk::application::kiosk::service::KioskService;
 use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::rate::bot_rate_source::BotRateSource;
 use xc_shift::application::shift::service::ShiftService;
+use xc_shift::application::shift_plan::service::ShiftPlanService;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::attach_referral::capture_service_for_pool;
 use super::commands::make_approval_service;
@@ -111,7 +113,9 @@ pub struct TransactionCreateInput {
     pub staff_draft_id: Option<String>,
     pub passport: UploadRef,
     pub payment: TransactionPaymentInput,
-    pub value_date: String,
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub value_date: Option<String>,
     #[serde(default)]
     pub notes: String,
     #[serde(default)]
@@ -190,6 +194,7 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
             "idempotencyConflict" => ("idempotencyConflict", StatusCode::CONFLICT),
             "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
             "countFirst" => ("countFirst", StatusCode::CONFLICT),
+            "dayClosed" => ("dayClosed", StatusCode::CONFLICT),
             _ => ("validationFailed", StatusCode::BAD_REQUEST),
         }
     };
@@ -317,13 +322,15 @@ pub(crate) fn save_steps(state: &AppState) -> Vec<Arc<dyn SaveStep>> {
 pub struct TransactionCreateCommand {
     service: CreateTransaction,
     store: PgTransactionStore,
+    branch_tx: BranchTx,
 }
 
 impl TransactionCreateCommand {
     pub fn new(pool: PgPool, files: FileService) -> Self {
         Self {
             service: CreateTransaction::new(pool.clone(), files),
-            store: PgTransactionStore::new(pool),
+            store: PgTransactionStore::new(pool.clone()),
+            branch_tx: BranchTx::new(Transactor::new(pool)),
         }
     }
 }
@@ -357,8 +364,20 @@ impl CommandAction for TransactionCreateCommand {
         let paid_at = DateTime::parse_from_rfc3339(&input.payment.paid_at)
             .map(|at| at.with_timezone(&Utc))
             .map_err(|_| invalid("payment.paidAt", "invalid paidAt"))?;
-        let value_date = NaiveDate::parse_from_str(&input.value_date, "%Y-%m-%d")
-            .map_err(|_| invalid("valueDate", "invalid valueDate"))?;
+        let now = Utc::now();
+        let value_date = match input.value_date {
+            Some(ref s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| invalid("valueDate", "invalid valueDate"))?,
+            None => {
+                let plan =
+                    ShiftPlanService::new(Arc::new(PgShiftTemplateStore), self.branch_tx.clone())
+                        .plan_in(tx, branch)
+                        .await
+                        .map_err(refusal)?;
+                plan.business_date_of(now)
+                    .unwrap_or_else(|| now.with_timezone(&plan.timezone()).date_naive())
+            }
+        };
         input::text(
             "payment.reference",
             &input.payment.reference,
@@ -392,13 +411,7 @@ impl CommandAction for TransactionCreateCommand {
         };
         let made = self
             .service
-            .run_with_ticket_in(
-                tx,
-                req,
-                input.queue_ticket_id,
-                &save_actor(who)?,
-                Utc::now(),
-            )
+            .run_with_ticket_in(tx, req, input.queue_ticket_id, &save_actor(who)?, now)
             .await
             .map_err(refusal)?;
         if let Some(ref shift_id) = made.shift_id {

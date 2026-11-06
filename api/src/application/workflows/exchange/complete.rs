@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Days, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
 use pos_infra::transactions::Transactor;
 use rust_decimal::Decimal;
@@ -42,6 +42,7 @@ use xc_queue::domain::repository::QueueRepository;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 use xc_shift::domain::shift::value_objects::shift_error::ShiftError;
 
+use super::business_day::BusinessDayEnd;
 use super::create::check_valid_in;
 use crate::application::workflows::save_step::{
     BookingClaim, SaveActor, SaveContext, SaveExtras, SaveStep,
@@ -68,6 +69,7 @@ pub struct CompletedExchange {
 }
 
 pub struct CompleteExchange {
+    pool: PgPool,
     store: PgTransactionStore,
     quotes: PgQuoteRepository,
     saved: PgTransactionRepository,
@@ -146,31 +148,26 @@ fn legs(t: &ExchangeTransaction, place: CashPlace) -> AppResult<Vec<PostingReque
 
 /// The branch's name (printed on the receipt) and the end of `business_date` in its timezone (reversal R-1).
 async fn branch_day_in(
+    pool: &PgPool,
     tx: &mut Transaction<'_, Postgres>,
     branch: &BranchId,
     business_date: NaiveDate,
 ) -> AppResult<(String, DateTime<Utc>)> {
-    let row: Option<(String, String)> =
-        sqlx::query_as("SELECT name, timezone FROM branches WHERE id = $1")
-            .bind(branch.as_str())
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(AppError::Database)?;
-    let Some((name, timezone)) = row else {
+    let name: Option<String> = sqlx::query_scalar("SELECT name FROM branches WHERE id = $1")
+        .bind(branch.as_str())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(AppError::Database)?;
+    let Some(name) = name else {
         return Err(AppError::Internal(format!(
             "branch {} does not exist",
             branch.as_str()
         )));
     };
-    let tz: chrono_tz::Tz = timezone
-        .parse()
-        .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
-    let end = business_date
-        .checked_add_days(Days::new(1))
-        .and_then(|d| d.and_hms_opt(0, 0, 0))
-        .and_then(|d| tz.from_local_datetime(&d).earliest())
-        .ok_or_else(|| AppError::Internal(format!("the end of {business_date}")))?;
-    Ok((name, end.with_timezone(&Utc)))
+    let end = BusinessDayEnd::new(pool.clone())
+        .of_in(tx, branch, business_date)
+        .await?;
+    Ok((name, end))
 }
 
 impl CompleteExchange {
@@ -198,8 +195,9 @@ impl CompleteExchange {
             postings,
             steps,
             effects,
-            audit: PgAuditLog::new(pool),
+            audit: PgAuditLog::new(pool.clone()),
             walk_in: WalkInDesk::new(issuer, desk, repo, status),
+            pool,
         }
     }
 
@@ -239,7 +237,7 @@ impl CompleteExchange {
             .collect();
         self.store.record_line_costs_in(tx, id, &costs).await?;
 
-        let (branch_name, _) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
+        let (branch_name, _) = branch_day_in(&self.pool, tx, &t.branch_id, t.value_date).await?;
         let names = xc_auth::application::user::directory::user_names(
             &mut **tx,
             std::slice::from_ref(&t.staff_id),
@@ -333,7 +331,8 @@ impl CompleteExchange {
         }
 
         // 5a. Consume the quote's stock reservations, before the posting (B05 D-5; Blueprint §09 order)
-        let (branch_name, reversible_until) = branch_day_in(tx, &t.branch_id, t.value_date).await?;
+        let (branch_name, reversible_until) =
+            branch_day_in(&self.pool, tx, &t.branch_id, t.value_date).await?;
         let facts = ExchangeCompletedFacts {
             organization_id: t.organization_id,
             branch_id: t.branch_id.clone(),

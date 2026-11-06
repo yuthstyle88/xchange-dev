@@ -516,10 +516,14 @@ Cloudflare connects to the customer host over HTTPS (origin TLS on port 443 with
 Build the Flutter web client in release mode:
 
 ```bash
-cd app && flutter build web --release
+cd app && flutter build web --release \
+  --dart-define=APP_VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)" \
+  --dart-define=BUILD_SHA="$(git rev-parse --short HEAD)" \
+  --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  --dart-define=CHANNEL=staging
 ```
 
-The output bundle is generated in `app/build/web/`.
+Use `CHANNEL=staging` for `xc-v3` (which reports `staging`), and `CHANNEL=release` only for a production host (`APP_ENVIRONMENT=production`). The output bundle is generated in `app/build/web/`.
 
 ---
 

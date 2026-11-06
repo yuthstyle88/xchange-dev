@@ -11,6 +11,7 @@
 
 mod compat_common;
 mod save_common;
+mod shift_date_common;
 mod snapshot_common;
 
 use std::str::FromStr;
@@ -368,6 +369,7 @@ async fn the_compat_saved_exchange_gives_todays_map() {
     cmd.staff = "owner".to_owned();
     cmd.reference_rate = Some("32.95".to_owned());
     cmd.value_date = "2026-11-01".to_owned();
+    shift_date_common::date_open_shifts(&shop.pool, MAIN, &cmd.value_date).await;
     let saved = shop.save(MAIN, cmd, at(20)).await.expect("the compat save");
 
     let sources = sources(&shop);

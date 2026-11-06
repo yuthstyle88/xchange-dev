@@ -15,6 +15,7 @@ use crate::domain::shift::entities::shift::{Shift, ShiftStatus};
 use crate::domain::shift::entities::shift_ledger::ShiftLedger;
 use crate::domain::shift::repositories::shift_repository::ShiftRepository;
 use crate::domain::shift::value_objects::balances::Balances;
+use crate::domain::shift::value_objects::opened_as::OpenedAs;
 use crate::domain::shift::value_objects::shift_error::ShiftError;
 use crate::domain::shift::value_objects::stock_delta::{StockDelta, StockError};
 use crate::infrastructure::shift::shift_repository::PgShiftRepository;
@@ -140,6 +141,9 @@ impl<R: ShiftRepository> ShiftService<R> {
         Ok(shift_id)
     }
 
+    /// Opens the teller's shift as `opened_as` (configurable-shifts.md §2.3): the row records the template, its
+    /// name and the business date.
+    #[allow(clippy::too_many_arguments)]
     pub async fn open_on_verified(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -147,6 +151,7 @@ impl<R: ShiftRepository> ShiftService<R> {
         teller_id: &str,
         count_id: &str,
         opening: &[(String, Decimal)],
+        opened_as: &OpenedAs,
         now: DateTime<Utc>,
     ) -> AppResult<Shift> {
         let existing_open: i64 = sqlx::query_scalar(
@@ -161,16 +166,21 @@ impl<R: ShiftRepository> ShiftService<R> {
         }
 
         let id = format!("SH-{}", uuid::Uuid::new_v4());
-        sqlx::query(
-            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id) \
-             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $4::uuid)",
+        let business_date: chrono::NaiveDate = sqlx::query_scalar(
+            "INSERT INTO shifts (id, branch_id, status, opened_at, opened_by, close_note, open_request_id, teller_id, \
+             template_id, template_name, business_date) \
+             VALUES ($1, $2, 'OPEN', $3, $4, '', $5, $4::uuid, $6::uuid, $7, $8) \
+             RETURNING business_date",
         )
         .bind(&id)
         .bind(branch.as_str())
         .bind(now)
         .bind(teller_id)
         .bind(count_id)
-        .execute(&mut **tx)
+        .bind(&opened_as.template_id)
+        .bind(&opened_as.template_name)
+        .bind(opened_as.business_date)
+        .fetch_one(&mut **tx)
         .await?;
 
         self.lifecycle.on_opened(tx, branch, teller_id, now).await?;
@@ -211,6 +221,9 @@ impl<R: ShiftRepository> ShiftService<R> {
             note: String::new(),
             open_request_id: count_id.to_owned(),
             close_request_id: None,
+            template_id: opened_as.template_id.clone(),
+            template_name: opened_as.template_name.clone(),
+            business_date,
         })
     }
 

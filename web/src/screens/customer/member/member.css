@@ -41,7 +41,7 @@
 
 .xc-member-retry-btn {
   padding: 0.5rem 1rem;
-  border-radius: 0.375rem;
+  border-radius: var(--xc-radius-lg);
   cursor: pointer;
 }
 
@@ -56,7 +56,9 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--xc-radius-card);
+  background: var(--xc-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-member-not-member-title {
@@ -74,7 +76,12 @@
   flex-direction: column;
   gap: 0.375rem;
   padding: 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--xc-radius-card);
+  background: var(--xc-card);
+  box-shadow: var(--xc-shadow-card);
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  box-shadow: var(--xc-shadow-brand);
 }
 
 .xc-member-tier-label {
@@ -82,7 +89,7 @@
 }
 
 .xc-member-tier-value {
-  font-size: 1.5rem;
+  font-size: 1.75rem;
   font-weight: 700;
 }
 
@@ -96,7 +103,9 @@
   flex-direction: column;
   gap: 0.75rem;
   padding: 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--xc-radius-card);
+  background: var(--xc-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-member-points-unavailable {
@@ -118,17 +127,23 @@
 
 .xc-member-points-label {
   font-size: 0.875rem;
+  color: var(--xc-text-muted);
 }
 
 .xc-member-points-value {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
   font-weight: 700;
+  color: var(--xc-brand);
 }
 
 .xc-member-expiry {
   padding: 0.75rem 1rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
+  background: var(--xc-warning-bg);
+  border: 1px solid var(--xc-warning-border);
+  color: var(--xc-warning-text);
+  border-radius: var(--xc-radius-lg);
 }
 
 .xc-member-progress {
@@ -136,7 +151,9 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 1.25rem;
-  border-radius: 0.5rem;
+  border-radius: var(--xc-radius-card);
+  background: var(--xc-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-member-progress-title {

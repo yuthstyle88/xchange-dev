@@ -3,6 +3,7 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
 import { locale, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import './member.css';
 
@@ -23,14 +24,17 @@ function formatDate(iso: string): string {
 export function MemberScreen(): JSX.Element {
   const [loading, setLoading] = createSignal(true);
   const [errorMsg, setErrorMsg] = createSignal<string | null>(null);
+  const [signedOut, setSignedOut] = createSignal(false);
   const [data, setData] = createSignal<MyMembershipData | null>(null);
 
   const loadData = async () => {
     setLoading(true);
     setErrorMsg(null);
+    setSignedOut(false);
     try {
       setData(await api.viewBare<MyMembershipData>('my_membership'));
     } catch (err) {
+      setSignedOut(isSignedOut(err));
       const message =
         err instanceof ApiError && err.code === 'outOfScope' ? t('outOfScope') : wordedError(err);
       setErrorMsg(message);
@@ -64,7 +68,10 @@ export function MemberScreen(): JSX.Element {
         </div>
       </Show>
 
-      <Show when={!loading() && errorMsg()}>
+      <Show when={!loading() && signedOut() && errorMsg()}>
+        {(msg) => <SignInNeeded message={msg()} />}
+      </Show>
+      <Show when={!loading() && !signedOut() && errorMsg()}>
         {(msg) => (
           <div class="xc-member-error" role="alert">
             <p class="xc-member-error-message">{msg()}</p>

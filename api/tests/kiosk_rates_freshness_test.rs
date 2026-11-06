@@ -165,6 +165,10 @@ async fn rates_appends_freshness_after_every_v2_key() {
         "paymentMethods",
         "simulation",
         "freshness",
+        // restated 2026-11-05 (the kiosk swap): `ask`, `popular` and `screen` follow freshness
+        "ask",
+        "popular",
+        "screen",
     ];
     let mut last = 0;
     for key in order {

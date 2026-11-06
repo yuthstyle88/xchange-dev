@@ -898,6 +898,9 @@ fn first_shift_open() -> Shift {
         note: String::new(),
         open_request_id: "00000000-0000-4000-8000-0000000a0002".to_string(),
         close_request_id: None,
+        template_id: None,
+        template_name: None,
+        business_date: chrono::NaiveDate::from_ymd_opt(2026, 10, 6).expect("date"),
     }
 }
 

@@ -1,6 +1,6 @@
 //! PostgreSQL implementation of CashRepository.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use futures::future::BoxFuture;
 use pos_error::AppResult;
 use rust_decimal::Decimal;
@@ -44,6 +44,8 @@ struct CashCountDbRow {
     rejected_by: Option<uuid::Uuid>,
     rejected_at: Option<DateTime<Utc>>,
     reject_reason: Option<String>,
+    shift_template_id: Option<uuid::Uuid>,
+    business_date: NaiveDate,
 }
 
 impl CashCountDbRow {
@@ -70,6 +72,8 @@ impl CashCountDbRow {
                 }),
                 _ => None,
             },
+            shift_template_id: self.shift_template_id.map(|u| u.to_string()),
+            business_date: Some(self.business_date),
         }
     }
 }
@@ -115,7 +119,7 @@ impl CashRepository for PgCashRepository {
             let row: Option<CashCountDbRow> = sqlx::query_as(
                 "SELECT id, organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
                         verified_by, verified_at, note, idempotency_key, created_at, updated_at, \
-                        rejected_by, rejected_at, reject_reason \
+                        rejected_by, rejected_at, reject_reason, shift_template_id, business_date \
                  FROM cash_counts WHERE id = $1",
             )
             .bind(id)
@@ -136,7 +140,7 @@ impl CashRepository for PgCashRepository {
             let row: Option<CashCountDbRow> = sqlx::query_as(
                 "SELECT id, organization_id, branch_id, shift_id, kind, counted_by, counted_at, \
                         verified_by, verified_at, note, idempotency_key, created_at, updated_at, \
-                        rejected_by, rejected_at, reject_reason \
+                        rejected_by, rejected_at, reject_reason, shift_template_id, business_date \
                  FROM cash_counts WHERE branch_id = $1 AND idempotency_key = $2",
             )
             .bind(branch.as_str())
@@ -158,8 +162,9 @@ impl CashRepository for PgCashRepository {
         Box::pin(async move {
             sqlx::query(
                 "INSERT INTO cash_counts (id, organization_id, branch_id, shift_id, kind, \
-                        counted_by, counted_at, note, idempotency_key, created_at, updated_at) \
-                 VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7, $8, $9, $10, $10)",
+                        counted_by, counted_at, note, idempotency_key, created_at, updated_at, \
+                        shift_template_id, business_date) \
+                 VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7, $8, $9, $10, $10, $11::uuid, $12)",
             )
             .bind(&count.id)
             .bind(&count.organization_id)
@@ -171,6 +176,8 @@ impl CashRepository for PgCashRepository {
             .bind(&count.note)
             .bind(&count.idempotency_key)
             .bind(count.created_at)
+            .bind(&count.shift_template_id)
+            .bind(count.business_date)
             .execute(&mut **tx)
             .await?;
 

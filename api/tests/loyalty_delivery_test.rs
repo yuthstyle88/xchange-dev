@@ -23,6 +23,7 @@
 
 mod common;
 mod quote_common;
+mod shift_plan_common;
 
 use std::collections::{BTreeMap, VecDeque};
 use std::str::FromStr;
@@ -685,13 +686,14 @@ async fn an_earn_is_posted_signed_with_its_key_and_the_designs_body_and_turns_de
         json!("2026-10-07"),
         "the completion date in the branch timezone (Bangkok), not the UTC date"
     );
+    // CS-20 (configurable-shifts.md §2.10, restated by claude/35271802): the end of the business day is the end of the
+    // shift plan's service span, 06:00 the next morning with the defaults, no longer local midnight.
     let until = instant(&data["reversibleUntil"]).with_timezone(&Bangkok);
     assert!(
-        until.date_naive() == NaiveDate::from_ymd_opt(2026, 10, 7).unwrap()
-            && until.hour() == 23
-            && until.minute() == 59
-            || until.date_naive() == NaiveDate::from_ymd_opt(2026, 10, 8).unwrap()
-                && until.num_seconds_from_midnight() == 0,
+        until.date_naive() == NaiveDate::from_ymd_opt(2026, 10, 8).unwrap()
+            && until.hour() == 6
+            && until.minute() == 0
+            && until.second() == 0,
         "reversibleUntil is the end of the business day in Bangkok (D-7), got {until}"
     );
     assert_eq!(
@@ -1052,8 +1054,8 @@ async fn an_earn_at_an_asia_tokyo_branch_sets_reversible_until_to_end_of_tokyo_b
     assert_eq!(instant(&data["completedAt"]), at(COMPLETED_AT));
     assert_eq!(
         instant(&data["reversibleUntil"]),
-        at("2026-10-07T15:00:00Z"),
-        "end of 2026-10-07 in Asia/Tokyo (UTC+9) is 2026-10-07T15:00:00Z"
+        at("2026-10-07T21:00:00Z"),
+        "CS-20: the 2026-10-07 business day in Asia/Tokyo (UTC+9) ends at the plan's 06:00 cutover, 2026-10-07T21:00:00Z"
     );
     w.finish().await;
 }
@@ -1077,8 +1079,8 @@ async fn an_earn_at_a_europe_london_branch_sets_reversible_until_to_end_of_londo
     assert_eq!(instant(&data["completedAt"]), at(COMPLETED_AT));
     assert_eq!(
         instant(&data["reversibleUntil"]),
-        at("2026-10-07T23:00:00Z"),
-        "end of 2026-10-07 in Europe/London (BST, UTC+1) is 2026-10-07T23:00:00Z"
+        at("2026-10-08T05:00:00Z"),
+        "CS-20: the 2026-10-07 business day in Europe/London (BST, UTC+1) ends at the plan's 06:00 cutover, 2026-10-08T05:00:00Z"
     );
     w.finish().await;
 }
@@ -1089,6 +1091,14 @@ async fn an_earn_in_a_zone_with_a_dst_transition_at_midnight_uses_earliest_insta
     // America/Havana transitions at local midnight (00:00); on 2026-11-01 00:00:00 local is ambiguous (-04:00 then -05:00).
     w.db.exec("UPDATE branches SET timezone = 'America/Havana' WHERE id = 'MAIN'")
         .await;
+    // CS-20 (restated by claude/35271802): the business day now ends at the plan's cutover, so MAIN gets a plan whose
+    // cutover is midnight; the ambiguous 00:00 stays the case under test.
+    shift_plan_common::set_plan(
+        &w.db.pool,
+        "MAIN",
+        &[("D", "00:00", "12:00"), ("N", "12:00", "00:00")],
+    )
+    .await;
     let customer = w.customer(&[(PHONE, Phone::ActiveVerified)]).await;
     let x = w.exchange(&customer).await;
     w.db.exec(&format!(

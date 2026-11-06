@@ -16,6 +16,7 @@ import type { CountRejectInput, CountRejected } from '../../../shared/api/genera
 import type { HandoverPendingRow } from '../../../shared/api/generated/handovers_pending';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
+import type { OpenShiftChoice } from '../../../shared/api/generated/open_shift_choices';
 import { formatFaceValue } from '../../../shared/ui/currency-count/face-value';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
@@ -23,8 +24,11 @@ import { command } from '../parts/command';
 import { countDifferences, CountForm, CountWaitingLine } from './CountForm';
 import { countsToVerify, formatCountTime, myWaitingCloseCount, myWaitingOpenCount } from './counts';
 import { th, en } from './i18n';
+import { ShiftPicker, shiftChosenOrUnneeded } from './ShiftPicker';
 import { createWaitingCounts } from './waiting-counts';
 import './shift.css';
+
+type HandoverAcceptBody = CashRecordInput & { shiftTemplateId?: string };
 
 export interface ShiftCardProps {
   ctx: StaffCtx;
@@ -68,6 +72,9 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [rejectReason, setRejectReason] = createSignal<string>('');
   const [rejectReasonError, setRejectReasonError] = createSignal<string | null>(null);
   const [rejectRowErrors, setRejectRowErrors] = createSignal<Record<string, string>>({});
+  const [acceptShift, setAcceptShift] = createSignal<string | null>(null);
+  const [acceptChoices, setAcceptChoices] = createSignal<OpenShiftChoice[] | null>(null);
+  const acceptReady = () => shiftChosenOrUnneeded(acceptChoices(), acceptShift());
 
   createEffect(() => {
     if (showHandover() || rejectingId() !== null) {
@@ -288,15 +295,21 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   };
 
   const handleAcceptHandover = async (id: string) => {
-    if (busy()) return;
+    if (busy() || !acceptReady()) return;
     setBusy(true);
-    const cmd = getCmd<CashRecordInput, CashRecordOutput>(
+    const cmd = getCmd<HandoverAcceptBody, CashRecordOutput>(
       'handover-accept-' + id,
       'POST',
       '/api/handovers/' + id + '/accept'
     );
     try {
-      const answer = await cmd.send({ id, branch: props.ctx.me.branchId });
+      const tid = acceptShift();
+      const body: HandoverAcceptBody = {
+        id,
+        branch: props.ctx.me.branchId,
+        ...(tid ? { shiftTemplateId: tid } : {}),
+      };
+      const answer = await cmd.send(body);
       if (answer?.status === 'AWAITING_FINANCE') {
         setNotice(t('handoverAwaitingFinance'));
       } else {
@@ -731,6 +744,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
       <Show when={canOperate() && handoversToMe().length > 0}>
         <div class="xc-shift-section">
           <h3 class="xc-shift-section-title">{t('handoversToMe')}</h3>
+          <ShiftPicker
+            ctx={props.ctx}
+            api={api}
+            value={acceptShift}
+            onChange={setAcceptShift}
+            onChoices={setAcceptChoices}
+          />
           <div class="xc-shift-list">
             <For each={handoversToMe()}>
               {(h) => (
@@ -743,7 +763,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                       type="button"
                       data-testid="shift-accept"
                       class="xc-shift-btn"
-                      disabled={busy()}
+                      disabled={busy() || !acceptReady()}
                       onClick={() => handleAcceptHandover(h.id)}
                     >
                       {t('accept')}

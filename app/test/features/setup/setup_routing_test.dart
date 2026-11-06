@@ -13,6 +13,7 @@ import 'package:xchange_kiosk/features/queue_machine/presentation/pages/queue_ma
 import 'package:xchange_kiosk/features/setup/app/setup_providers.dart';
 import 'package:xchange_kiosk/features/setup/l10n/setup_l10n.dart';
 import 'package:xchange_kiosk/features/setup/presentation/pages/setup_page.dart';
+import 'package:xchange_kiosk/shared/ui/version_stamp.dart';
 
 import 'setup_controller_test.dart' show MemoryStore;
 
@@ -46,6 +47,7 @@ void main() {
           probed.add(e);
         }),
         deviceLanguagesProvider.overrideWithValue(const ['en']),
+        serverVersionStampProvider.overrideWith((ref) async => 'server ?'),
       ],
     );
     await tester.pumpWidget(

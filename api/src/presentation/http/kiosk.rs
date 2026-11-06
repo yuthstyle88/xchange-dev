@@ -32,6 +32,7 @@ use xc_kiosk::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
+use xc_kiosk::domain::kiosk::value_objects::public_rates::PublicRates;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
 use xc_kiosk::domain::kiosk::value_objects::queue_page::QueuePage;
 use xc_rate::application::rate::service::RateService;
@@ -45,11 +46,15 @@ use xc_queue::application::issue::ticket_issuer::TicketIssuer;
 use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::application::compat::v2_json::V2Json;
+use crate::application::kiosk_popular::{PopularCache, popular_order, window_start};
+use crate::application::kiosk_screen::{self, KioskScreen};
 use crate::bootstrap::AppState;
 use crate::infrastructure::branch_tablets::pg_tablet_store::PgBranchTabletStore;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
+use crate::infrastructure::kiosk::pg_currency_uses::PgCurrencyUses;
 use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
@@ -84,8 +89,14 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
         PgDeviceRepository::new(state.db.clone()),
     ));
 
+    // the kiosk's popular currencies, counted once per branch per 10 minutes (application::kiosk_popular)
+    let popular = web::Data::new(PopularCache::new(Arc::new(PgCurrencyUses::new(
+        state.db.clone(),
+    ))));
+
     cfg.app_data(web::Data::from(default_ids))
         .app_data(web::Data::from(default_audit))
+        .app_data(popular)
         .service(
             web::resource("/api/kiosk")
                 .app_data(web::PayloadConfig::new(8_000_008))
@@ -234,6 +245,53 @@ fn confirm_queue(pool: &sqlx::PgPool) -> Arc<dyn QueueTickets> {
         )
         .with_booking_events(booking_events),
     )
+}
+
+/// The branch's ASK currencies (the kiosk switch rows, `group_code = 'ALL'`, as `rates` reads its SHOW
+/// ones), in code order. The kiosk lists them to say "contact staff"; nothing quotes them.
+async fn ask_currencies(pool: &sqlx::PgPool, branch: &BranchId) -> Result<Vec<String>, AppError> {
+    sqlx::query_scalar(
+        "SELECT currency_code::text FROM branch_currencies \
+         WHERE branch_id = $1 AND group_code = 'ALL' AND display = 'ASK' ORDER BY currency_code",
+    )
+    .bind(branch.as_str())
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::Internal(format!("kiosk ASK currencies: {e}")))
+}
+
+/// The branch's owner-set screen values; "not set" when it has none or they cannot be read.
+async fn kiosk_screen(pool: &sqlx::PgPool, branch: &BranchId) -> KioskScreen {
+    match BranchSettingStore::new(pool.clone())
+        .read(branch, kiosk_screen::SETTING)
+        .await
+    {
+        Ok(Some(saved)) => KioskScreen::from_body(&saved.body),
+        Ok(None) => KioskScreen::not_set(),
+        Err(err) => {
+            tracing::warn!(error = %err, branch = branch.as_str(), "kiosk screen values: read failed");
+            KioskScreen::not_set()
+        }
+    }
+}
+
+/// The kiosk's popular currencies among those it offers now; none when no cache is registered.
+async fn popular_codes(
+    req: &HttpRequest,
+    public_rates: &PublicRates,
+    screen: &KioskScreen,
+    now: DateTime<Utc>,
+) -> Vec<String> {
+    let Some(cache) = req.app_data::<web::Data<PopularCache>>() else {
+        return Vec::new();
+    };
+    let today = now.with_timezone(&chrono_tz::Asia::Bangkok).date_naive();
+    let since = window_start(today, screen.popular_days);
+    let uses = cache
+        .uses_at(&public_rates.branch_id, since, std::time::Instant::now())
+        .await;
+    let offered: Vec<&str> = public_rates.rates.iter().map(|r| r.code.as_str()).collect();
+    popular_order(&offered, &uses)
 }
 
 fn handle_service_error(err: AppError) -> HttpResponse {
@@ -399,7 +457,19 @@ async fn handle_kiosk(
                     Ok(f) => f,
                     Err(err) => return handle_service_error(err),
                 };
-                match dto_kiosk::rates_json(&public_rates, &freshness) {
+                let screen = kiosk_screen(pool, &branch).await;
+                let popular = popular_codes(&req, &public_rates, &screen, now).await;
+                let ask = match ask_currencies(pool, &branch).await {
+                    Ok(ask) => ask,
+                    Err(err) => return handle_service_error(err),
+                };
+                let screen_json = screen.to_json();
+                let extras = dto_kiosk::KioskRatesExtras {
+                    ask: &ask,
+                    popular: &popular,
+                    screen: &screen_json,
+                };
+                match dto_kiosk::rates_json_with_popular(&public_rates, &freshness, Some(extras)) {
                     Ok(json) => json_response(json),
                     Err(err) => handle_service_error(err),
                 }

@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::{AppError, AppResult};
+use pos_infra::transactions::Transactor;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -27,11 +28,15 @@ use xc_exchange::domain::transaction::transaction::{
     ExchangeTransaction, TransactionId, TransactionStatus,
 };
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::mode::Mode;
 use xc_kernel::money::{
     CurrencyCode, CurrencyUnits, ForeignAmount, MinorUnit, Money, Rate, Side, UnitSize,
 };
+use xc_shift::application::shift_plan::service::ShiftPlanService;
+use xc_shift::domain::shift_plan::shift_plan::ShiftPlan;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::complete::{CompleteExchange, ExchangeEffects};
 use super::create::CreatePayment;
@@ -91,7 +96,8 @@ impl BackdateSale {
     }
 
     /// `[required]` In this order, every refusal before the first write (§4, §5, §6, §7):
-    /// 1. `BackdateWindow::check(paid_at, value_date, now, <branch timezone>, ClosedDays::is_closed_in(..))`;
+    /// 1. `BackdateWindow::check(paid_at, value_date, now, <business date of paid_at>, <business date of now>,
+    ///    ClosedDays::is_closed_in(..))`;
     ///    a refusal answers `AppError::Domain("<code>:<field>: …")` as `transactions.rs::refusal` reads it
     ///    (`dayClosed: …` for a closed day).
     /// 2. The currency: not THB, in the branch's register (`PgCurrencyRegister`), for `unit_size`.
@@ -128,8 +134,21 @@ impl BackdateSale {
             .parse()
             .map_err(|_| AppError::Internal(format!("branch timezone {timezone}")))?;
         let closed = ClosedDays::is_closed_in(tx, &req.branch_id, req.value_date).await?;
-        if let Err(r) = BackdateWindow::check(req.payment.paid_at, req.value_date, now, tz, closed)
-        {
+        let plan = ShiftPlanService::new(
+            Arc::new(PgShiftTemplateStore),
+            BranchTx::new(Transactor::new(self.pool.clone())),
+        )
+        .plan_in(tx, &req.branch_id)
+        .await?;
+        let (paid_day, today) = business_dates(&plan, req.payment.paid_at, now, tz);
+        if let Err(r) = BackdateWindow::check(
+            req.payment.paid_at,
+            req.value_date,
+            now,
+            paid_day,
+            today,
+            closed,
+        ) {
             let msg = match r {
                 BackdateRefusal::PaidAtInFuture => format!(
                     "{}:{}: paidAt is in the future",
@@ -351,6 +370,21 @@ impl BackdateSale {
 
         Ok(completed.transaction)
     }
+}
+
+fn business_dates(
+    plan: &ShiftPlan,
+    paid_at: DateTime<Utc>,
+    now: DateTime<Utc>,
+    tz: chrono_tz::Tz,
+) -> (NaiveDate, NaiveDate) {
+    let paid_day = plan
+        .business_date_of(paid_at)
+        .unwrap_or_else(|| paid_at.with_timezone(&tz).date_naive());
+    let today = plan
+        .business_date_of(now)
+        .unwrap_or_else(|| now.with_timezone(&tz).date_naive());
+    (paid_day, today)
 }
 
 fn payload_hash(req: &BackdateRequest) -> String {

@@ -372,6 +372,14 @@ impl Counter {
     ) -> ExchangeTransaction {
         let line = &q.lines[0];
         let id = TransactionId(Uuid::new_v4());
+        // CS-20: a LIVE sale is dated by its shift's business date (CS-8), so the draft takes the open shift's, not a
+        // fixed day; the reversal window and `reversible_until` now end at the end of that business day.
+        let value_date: NaiveDate =
+            sqlx::query_scalar("SELECT business_date FROM shifts WHERE id = $1")
+                .bind(&self.shift)
+                .fetch_one(&self.desk.db.pool)
+                .await
+                .expect("the open shift's business date");
         let t = ExchangeTransaction {
             queue_ticket_id: None,
             id,
@@ -391,7 +399,7 @@ impl Counter {
             staff_id: TELLER.to_owned(),
             booking_no: "WALK-IN".to_owned(),
             notes: String::new(),
-            value_date: NaiveDate::from_ymd_opt(2026, 10, 6).unwrap(),
+            value_date,
             recorded_at: now,
             recorded_by: TELLER.to_owned(),
             completed_at: None,

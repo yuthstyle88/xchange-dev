@@ -17,6 +17,11 @@
 //! pages are this repository's own; none is v2's.
 //!
 //! No test here needs a database.
+//!
+//! Restated 2026-11-05 (owner, "Yes, start it"): `/kiosk` is no longer read from `web.dir`. Its page
+//! and files are compiled in from `api/static/kiosk/` (`pages.rs` `KIOSK_PAGE`, `KIOSK_FILES`); the
+//! v2 recording's `/kiosk` bodies are replaced by that page, and its sign-in gate is unchanged.
+//! `pages_kiosk_test.rs` pins the compiled kiosk.
 
 mod common;
 
@@ -47,6 +52,18 @@ use xchange::presentation::ui::UiAssets;
 const WHO: &str = "x-test-sessions";
 /// Every request names this host; redirects are built from it.
 const HOST: &str = "xc.test";
+/// The compiled kiosk page (`pages.rs` `KIOSK_PAGE`).
+const KIOSK_PAGE: &str = include_str!("../static/kiosk/kiosk.html");
+
+/// The kiosk page without the screen values the server puts first into its head (`kiosk_screen`).
+fn without_kiosk_screen(body: &str) -> String {
+    const OPEN: &str = "<script>window.XC_KIOSK_SCREEN=";
+    let Some(at) = body.find(OPEN) else {
+        return body.to_owned();
+    };
+    let end = at + body[at..].find(";</script>").unwrap() + ";</script>".len();
+    format!("{}{}", &body[..at], &body[end..])
+}
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pages")
@@ -420,8 +437,15 @@ async fn every_page_answers_as_v2_does() {
                             .header("content-type")
                             .is_some_and(|c| c.starts_with("text/html"));
                         let body = String::from_utf8_lossy(&answer.body);
-                        let body = without_version_line(&body, is_page, &what);
-                        assert_eq!(body, case["body"].as_str().unwrap(), "{what}: body");
+                        let body =
+                            without_kiosk_screen(&without_version_line(&body, is_page, &what));
+                        // `/kiosk` is compiled in now, not read from `web.dir` (restated 2026-11-05)
+                        let want = if path == "/kiosk" {
+                            KIOSK_PAGE
+                        } else {
+                            case["body"].as_str().unwrap()
+                        };
+                        assert_eq!(body, want, "{what}: body");
                     }
                 }
                 400 => {
@@ -661,7 +685,11 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
         }
         let held = ScreenTable::compiled().holds(path);
         let answer = ask(&app, get(path, "owner").to_request()).await;
-        if held {
+        if path == "/kiosk" {
+            // compiled in, so a directory without it still has it (restated 2026-11-05)
+            assert_eq!(answer.status, StatusCode::OK, "GET {path} as the owner");
+            assert_eq!(answer.header("cache-control"), Some("no-store"));
+        } else if held {
             assert_eq!(answer.status, StatusCode::OK, "GET {path} as the owner");
             assert_eq!(answer.header("cache-control"), Some("no-cache"));
         } else {
@@ -692,7 +720,15 @@ async fn a_page_whose_file_is_missing_is_the_plain_404_after_the_sign_in_check()
             "no-cache"
         };
         let answer = ask(&app, get(path, "owner").to_request()).await;
-        if held {
+        if path == "/kiosk" {
+            // compiled in (restated 2026-11-05)
+            assert_eq!(
+                answer.status,
+                StatusCode::OK,
+                "no directory: GET {path} as the owner"
+            );
+            assert_eq!(answer.header("cache-control"), Some("no-store"));
+        } else if held {
             assert_eq!(
                 answer.status,
                 StatusCode::OK,
@@ -740,13 +776,15 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     let app = app!(&scratch.0);
     let login_held = ScreenTable::compiled().holds("/login");
     // a v2 branch page read from the directory: `/` until V2-switch (#472) hands it to the
-    // v3 admin screen, then `/desk` (`pages.rs` `PAGE_SPECS`)
-    let (live_path, live_file) = if ScreenTable::compiled().holds("/desk") {
-        ("/kiosk", "kiosk.html")
+    // v3 admin screen, then `/desk` (`pages.rs` `PAGE_SPECS`). Once `/desk` is a v3 screen no page
+    // is read from the directory any more: `/kiosk`, the last one, is compiled in (restated
+    // 2026-11-05), so only the static file is checked live then.
+    let live = if ScreenTable::compiled().holds("/desk") {
+        None
     } else if ScreenTable::compiled().holds("/") {
-        ("/desk", "desk.html")
+        Some(("/desk", "desk.html"))
     } else {
-        ("/", "admin.html")
+        Some(("/", "admin.html"))
     };
 
     if login_held {
@@ -763,7 +801,9 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
         .is_the_plain_404("before the file exists");
 
     scratch.write("login.html", "<html><body>first</body></html>");
-    scratch.write(live_file, "<html><head></head><body>first</body></html>");
+    if let Some((_, live_file)) = live {
+        scratch.write(live_file, "<html><head></head><body>first</body></html>");
+    }
     scratch.write("late.js", "first();");
     if login_held {
         let answer = ask(&app, get("/login", "none").to_request()).await;
@@ -778,11 +818,15 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "first();");
-    let answer = ask(&app, get(live_path, "owner").to_request()).await;
-    assert!(String::from_utf8_lossy(&answer.body).contains("<body>first"));
+    if let Some((live_path, _)) = live {
+        let answer = ask(&app, get(live_path, "owner").to_request()).await;
+        assert!(String::from_utf8_lossy(&answer.body).contains("<body>first"));
+    }
 
     scratch.write("login.html", "<html><body>second</body></html>");
-    scratch.write(live_file, "<html><head></head><body>second</body></html>");
+    if let Some((_, live_file)) = live {
+        scratch.write(live_file, "<html><head></head><body>second</body></html>");
+    }
     scratch.write("late.js", "second();");
     if login_held {
         let answer = ask(&app, get("/login", "none").to_request()).await;
@@ -797,8 +841,10 @@ async fn pages_and_files_are_read_when_they_are_asked_for() {
     }
     let answer = ask(&app, get("/late.js", "none").to_request()).await;
     assert_eq!(String::from_utf8_lossy(&answer.body), "second();");
-    let answer = ask(&app, get(live_path, "owner").to_request()).await;
-    assert!(String::from_utf8_lossy(&answer.body).contains("<body>second"));
+    if let Some((live_path, _)) = live {
+        let answer = ask(&app, get(live_path, "owner").to_request()).await;
+        assert!(String::from_utf8_lossy(&answer.body).contains("<body>second"));
+    }
 }
 
 #[actix_web::test]
@@ -1061,17 +1107,19 @@ async fn k1_kiosk_with_no_session_redirects_to_login() {
     );
 }
 
+/// Restated 2026-11-05: the page is the compiled kiosk (`api/static/kiosk/kiosk.html`), not the
+/// fixture `web/kiosk.html`, which is still in the directory and must not be what answers.
 #[actix_web::test]
 async fn k2_kiosk_signed_in_serves_kiosk_html() {
     let app = app!(&fixtures().join("web"));
     let answer = ask(&app, get("/kiosk", "staff:FRONT:XC-B01").to_request()).await;
     assert_eq!(answer.status, StatusCode::OK);
     assert_eq!(
-        without_version_line(
+        without_kiosk_screen(&without_version_line(
             std::str::from_utf8(&answer.body).expect("utf-8"),
             true,
             "GET /kiosk as staff"
-        ),
-        "<!doctype html><html><head><title>kiosk (fixture)</title></head><body><p>kiosk shell</p></body></html>\n"
+        )),
+        KIOSK_PAGE
     );
 }

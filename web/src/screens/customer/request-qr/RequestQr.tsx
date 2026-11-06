@@ -3,6 +3,7 @@ import { screenT } from '../../../shared/i18n';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
+import '../_shell/xc-customer-tokens.css';
 import './request-qr.css';
 
 export interface RequestQrProps {
@@ -26,7 +27,7 @@ export function RequestQr(props: RequestQrProps): JSX.Element {
   });
 
   return (
-    <div class="xc-request-qr">
+    <div class="xc-customer xc-request-qr">
       <div class="xc-request-qr-card">
         <h1 class="xc-request-qr-title">{t('title')}</h1>
         <Show

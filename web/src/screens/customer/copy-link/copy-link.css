@@ -12,9 +12,9 @@
   width: 100%;
   padding: 2rem;
   text-align: center;
-  background: #ffffff;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--xc-surface);
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-copy-link-title {
@@ -25,7 +25,7 @@
 
 .xc-copy-link-loading {
   font-size: 1.125rem;
-  color: #666666;
+  color: var(--xc-text-muted);
   margin: 1.5rem 0;
 }
 
@@ -33,18 +33,18 @@
   display: inline-block;
   font-size: 1.125rem;
   font-weight: 600;
-  color: #1976d2;
-  background: #e3f2fd;
+  color: var(--xc-brand);
+  background: var(--xc-brand-soft);
   padding: 0.25rem 0.75rem;
-  border-radius: 4px;
+  border-radius: var(--xc-radius-lg);
   margin-bottom: 1.5rem;
 }
 
 .xc-copy-link-details {
   text-align: left;
   margin-bottom: 1.5rem;
-  border-top: 1px solid #eeeeee;
-  border-bottom: 1px solid #eeeeee;
+  border-top: 1px solid var(--xc-surface-subtle);
+  border-bottom: 1px solid var(--xc-surface-subtle);
   padding: 0.75rem 0;
 }
 
@@ -56,12 +56,12 @@
 }
 
 .xc-copy-link-label {
-  color: #666666;
+  color: var(--xc-text-muted);
 }
 
 .xc-copy-link-value {
   font-weight: 500;
-  color: #111111;
+  color: var(--xc-text);
 }
 
 .xc-copy-link-code {
@@ -71,7 +71,13 @@
 }
 
 .xc-copy-link-error {
-  color: #d32f2f;
+  color: var(--xc-danger);
   font-size: 1rem;
   margin: 1.5rem 0;
+}
+
+/* The QR's box has no size of its own; give it the same square as /q. */
+.xc-copy-link-code [role='img'] {
+  width: min(72vw, 260px);
+  aspect-ratio: 1;
 }

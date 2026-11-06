@@ -1,4 +1,5 @@
-// §9 TierEditor: 4 tiers buy/sell prefilled from the suggestion, the margin each makes, approve one currency (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
+// §9 TierEditor: 4 tier blocks ("ระดับ 1 ไม่เกิน 10,000 บาท", ร้านรับซื้อ / ร้านขาย, "แนะนำ x / y") like the shop board,
+// buy/sell prefilled from the suggestion, the margin each makes, approve one currency (FE pricing-board, #564; docs/design/blueprint/pricing-tiers.md §9).
 import { For, Show, createSignal, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type {
@@ -14,6 +15,7 @@ import { RATE, checkDecimal } from '../../../shared/ui/bounded';
 import { en, th } from './i18n';
 import { ApproveResults } from './ApproveResults';
 import { ROUTE_PRICING_APPROVE, type TierNo } from './pricing-labels';
+import { bandText, rateAt, rowDigits } from './pricing-format';
 import './tier-editor.css';
 
 export interface TierEditorProps {
@@ -86,12 +88,19 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     return props.row.margins.find((m) => m.tierNo === tierNo)?.sellMarginPct ?? '';
   };
 
-  const bandText = (tierNo: TierNo): string => {
-    const b = props.bands.find((band) => band.tierNo === tierNo);
-    if (!b) return '';
-    const lower = b.lowerExclusiveThb ?? '0';
-    return b.upperInclusiveThb ? `${lower} – ${b.upperInclusiveThb}` : `${lower}+`;
-  };
+  const digits = () => rowDigits(props.row);
+  /** The prefilled box shows the suggestion without the server's zero padding (same number); an untouched box still
+   *  sends the suggestion exactly as the board sent it (`buyValue` / `sellValue`). */
+  const shown = (v: string): string => (v === '' ? '' : rateAt(v, digits()));
+  const bandLine = (tierNo: TierNo): string =>
+    bandText(
+      props.bands.find((band) => band.tierNo === tierNo),
+      {
+        upTo: (upper) => tr('bandUpTo', { upper }),
+        between: (lower, upper) => tr('bandBetween', { lower, upper }),
+        above: (lower) => tr('bandAbove', { lower }),
+      },
+    );
 
   const handleApprove = async () => {
     if (!props.row.suggestion || submitting()) return;
@@ -152,14 +161,13 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
     }
   };
 
+  const fieldId = (side: 'buy' | 'sell', tierNo: TierNo) => `tier-${props.row.currency}-${side}-${tierNo}`;
+
   return (
-    <section class="tier-editor">
-      <header class="tier-editor-header">
-        <strong class="tier-editor-currency">{props.row.currency}</strong>
-        <Show when={!props.row.suggestion}>
-          <span class="tier-editor-empty">{tr('noSuggestion')}</span>
-        </Show>
-      </header>
+    <section class="tier-editor" aria-label={`${tr('setPrice')} ${props.row.currency}`}>
+      <Show when={!props.row.suggestion}>
+        <p class="tier-editor-empty">{tr('noSuggestion')}</p>
+      </Show>
 
       <Show when={errorMsg()}>
         {(msg) => (
@@ -169,78 +177,113 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
         )}
       </Show>
 
-      <table class="tier-editor-table">
-        <thead>
-          <tr>
-            <th>{tr('label')}</th>
-            <th>{tr('buy')}</th>
-            <th>{tr('margin')}</th>
-            <th>{tr('sell')}</th>
-            <th>{tr('margin')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={TIER_NOS}>
-            {(tierNo) => (
-              <tr>
-                <td>
-                  <span>{tr('tier', { n: tierNo })}</span>
-                  <Show when={bandText(tierNo)}>
-                    <span class="tier-editor-band">{bandText(tierNo)}</span>
-                  </Show>
-                </td>
-                <td>
+      <div class="tier-editor-tiers">
+        <For each={TIER_NOS}>
+          {(tierNo) => (
+            <fieldset class="tier-editor-tier" data-tier={tierNo}>
+              <legend class="tier-editor-tier-title">
+                <strong>{tr('tierLevel', { n: tierNo })}</strong>
+                <Show when={bandLine(tierNo)}>
+                  <span class="tier-editor-band">{bandLine(tierNo)}</span>
+                </Show>
+              </legend>
+              <div class="tier-editor-fields">
+                <div class="tier-editor-field">
+                  <label class="tier-editor-label" for={fieldId('buy', tierNo)}>
+                    {tr('shopBuy')}
+                  </label>
                   <input
+                    id={fieldId('buy', tierNo)}
                     class="tier-editor-input"
                     type="text"
                     inputMode="decimal"
+                    autocomplete="off"
                     name={`buy-${tierNo}`}
-                    value={buyValue(tierNo)}
+                    value={editedBuy()[tierNo] ?? shown(suggestedBuy(tierNo))}
                     disabled={!props.row.suggestion}
+                    aria-invalid={fieldErrors()[`tiers[${tierNo - 1}].buy`] ? 'true' : undefined}
                     onInput={(e) => {
                       const val = e.currentTarget.value;
                       setEditedBuy((prev) => ({ ...prev, [tierNo]: val }));
                     }}
                   />
                   <Show when={fieldErrors()[`tiers[${tierNo - 1}].buy`]}>
-                    {(msg) => <span data-field-error={`tiers[${tierNo - 1}].buy`}>{msg()}</span>}
+                    {(msg) => (
+                      <span class="tier-editor-error" data-field-error={`tiers[${tierNo - 1}].buy`}>
+                        {msg()}
+                      </span>
+                    )}
                   </Show>
-                </td>
-                <td class="tier-editor-margin" data-margin={`buy-${tierNo}`}>
-                  {buyMarginText(tierNo)}
-                </td>
-                <td>
+                </div>
+                <div class="tier-editor-field">
+                  <label class="tier-editor-label" for={fieldId('sell', tierNo)}>
+                    {tr('shopSell')}
+                  </label>
                   <input
+                    id={fieldId('sell', tierNo)}
                     class="tier-editor-input"
                     type="text"
                     inputMode="decimal"
+                    autocomplete="off"
                     name={`sell-${tierNo}`}
-                    value={sellValue(tierNo)}
+                    value={editedSell()[tierNo] ?? shown(suggestedSell(tierNo))}
                     disabled={!props.row.suggestion}
+                    aria-invalid={fieldErrors()[`tiers[${tierNo - 1}].sell`] ? 'true' : undefined}
                     onInput={(e) => {
                       const val = e.currentTarget.value;
                       setEditedSell((prev) => ({ ...prev, [tierNo]: val }));
                     }}
                   />
                   <Show when={fieldErrors()[`tiers[${tierNo - 1}].sell`]}>
-                    {(msg) => <span data-field-error={`tiers[${tierNo - 1}].sell`}>{msg()}</span>}
+                    {(msg) => (
+                      <span class="tier-editor-error" data-field-error={`tiers[${tierNo - 1}].sell`}>
+                        {msg()}
+                      </span>
+                    )}
                   </Show>
-                </td>
-                <td class="tier-editor-margin" data-margin={`sell-${tierNo}`}>
-                  {sellMarginText(tierNo)}
-                </td>
-              </tr>
-            )}
-          </For>
-        </tbody>
-      </table>
+                </div>
+              </div>
+              <div class="tier-editor-hints">
+                <Show when={props.row.suggestion}>
+                  <span class="tier-editor-hint">
+                    {tr('suggestedHint')}{' '}
+                    <span class="tier-editor-hint-rates">
+                      {rateAt(suggestedBuy(tierNo), digits())}
+                      <span class="pricing-rate-sep" aria-hidden="true">
+                        {' / '}
+                      </span>
+                      {rateAt(suggestedSell(tierNo), digits())}
+                    </span>
+                  </span>
+                </Show>
+                <span class="tier-editor-hint tier-editor-margins">
+                  {tr('marginHint')}{' '}
+                  <span class="tier-editor-margin" data-margin={`buy-${tierNo}`}>
+                    {buyMarginText(tierNo)}
+                  </span>
+                  <span class="pricing-rate-sep" aria-hidden="true">
+                    {' / '}
+                  </span>
+                  <span class="tier-editor-margin" data-margin={`sell-${tierNo}`}>
+                    {sellMarginText(tierNo)}
+                  </span>
+                </span>
+              </div>
+            </fieldset>
+          )}
+        </For>
+      </div>
 
       <div class="tier-editor-actions">
-        <div>
+        <div class="tier-editor-field tier-editor-reason">
+          <label class="tier-editor-label" for={`tier-${props.row.currency}-reason`}>
+            {tr('reason')}
+          </label>
           <input
+            id={`tier-${props.row.currency}-reason`}
             type="text"
             name="reason"
-            class="tier-editor-input"
+            class="tier-editor-input tier-editor-input-text"
             placeholder={tr('reason')}
             aria-label={tr('reason')}
             required
@@ -249,7 +292,11 @@ export function TierEditor(props: TierEditorProps): JSX.Element {
             onInput={(e) => setReason(e.currentTarget.value)}
           />
           <Show when={fieldErrors().reason}>
-            {(msg) => <span data-field-error="reason">{msg()}</span>}
+            {(msg) => (
+              <span class="tier-editor-error" data-field-error="reason">
+                {msg()}
+              </span>
+            )}
           </Show>
         </div>
         <button

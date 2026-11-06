@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 // PH-gate (docs/design/web-public-get.md §2 PH6, §5 PH-gate): nothing outside public-host.ts may read /api/public/host.
 // KNOWN must stay empty: every caller was converted in PH-0..11.
 export const KNOWN: readonly string[] = [];
+// Test-support files that fake the endpoint for tests; named one by one, never by folder.
+export const TEST_HARNESSES: readonly string[] = ['web/src/kiosk/load-kiosk.ts'];
 
 export function normalizePath(p: string): string {
   const norm = p.replace(/\\/g, '/');
@@ -27,6 +29,10 @@ export function shouldScanFile(filePath: string): boolean {
     return false;
   }
   if (norm === 'web/src/shared/api/public-host.ts') {
+    return false;
+  }
+  // Test support, not app code: it fakes /api/public/host for the vendored plain-script kiosk, which cannot import readHostOrg.
+  if (TEST_HARNESSES.includes(norm)) {
     return false;
   }
   return true;
@@ -287,6 +293,11 @@ describe('PH-gate public-host gate unit tests', () => {
 
     expect(result.passed).toBe(true);
     expect(result.offenders).toEqual([]);
+  });
+
+  it('a named test harness passes (exempt), and its neighbours are still scanned', () => {
+    expect(shouldScanFile('web/src/kiosk/load-kiosk.ts')).toBe(false);
+    expect(shouldScanFile('web/src/kiosk/other.ts')).toBe(true);
   });
 
   it('comments mentioning /api/public/host pass', () => {

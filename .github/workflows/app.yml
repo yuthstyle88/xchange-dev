@@ -142,4 +142,17 @@ jobs:
 
       - name: Build web
         working-directory: app
-        run: flutter build web --release
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
+          flutter build web --release \
+            --dart-define=APP_VERSION="$version" \
+            --dart-define=BUILD_SHA="$(git rev-parse --short HEAD)" \
+            --dart-define=BUILT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --dart-define=CHANNEL="${{ startsWith(github.ref, 'refs/heads/release/') && 'release' || 'staging' }}"
+
+      - name: Verify bundle contains pubspec version
+        working-directory: app
+        run: |
+          version=$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)
+          grep -qF "$version" build/web/main.dart.js
+          grep -qF "$(git rev-parse --short HEAD)" build/web/main.dart.js

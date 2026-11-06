@@ -10,6 +10,8 @@ import {
   makeStaffMeView,
   type StaffFloorView,
   type StaffMeView,
+  makeOpenShiftChoice,
+  makeOpenShiftChoices,
 } from "../../../shared/testing/fixtures";
 import type { StaffCard, StaffCtx } from "../cards";
 import { warmModules } from "../../../shared/testing/warm-modules";
@@ -83,6 +85,10 @@ function json(status: number, body: unknown): Response {
   });
 }
 
+// CS-15m: the OPEN count form and the handover accept now read open_shift_choices (ShiftPicker); one covering
+// shift keeps Save and Accept usable as before. Stub restated per the lane controller's ruling on PR 6274.
+const ONE_SHIFT = makeOpenShiftChoices({ choices: [makeOpenShiftChoice({ templateId: "tpl-1" })], preselect: "tpl-1" });
+
 function stub(views: Record<string, unknown> = {}) {
   const all: Record<string, unknown> = {
     cash_counts: [],
@@ -90,6 +96,7 @@ function stub(views: Record<string, unknown> = {}) {
     my_shift: null,
     denominations: { rows: [] },
     handover_receivers: { rows: [] },
+    open_shift_choices: ONE_SHIFT,
     ...views,
   };
   vi.stubGlobal(

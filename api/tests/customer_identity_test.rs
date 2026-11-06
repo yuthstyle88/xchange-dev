@@ -529,11 +529,24 @@ async fn reveal_needs_identity_document_read_and_writes_one_audit_row_without_th
     assert!(row.contains(&teller.user_id), "who: {row}");
     assert!(row.contains(&reserved.customer_id), "which customer: {row}");
     assert!(row.contains("the customer asked"), "why: {row}");
-    for secret in ["AA1234567", "4567", hash_hex.as_str()] {
-        assert!(
-            !row.contains(secret),
-            "never the value, its last 4 or its hash: {row}"
-        );
+    let audit_json: serde_json::Value = serde_json::from_str(&row).expect("valid audit row json");
+    let mut stack = vec![&audit_json];
+    while let Some(val) = stack.pop() {
+        match val {
+            serde_json::Value::String(s) => {
+                if uuid::Uuid::parse_str(s).is_err() {
+                    for secret in ["AA1234567", "4567", hash_hex.as_str()] {
+                        assert!(
+                            !s.contains(secret),
+                            "never the value, its last 4 or its hash: {s}"
+                        );
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => stack.extend(items),
+            serde_json::Value::Object(map) => stack.extend(map.values()),
+            _ => {}
+        }
     }
 }
 

@@ -1,8 +1,18 @@
 /* APP-7 (#998) C14 sign-in and sign-up. */
 .xc-sign-in {
   max-width: 28rem;
-  margin: 0 auto;
-  padding: 1rem;
+  margin: 12px auto;
+  padding: 18px 16px 20px;
+  border-radius: var(--xc-radius-card);
+  background: var(--xc-card);
+  box-shadow: var(--xc-shadow-card);
+  box-sizing: border-box;
+}
+
+@media (max-width: 460px) {
+  .xc-sign-in {
+    margin: 12px 16px;
+  }
 }
 
 .xc-sign-in-mode {
@@ -13,21 +23,23 @@
 
 .xc-sign-in-tab {
   flex: 1;
+  min-height: 48px;
   padding: 0.5rem 1rem;
-  border: 1px solid var(--xc-border);
+  border: 2px solid var(--xc-border);
   background: var(--xc-surface);
-  color: var(--xc-text-muted);
-  border-radius: 0.25rem;
+  color: var(--xc-text);
+  border-radius: var(--xc-radius-lg);
   cursor: pointer;
-  font-size: 0.875rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
 }
 
 .xc-sign-in-tab.active,
 .xc-sign-in-tab[aria-selected="true"] {
-  background: var(--xc-surface-subtle);
-  color: var(--xc-text);
-  border-color: var(--xc-primary);
-  font-weight: 600;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
+  border-color: var(--xc-brand);
+  font-weight: 700;
 }
 
 .xc-sign-in-form {
@@ -49,11 +61,11 @@
 
 .xc-sign-in-terms,
 .xc-sign-in-switch {
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
 }
 
 .xc-sign-in-error {
-  color: var(--xc-danger, #ef4444);
+  color: var(--xc-danger);
 }
 
 .xc-sign-in-link {
@@ -72,13 +84,13 @@
 .xc-sign-in-terms-version {
   font-size: 0.8125rem;
   font-weight: 600;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   margin: 0;
 }
 
 .xc-sign-in-terms-body {
   font-size: 0.8125rem;
-  color: var(--xc-text-muted, #64748b);
+  color: var(--xc-text-muted);
   line-height: 1.4;
   white-space: pre-wrap;
 }
@@ -87,7 +99,7 @@
 /* SF-5 (web-silent-failures.md §6): sign-up waits for the TERMS text. */
 .xc-sign-in-terms-missing,
 .xc-sign-in-terms-failed {
-  color: var(--xc-danger, #ef4444);
+  color: var(--xc-danger);
   margin: 0;
 }
 
