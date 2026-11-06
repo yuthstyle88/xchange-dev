@@ -103,6 +103,13 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
           <dd>{statusName(props.row.status)}</dd>
         </div>
 
+        <Show when={props.row.backdated}>
+          <div>
+            <dt>{t('backdated')}</dt>
+            <dd>{t('backdatedYes')}</dd>
+          </div>
+        </Show>
+
         <div>
           <dt>{t('headerCustomer')}</dt>
           <dd>{props.row.customer}</dd>

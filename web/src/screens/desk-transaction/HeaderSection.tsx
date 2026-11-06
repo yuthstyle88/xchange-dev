@@ -29,6 +29,14 @@ export function HeaderSection(props: { tx: TransactionDetailDto }): JSX.Element 
         <Field label={t('number')} value={props.tx.documentRef} />
         <Field label={t('status')} value={statusText(props.tx)} />
         <Field label={t('completedAt')} value={tm(props.tx.completedAt)} />
+        <Show when={props.tx.backdate}>
+          {(b) => (
+            <Field
+              label={ht('headerBackdated')}
+              value={`${ht('headerBackdatedEntered')} ${formatBangkokDateTime(b().enteredAt)}`}
+            />
+          )}
+        </Show>
         <Show when={props.tx.status === 'CANCELLED'}>
           <Field label={t('cancelledAt')} value={tm(props.tx.cancelledAt)} />
           <Field label={t('cancelReason')} value={props.tx.cancelReason} />
