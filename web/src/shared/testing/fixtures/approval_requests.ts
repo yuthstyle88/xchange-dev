@@ -31,6 +31,7 @@ export function makeApprovalRequestItemDto(o: Partial<ApprovalRequestItemDto> = 
     status: 'status',
     decision: null,
     subject: null,
+    canDecide: true,
     ...o,
   };
 }
