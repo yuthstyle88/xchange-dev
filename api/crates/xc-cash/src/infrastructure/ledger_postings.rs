@@ -607,7 +607,7 @@ fn check_requests(req: &[PostingRequest]) -> AppResult<&SourceRef> {
 enum Planned<'a> {
     Empty,
     Replayed(PostingId),
-    Ready(Plan, &'a SourceRef),
+    Ready(Box<Plan>, &'a SourceRef),
 }
 
 impl LedgerCashPostings {
@@ -938,7 +938,7 @@ impl LedgerCashPostings {
             return Err(err);
         }
 
-        Ok(Planned::Ready(plan, source))
+        Ok(Planned::Ready(Box::new(plan), source))
     }
 
     async fn post(

@@ -816,7 +816,7 @@ async fn submitted_within_limit(db: &Db, s: &Shop, notes: i32) -> CashTransfer {
     .expect("a transfer policy version");
     let flow = db.flow();
     let cmd = NewTransfer {
-        kind: TransferKind::ExternalOut,
+        kind: TransferKind::ExternalIn,
         from_branch: s.b1.clone(),
         to_branch: None,
         from_shift: None,

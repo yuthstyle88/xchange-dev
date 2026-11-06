@@ -13,7 +13,7 @@ use xc_approval::domain::subject::{ApprovalSubject, SubjectError};
 use xc_auth::domain::access::{Actor, ApprovalDecider, Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
 
-use crate::domain::posting::CashPostings;
+use crate::domain::posting::{CashPlace, CashPostings};
 use crate::domain::shortfall::{ShortPlace, StockShortfall};
 use crate::domain::transfer::kinds::TransferKinds;
 use crate::domain::transfer::transfer_repository::TransferRepository;
@@ -144,7 +144,14 @@ impl ApprovalSubject for TransferApprovalSubject {
                 let reqs = ends
                     .on_dispatch(&t)
                     .map_err(|e| SubjectError::Failed(AppError::Domain(e.to_string())))?;
-                if let Err(e) = LedgerCashPostings::new().check_in(tx, &reqs).await {
+                // Only a drawer or safe source has a balance to cover; an EXTERNAL_IN inflow from the
+                // bank approves as before (its BUY-rate costing is dispatch's concern).
+                let from_drawer_or_safe = reqs
+                    .iter()
+                    .any(|r| matches!(r.from, CashPlace::Drawer(_) | CashPlace::Safe(_)));
+                if from_drawer_or_safe
+                    && let Err(e) = LedgerCashPostings::new().check_in(tx, &reqs).await
+                {
                     if let AppError::Domain(ref m) = e
                         && m.starts_with("stockInsufficient")
                     {
