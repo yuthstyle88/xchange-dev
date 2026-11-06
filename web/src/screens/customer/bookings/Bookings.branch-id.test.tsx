@@ -9,7 +9,6 @@ import {
 } from '../../../shared/testing/fixtures';
 import { setAudience, setLang } from '../../../shared/i18n';
 import { BookingsScreen } from './Bookings';
-import * as table from './i18n';
 
 const BOOKING_ID = 'bk-cb-1';
 
@@ -194,7 +193,7 @@ describe('Bookings.tsx — branch maps keyed by id (#4831)', () => {
     expect(cardTime).not.toContain('22:30');
   });
 
-  it('K4: when the list holds only { id: br-9, code: br-1 }, the row has no branch and the load error shows', async () => {
+  it('K4: when the list holds only { id: br-9, code: br-1 }, the row matches no branch: it shows its id br-1, not Siam, with no hours (#6313)', async () => {
     const fetchFn = vi.fn(async (input: string) => {
       const u = new URL(input, 'http://localhost');
       if (u.pathname === '/api/public/host') return jsonResponse(200, { org: 'XC' });
@@ -217,11 +216,16 @@ describe('Bookings.tsx — branch maps keyed by id (#4831)', () => {
 
     dispose = render(() => <BookingsScreen fetch={fetchFn} />, host);
 
+    // Restated for #6313 (owner rulings on #564): a booking whose branch is not public still renders.
+    // The point of K4 stays: rows are keyed by id, so code br-1 must not pick up Siam's name or timezone.
     await vi.waitFor(() => {
-      expect(host.querySelector('.xc-bookings-error')).not.toBeNull();
+      expect(host.querySelector('.xc-bookings-list')).not.toBeNull();
     });
 
-    expect(host.querySelector('.xc-bookings-error')?.textContent).toContain(table.th['error.loadFailed']);
-    expect(host.querySelector('.xc-bookings-list')).toBeNull();
+    expect(host.querySelector('.xc-bookings-error')).toBeNull();
+    const card = host.querySelector('.xc-bookings-list')!;
+    expect(card.querySelector('.xc-booking-branch')?.textContent).toBe('br-1');
+    expect(card.textContent).not.toContain('Siam');
+    expect(card.querySelector('.xc-booking-time')?.textContent ?? '').not.toMatch(/\d{1,2}:\d{2}/);
   });
 });

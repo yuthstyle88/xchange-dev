@@ -6,7 +6,7 @@ use std::sync::Arc;
 use chrono::{DateTime, TimeDelta, Utc};
 use pos_error::AppResult;
 use pos_infra::transactions::Transactor;
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_shift::application::shift_plan::service::ShiftPlanService;
@@ -75,6 +75,13 @@ impl BusinessDayCloser {
 
             let held_before = cutover - TimeDelta::hours(24);
 
+            // The branch lock comes before the ticket and kiosk rows, in `BranchTx::run`'s order, so a sweep and a
+            // queue or kiosk command never wait on each other in a cycle (review of PR 6297).
+            if let Err(e) = lock_branch_version(&mut tx, &branch).await {
+                tracing::error!("business-day-close: branch lock failed for {branch_str}: {e}");
+                continue;
+            }
+
             let ended = match hook
                 .on_business_day_end(&mut tx, &branch, cutover, held_before, now)
                 .await
@@ -86,10 +93,13 @@ impl BusinessDayCloser {
                 }
             };
 
+            // Views read by `branch_versions` (`kiosk_queue`, `my_queue_ticket`) must see what the sweep ended, as the
+            // booking sweeper's do (#1937). Only when something ended: the sweep runs every minute, and raising the
+            // version on an idle round would tell every client "changed" once a minute.
             if ended > 0
-                && let Err(e) = BranchTx::lock_also(&mut tx, &branch).await
+                && let Err(e) = raise_branch_version(&mut tx, &branch).await
             {
-                tracing::error!("business-day-close: version bump failed for {branch_str}: {e}");
+                tracing::error!("business-day-close: version raise failed for {branch_str}: {e}");
                 continue;
             }
 
@@ -103,4 +113,37 @@ impl BusinessDayCloser {
 
         Ok(total_ended)
     }
+}
+
+/// Locks the branch's `branch_versions` row `FOR UPDATE` until `tx` ends, creating it if absent, without raising it:
+/// the first half of `BranchTx::run`, for a sweep that does not yet know whether it will write.
+async fn lock_branch_version(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+) -> AppResult<()> {
+    sqlx::query(
+        "INSERT INTO branch_versions (branch_id, version) VALUES ($1, 0) ON CONFLICT (branch_id) DO NOTHING",
+    )
+    .bind(branch.as_str())
+    .execute(&mut **tx)
+    .await?;
+    sqlx::query("SELECT version FROM branch_versions WHERE branch_id = $1 FOR UPDATE")
+        .bind(branch.as_str())
+        .execute(&mut **tx)
+        .await?;
+    Ok(())
+}
+
+/// Raises the branch's version by 1 inside `tx`, which already holds its row lock (`lock_branch_version`).
+async fn raise_branch_version(
+    tx: &mut Transaction<'_, Postgres>,
+    branch: &BranchId,
+) -> AppResult<()> {
+    sqlx::query(
+        "UPDATE branch_versions SET version = version + 1, changed_at = now() WHERE branch_id = $1",
+    )
+    .bind(branch.as_str())
+    .execute(&mut **tx)
+    .await?;
+    Ok(())
 }
