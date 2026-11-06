@@ -1,8 +1,5 @@
 import type { ApiClient } from '../../shared/api/client';
-import type {
-  KioskScreenData,
-  KioskScreenSaveInput,
-} from '../../shared/api/generated/kiosk_screen';
+import type { KioskScreenData } from '../../shared/api/generated/kiosk_screen';
 
 export type CurrencyDisplay = 'SHOW' | 'ASK' | 'HIDE';
 
@@ -38,17 +35,4 @@ export async function readKioskScreen(
 ): Promise<KioskScreenData | undefined> {
   const res = await api.view<KioskScreenData>(KIOSK_SCREEN_VIEW, { branch });
   return res.data;
-}
-
-export async function saveKioskScreen(
-  api: Pick<ApiClient, 'command'>,
-  input: KioskScreenSaveInput,
-  key = crypto.randomUUID(),
-): Promise<KioskScreenData> {
-  return api.command<KioskScreenSaveInput, KioskScreenData>(
-    'POST',
-    KIOSK_SCREEN_SAVE_PATH,
-    input,
-    key,
-  );
 }

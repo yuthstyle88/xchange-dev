@@ -321,3 +321,8 @@
   color: var(--brand);
 }
 
+.xc-kiosk .kiosk-screen-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

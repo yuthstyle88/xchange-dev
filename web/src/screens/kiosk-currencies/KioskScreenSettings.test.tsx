@@ -33,7 +33,7 @@ const SERVER_DEFAULTS = {
   defaultPaymentMethod: 'Cash',
 };
 
-function unsetScreen(branch = 'MAIN'): KioskScreenData {
+function unsetScreen(branch = 'MAIN') {
   return makeKioskScreenData({
     branch,
     ...SERVER_DEFAULTS,
@@ -83,7 +83,7 @@ function createFakeApi(options?: {
       return { saved: true } as any;
     },
     async command(method: string, path: string, body: unknown, key: string) {
-      const input = JSON.parse(JSON.stringify(body)) as KioskScreenSaveInput;
+      const input: KioskScreenSaveInput = JSON.parse(JSON.stringify(body));
       commands.push({ method, path, body: input, key });
       if (options?.onSave) {
         current = await options.onSave(input);
