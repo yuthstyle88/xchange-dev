@@ -132,6 +132,7 @@ export const th = {
   'kioskCancel.confirm': 'ยืนยัน',
   'kioskCancel.dismiss': 'ปิด',
   'kioskCancel.reason.customerLeft': 'ลูกค้าไม่อยู่ / เดินออกไปแล้ว',
+  'kioskCancel.reason.stockShort': 'เงินสดในลิ้นชักไม่พอ',
   'kioskCancel.reason.customerCancelled': 'ลูกค้ายกเลิกเองที่ตู้',
   'kioskCancel.reason.dayClosed': 'ปิดวันทำการ',
   'kioskCancel.reason.customerChangedMind': 'ลูกค้าเปลี่ยนใจ',

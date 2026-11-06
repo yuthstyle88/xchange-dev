@@ -134,6 +134,7 @@ export const zh: Record<Key, string> = {
   'kioskCancel.confirm': '确认',
   'kioskCancel.dismiss': '关闭',
   'kioskCancel.reason.customerLeft': '客户已离开',
+  'kioskCancel.reason.stockShort': '钱箱现金不足',
   'kioskCancel.reason.customerCancelled': '客户在自助终端自行取消',
   'kioskCancel.reason.dayClosed': '营业日结束',
   'kioskCancel.reason.customerChangedMind': '客户改变主意',
