@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>xchange — one look (mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="xc-tokens.css">
+<style>
+  /* Mock of docs/design/xchange-one-look.md §2.3 — every value from the kiosk tokens; no literal colours below. */
+  :root { --xc-font-sans: 'Noto Sans Thai', Arial, Tahoma, sans-serif; --xc-focus-ring: var(--xc-brand-100); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--xc-canvas); color: var(--xc-ink); font: 15px/1.6 var(--xc-font-sans); }
+  .tabs { display: flex; gap: 8px; padding: 12px 16px; background: var(--xc-surface); border-bottom: 1px solid var(--xc-line); position: sticky; top: 0; z-index: 2; }
+  .tabs button { min-height: 36px; padding: 6px 14px; border-radius: var(--xc-radius-pill); border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-muted); font: 600 13px/1 var(--xc-font-sans); cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--xc-brand); border-color: var(--xc-brand); color: var(--xc-on-brand); }
+  .view { display: none; } .view.on { display: block; }
+
+  /* Shared parts */
+  .field { display: grid; gap: 6px; margin-bottom: 16px; }
+  .field label { font-weight: 600; font-size: 14px; color: var(--xc-ink); }
+  .field .hint { font-size: 13px; color: var(--xc-muted); }
+  .input, select.input { width: 100%; height: 44px; padding: 10px 12px; border: 1px solid var(--xc-gray-200); border-radius: var(--xc-radius-md);
+    background: var(--xc-surface); color: var(--xc-ink); font: 16px/1.4 var(--xc-font-sans); outline: none; transition: border-color .12s, box-shadow .12s; }
+  .input::placeholder { color: var(--xc-gray-400); }
+  .input:hover { border-color: var(--xc-gray-300); }
+  .input:focus { border-color: var(--xc-brand); box-shadow: 0 0 0 3px var(--xc-focus-ring); }
+  .input[aria-invalid="true"] { border-color: var(--xc-danger); box-shadow: 0 0 0 3px var(--xc-danger-soft); }
+  .error { font-size: 13px; color: var(--xc-danger); }
+  .pw { position: relative; } .pw .input { padding-right: 44px; }
+  .pw .eye { position: absolute; right: 6px; top: 6px; width: 32px; height: 32px; border: 0; background: transparent; color: var(--xc-muted); border-radius: var(--xc-radius-sm); cursor: pointer; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 10px 18px; border-radius: var(--xc-radius-md);
+    border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-brand); font: 600 15px/1.2 var(--xc-font-sans); cursor: pointer; }
+  .btn.primary { background: var(--xc-brand); border-color: var(--xc-brand); color: var(--xc-on-brand); box-shadow: var(--xc-shadow-brand); }
+  .btn.primary:hover { background: var(--xc-brand-strong); }
+  .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--xc-focus-ring); }
+  .btn.block { width: 100%; }
+  .card { background: var(--xc-surface); border: 1px solid var(--xc-line); border-radius: var(--xc-radius-xl); box-shadow: var(--xc-shadow-sm); padding: 20px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .02em; color: var(--xc-ink); }
+  .brand .mark { width: 32px; height: 32px; border-radius: var(--xc-radius-md); background: var(--xc-brand); color: var(--xc-on-brand); display: grid; place-items: center; font-size: 14px; }
+  .muted { color: var(--xc-muted); }
+  .badge { display: inline-flex; padding: 3px 10px; border-radius: var(--xc-radius-pill); font: 600 12px/1.4 var(--xc-font-sans); background: var(--xc-brand-soft); color: var(--xc-brand); }
+  .badge.ok { background: var(--xc-success-soft); color: var(--xc-success); }
+
+  /* Sign-in */
+  .auth { min-height: calc(100vh - 61px); display: grid; place-items: center; padding: 24px 16px; background: var(--xc-paper); }
+  .auth .card { width: 100%; max-width: 420px; padding: 32px; box-shadow: var(--xc-shadow-md); }
+  .auth h1 { font-size: 24px; line-height: 1.3; margin: 20px 0 4px; }
+  .auth .top { display: flex; justify-content: space-between; align-items: center; }
+  .lang { min-height: 32px; padding: 4px 10px; font-size: 13px; }
+  .ver { margin-top: 20px; text-align: center; font-size: 12px; color: var(--xc-gray-500); }
+
+  /* Shell + desk */
+  .shell-h { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: var(--xc-surface); border-bottom: 1px solid var(--xc-line); }
+  .shell-h nav { display: flex; gap: 4px; }
+  .shell-h nav a { padding: 8px 12px; border-radius: var(--xc-radius-md); color: var(--xc-muted); text-decoration: none; font-weight: 600; font-size: 14px; }
+  .shell-h nav a.on { background: var(--xc-brand-soft); color: var(--xc-brand); }
+  .who { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+  .page { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; display: grid; gap: 16px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .page > *, .grid2 > *, .grid3 > * { min-width: 0; }
+  .table-wrap { overflow-x: auto; }
+  .brand .name { white-space: nowrap; }
+  .badge { white-space: nowrap; }
+  .who .btn { white-space: nowrap; }
+  @media (max-width: 760px) {
+    .grid2, .grid3 { grid-template-columns: 1fr; }
+    .shell-h { padding: 12px 16px; gap: 8px; }
+    .shell-h nav, .who .user { display: none; }
+    .page { padding: 16px 12px 40px; }
+    .card { padding: 16px; }
+  }
+  h2 { font-size: 18px; margin: 0 0 16px; }
+  .seg { display: inline-flex; padding: 4px; gap: 4px; background: var(--xc-gray-75); border-radius: var(--xc-radius-lg); }
+  .seg button { min-height: 36px; padding: 6px 16px; border: 0; border-radius: var(--xc-radius-md); background: transparent; color: var(--xc-muted); font: 600 14px/1 var(--xc-font-sans); cursor: pointer; }
+  .seg button.on { background: var(--xc-surface); color: var(--xc-ink); box-shadow: var(--xc-shadow-sm); }
+  .sum { display: grid; gap: 8px; }
+  .sum .row { display: flex; justify-content: space-between; font-size: 14px; }
+  .sum .total { padding-top: 12px; border-top: 1px dashed var(--xc-line); font-size: 22px; font-weight: 700; color: var(--xc-brand); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--xc-muted); padding: 10px 12px; border-bottom: 1px solid var(--xc-line); }
+  td { padding: 12px; border-bottom: 1px solid var(--xc-gray-100); }
+  tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Mobile menu: the menu button expands a panel under the header and collapses it again (ย่อ/ขยาย). */
+  .shell-wrap { position: sticky; top: 61px; z-index: 5; }
+  .menu-btn { display: none; width: 40px; height: 40px; border: 1px solid var(--xc-line); border-radius: var(--xc-radius-md); background: var(--xc-surface); color: var(--xc-ink); cursor: pointer; align-items: center; justify-content: center; }
+  .menu-btn[aria-expanded="true"] { background: var(--xc-brand-soft); border-color: var(--xc-brand-200); color: var(--xc-brand); }
+  .menu-btn .i-close { display: none; }
+  .menu-btn[aria-expanded="true"] .i-open { display: none; }
+  .menu-btn[aria-expanded="true"] .i-close { display: block; }
+  .menu-btn svg { width: 20px; height: 20px; }
+  .drop { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .22s ease; background: var(--xc-surface); border-bottom: 1px solid transparent; }
+  .drop > div { overflow: hidden; }
+  .menu-open .drop { grid-template-rows: 1fr; border-bottom-color: var(--xc-line); box-shadow: var(--xc-shadow-md); }
+  .drop-user { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--xc-gray-100); font-size: 14px; }
+  .drop nav { display: grid; gap: 2px; padding: 8px; }
+  .drop nav a { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 0 12px; border-radius: var(--xc-radius-lg); color: var(--xc-ink); text-decoration: none; font-weight: 600; font-size: 15px; }
+  .drop nav a .ic { width: 30px; height: 30px; border-radius: var(--xc-radius-md); background: var(--xc-gray-75); color: var(--xc-muted); display: grid; place-items: center; }
+  .drop nav a.on { background: var(--xc-brand-soft); color: var(--xc-brand); }
+  .drop nav a.on .ic { background: var(--xc-brand); color: var(--xc-on-brand); }
+  .drop-f { padding: 8px 16px 16px; }
+  @media (min-width: 761px) { .drop { display: none; } }
+  @media (max-width: 760px) {
+    .menu-btn { display: inline-flex; }
+    .who .badge, .who .btn { display: none; }
+  }
+
+  /* Sign-in on a phone fills the screen: no floating card, full width and height (owner: "ขยายให้ เต็มจอ"). */
+  @media (max-width: 560px) {
+    .auth { display: block; min-height: calc(100vh - 61px); padding: 0; background: var(--xc-surface); }
+    .auth > div { width: 100%; min-height: calc(100vh - 61px); display: flex; flex-direction: column; }
+    .auth .card { max-width: none; flex: 1; border: 0; border-radius: 0; box-shadow: none; padding: 28px 20px 24px; display: flex; flex-direction: column; }
+    .auth .card .btn.primary { margin-top: 8px; min-height: 52px; font-size: 16px; }
+    .auth h1 { font-size: 26px; margin-top: 28px; }
+    .auth .input { height: 52px; }
+    .auth .ver { margin: 0; padding: 16px; background: var(--xc-surface); }
+  }
+
+  /* Language switch: one segmented control, ไทย | EN, the current one filled (owner: "สลับ ภาษา ไทย en"). */
+  .lang-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--xc-gray-75); border: 1px solid var(--xc-line); border-radius: var(--xc-radius-pill); }
+  .lang-seg button { min-height: 30px; min-width: 44px; padding: 4px 12px; border: 0; border-radius: var(--xc-radius-pill); background: transparent; color: var(--xc-muted); font: 600 13px/1 var(--xc-font-sans); cursor: pointer; }
+  .lang-seg button[aria-pressed="true"] { background: var(--xc-surface); color: var(--xc-brand); box-shadow: var(--xc-shadow-sm); }
+</style>
+</head>
+<body>
+<div class="tabs" role="toolbar">
+  <button aria-pressed="true" data-v="login">หน้าเข้าสู่ระบบ</button>
+  <button aria-pressed="false" data-v="desk">หน้าคีย์ย้อนหลัง (เคาน์เตอร์)</button>
+</div>
+
+<section class="view on" id="login">
+  <div class="auth">
+    <div>
+      <div class="card">
+        <div class="top"><div class="brand"><span class="mark">XC</span>XCHANGE × T.K.</div><div class="lang-seg" role="group" aria-label="ภาษา / Language"><button data-lang="th" aria-pressed="true">ไทย</button><button data-lang="en" aria-pressed="false">EN</button></div></div>
+        <h1><span data-i18n="t0">เข้าสู่ระบบพนักงาน</span></h1>
+        <p class="muted" style="margin:0 0 24px"><span data-i18n="t1">ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</span></p>
+        <div class="field"><label for="u"><span data-i18n="t2">อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</span></label><input class="input" id="u" placeholder="+66 8x xxx xxxx"></div>
+        <div class="field"><label for="p"><span data-i18n="t3">รหัสผ่าน</span></label><div class="pw"><input class="input" id="p" type="password" value="password"><button class="eye" aria-label="แสดงรหัสผ่าน">👁</button></div></div>
+        <button class="btn primary block"><span data-i18n="t4">เข้าสู่ระบบ</span></button>
+      </div>
+      <p class="ver">v1.0.0 · 864a15f · staging</p>
+    </div>
+  </div>
+</section>
+
+<section class="view" id="desk">
+  <header class="shell-h">
+    <div class="brand"><span class="mark">XC</span><span class="name">XCHANGE · MAIN</span></div>
+    <nav><a href="#"><span data-i18n="t27">เคาน์เตอร์</span></a><a href="#" class="on">คีย์ย้อนหลัง</a><a href="#"><span data-i18n="t28">ตู้เซฟ</span></a><a href="#"><span data-i18n="t29">รายงาน</span></a></nav>
+    <div class="who"><div class="lang-seg" role="group" aria-label="ภาษา / Language"><button data-lang="th" aria-pressed="true">ไทย</button><button data-lang="en" aria-pressed="false">EN</button></div><span class="badge ok"><span data-i18n="t32">กะ C เปิดอยู่</span></span><span class="user">Owner</span><button class="btn" style="min-height:36px;padding:6px 12px"><span data-i18n="t31">ออกจากระบบ</span></button><button class="menu-btn" aria-label="เมนู" aria-controls="drop" aria-expanded="false" onclick="toggleMenu()"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  </header>
+
+  <div class="drop" id="drop"><div>
+    <div class="drop-user"><span><strong>Owner</strong> · <span class="muted"><span data-i18n="t33">สาขา MAIN</span></span></span><span class="badge ok"><span data-i18n="t32">กะ C เปิดอยู่</span></span></div>
+    <nav>
+      <a href="#"><span class="ic">⇄</span><span data-i18n="t27">เคาน์เตอร์</span></a>
+      <a href="#" class="on"><span class="ic">↺</span>คีย์ย้อนหลัง</a>
+      <a href="#"><span class="ic">▣</span><span data-i18n="t28">ตู้เซฟ</span></a>
+      <a href="#"><span class="ic">≡</span><span data-i18n="t29">รายงาน</span></a>
+      <a href="#"><span class="ic">⚙</span><span data-i18n="t30">ตั้งค่า</span></a>
+    </nav>
+    <div class="drop-f"><button class="btn block"><span data-i18n="t31">ออกจากระบบ</span></button></div>
+  </div></div>
+  <main class="page">
+    <div class="grid2">
+      <div class="card">
+        <h2><span data-i18n="t5">คีย์รายการย้อนหลัง</span> <span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></h2>
+        <div class="field"><label><span data-i18n="t7">ประเภท</span></label><div class="seg"><button class="on"><span data-i18n="t8">รับซื้อ (BUY)</span></button><button><span data-i18n="t9">ขาย (SELL)</span></button></div></div>
+        <div class="grid3">
+          <div class="field"><label><span data-i18n="t10">สกุลเงิน</span></label><select class="input"><option>USD</option><option>EUR</option><option>JPY</option></select></div>
+          <div class="field"><label><span data-i18n="t11">จำนวน</span></label><input class="input" value="100.00" inputmode="decimal"></div>
+          <div class="field"><label><span data-i18n="t12">เรท</span></label><input class="input" value="33.57" inputmode="decimal"></div>
+        </div>
+        <div class="grid2">
+          <div class="field"><label><span data-i18n="t13">วันที่ทำการ</span></label><input class="input" type="date" value="2026-11-04"></div>
+          <div class="field"><label><span data-i18n="t14">เวลาจ่ายเงินจริง</span></label><input class="input" type="time" value="13:23"></div>
+        </div>
+        <div class="field"><label><span data-i18n="t15">หมายเหตุ</span></label><input class="input" value="XC-20261104-000018 · T1"><span class="hint"><span data-i18n="t16">เลขที่ใบเดิมจาก Telegram และพนักงาน</span></span></div>
+        <button class="btn primary block"><span data-i18n="t17">บันทึกรายการ</span></button>
+      </div>
+      <div class="card">
+        <h2><span data-i18n="t18">สรุป</span></h2>
+        <div class="sum">
+          <div class="row"><span class="muted">USD 100.00 × 33.57</span><span>3,357.00</span></div>
+          <div class="row"><span class="muted"><span data-i18n="t19">ตู้เซฟก่อนจ่าย</span></span><span>334,800.00</span></div>
+          <div class="row"><span class="muted"><span data-i18n="t20">ตู้เซฟหลังจ่าย</span></span><span>331,443.00</span></div>
+          <div class="row total"><span><span data-i18n="t21">จ่ายลูกค้า</span></span><span>฿3,357.00</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="padding:0">
+      <div style="padding:16px 20px 0"><h2><span data-i18n="t22">รายการวันที่ 4 พ.ย.</span></h2></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th><span data-i18n="t23">เวลา</span></th><th><span data-i18n="t24">เลขที่</span></th><th><span data-i18n="t25">สกุล</span></th><th class="num"><span data-i18n="t11">จำนวน</span></th><th class="num"><span data-i18n="t12">เรท</span></th><th class="num"><span data-i18n="t26">บาท</span></th><th></th></tr></thead>
+        <tbody>
+          <tr><td>13:23</td><td>R-0001</td><td>USD</td><td class="num">100.00</td><td class="num">33.57</td><td class="num">3,357.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
+          <tr><td>13:30</td><td>R-0002</td><td>USD</td><td class="num">200.00</td><td class="num">33.57</td><td class="num">6,714.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
+          <tr><td>13:43</td><td>R-0003</td><td>EUR</td><td class="num">200.00</td><td class="num">37.50</td><td class="num">7,500.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </main>
+</section>
+<script>
+  function toggleMenu(on){ on = on ?? !document.body.classList.contains("menu-open"); document.body.classList.toggle("menu-open", on); document.querySelectorAll(".shell-h .menu-btn").forEach(b=>b.setAttribute("aria-expanded", on)); }
+  document.addEventListener("keydown", e => { if (e.key === "Escape") toggleMenu(false); });
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === b.dataset.v));
+  });
+
+  const I18N = { th: {"t0": "เข้าสู่ระบบพนักงาน", "t1": "ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้", "t2": "อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้", "t3": "รหัสผ่าน", "t4": "เข้าสู่ระบบ", "t5": "คีย์รายการย้อนหลัง", "t6": "ย้อนหลัง", "t7": "ประเภท", "t8": "รับซื้อ (BUY)", "t9": "ขาย (SELL)", "t10": "สกุลเงิน", "t11": "จำนวน", "t12": "เรท", "t13": "วันที่ทำการ", "t14": "เวลาจ่ายเงินจริง", "t15": "หมายเหตุ", "t16": "เลขที่ใบเดิมจาก Telegram และพนักงาน", "t17": "บันทึกรายการ", "t18": "สรุป", "t19": "ตู้เซฟก่อนจ่าย", "t20": "ตู้เซฟหลังจ่าย", "t21": "จ่ายลูกค้า", "t22": "รายการวันที่ 4 พ.ย.", "t23": "เวลา", "t24": "เลขที่", "t25": "สกุล", "t26": "บาท", "t27": "เคาน์เตอร์", "t28": "ตู้เซฟ", "t29": "รายงาน", "t30": "ตั้งค่า", "t31": "ออกจากระบบ", "t32": "กะ C เปิดอยู่", "t33": "สาขา MAIN"}, en: {"t0": "Staff sign-in", "t1": "Use your email, phone number or username", "t2": "Email, phone number or username", "t3": "Password", "t4": "Sign in", "t5": "Backdated entry", "t6": "Backdated", "t7": "Type", "t8": "We buy (BUY)", "t9": "We sell (SELL)", "t10": "Currency", "t11": "Amount", "t12": "Rate", "t13": "Business date", "t14": "Actual paid time", "t15": "Note", "t16": "Original slip number from Telegram and the staff", "t17": "Save entry", "t18": "Summary", "t19": "Safe before payout", "t20": "Safe after payout", "t21": "Pay customer", "t22": "Entries for 4 Nov", "t23": "Time", "t24": "No.", "t25": "Cur.", "t26": "THB", "t27": "Desk", "t28": "Safe", "t29": "Reports", "t30": "Settings", "t31": "Sign out", "t32": "Shift C open", "t33": "Branch MAIN"} };
+  function setLang(l) {
+    document.documentElement.lang = l;
+    document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = I18N[l][e.dataset.i18n]; });
+    document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === l));
+    try { localStorage.setItem('xc-mock-lang', l); } catch (e) {}
+  }
+  document.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => setLang(b.dataset.lang));
+  try { const l = localStorage.getItem('xc-mock-lang'); if (l) setLang(l); } catch (e) {}
+
+  // Mock wiring: sign-out returns to the sign-in page; sign-in opens the desk; nav rows move the highlight and collapse the menu.
+  function show(v){ document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === v)); document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v)); window.scrollTo(0,0); }
+  document.querySelectorAll('.btn').forEach(b => { if (b.textContent.trim().match(/^(ออกจากระบบ|Sign out)$/) || b.querySelector('[data-i18n]') && /ออกจากระบบ|Sign out/.test(b.textContent)) b.onclick = () => { toggleMenu(false); show('login'); }; });
+  document.querySelector('#login .btn.primary').onclick = () => show('desk');
+  document.querySelectorAll('.shell-h nav a, .drop nav a').forEach(a => a.onclick = e => {
+    e.preventDefault(); const label = a.textContent.trim();
+    document.querySelectorAll('.shell-h nav a, .drop nav a').forEach(x => x.classList.toggle('on', x.textContent.trim() === label));
+    toggleMenu(false);
+  });
+</script>
+</body>
+</html>
