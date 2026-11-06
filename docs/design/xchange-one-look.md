@@ -1,7 +1,7 @@
 # One look for every xchange web page (staff, admin, sign-in, customer)
 
 > designed-by: claude/022a7453 · 2026-11-06 · measured on `main` at `f5a0932`
-> Owner, 2026-11-06 ~09:10–09:40 ICT, while keying 4–5 Nov on xc-v3:
+> Owner, 2026-11-06 between ~08:40 and 09:05 ICT, while preparing to key 4–5 Nov on xc-v3:
 > - *"หน้าแรกก็ไม่สวย"* (about the sign-in page);
 > - *"ธีม ไม่เข้ากัน"*;
 > - *"แก้ไข ธีม ใหม่"*;
@@ -66,6 +66,7 @@ the next screen free to hard-code again.
 | Page | background `--xc-bg`; text `--xc-ink`; font `--xc-font-sans` 15px/1.6 |
 | Shell header | `--xc-surface`, bottom 1px `--xc-line`, brand mark in `--xc-brand` |
 | Sign-in card | centred and 420px wide. Brand mark at the top. The same input and button parts. Background `--xc-bg` |
+| Mobile menu (≤760px) | The header keeps the brand mark and a 40px menu button only. The button **expands a panel under the header and collapses it again** (owner: *"ทำเมนู มือ ถือ"*, *"ย่อ ขยาย"*). The panel holds the user and branch, the shift badge, every nav item as a 48px row (the current one in `--xc-brand-soft`), and sign-out. The icon swaps ☰ ↔ ✕, `aria-expanded` follows, and Esc closes it. There is no horizontal scroll at 375px. Above 760px the nav stays inline in the header |
 
 **Font: open question for OL-1.** `api/static/kiosk/xc-tokens.css:6-8` declares `XC Noto Sans Thai` from `fonts/noto-sans-thai-*.woff2`.
 At `f5a0932` no such file is in the repo, and `/kiosk/fonts/…` answers 404 on xc-v3. The kiosk therefore falls back to Arial/Tahoma today.
@@ -88,6 +89,12 @@ Exempt:
 - `api/static/kiosk/**`, which is not under `web/src`.
 
 `transparent`, `currentColor`, `inherit` and `none` are not literals.
+
+### 2.5 The approved mock-up
+
+The owner reviewed a live mock-up of §2.3 in the browser pane and answered *"ok"* (2026-11-06 ~09:07 ICT). It shows the sign-in page and the backdated-keying desk page, including the mobile menu, at phone and desktop width.
+The file is `docs/design/one-look-mock/index.html`. It uses only the kiosk tokens (`one-look-mock/xc-tokens.css`, copied from `api/static/kiosk/xc-tokens.css` with the `@font-face` lines removed), and no colour literal sits outside them.
+**This mock-up is the visual reference for every OL ticket.** Where the mock-up and a table cell above disagree, the mock-up wins, and the ticket says so.
 
 ## 3. What does not change
 
