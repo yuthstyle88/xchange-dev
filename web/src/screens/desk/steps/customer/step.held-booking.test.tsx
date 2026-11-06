@@ -216,8 +216,23 @@ describe('C1: the customer step sends the held booking with reserveCustomer', ()
     expect(s.reserves()[0]!.body.payload).not.toHaveProperty('bookingId');
   });
 
-  it('F5: the skip (WALK-IN) never reads the held ticket and never sends bookingId', async () => {
+  // F5 restated on feat/custsim-fixes by claude/33691c06 under the owner's ruling R7 (A) on #564,
+  // issuecomment-6673699296: the passport skip is refused while a booking is held. It was "the skip never reads the
+  // held ticket" (C1.7); a held walk-in still skips as before.
+  it('F5: the skip is refused while a booking is held; no WALK-IN is reserved', async () => {
     const s = stubServer({ called: [HELD_BOOKING], bookings: [BK9] });
+    const store = atCustomerStep(s);
+    const skip = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
+      b.textContent?.includes('ข้ามข้อมูลลูกค้า'),
+    )!;
+    skip.click();
+    await vi.waitFor(() => expect(host.textContent).toContain('ข้ามข้อมูลลูกค้าไม่ได้'));
+    expect(s.reserves()).toHaveLength(0);
+    expect(store.step()).toBe(1);
+  });
+
+  it('F5b: with a held walk-in the skip reserves WALK-IN and sends no bookingId', async () => {
+    const s = stubServer({ called: [{ ...HELD_BOOKING, serviceType: 'WALK_IN', displayNumber: 'W004' }] });
     atCustomerStep(s);
     const skip = [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
       b.textContent?.includes('ข้ามข้อมูลลูกค้า'),
@@ -226,7 +241,6 @@ describe('C1: the customer step sends the held booking with reserveCustomer', ()
     await vi.waitFor(() => expect(s.reserves()).toHaveLength(1));
     expect(s.reserves()[0]!.body.payload).toMatchObject({ passportNo: 'WALKIN' });
     expect(s.reserves()[0]!.body.payload).not.toHaveProperty('bookingId');
-    expect(s.boardReads()).toHaveLength(0);
   });
 
   it('F6: bookingNotThisCustomer is shown on the passport field and the step stays', async () => {
