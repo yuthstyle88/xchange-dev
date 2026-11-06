@@ -1,4 +1,5 @@
 pub mod accept_outcome;
+pub mod amount_in;
 pub mod audit_line;
 pub mod cancel_reason;
 pub mod counter_facts;

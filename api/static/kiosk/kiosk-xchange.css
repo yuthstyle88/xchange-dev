@@ -20,6 +20,10 @@ body.customer-kiosk .amount-code{position:absolute;left:18px;top:50%;transform:t
 body.customer-kiosk .quick-amounts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 0}
 body.customer-kiosk .quick-amounts button{min-width:0;min-height:0;height:48px;padding:0 4px;border:2px solid transparent;border-radius:var(--xc-radius-lg);background:var(--xc-gray-100);color:var(--xc-ink);font:800 17px/1 var(--xc-font-sans);box-shadow:none;touch-action:manipulation}
 body.customer-kiosk .quick-amounts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+body.customer-kiosk #amount-in{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px;padding:0;border:0}
+body.customer-kiosk #amount-in button{min-width:0;min-height:44px;padding:6px 10px;border:2px solid var(--xc-line);border-radius:var(--xc-radius-lg);background:var(--xc-surface);color:var(--xc-ink);font:700 15px/1.2 var(--xc-font-sans);text-align:center;box-shadow:none;touch-action:manipulation}
+body.customer-kiosk #amount-in button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+body.customer-kiosk #amount-in button.selected:after{display:none}
 
 @media(max-width:600px){
  /* the card: one white surface, as .xa-device */

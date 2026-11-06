@@ -18,6 +18,7 @@ use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::entities::payment_gate::PaymentGate;
 use crate::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
+use crate::domain::kiosk::value_objects::amount_in::AmountIn;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::customer_quote::CustomerQuote;
@@ -79,6 +80,22 @@ impl KioskService {
         self.quote_for(branch, cmd, None, now).await
     }
 
+    pub async fn quote_amount_in(
+        &self,
+        branch: &BranchId,
+        cmd: NewQuote,
+        amount_in: Option<AmountIn>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        self.branch_name(branch).await?;
+        let (this, b) = (self.clone(), branch.clone());
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { this.quote_core_in(tx, &b, cmd, amount_in, None, now).await })
+            })
+            .await
+    }
+
     /// `quote` for a web request (design `kiosk-shared-phone.md` §4.2 D1, D2): the same rules and
     /// the same transaction as `quote`, plus, when `customer` is given, the member
     /// (`kiosk_requests.customer_id`) and the hash of its request token (`cancel_token_hash`).
@@ -111,6 +128,19 @@ impl KioskService {
         customer: Option<CustomerQuote>,
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
+        self.quote_core_in(tx, branch, cmd, None, customer, now)
+            .await
+    }
+
+    async fn quote_core_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: NewQuote,
+        amount_in: Option<AmountIn>,
+        customer: Option<CustomerQuote>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
         let at = cut_to_millis(now);
         let now = time(now);
         let (repo, ports, b) = (&self.repo, &self.ports, branch);
@@ -125,8 +155,8 @@ impl KioskService {
             }
             _ => view.facts_without_rate(),
         };
-        let mut request =
-            KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now).map_err(refuse)?;
+        let mut request = KioskMachine::quote_in(&cmd.input, amount_in, &facts, &cmd.new_id, now)
+            .map_err(refuse)?;
 
         if let (Some(currency), Some(side)) = (cmd.input.currency, cmd.input.side) {
             if facts.line.is_some() {
@@ -149,8 +179,14 @@ impl KioskService {
                                 break;
                             }
                             facts.line = Some(tier_line);
-                            request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
-                                .map_err(refuse)?;
+                            request = KioskMachine::quote_in(
+                                &cmd.input,
+                                amount_in,
+                                &facts,
+                                &cmd.new_id,
+                                now,
+                            )
+                            .map_err(refuse)?;
                         }
                     }
                 }
