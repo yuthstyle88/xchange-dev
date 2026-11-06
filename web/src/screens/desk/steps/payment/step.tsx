@@ -17,6 +17,14 @@ const SLIP_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const SLIP_ACCEPT = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
 /** v2 sends Cash's reference as an em dash (dh:117). */
 const CASH_REF = '—';
+const METHOD_KEY = {
+  'Credit Card': 'methodCreditCard',
+  'Alipay': 'methodAlipay',
+  'PromptPay': 'methodPromptPay',
+  'Cash': 'methodCash',
+  'Bank Transfer': 'methodBankTransfer',
+  'SCB Transfer': 'methodScbTransfer',
+} as const;
 
 function slipRefused(file: File): boolean {
   const known = SLIP_TYPES.includes(file.type) || /\.(jpe?g|png|webp|pdf)$/i.test(file.name);
@@ -80,7 +88,8 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
 
   onMount(() => {
     if (store.method() === '') {
-      const first = METHODS.find((m) => open(m));
+      const first =
+        METHODS.find((m) => m === store.config()?.defaultPaymentMethod && open(m)) ?? METHODS.find((m) => open(m));
       if (first) choose(first);
     }
   });
@@ -123,10 +132,9 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
     const needsRef = !isCash();
     if (
       store.method() === '' ||
-      store.account().trim() === '' ||
       !store.passport() ||
       net() === '' ||
-      (needsRef && (store.ref().trim() === '' || !store.slip()))
+      (needsRef && (store.account().trim() === '' || store.ref().trim() === '' || !store.slip()))
     ) {
       setError(t('incomplete'));
       return;
@@ -172,7 +180,7 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
                 disabled={!noRules() && !open(m)}
                 hidden={!noRules() && !open(m) && store.method() !== m}
               >
-                {m}
+                {t(METHOD_KEY[m])}
               </option>
             )}
           </For>

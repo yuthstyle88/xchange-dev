@@ -263,16 +263,18 @@ impl KioskPorts for Switched {
     fn counter<'a>(
         &'a self,
         branch: &'a BranchId,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
-        self.inner.counter(branch)
+        self.inner.counter(branch, now)
     }
 
     fn counter_in<'a>(
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
+        now: DateTime<Utc>,
     ) -> BoxFuture<'a, AppResult<Option<CounterView>>> {
-        self.inner.counter_in(tx, branch)
+        self.inner.counter_in(tx, branch, now)
     }
 
     fn record_in<'a>(

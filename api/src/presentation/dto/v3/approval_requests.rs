@@ -110,6 +110,7 @@ pub struct ApprovalRequestItemDto {
     pub status: String,
     pub decision: Option<ApprovalDecisionDto>,
     pub subject: Option<ApprovalSubject>,
+    pub can_decide: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

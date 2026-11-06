@@ -364,7 +364,10 @@ for (const which of ["OWNER_DESK", "STAFF_DESK"] as const) {
       for (const init of [
         { method: "Bank Transfer", ref: "", account: "A", slip: new File([new Uint8Array([1])], "s.png", { type: "image/png" }) },
         { method: "Bank Transfer", ref: "R1", account: "A" },
-        { method: "Cash", ref: "", account: "" },
+        // Restated by the ticket author (claude/33691c06) to owner ruling R5 (A) on #564, issuecomment-6673699296:
+        // "Cash needs no account name", so the no-account row is a non-cash method (was Cash with no account).
+        // Cash with no account is now allowed: step.default-method.test.tsx.
+        { method: "Bank Transfer", ref: "R1", account: "", slip: new File([new Uint8Array([1])], "s.png", { type: "image/png" }) },
       ]) {
         const store = stubStore(PATHS[which], { ...init, checked: true });
         await mount(store);

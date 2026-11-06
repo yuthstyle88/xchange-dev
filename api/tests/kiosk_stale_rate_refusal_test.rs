@@ -101,7 +101,11 @@ impl KioskPorts for Counter {
         Box::pin(async { Ok(Some("Main".to_owned())) })
     }
 
-    fn counter<'a>(&'a self, _branch: &'a BranchId) -> Asked<'a, Option<CounterView>> {
+    fn counter<'a>(
+        &'a self,
+        _branch: &'a BranchId,
+        _now: DateTime<Utc>,
+    ) -> Asked<'a, Option<CounterView>> {
         Box::pin(async { Ok(Some(Self::view())) })
     }
 
@@ -109,6 +113,7 @@ impl KioskPorts for Counter {
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &'a BranchId,
+        _now: DateTime<Utc>,
     ) -> Asked<'a, Option<CounterView>> {
         Box::pin(async move {
             the_line_exists(tx, branch).await?;

@@ -6,6 +6,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+use crate::presentation::dto::v3::common::OpenShiftDto;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "staff_floor.ts")]
@@ -70,6 +72,8 @@ pub struct StaffFloorView {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub safe: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub open_shifts: Vec<OpenShiftDto>,
 }
 
 pub type StaffFloor = StaffFloorView;

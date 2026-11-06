@@ -44,6 +44,9 @@ struct DeskDbRow {
     key_id: Option<String>,
     encrypted_value: Option<Vec<u8>>,
     ticket_no: Option<String>,
+    shop_side: String,
+    requested_currency: String,
+    requested_quantity: String,
     slot_id: uuid::Uuid,
     start_at: DateTime<Utc>,
     end_at: DateTime<Utc>,
@@ -86,6 +89,7 @@ impl BranchView for DeskBookingsView {
                         (SELECT qt.display_number FROM queue_tickets qt \
                          WHERE qt.booking_id = b.id AND qt.status NOT IN ('CANCELLED', 'NO_SHOW') \
                          ORDER BY qt.created_at DESC LIMIT 1) AS ticket_no, \
+                        b.shop_side, b.requested_currency, b.requested_quantity::text, \
                         b.slot_id, s.start_at, s.end_at, \
                         b.confirm_expires_at, \
                         (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
@@ -172,6 +176,9 @@ impl BranchView for DeskBookingsView {
                         phone_last4,
                         readiness,
                         ticket_number: row.ticket_no,
+                        shop_side: row.shop_side,
+                        currency: row.requested_currency.trim().to_string(),
+                        quantity: row.requested_quantity,
                         slot_id: row.slot_id.to_string(),
                         start_at: row.start_at.to_rfc3339(),
                         end_at: row.end_at.to_rfc3339(),

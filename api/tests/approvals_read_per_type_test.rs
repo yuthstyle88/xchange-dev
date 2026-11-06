@@ -13,6 +13,14 @@
 //! `may_decide(reader, row)`. A row whose type is not registered is never listed. The branch and
 //! the `status`/`type` filters are unchanged.
 //!
+//! Restated for `CASH_TRANSFER` by owner ruling R4 (B) on #564, issuecomment-6673699296
+//! (2026-11-06, by the R4 ticket author claude/33691c06): a cash-transfer row is listed to a reader
+//! holding `ApprovalsDecide` on the transfer's `from_branch`, with `canDecide = may_decide(..).is_ok()`,
+//! so FINANCE and BRANCH_MANAGER see an over-limit transfer read-only. "Listed iff `may_decide`"
+//! still holds for every other type. The cash-transfer rule is pinned in
+//! `f37_transfer_approvals_visible_read_only_test.rs`; the tests below, which use no cash transfer,
+//! are unchanged.
+//!
 //! Needs `TEST_DATABASE_URL`; nothing here skips. Callers come from the `x-test-as` header, as in
 //! `v3_rate_engine_routes_test.rs` (`owner`, `staff:<ROLE>:<branch>`).
 //!

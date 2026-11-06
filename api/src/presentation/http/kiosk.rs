@@ -28,9 +28,11 @@ use xc_kiosk::domain::kiosk::commands::new_quote::NewQuote;
 use xc_kiosk::domain::kiosk::entities::kiosk_settings::KioskSettings;
 use xc_kiosk::domain::kiosk::repositories::kiosk_settings_repository::KioskSettingsRepository;
 use xc_kiosk::domain::kiosk::value_objects::accept_outcome::AcceptOutcome;
+use xc_kiosk::domain::kiosk::value_objects::amount_in::AmountIn;
 use xc_kiosk::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_action::KioskAction;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_actor::KioskActor;
+use xc_kiosk::domain::kiosk::value_objects::kiosk_error::KioskError;
 use xc_kiosk::domain::kiosk::value_objects::kiosk_role::KioskRole;
 use xc_kiosk::domain::kiosk::value_objects::public_rates::PublicRates;
 use xc_kiosk::domain::kiosk::value_objects::queue_filter::QueueFilter;
@@ -47,14 +49,13 @@ use xc_queue::infrastructure::repository::PgQueueRepository;
 
 use crate::application::compat::v2_json::V2Json;
 use crate::application::kiosk_popular::{PopularCache, popular_order, window_start};
-use crate::application::kiosk_screen::{self, KioskScreen};
+use crate::application::kiosk_screen::KioskScreen;
 use crate::bootstrap::AppState;
 use crate::infrastructure::branch_tablets::pg_tablet_store::PgBranchTabletStore;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::kiosk::pg_currency_uses::PgCurrencyUses;
 use crate::infrastructure::kiosk::pg_kiosk_settings_repository::PgKioskSettingsRepository;
-use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::dto::v3::common::RateFreshnessDto;
 use crate::presentation::extractors::actor::{
@@ -260,21 +261,6 @@ async fn ask_currencies(pool: &sqlx::PgPool, branch: &BranchId) -> Result<Vec<St
     .map_err(|e| AppError::Internal(format!("kiosk ASK currencies: {e}")))
 }
 
-/// The branch's owner-set screen values; "not set" when it has none or they cannot be read.
-async fn kiosk_screen(pool: &sqlx::PgPool, branch: &BranchId) -> KioskScreen {
-    match BranchSettingStore::new(pool.clone())
-        .read(branch, kiosk_screen::SETTING)
-        .await
-    {
-        Ok(Some(saved)) => KioskScreen::from_body(&saved.body),
-        Ok(None) => KioskScreen::not_set(),
-        Err(err) => {
-            tracing::warn!(error = %err, branch = branch.as_str(), "kiosk screen values: read failed");
-            KioskScreen::not_set()
-        }
-    }
-}
-
 /// The kiosk's popular currencies among those it offers now; none when no cache is registered.
 async fn popular_codes(
     req: &HttpRequest,
@@ -451,13 +437,13 @@ async fn handle_kiosk(
     let service = KioskService::new(branch_tx, ports);
 
     match action {
-        KioskAction::Rates => match service.public_rates(&branch).await {
+        KioskAction::Rates => match service.public_rates_at(&branch, now).await {
             Ok(public_rates) => {
                 let freshness = match publication_freshness(pool, &branch).await {
                     Ok(f) => f,
                     Err(err) => return handle_service_error(err),
                 };
-                let screen = kiosk_screen(pool, &branch).await;
+                let screen = KioskScreen::read(pool, &branch).await;
                 let popular = popular_codes(&req, &public_rates, &screen, now).await;
                 let ask = match ask_currencies(pool, &branch).await {
                     Ok(ask) => ask,
@@ -477,6 +463,19 @@ async fn handle_kiosk(
             Err(err) => handle_service_error(err),
         },
         KioskAction::Quote => {
+            let amount_in = match payload.get("amountIn") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(s)) => match AmountIn::parse(s) {
+                    Some(a) => Some(a),
+                    None => {
+                        return refuse(400, &KioskError::AmountOrCurrencyInvalid.to_string());
+                    }
+                },
+                Some(_) => {
+                    return refuse(400, &KioskError::AmountOrCurrencyInvalid.to_string());
+                }
+            };
+
             let input = parse_quote_input(
                 payload.get("type").and_then(Value::as_str),
                 payload.get("currency").and_then(Value::as_str),
@@ -498,7 +497,7 @@ async fn handle_kiosk(
                 client_ip,
             };
 
-            match service.quote(&branch, cmd, now).await {
+            match service.quote_amount_in(&branch, cmd, amount_in, now).await {
                 Ok(identified) => {
                     let branch_name: String =
                         sqlx::query_scalar("SELECT name FROM branches WHERE id = $1")

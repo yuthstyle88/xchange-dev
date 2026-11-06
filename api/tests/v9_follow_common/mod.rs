@@ -197,6 +197,12 @@ impl Room {
         xc_testdb::seed_branch_currencies(&self.pool, branch, &["USD", "EUR", "GBP", "CNY", "AUD"])
             .await
             .expect("seed branch currencies");
+        // Restated for R2/F29 by the ticket author (claude/33691c06), owner ruling R2 (A) on #564,
+        // issuecomment-6673699296: the kiosk is open only inside the branch's opening hours (NULL =
+        // closed). The branch is opened all day so a kiosk quote here answers as it did.
+        xc_testdb::open_all_day(&self.pool, branch)
+            .await
+            .expect("open the branch all day");
     }
 
     /// A current policy version of `branch`: adjust 0 / 0, value tiers OFF, references stale after 24 h, and a

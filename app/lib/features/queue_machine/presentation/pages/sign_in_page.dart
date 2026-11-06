@@ -62,7 +62,7 @@ class _SignInPageState extends ConsumerState<SignInPage> {
         if (s.error != null) ...[
           const SizedBox(height: 12),
           Text(
-            queueMachineText(ref, 'sign_in_error'),
+            queueMachineText(ref, _errorKey(s.error!)),
             key: const Key('sign-in-error'),
             style: const TextStyle(fontSize: 16, color: Colors.red),
           ),
@@ -79,3 +79,8 @@ class _SignInPageState extends ConsumerState<SignInPage> {
     );
   }
 }
+
+String _errorKey(String error) => switch (error) {
+  'unauthorized' || 'invalidCredentials' => 'sign_in_error',
+  _ => 'sign_in_unavailable',
+};

@@ -782,12 +782,15 @@ async fn staff_floor_cutoff_answers_its_time_and_how_many_are_pending() {
 
 #[actix_web::test]
 async fn staff_floor_reads_closed_after_cutoff_with_no_open_shift() {
+    // F36 (#564, ruling on #6341): CLOSED is today's cut-off with no open shift. A cut-off on an earlier business
+    // date reads NOT_OPENED, so the cut-off is stamped now, not at T0.
     let f = Floor::start().await;
+    let now = Utc::now().timestamp_millis();
     f.ops(
         "CUT_OFF",
         None,
         None,
-        Some(json!({ "at": T0, "by": "bm", "shiftId": "s-1", "pending": [] })),
+        Some(json!({ "at": now, "by": "bm", "shiftId": "s-1", "pending": [] })),
     )
     .await;
     let teller = test_callers::V2_STAFF
@@ -798,7 +801,7 @@ async fn staff_floor_reads_closed_after_cutoff_with_no_open_shift() {
     let id = f.person("p").await;
     let floor = f.ok(&spec(teller, &id, "MAIN"), "staff_floor", "").await;
     assert_eq!(floor["phase"], json!("CLOSED"));
-    assert_eq!(instant(&floor["cutoff"]["at"], "cutoff.at"), millis(T0));
+    assert_eq!(instant(&floor["cutoff"]["at"], "cutoff.at"), millis(now));
     assert_eq!(floor["cutoff"]["pendingCount"], json!(0));
     f.finish().await;
 }

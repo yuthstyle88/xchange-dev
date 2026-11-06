@@ -195,6 +195,7 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
             "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
             "countFirst" => ("countFirst", StatusCode::CONFLICT),
             "dayClosed" => ("dayClosed", StatusCode::CONFLICT),
+            "bookingNotThisCustomer" => ("bookingNotThisCustomer", StatusCode::BAD_REQUEST),
             _ => ("validationFailed", StatusCode::BAD_REQUEST),
         }
     };

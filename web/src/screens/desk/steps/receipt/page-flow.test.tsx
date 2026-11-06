@@ -6,6 +6,8 @@
 // (claude/709ec749, on the FE lane controller claude/5edf7bb5's order). Do not edit, delete or weaken.
 // Amended by FE-T8 #5856 (claude/01TxaRJG): W2 walks a walk-in sale, so its step-2 heading is the walk-in
 // `ข้อมูลรายการ` (design fe-triage-1101.md W5) instead of v2's `ข้อมูลการจอง`, which stays for booking and kiosk sales.
+// Amended for R7 (owner ruling on #564, issuecomment-6673699296; #6322, claude/33691c06): the fake server answers an
+// empty `queue_board`, since the skip now reads the held ticket before it reserves a walk-in.
 //
 // [required]: the headings of steps 2–4 are `ข้อมูลรายการ` (a walk-in, W5), `ชำระเงินและเอกสารบัญชี`,
 // `ใบเสร็จรายการแลกเงิน`; their controls are the names pinned in `steps/{booking,payment}/step.test.tsx`.
@@ -17,6 +19,7 @@ import {
   makeDeskConfig,
   makeDeskPaymentMethod,
   makeDeskRate,
+  makeQueueBoardData,
   makeQueueTicketDto,
   makeQuoteDto,
   makeQuoteLineDto,
@@ -108,6 +111,8 @@ function fakeServer() {
       calls.push(`${method} ${path}`);
       const body = typeof init?.body === "string" ? JSON.parse(init.body) : undefined;
       if (path === "/api/v3/views/me") return json(200, { version: 1, changed: true, data: ME });
+      // R7 (#564, #6322): the skip reads the held ticket first; nothing is held on this walk-in.
+      if (path === "/api/v3/views/queue_board") return json(200, { version: 1, changed: true, data: makeQueueBoardData({ called: [] }) });
       if (path === "/api/v3/views/desk_config" || path === "/api/v3/views/staff_desk_config") {
         return json(200, { version: 1, changed: true, data: CONFIG });
       }

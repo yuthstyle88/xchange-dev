@@ -43,6 +43,9 @@ const SEED_REQUEST = {
   requestedAt: '2026-10-09T03:00:00+00:00',
   status: 'PENDING',
   decision: null,
+  // R4 (#564, issuecomment-6673699296): the decide form renders only for a row the reader may
+  // decide; this seed is such a row. Added by the R4 ticket author (claude/33691c06).
+  canDecide: true,
 };
 
 async function fakeFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {

@@ -670,6 +670,22 @@ async fn the_answers_keep_v2s_key_order() {
          \"status\":\"QUOTED\",\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\"currency\":\"USD\",\
          \"rate\":32.1,\"foreign\":250,\"thb\":8025,\"inputAmount\":250,\"branchName\":\"XC-B\"}"
     );
+    // F28 (#564), owner ruling R9 (A) 2026-11-06, issuecomment-6673699296: the kiosk shows the
+    // queue ticket's number (W001), so `status` and `confirm` append `ticketNumber` after v2's last
+    // key (snapshot_common::V3_ADDED_KEYS); `null` while the request has no ticket.
+    let quoted = counter
+        .ask(
+            None,
+            "status",
+            json!({ "id": "00000000-0000-4000-8000-0000000c0001" }),
+        )
+        .await;
+    assert_eq!(
+        quoted.text,
+        "{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
+         \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
+         \"status\":\"QUOTED\",\"ticketNumber\":null}"
+    );
     let created = counter.now().timestamp_millis();
     counter.desk.clock.set(counter.now() + Duration::seconds(4));
     let id = "00000000-0000-4000-8000-0000000c0001";
@@ -700,12 +716,22 @@ async fn the_answers_keep_v2s_key_order() {
         "`cancelToken` is a 36-char UUID string: {}",
         confirmed.text
     );
+    let ticket: String =
+        sqlx::query_scalar("SELECT display_number FROM queue_tickets WHERE kiosk_request_id = $1")
+            .bind(id)
+            .fetch_one(&counter.desk.db.pool)
+            .await
+            .expect("the confirm issued the request's ticket");
     assert_eq!(
         format!("{v2_part}}}"),
-        "{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
-         \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
-         \"status\":\"WAITING\"}"
+        format!(
+            "{{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
+             \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
+             \"status\":\"WAITING\",\"ticketNumber\":\"{ticket}\"}}"
+        )
     );
+    let waiting = counter.ask(None, "status", json!({ "id": id })).await;
+    assert_eq!(waiting.text, format!("{v2_part}}}"));
     let notifications = counter.ask(Some("FR1"), "notifications", json!({})).await;
     // OR-7.m S-D2: one name per user (known difference; rulings on #3730)
     assert_eq!(

@@ -36,6 +36,18 @@ const KINDS = [
   'EXTERNAL_OUT',
 ];
 
+const SHIFT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function formatShiftTime(iso: string): string {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? iso : SHIFT_TIME_FMT.format(d);
+}
+
 export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const t = screenT('staff.transfers', { th, en });
 
@@ -73,10 +85,12 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [showCreate, setShowCreate] = createSignal(false);
   const [kind, setKind] = createSignal('BRANCH');
   const [toBranchId, setToBranchId] = createSignal('');
+  const [toShiftId, setToShiftId] = createSignal('');
   const [note, setNote] = createSignal('');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
   const [createLineErrors, setCreateLineErrors] = createSignal<Record<number, string>>({});
   const [toBranchError, setToBranchError] = createSignal<string | null>(null);
+  const [toShiftError, setToShiftError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
 
   // Active command references for create/submit retry
@@ -115,6 +129,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
 
   const hasOpenShift = () => Boolean(props.ctx.floor?.myShift?.id);
   const teller = () => !can(props.ctx.me, 'CashManage');
+  const openShifts = () => (!teller() ? (props.ctx.floor?.openShifts ?? []) : []);
+  const useShiftPicker = () => !teller() && openShifts().length > 0;
+  const canSafeToDrawer = () => useShiftPicker() || hasOpenShift();
 
   const loadIncoming = async () => {
     try {
@@ -191,6 +208,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     setShowCreate(true);
     setCreateLineErrors({});
     setToBranchError(null);
+    setToShiftError(null);
     setNotice(null);
     setError(null);
   };
@@ -198,6 +216,12 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const handleCreateSubmit = async (e: Event) => {
     e.preventDefault();
     if (isCreateSaveDisabled()) return;
+
+    if (kind() === 'SAFE_TO_DRAWER' && useShiftPicker() && !toShiftId()) {
+      setToShiftError(t('pickTellerShift'));
+      setError(t('pickTellerShift'));
+      return;
+    }
 
     const lines: CashLineInput[] = [];
     const nextLineErrors: Record<number, string> = {};
@@ -231,6 +255,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     }
     setCreateLineErrors({});
     setToBranchError(null);
+    setToShiftError(null);
 
     const api = new ApiClient();
     setSubmitting(true);
@@ -243,7 +268,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         fromShiftId:
           kind() === 'DRAWER_TO_SAFE' ? props.ctx.floor?.myShift?.id ?? null : null,
         toShiftId:
-          kind() === 'SAFE_TO_DRAWER' ? props.ctx.floor?.myShift?.id ?? null : null,
+          kind() === 'SAFE_TO_DRAWER'
+            ? (useShiftPicker() ? toShiftId() || null : props.ctx.floor?.myShift?.id ?? null)
+            : null,
         lines,
         note: note(),
       };
@@ -293,7 +320,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setQuantities({});
       setCreateLineErrors({});
       setToBranchError(null);
+      setToShiftError(null);
       setToBranchId('');
+      setToShiftId('');
       setKind('BRANCH');
       setError(null);
       setNotice(t('saved'));
@@ -308,6 +337,8 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
         setCreateLineErrors({ [denomId]: fe.message });
       } else if (fe.field === 'toBranch') {
         setToBranchError(fe.message);
+      } else if (fe.field === 'toShift') {
+        setToShiftError(fe.message);
       } else {
         setError(fe.message);
       }
@@ -346,6 +377,11 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     }
   };
 
+  const denominationText = (id: number): string => {
+    const d = denominations().find((row) => row.id === id);
+    return d ? `${d.currency} ${d.faceValue}` : `#${id}`;
+  };
+
   const handleOpenReceive = (row: CashTransferRow) => {
     setActiveReceive(row);
     setReceiveQuantities({});
@@ -361,22 +397,24 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     const lines: CashReceivedLineInput[] = [];
     const nextLineErrors: Record<number, string> = {};
     const labels: Record<string, string> = {};
-    const lineDenomIds: number[] = [];
-    for (const d of denominations()) {
-      const qStr = (receiveQuantities()[d.id] ?? '').trim();
-      if (qStr === '') continue;
-      const check = checkInteger(qStr, 0, 2147483647);
-      if (!check.ok) {
-        nextLineErrors[d.id] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+    for (let i = 0; i < row.lines.length; i++) {
+      const l = row.lines[i]!;
+      const qStr = (receiveQuantities()[l.denominationId] ?? '').trim();
+      const label = denominationText(l.denominationId);
+      labels[`lines[${i}].qty`] = label;
+      labels[`lines[${i}].qtyReceived`] = label;
+      if (qStr === '') {
+        nextLineErrors[l.denominationId] = t('countEveryLine');
         continue;
       }
-      const idx = lines.length;
-      labels[`lines[${idx}].qty`] = `${d.currency} ${d.faceValue}`;
-      labels[`lines[${idx}].qtyReceived`] = `${d.currency} ${d.faceValue}`;
-      lineDenomIds.push(d.id);
+      const check = checkInteger(qStr, 0, 2147483647);
+      if (!check.ok) {
+        nextLineErrors[l.denominationId] = check.error === 'outOfRange' ? t('qtyTooLarge') : t('qtyWholeMin0');
+        continue;
+      }
       lines.push({
-        currency: d.currency,
-        denominationId: d.id,
+        currency: l.currency,
+        denominationId: l.denominationId,
         qtyReceived: check.text,
       });
     }
@@ -420,7 +458,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setNotice(null);
       const fe = fieldError(err, labels);
       const match = fe.field?.match(/^lines\[(\d+)\]\.(?:qty|qtyReceived)$/);
-      const denomId = match ? lineDenomIds[+match[1]!] : undefined;
+      const denomId = match ? row.lines[+match[1]!]?.denominationId : undefined;
       if (denomId !== undefined) {
         setReceiveLineErrors({ [denomId]: fe.message });
       } else {
@@ -505,23 +543,29 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             <select
               data-testid="transfer-kind"
               value={kind()}
-              onChange={(e) => setKind(e.currentTarget.value)}
+              onChange={(e) => {
+                setKind(e.currentTarget.value);
+                setToShiftError(null);
+              }}
             >
               <For each={KINDS}>
                 {(k) => {
-                  const isDrawerMove =
-                    k === 'DRAWER_TO_SAFE' || k === 'SAFE_TO_DRAWER';
-                  const disabled = isDrawerMove && !hasOpenShift();
+                  const disabled = () =>
+                    k === 'DRAWER_TO_SAFE'
+                      ? !hasOpenShift()
+                      : k === 'SAFE_TO_DRAWER'
+                        ? !canSafeToDrawer()
+                        : false;
                   const label = t(('kind_' + k) as any);
                   return (
-                    <option value={k} disabled={disabled}>
-                      {disabled ? `${label} (${t('noOpenShift')})` : label}
+                    <option value={k} disabled={disabled()}>
+                      {disabled() ? `${label} (${t('noOpenShift')})` : label}
                     </option>
                   );
                 }}
               </For>
             </select>
-            <Show when={!hasOpenShift()}>
+            <Show when={!hasOpenShift() && !useShiftPicker()}>
               <span class="xc-transfers-no-shift">{t('noOpenShift')}</span>
             </Show>
           </div>
@@ -544,6 +588,33 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
               </select>
               <Show when={toBranchError()}>
                 {(msg) => <span data-field-error="toBranch">{msg()}</span>}
+              </Show>
+            </div>
+          </Show>
+
+          <Show when={kind() === 'SAFE_TO_DRAWER' && useShiftPicker()}>
+            <div class="xc-transfers-form-field">
+              <label>{t('pickTellerShift')}</label>
+              <select
+                data-testid="transfer-to-shift"
+                value={toShiftId()}
+                onChange={(e) => {
+                  setToShiftId(e.currentTarget.value);
+                  setToShiftError(null);
+                  setError(null);
+                }}
+              >
+                <option value="">{t('pickTellerShift')}</option>
+                <For each={openShifts()}>
+                  {(s) => (
+                    <option value={s.shiftId}>
+                      {`${s.tellerName} · ${formatShiftTime(s.openedAt)}`}
+                    </option>
+                  )}
+                </For>
+              </select>
+              <Show when={toShiftError()}>
+                {(msg) => <span data-field-error="toShift">{msg()}</span>}
               </Show>
             </div>
           </Show>
@@ -605,7 +676,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 setQuantities({});
                 setCreateLineErrors({});
                 setToBranchError(null);
+                setToShiftError(null);
                 setToBranchId('');
+                setToShiftId('');
                 setKind('BRANCH');
                 setError(null);
               }}
@@ -626,26 +699,27 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             <h3 title={row().id}>
               {t('receive')}: {shortId(row().id)}
             </h3>
+            <p class="xc-transfers-note">{t('receiveNote')}</p>
             <div class="xc-transfers-denoms">
               <label>{t('lines')}</label>
-              <For each={denominations()}>
-                {(d) => (
+              <For each={row().lines}>
+                {(line) => (
                   <div data-denomination-row class="xc-transfer-denom-row">
                     <span>
-                      {d.currency} {d.faceValue}
+                      {denominationText(line.denominationId)}
                     </span>
                     <input
                       type="text"
                       inputMode="numeric"
-                      data-denomination-id={String(d.id)}
-                      value={receiveQuantities()[d.id] ?? ''}
+                      data-denomination-id={String(line.denominationId)}
+                      value={receiveQuantities()[line.denominationId] ?? ''}
                       onInput={(e) => {
                         const val = e.currentTarget.value;
-                        setReceiveQuantities((prev) => ({ ...prev, [d.id]: val }));
+                        setReceiveQuantities((prev) => ({ ...prev, [line.denominationId]: val }));
                       }}
                     />
-                    <Show when={receiveLineErrors()[d.id]}>
-                      {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
+                    <Show when={receiveLineErrors()[line.denominationId]}>
+                      {(msg) => <span data-field-error={`lines.${line.denominationId}.qty`}>{msg()}</span>}
                     </Show>
                   </div>
                 )}

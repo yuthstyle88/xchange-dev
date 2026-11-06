@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse, web};
+use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use sqlx::{PgPool, Row};
 use xc_kernel::branch_tx::BranchTx;
@@ -25,6 +26,7 @@ use crate::infrastructure::kiosk::kiosk_ports::{KioskAuditLog, PgKioskAuditLog, 
 use crate::presentation::dto::kiosk as dto_kiosk;
 use crate::presentation::http::kiosk::publication_freshness;
 use crate::presentation::http::public::not_found_response;
+use crate::presentation::http::rpc::RpcClock;
 
 pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.app_data(web::Data::new(state.db.clone())).route(
@@ -75,8 +77,11 @@ async fn handle(
         );
     let ports = Arc::new(PgKioskPorts::new(pool_ref.clone(), audit, source));
     let service = KioskService::new(branch_tx, ports);
+    let now = req
+        .app_data::<web::Data<dyn RpcClock>>()
+        .map_or_else(Utc::now, |c| c.now());
 
-    let rates = match service.public_rates(&branch_id).await {
+    let rates = match service.public_rates_at(&branch_id, now).await {
         Ok(r) => r,
         Err(e) => {
             tracing::error!("failed to read kiosk public_rates for queue-rates: {e}");

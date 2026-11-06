@@ -18,6 +18,7 @@ use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
 use crate::domain::kiosk::entities::payment_gate::PaymentGate;
 use crate::domain::kiosk::repositories::kiosk_ports::KioskPorts;
 use crate::domain::kiosk::repositories::kiosk_repository::KioskRepository;
+use crate::domain::kiosk::value_objects::amount_in::AmountIn;
 use crate::domain::kiosk::value_objects::audit_line::CUSTOMER_KIOSK;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::customer_quote::CustomerQuote;
@@ -43,9 +44,18 @@ use super::service::{
 impl KioskService {
     /// `rates`: what the kiosk offers now.
     pub async fn public_rates(&self, branch: &BranchId) -> AppResult<PublicRates> {
+        self.public_rates_at(branch, Utc::now()).await
+    }
+
+    /// `rates` at `now`: what the kiosk offers now, gated by the branch's opening hours at `now`.
+    pub async fn public_rates_at(
+        &self,
+        branch: &BranchId,
+        now: DateTime<Utc>,
+    ) -> AppResult<PublicRates> {
         let view = self
             .ports
-            .counter(branch)
+            .counter(branch, cut_to_millis(now))
             .await?
             .ok_or_else(no_such_branch)?;
         let currencies = KioskCurrencies::new(&self.repo.switches(branch).await?);
@@ -68,6 +78,22 @@ impl KioskService {
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
         self.quote_for(branch, cmd, None, now).await
+    }
+
+    pub async fn quote_amount_in(
+        &self,
+        branch: &BranchId,
+        cmd: NewQuote,
+        amount_in: Option<AmountIn>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
+        self.branch_name(branch).await?;
+        let (this, b) = (self.clone(), branch.clone());
+        self.branch_tx
+            .run(branch, move |tx| {
+                Box::pin(async move { this.quote_core_in(tx, &b, cmd, amount_in, None, now).await })
+            })
+            .await
     }
 
     /// `quote` for a web request (design `kiosk-shared-phone.md` §4.2 D1, D2): the same rules and
@@ -102,10 +128,26 @@ impl KioskService {
         customer: Option<CustomerQuote>,
         now: DateTime<Utc>,
     ) -> AppResult<IdentifiedRequest> {
+        self.quote_core_in(tx, branch, cmd, None, customer, now)
+            .await
+    }
+
+    async fn quote_core_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        cmd: NewQuote,
+        amount_in: Option<AmountIn>,
+        customer: Option<CustomerQuote>,
+        now: DateTime<Utc>,
+    ) -> AppResult<IdentifiedRequest> {
         let at = cut_to_millis(now);
         let now = time(now);
         let (repo, ports, b) = (&self.repo, &self.ports, branch);
-        let view = ports.counter_in(tx, b).await?.ok_or_else(no_such_branch)?;
+        let view = ports
+            .counter_in(tx, b, at)
+            .await?
+            .ok_or_else(no_such_branch)?;
         let mut facts = match (cmd.input.currency, cmd.input.side) {
             (Some(currency), Some(side)) => {
                 let currencies = KioskCurrencies::new(&repo.switches_in(tx, b).await?);
@@ -113,8 +155,8 @@ impl KioskService {
             }
             _ => view.facts_without_rate(),
         };
-        let mut request =
-            KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now).map_err(refuse)?;
+        let mut request = KioskMachine::quote_in(&cmd.input, amount_in, &facts, &cmd.new_id, now)
+            .map_err(refuse)?;
 
         if let (Some(currency), Some(side)) = (cmd.input.currency, cmd.input.side) {
             if facts.line.is_some() {
@@ -137,8 +179,14 @@ impl KioskService {
                                 break;
                             }
                             facts.line = Some(tier_line);
-                            request = KioskMachine::quote(&cmd.input, &facts, &cmd.new_id, now)
-                                .map_err(refuse)?;
+                            request = KioskMachine::quote_in(
+                                &cmd.input,
+                                amount_in,
+                                &facts,
+                                &cmd.new_id,
+                                now,
+                            )
+                            .map_err(refuse)?;
                         }
                     }
                 }
@@ -391,6 +439,7 @@ impl KioskService {
                     let moved =
                         confirm_in(tx, &repo, &*ports, &b, stored.as_ref(), at, now).await?;
                     let mut minted = false;
+                    let mut ticket_number = None;
                     if moved.event.is_some() && moved.request.status == KioskStatus::Waiting {
                         if let Some(token) = &cancel_token {
                             repo.set_cancel_token_in(tx, &b, &id, token).await?;
@@ -400,14 +449,18 @@ impl KioskService {
                             let source = QueueTicketSource::Kiosk {
                                 request_id: id.clone(),
                             };
-                            queue
+                            let issued = queue
                                 .issue_in(tx, &b, &source, &format!("kiosk-confirm:{id}"), at)
                                 .await
                                 .map_err(queue_refusal)?;
+                            ticket_number = Some(issued.display_number);
                         }
+                    } else {
+                        ticket_number = repo.ticket_number_in(tx, &b, &id).await?;
                     }
-                    let identity =
+                    let mut identity =
                         KioskMachine::identity(Some(&moved.request), now).map_err(refuse)?;
+                    identity.ticket_number = ticket_number;
                     Ok((identity, minted))
                 })
             })
@@ -490,7 +543,9 @@ impl KioskService {
     ) -> AppResult<RequestIdentity> {
         self.branch_name(branch).await?;
         let stored = self.repo.find(branch, id).await?;
-        KioskMachine::identity(stored.as_ref(), time(now)).map_err(refuse)
+        let mut identity = KioskMachine::identity(stored.as_ref(), time(now)).map_err(refuse)?;
+        identity.ticket_number = self.repo.ticket_number(branch, id).await?;
+        Ok(identity)
     }
 
     /// `customerReceipt`: the same, with the published picture while it is readable.
@@ -503,7 +558,8 @@ impl KioskService {
         let now = time(now);
         self.branch_name(branch).await?;
         let stored = self.repo.find(branch, id).await?;
-        let identity = KioskMachine::identity(stored.as_ref(), now).map_err(refuse)?;
+        let mut identity = KioskMachine::identity(stored.as_ref(), now).map_err(refuse)?;
+        identity.ticket_number = self.repo.ticket_number(branch, id).await?;
         let image = self
             .repo
             .receipt(branch, id)
@@ -557,7 +613,7 @@ async fn confirm_in(
     let facts = match stored {
         Some(request) => {
             let view = ports
-                .counter_in(tx, branch)
+                .counter_in(tx, branch, at)
                 .await?
                 .ok_or_else(no_such_branch)?;
             let currencies = KioskCurrencies::new(&repo.switches_in(tx, branch).await?);

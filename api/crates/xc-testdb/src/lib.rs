@@ -240,3 +240,28 @@ pub async fn seed_branch_currencies(
     }
     Ok(())
 }
+
+/// Gives `branch` opening hours that cover every instant: `00:00`–`00:00` (a close at or before the
+/// open ends the next day, `BranchHours::window`) on every day of the week, so a test whose clock is
+/// the real one, or any fixed one, finds its branch open.
+///
+/// Added by the ticket author of R2/F29 (claude/33691c06), owner ruling R2 (A) on #564,
+/// issuecomment-6673699296: the kiosk (and the customer's `queueOpen`) is open only inside
+/// `branches.opening_hours`, and NULL hours are closed. A harness that inserts its own branch with
+/// no hours and uses the kiosk calls this to keep its answers as they were.
+pub async fn open_all_day(pool: &PgPool, branch: &str) -> anyhow::Result<()> {
+    let day = r#"[{"open": "00:00", "close": "00:00"}]"#;
+    let hours = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        .map(|d| format!(r#""{d}": {day}"#))
+        .join(", ");
+    let done = sqlx::query("UPDATE branches SET opening_hours = $1::jsonb WHERE id = $2")
+        .bind(format!("{{{hours}}}"))
+        .bind(branch)
+        .execute(pool)
+        .await?;
+    ensure!(
+        done.rows_affected() == 1,
+        "no branch {branch:?} to open all day"
+    );
+    Ok(())
+}
