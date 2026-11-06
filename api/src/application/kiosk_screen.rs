@@ -13,6 +13,9 @@
 //! `kioskScreen` row; the defaults are today's numbers, the ones the owner approved on the preview.
 
 use serde_json::{Value, json};
+use xc_kernel::ids::BranchId;
+
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 
 /// The `branch_settings.name` of these values.
 pub const SETTING: &str = "kioskScreen";
@@ -148,6 +151,21 @@ impl KioskScreen {
             default_payment_method,
             set: true,
             defaults,
+        }
+    }
+
+    /// The branch's owner-set screen values; "not set" when it has none or they cannot be read.
+    pub async fn read(pool: &sqlx::PgPool, branch: &BranchId) -> Self {
+        match BranchSettingStore::new(pool.clone())
+            .read(branch, SETTING)
+            .await
+        {
+            Ok(Some(saved)) => Self::from_body(&saved.body),
+            Ok(None) => Self::not_set(),
+            Err(err) => {
+                tracing::warn!(error = %err, branch = branch.as_str(), "kiosk screen values: read failed");
+                Self::not_set()
+            }
         }
     }
 

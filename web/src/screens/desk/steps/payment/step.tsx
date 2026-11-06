@@ -88,7 +88,8 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
 
   onMount(() => {
     if (store.method() === '') {
-      const first = METHODS.find((m) => open(m));
+      const first =
+        METHODS.find((m) => m === store.config()?.defaultPaymentMethod && open(m)) ?? METHODS.find((m) => open(m));
       if (first) choose(first);
     }
   });
@@ -131,10 +132,9 @@ function PaymentStep(props: { store: DeskStore }): JSX.Element {
     const needsRef = !isCash();
     if (
       store.method() === '' ||
-      store.account().trim() === '' ||
       !store.passport() ||
       net() === '' ||
-      (needsRef && (store.ref().trim() === '' || !store.slip()))
+      (needsRef && (store.account().trim() === '' || store.ref().trim() === '' || !store.slip()))
     ) {
       setError(t('incomplete'));
       return;
