@@ -12,6 +12,7 @@ use xc_rate::infrastructure::branch::branch_repository::PgBranchRepository;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 use xc_shift::application::shift::service::ShiftService;
 
+use crate::application::kiosk_screen::KioskScreen;
 use crate::application::settings::payment_settings::PaymentSettingsService;
 use crate::bootstrap::AppState;
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
@@ -91,6 +92,10 @@ impl DeskConfigCore {
             })
             .collect();
 
+        let default_payment_method = KioskScreen::read(&state.db, branch)
+            .await
+            .default_payment_method;
+
         Ok(DeskConfig {
             branch_id,
             branch_name,
@@ -98,6 +103,7 @@ impl DeskConfigCore {
             admin_url,
             rates,
             payment_methods,
+            default_payment_method,
         })
     }
 }

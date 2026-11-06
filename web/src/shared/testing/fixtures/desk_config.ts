@@ -13,6 +13,7 @@ export function makeDeskConfig(o: Partial<DeskConfig> = {}): DeskConfig {
     adminUrl: 'adminUrl',
     rates: [],
     paymentMethods: [],
+    defaultPaymentMethod: 'defaultPaymentMethod',
     ...o,
   };
 }
