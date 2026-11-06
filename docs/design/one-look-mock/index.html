@@ -223,6 +223,16 @@
   }
   document.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => setLang(b.dataset.lang));
   try { const l = localStorage.getItem('xc-mock-lang'); if (l) setLang(l); } catch (e) {}
+
+  // Mock wiring: sign-out returns to the sign-in page; sign-in opens the desk; nav rows move the highlight and collapse the menu.
+  function show(v){ document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x.dataset.v === v)); document.querySelectorAll('.view').forEach(x => x.classList.toggle('on', x.id === v)); window.scrollTo(0,0); }
+  document.querySelectorAll('.btn').forEach(b => { if (b.textContent.trim().match(/^(ออกจากระบบ|Sign out)$/) || b.querySelector('[data-i18n]') && /ออกจากระบบ|Sign out/.test(b.textContent)) b.onclick = () => { toggleMenu(false); show('login'); }; });
+  document.querySelector('#login .btn.primary').onclick = () => show('desk');
+  document.querySelectorAll('.shell-h nav a, .drop nav a').forEach(a => a.onclick = e => {
+    e.preventDefault(); const label = a.textContent.trim();
+    document.querySelectorAll('.shell-h nav a, .drop nav a').forEach(x => x.classList.toggle('on', x.textContent.trim() === label));
+    toggleMenu(false);
+  });
 </script>
 </body>
 </html>
