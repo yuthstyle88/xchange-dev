@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CancelReason {
     CustomerLeft { note: Option<String> },
+    StockShort { note: Option<String> },
     CustomerCancelled,
     CustomerChangedMind { note: Option<String> },
     Duplicate { note: Option<String> },
@@ -35,6 +36,9 @@ impl CancelReason {
             "CUSTOMER_LEFT" => Ok(Self::CustomerLeft {
                 note: note.map(str::to_owned),
             }),
+            "STOCK_SHORT" => Ok(Self::StockShort {
+                note: note.map(str::to_owned),
+            }),
             "CUSTOMER_CHANGED_MIND" => Ok(Self::CustomerChangedMind {
                 note: note.map(str::to_owned),
             }),
@@ -52,6 +56,7 @@ impl CancelReason {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::CustomerLeft { .. } => "CUSTOMER_LEFT",
+            Self::StockShort { .. } => "STOCK_SHORT",
             Self::CustomerCancelled => "CUSTOMER_CANCELLED",
             Self::CustomerChangedMind { .. } => "CUSTOMER_CHANGED_MIND",
             Self::Duplicate { .. } => "DUPLICATE",
@@ -63,6 +68,7 @@ impl CancelReason {
     pub fn note(&self) -> Option<&str> {
         match self {
             Self::CustomerLeft { note }
+            | Self::StockShort { note }
             | Self::CustomerChangedMind { note }
             | Self::Duplicate { note } => note.as_deref(),
             Self::Other { note } => Some(note.as_str()),
