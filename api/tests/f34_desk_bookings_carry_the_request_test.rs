@@ -74,14 +74,31 @@ async fn f34_desk_bookings_carry_the_request() {
     let uri = format!("/api/v3/views/desk_bookings?branch={B01}");
     let res = call(&db, Some("TELLER@XC-B01"), Method::GET, &uri, None, None).await;
 
-    assert_eq!(res.status, StatusCode::OK, "GET desk_bookings: {}", res.text);
+    assert_eq!(
+        res.status,
+        StatusCode::OK,
+        "GET desk_bookings: {}",
+        res.text
+    );
 
-    let row = row_of(&res.body, booking_id)
-        .unwrap_or_else(|| panic!("booking {booking_id} not found in desk_bookings: {}", res.text));
+    let row = row_of(&res.body, booking_id).unwrap_or_else(|| {
+        panic!(
+            "booking {booking_id} not found in desk_bookings: {}",
+            res.text
+        )
+    });
 
-    assert_eq!(row["shopSide"], "SELL", "shopSide must be SELL: {}", res.text);
+    assert_eq!(
+        row["shopSide"], "SELL",
+        "shopSide must be SELL: {}",
+        res.text
+    );
     assert_eq!(row["currency"], "USD", "currency must be USD: {}", res.text);
-    assert_eq!(row["quantity"], "300.0000", "quantity must be 300.0000: {}", res.text);
+    assert_eq!(
+        row["quantity"], "300.0000",
+        "quantity must be 300.0000: {}",
+        res.text
+    );
 
     db.finish().await;
 }

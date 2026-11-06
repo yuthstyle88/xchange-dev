@@ -441,7 +441,10 @@ async fn ticket_state(room: &Room, ticket: &str) -> (String, bool, i64) {
 /// in `ticket_status` held by the teller (`None`: no ticket). Answers `(request id, ticket id)`.
 async fn requested(room: &Room, ticket_status: Option<&str>) -> (String, Option<String>) {
     let pool = &room.db.pool;
-    let request = format!("K-{}", Uuid::new_v4().simple().to_string()[..8].to_uppercase());
+    let request = format!(
+        "K-{}",
+        Uuid::new_v4().simple().to_string()[..8].to_uppercase()
+    );
     sqlx::query(
         "INSERT INTO kiosk_requests (branch_id, id, status, created_at, staff, side, currency, rate, \
              foreign_amount, thb, input_amount, payment_method) \

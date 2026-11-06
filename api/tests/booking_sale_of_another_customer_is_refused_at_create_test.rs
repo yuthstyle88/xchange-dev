@@ -536,7 +536,8 @@ async fn walk_in_customer(room: &Room) -> String {
             &BranchId::new("MAIN"),
             ReserveCustomer {
                 name: "WALK-IN".to_owned(),
-                passport_no: format!("W{}", &Uuid::new_v4().simple().to_string()[..19]).to_uppercase(),
+                passport_no: format!("W{}", &Uuid::new_v4().simple().to_string()[..19])
+                    .to_uppercase(),
                 nationality: "XXX".to_owned(),
                 birth_date: String::new(),
                 passport_expiry: String::new(),
