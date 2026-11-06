@@ -84,6 +84,7 @@ export * from './handover_receivers';
 export * from './handovers_pending';
 export * from './kiosk_currencies';
 export * from './kiosk_queue';
+export * from './kiosk_screen';
 export * from './ledger_adjustment_create';
 export * from './ledger_adjustment_post';
 export * from './ledger_adjustments';

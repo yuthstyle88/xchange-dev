@@ -1,6 +1,10 @@
 import type { ApiClient } from '../../shared/api/client';
+import type { KioskScreenData } from '../../shared/api/generated/kiosk_screen';
 
 export type CurrencyDisplay = 'SHOW' | 'ASK' | 'HIDE';
+
+export const KIOSK_SCREEN_VIEW = 'kiosk_screen';
+export const KIOSK_SCREEN_SAVE_PATH = '/api/v3/commands/kiosk_screen_save';
 
 export interface ConfigurePayload {
   branchId: string;
@@ -23,4 +27,12 @@ export async function configure(
     action: 'configure',
     payload: p,
   });
+}
+
+export async function readKioskScreen(
+  api: Pick<ApiClient, 'view'>,
+  branch: string,
+): Promise<KioskScreenData | undefined> {
+  const res = await api.view<KioskScreenData>(KIOSK_SCREEN_VIEW, { branch });
+  return res.data;
 }
