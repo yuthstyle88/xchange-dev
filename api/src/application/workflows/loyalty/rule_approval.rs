@@ -106,6 +106,7 @@ fn map_rule_error(err: LoyaltyRuleError) -> SubjectError {
 fn map_subject_error_to_app(err: SubjectError) -> AppError {
     match err {
         SubjectError::DependencyUnavailable { message, .. } => AppError::Internal(message),
+        SubjectError::Refused { code, message } => AppError::Domain(format!("{code}: {message}")),
         SubjectError::Failed(e) => e,
     }
 }

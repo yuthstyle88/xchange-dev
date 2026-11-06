@@ -585,9 +585,20 @@ async fn dispatched(
     flow.submit(&s.finance, &t.id, at(11))
         .await
         .expect("submit");
+    let cover = match (kind, notes) {
+        (TransferKind::DrawerToSafe, 3) => Some(CashPlace::Drawer(from_shift.unwrap().to_owned())),
+        (TransferKind::ExternalOut, 11) => Some(CashPlace::Safe(s.b1.clone())),
+        _ => None,
+    };
+    if let Some(ref place) = cover {
+        lg4_post(&db.pool, CashPlace::Bank, place.clone(), "USD", "50.00").await;
+    }
     flow.decide(&s.exec, &t.id, Outcome::Approved, "ok", at(12))
         .await
         .expect("EXECUTIVE approves");
+    if let Some(place) = cover {
+        lg4_post(&db.pool, place, CashPlace::Bank, "USD", "50.00").await;
+    }
     flow.dispatch(&s.finance, &t.id, at(13)).await
 }
 
@@ -805,7 +816,7 @@ async fn submitted_within_limit(db: &Db, s: &Shop, notes: i32) -> CashTransfer {
     .expect("a transfer policy version");
     let flow = db.flow();
     let cmd = NewTransfer {
-        kind: TransferKind::ExternalIn,
+        kind: TransferKind::ExternalOut,
         from_branch: s.b1.clone(),
         to_branch: None,
         from_shift: None,
@@ -1059,15 +1070,26 @@ async fn two_concurrent_dispatches_of_one_approved_transfer_move_the_safe_once()
 static LG4_FUND: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    lg4_post(
+        pool,
+        CashPlace::Bank,
+        CashPlace::Safe(BranchId::new(branch)),
+        currency,
+        amount,
+    )
+    .await;
+}
+
+async fn lg4_post(pool: &PgPool, from: CashPlace, to: CashPlace, currency: &str, amount: &str) {
     use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
-    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    use xc_cash::domain::posting::{CashPostings, PostingRequest};
     let mut tx = pool.begin().await.expect("begin");
     xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
         .post_in(
             &mut tx,
             &[PostingRequest {
-                from: CashPlace::Bank,
-                to: CashPlace::Safe(BranchId::new(branch)),
+                from,
+                to,
                 currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
                 quantity: xc_kernel::money::ForeignAmount::from_decimal(
                     amount.parse().expect("an amount"),
@@ -1075,7 +1097,7 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
                 source: SourceRef {
                     source_type: SourceType::Opening,
                     source_id: format!(
-                        "lg4-fund:{branch}:{currency}:{}",
+                        "lg4-fund:{currency}:{}",
                         LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
                     ),
                     source_key: "fund".to_string(),
@@ -1086,7 +1108,7 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
             None,
         )
         .await
-        .expect("fund the safe through the ledger");
+        .expect("post through the ledger");
     tx.commit().await.expect("commit");
 }
 

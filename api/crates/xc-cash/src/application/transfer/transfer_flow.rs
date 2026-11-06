@@ -197,6 +197,10 @@ impl TransferFlow {
                 | xc_approval::application::approval_service::ApprovalError::Internal(m) => {
                     AppError::Internal(m)
                 }
+                xc_approval::application::approval_service::ApprovalError::Refused {
+                    code,
+                    message,
+                } => AppError::Domain(format!("{code}: {message}")),
                 other => AppError::Domain(other.to_string()),
             })?;
 

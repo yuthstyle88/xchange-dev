@@ -525,9 +525,11 @@ async fn a_dispatch_beyond_the_source_safe_is_refused_and_nothing_moves() {
     let c = cast(&db).await;
     let flow = db.flow();
     let t = submitted(&db, &c, 12).await; // USD 600 > 500 in B1's safe
+    lg4_fund_safe(&db.pool, c.b1.as_str(), "USD", "100.00").await;
     flow.decide(&c.exec, &t.id, Outcome::Approved, "ok", at(20))
         .await
         .expect("approve above the limit");
+    lg4_draw_safe(&db.pool, c.b1.as_str(), "USD", "100.00").await;
     // Restated by the sub-controller (claude/491239fc, XC-BE-GAPS-A row 3): owner R1 (2026-10-27, #564
     // issuecomment-6439994453) makes the posting port the one check, so the refusal is its `stockInsufficient: …`.
     refused_stock_insufficient(flow.dispatch(&c.creator, &t.id, at(30)).await);
@@ -751,5 +753,37 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
         )
         .await
         .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
+}
+
+async fn lg4_draw_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Safe(BranchId::new(branch)),
+                to: CashPlace::Bank,
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-draw:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "draw".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("draw down the safe through the ledger");
     tx.commit().await.expect("commit");
 }

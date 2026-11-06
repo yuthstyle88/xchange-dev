@@ -10,6 +10,7 @@ use crate::domain::request::{ApprovalRequest, Outcome};
 #[derive(Debug)]
 pub enum SubjectError {
     DependencyUnavailable { code: &'static str, message: String },
+    Refused { code: &'static str, message: String },
     Failed(AppError),
 }
 
