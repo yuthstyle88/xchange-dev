@@ -15,7 +15,9 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_kernel::ids::BranchId;
 
+use crate::application::kiosk_screen::{self, KioskScreen};
 use crate::bootstrap::AppState;
+use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::common::NoFilter;
 use crate::presentation::dto::v3::kiosk_screen::KioskScreenData;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
@@ -39,14 +41,32 @@ impl BranchView for KioskScreenView {
 
     fn load(
         &self,
-        _branch: &BranchId,
+        branch: &BranchId,
         _who: &Actor,
         _filter: &Self::Filter,
     ) -> impl Future<Output = AppResult<Self::Data>> + Send {
         let pool = self.pool.clone();
+        let branch = branch.clone();
         async move {
-            let _ = pool;
-            todo!("#6273: read kiosk_screen::SETTING through BranchSettingStore")
+            let stored = BranchSettingStore::new(pool)
+                .read(&branch, kiosk_screen::SETTING)
+                .await?;
+            let (screen, version) = match stored {
+                Some(s) => (KioskScreen::from_body(&s.body), Some(s.version)),
+                None => (KioskScreen::not_set(), None),
+            };
+            Ok(KioskScreenData {
+                branch: branch.as_str().to_owned(),
+                quick_amounts: screen.quick_amounts,
+                tiles: screen.tiles,
+                idle_seconds: screen.idle_seconds,
+                review_seconds: screen.review_seconds,
+                refresh_seconds: screen.refresh_seconds,
+                popular_days: screen.popular_days,
+                default_payment_method: screen.default_payment_method,
+                defaults: screen.defaults.into_iter().map(str::to_owned).collect(),
+                version,
+            })
         }
     }
 }
