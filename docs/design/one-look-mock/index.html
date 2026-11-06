@@ -119,6 +119,11 @@
     .auth .input { height: 52px; }
     .auth .ver { margin: 0; padding: 16px; background: var(--xc-surface); }
   }
+
+  /* Language switch: one segmented control, ไทย | EN, the current one filled (owner: "สลับ ภาษา ไทย en"). */
+  .lang-seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--xc-gray-75); border: 1px solid var(--xc-line); border-radius: var(--xc-radius-pill); }
+  .lang-seg button { min-height: 30px; min-width: 44px; padding: 4px 12px; border: 0; border-radius: var(--xc-radius-pill); background: transparent; color: var(--xc-muted); font: 600 13px/1 var(--xc-font-sans); cursor: pointer; }
+  .lang-seg button[aria-pressed="true"] { background: var(--xc-surface); color: var(--xc-brand); box-shadow: var(--xc-shadow-sm); }
 </style>
 </head>
 <body>
@@ -131,12 +136,12 @@
   <div class="auth">
     <div>
       <div class="card">
-        <div class="top"><div class="brand"><span class="mark">XC</span>XCHANGE × T.K.</div><button class="btn lang">EN</button></div>
-        <h1>เข้าสู่ระบบพนักงาน</h1>
-        <p class="muted" style="margin:0 0 24px">ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</p>
-        <div class="field"><label for="u">อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</label><input class="input" id="u" placeholder="+66 8x xxx xxxx"></div>
-        <div class="field"><label for="p">รหัสผ่าน</label><div class="pw"><input class="input" id="p" type="password" value="password"><button class="eye" aria-label="แสดงรหัสผ่าน">👁</button></div></div>
-        <button class="btn primary block">เข้าสู่ระบบ</button>
+        <div class="top"><div class="brand"><span class="mark">XC</span>XCHANGE × T.K.</div><div class="lang-seg" role="group" aria-label="ภาษา / Language"><button data-lang="th" aria-pressed="true">ไทย</button><button data-lang="en" aria-pressed="false">EN</button></div></div>
+        <h1><span data-i18n="t0">เข้าสู่ระบบพนักงาน</span></h1>
+        <p class="muted" style="margin:0 0 24px"><span data-i18n="t1">ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</span></p>
+        <div class="field"><label for="u"><span data-i18n="t2">อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้</span></label><input class="input" id="u" placeholder="+66 8x xxx xxxx"></div>
+        <div class="field"><label for="p"><span data-i18n="t3">รหัสผ่าน</span></label><div class="pw"><input class="input" id="p" type="password" value="password"><button class="eye" aria-label="แสดงรหัสผ่าน">👁</button></div></div>
+        <button class="btn primary block"><span data-i18n="t4">เข้าสู่ระบบ</span></button>
       </div>
       <p class="ver">v1.0.0 · 864a15f · staging</p>
     </div>
@@ -146,56 +151,56 @@
 <section class="view" id="desk">
   <header class="shell-h">
     <div class="brand"><span class="mark">XC</span><span class="name">XCHANGE · MAIN</span></div>
-    <nav><a href="#">เคาน์เตอร์</a><a href="#" class="on">คีย์ย้อนหลัง</a><a href="#">ตู้เซฟ</a><a href="#">รายงาน</a></nav>
-    <div class="who"><span class="badge ok">กะ C เปิดอยู่</span><span class="user">Owner</span><button class="btn" style="min-height:36px;padding:6px 12px">ออกจากระบบ</button><button class="menu-btn" aria-label="เมนู" aria-controls="drop" aria-expanded="false" onclick="toggleMenu()"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <nav><a href="#"><span data-i18n="t27">เคาน์เตอร์</span></a><a href="#" class="on">คีย์ย้อนหลัง</a><a href="#"><span data-i18n="t28">ตู้เซฟ</span></a><a href="#"><span data-i18n="t29">รายงาน</span></a></nav>
+    <div class="who"><div class="lang-seg" role="group" aria-label="ภาษา / Language"><button data-lang="th" aria-pressed="true">ไทย</button><button data-lang="en" aria-pressed="false">EN</button></div><span class="badge ok"><span data-i18n="t32">กะ C เปิดอยู่</span></span><span class="user">Owner</span><button class="btn" style="min-height:36px;padding:6px 12px"><span data-i18n="t31">ออกจากระบบ</span></button><button class="menu-btn" aria-label="เมนู" aria-controls="drop" aria-expanded="false" onclick="toggleMenu()"><svg class="i-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg><svg class="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
   </header>
 
   <div class="drop" id="drop"><div>
-    <div class="drop-user"><span><strong>Owner</strong> · <span class="muted">สาขา MAIN</span></span><span class="badge ok">กะ C เปิดอยู่</span></div>
+    <div class="drop-user"><span><strong>Owner</strong> · <span class="muted"><span data-i18n="t33">สาขา MAIN</span></span></span><span class="badge ok"><span data-i18n="t32">กะ C เปิดอยู่</span></span></div>
     <nav>
-      <a href="#"><span class="ic">⇄</span>เคาน์เตอร์</a>
+      <a href="#"><span class="ic">⇄</span><span data-i18n="t27">เคาน์เตอร์</span></a>
       <a href="#" class="on"><span class="ic">↺</span>คีย์ย้อนหลัง</a>
-      <a href="#"><span class="ic">▣</span>ตู้เซฟ</a>
-      <a href="#"><span class="ic">≡</span>รายงาน</a>
-      <a href="#"><span class="ic">⚙</span>ตั้งค่า</a>
+      <a href="#"><span class="ic">▣</span><span data-i18n="t28">ตู้เซฟ</span></a>
+      <a href="#"><span class="ic">≡</span><span data-i18n="t29">รายงาน</span></a>
+      <a href="#"><span class="ic">⚙</span><span data-i18n="t30">ตั้งค่า</span></a>
     </nav>
-    <div class="drop-f"><button class="btn block">ออกจากระบบ</button></div>
+    <div class="drop-f"><button class="btn block"><span data-i18n="t31">ออกจากระบบ</span></button></div>
   </div></div>
   <main class="page">
     <div class="grid2">
       <div class="card">
-        <h2>คีย์รายการย้อนหลัง <span class="badge">ย้อนหลัง</span></h2>
-        <div class="field"><label>ประเภท</label><div class="seg"><button class="on">รับซื้อ (BUY)</button><button>ขาย (SELL)</button></div></div>
+        <h2><span data-i18n="t5">คีย์รายการย้อนหลัง</span> <span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></h2>
+        <div class="field"><label><span data-i18n="t7">ประเภท</span></label><div class="seg"><button class="on"><span data-i18n="t8">รับซื้อ (BUY)</span></button><button><span data-i18n="t9">ขาย (SELL)</span></button></div></div>
         <div class="grid3">
-          <div class="field"><label>สกุลเงิน</label><select class="input"><option>USD</option><option>EUR</option><option>JPY</option></select></div>
-          <div class="field"><label>จำนวน</label><input class="input" value="100.00" inputmode="decimal"></div>
-          <div class="field"><label>เรท</label><input class="input" value="33.57" inputmode="decimal"></div>
+          <div class="field"><label><span data-i18n="t10">สกุลเงิน</span></label><select class="input"><option>USD</option><option>EUR</option><option>JPY</option></select></div>
+          <div class="field"><label><span data-i18n="t11">จำนวน</span></label><input class="input" value="100.00" inputmode="decimal"></div>
+          <div class="field"><label><span data-i18n="t12">เรท</span></label><input class="input" value="33.57" inputmode="decimal"></div>
         </div>
         <div class="grid2">
-          <div class="field"><label>วันที่ทำการ</label><input class="input" type="date" value="2026-11-04"></div>
-          <div class="field"><label>เวลาจ่ายเงินจริง</label><input class="input" type="time" value="13:23"></div>
+          <div class="field"><label><span data-i18n="t13">วันที่ทำการ</span></label><input class="input" type="date" value="2026-11-04"></div>
+          <div class="field"><label><span data-i18n="t14">เวลาจ่ายเงินจริง</span></label><input class="input" type="time" value="13:23"></div>
         </div>
-        <div class="field"><label>หมายเหตุ</label><input class="input" value="XC-20261104-000018 · T1"><span class="hint">เลขที่ใบเดิมจาก Telegram และพนักงาน</span></div>
-        <button class="btn primary block">บันทึกรายการ</button>
+        <div class="field"><label><span data-i18n="t15">หมายเหตุ</span></label><input class="input" value="XC-20261104-000018 · T1"><span class="hint"><span data-i18n="t16">เลขที่ใบเดิมจาก Telegram และพนักงาน</span></span></div>
+        <button class="btn primary block"><span data-i18n="t17">บันทึกรายการ</span></button>
       </div>
       <div class="card">
-        <h2>สรุป</h2>
+        <h2><span data-i18n="t18">สรุป</span></h2>
         <div class="sum">
           <div class="row"><span class="muted">USD 100.00 × 33.57</span><span>3,357.00</span></div>
-          <div class="row"><span class="muted">ตู้เซฟก่อนจ่าย</span><span>334,800.00</span></div>
-          <div class="row"><span class="muted">ตู้เซฟหลังจ่าย</span><span>331,443.00</span></div>
-          <div class="row total"><span>จ่ายลูกค้า</span><span>฿3,357.00</span></div>
+          <div class="row"><span class="muted"><span data-i18n="t19">ตู้เซฟก่อนจ่าย</span></span><span>334,800.00</span></div>
+          <div class="row"><span class="muted"><span data-i18n="t20">ตู้เซฟหลังจ่าย</span></span><span>331,443.00</span></div>
+          <div class="row total"><span><span data-i18n="t21">จ่ายลูกค้า</span></span><span>฿3,357.00</span></div>
         </div>
       </div>
     </div>
     <div class="card" style="padding:0">
-      <div style="padding:16px 20px 0"><h2>รายการวันที่ 4 พ.ย.</h2></div>
+      <div style="padding:16px 20px 0"><h2><span data-i18n="t22">รายการวันที่ 4 พ.ย.</span></h2></div>
       <div class="table-wrap"><table>
-        <thead><tr><th>เวลา</th><th>เลขที่</th><th>สกุล</th><th class="num">จำนวน</th><th class="num">เรท</th><th class="num">บาท</th><th></th></tr></thead>
+        <thead><tr><th><span data-i18n="t23">เวลา</span></th><th><span data-i18n="t24">เลขที่</span></th><th><span data-i18n="t25">สกุล</span></th><th class="num"><span data-i18n="t11">จำนวน</span></th><th class="num"><span data-i18n="t12">เรท</span></th><th class="num"><span data-i18n="t26">บาท</span></th><th></th></tr></thead>
         <tbody>
-          <tr><td>13:23</td><td>R-0001</td><td>USD</td><td class="num">100.00</td><td class="num">33.57</td><td class="num">3,357.00</td><td><span class="badge">ย้อนหลัง</span></td></tr>
-          <tr><td>13:30</td><td>R-0002</td><td>USD</td><td class="num">200.00</td><td class="num">33.57</td><td class="num">6,714.00</td><td><span class="badge">ย้อนหลัง</span></td></tr>
-          <tr><td>13:43</td><td>R-0003</td><td>EUR</td><td class="num">200.00</td><td class="num">37.50</td><td class="num">7,500.00</td><td><span class="badge">ย้อนหลัง</span></td></tr>
+          <tr><td>13:23</td><td>R-0001</td><td>USD</td><td class="num">100.00</td><td class="num">33.57</td><td class="num">3,357.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
+          <tr><td>13:30</td><td>R-0002</td><td>USD</td><td class="num">200.00</td><td class="num">33.57</td><td class="num">6,714.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
+          <tr><td>13:43</td><td>R-0003</td><td>EUR</td><td class="num">200.00</td><td class="num">37.50</td><td class="num">7,500.00</td><td><span class="badge"><span data-i18n="t6">ย้อนหลัง</span></span></td></tr>
         </tbody>
       </table></div>
     </div>
@@ -208,6 +213,16 @@
     document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-pressed', x === b));
     document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === b.dataset.v));
   });
+
+  const I18N = { th: {"t0": "เข้าสู่ระบบพนักงาน", "t1": "ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้", "t2": "อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้", "t3": "รหัสผ่าน", "t4": "เข้าสู่ระบบ", "t5": "คีย์รายการย้อนหลัง", "t6": "ย้อนหลัง", "t7": "ประเภท", "t8": "รับซื้อ (BUY)", "t9": "ขาย (SELL)", "t10": "สกุลเงิน", "t11": "จำนวน", "t12": "เรท", "t13": "วันที่ทำการ", "t14": "เวลาจ่ายเงินจริง", "t15": "หมายเหตุ", "t16": "เลขที่ใบเดิมจาก Telegram และพนักงาน", "t17": "บันทึกรายการ", "t18": "สรุป", "t19": "ตู้เซฟก่อนจ่าย", "t20": "ตู้เซฟหลังจ่าย", "t21": "จ่ายลูกค้า", "t22": "รายการวันที่ 4 พ.ย.", "t23": "เวลา", "t24": "เลขที่", "t25": "สกุล", "t26": "บาท", "t27": "เคาน์เตอร์", "t28": "ตู้เซฟ", "t29": "รายงาน", "t30": "ตั้งค่า", "t31": "ออกจากระบบ", "t32": "กะ C เปิดอยู่", "t33": "สาขา MAIN"}, en: {"t0": "Staff sign-in", "t1": "Use your email, phone number or username", "t2": "Email, phone number or username", "t3": "Password", "t4": "Sign in", "t5": "Backdated entry", "t6": "Backdated", "t7": "Type", "t8": "We buy (BUY)", "t9": "We sell (SELL)", "t10": "Currency", "t11": "Amount", "t12": "Rate", "t13": "Business date", "t14": "Actual paid time", "t15": "Note", "t16": "Original slip number from Telegram and the staff", "t17": "Save entry", "t18": "Summary", "t19": "Safe before payout", "t20": "Safe after payout", "t21": "Pay customer", "t22": "Entries for 4 Nov", "t23": "Time", "t24": "No.", "t25": "Cur.", "t26": "THB", "t27": "Desk", "t28": "Safe", "t29": "Reports", "t30": "Settings", "t31": "Sign out", "t32": "Shift C open", "t33": "Branch MAIN"} };
+  function setLang(l) {
+    document.documentElement.lang = l;
+    document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = I18N[l][e.dataset.i18n]; });
+    document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', b.dataset.lang === l));
+    try { localStorage.setItem('xc-mock-lang', l); } catch (e) {}
+  }
+  document.querySelectorAll('[data-lang]').forEach(b => b.onclick = () => setLang(b.dataset.lang));
+  try { const l = localStorage.getItem('xc-mock-lang'); if (l) setLang(l); } catch (e) {}
 </script>
 </body>
 </html>
