@@ -65,7 +65,7 @@ the next screen free to hard-code again.
 | Card (`Card.tsx`, `card.css`) | `--xc-surface`; `--xc-radius-xl`; 1px `--xc-line`; `--xc-shadow-sm`; padding 20px |
 | Page | background `--xc-bg`; text `--xc-ink`; font `--xc-font-sans` 15px/1.6 |
 | Shell header | `--xc-surface`, bottom 1px `--xc-line`, brand mark in `--xc-brand` |
-| Sign-in card | centred and 420px wide. Brand mark at the top. The same input and button parts. Background `--xc-bg` |
+| Sign-in card | centred and 420px wide above 560px, with the brand mark at the top, the same input and button parts, and background `--xc-bg`. **At 560px or less it fills the screen** (owner: *"ขยายให้ เต็มจอ"*): no card border, radius or shadow; full width and height; 52px inputs and sign-in button; the version line at the bottom |
 | Mobile menu (≤760px) | The header keeps the brand mark and a 40px menu button only. The button **expands a panel under the header and collapses it again** (owner: *"ทำเมนู มือ ถือ"*, *"ย่อ ขยาย"*). The panel holds the user and branch, the shift badge, every nav item as a 48px row (the current one in `--xc-brand-soft`), and sign-out. The icon swaps ☰ ↔ ✕, `aria-expanded` follows, and Esc closes it. There is no horizontal scroll at 375px. Above 760px the nav stays inline in the header |
 
 **Font: open question for OL-1.** `api/static/kiosk/xc-tokens.css:6-8` declares `XC Noto Sans Thai` from `fonts/noto-sans-thai-*.woff2`.
