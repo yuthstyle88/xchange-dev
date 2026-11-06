@@ -108,7 +108,14 @@ impl BranchView for QueueBoardView {
                 waiting: waiting
                     .into_iter()
                     .map(
-                        |(id, display_number, service_type, sequence, issued_at, kiosk_request_id)| {
+                        |(
+                            id,
+                            display_number,
+                            service_type,
+                            sequence,
+                            issued_at,
+                            kiosk_request_id,
+                        )| {
                             QueueBoardWaiting {
                                 id,
                                 display_number,

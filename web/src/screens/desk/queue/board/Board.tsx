@@ -44,7 +44,7 @@ export function Board(props: BoardProps): JSX.Element {
                         <span>{w.displayNumber}</span>
                         <Show when={w.kioskCode}>
                           {(code) => (
-                            <span class="desk-muted" data-kiosk-code={code()}>
+                            <span data-kiosk-code={code()}>
                               {' · '}
                               {code()}
                             </span>
@@ -78,7 +78,7 @@ export function Board(props: BoardProps): JSX.Element {
                         <span>{c.displayNumber}</span>
                         <Show when={c.kioskCode}>
                           {(code) => (
-                            <span class="desk-muted" data-kiosk-code={code()}>
+                            <span data-kiosk-code={code()}>
                               {' · '}
                               {code()}
                             </span>

@@ -333,7 +333,9 @@ async fn test_f28_queue_board_kiosk_code() {
     let ans = call(&db, &uri).await;
     assert_eq!(ans.status, StatusCode::OK);
 
-    let waiting = ans.body["data"]["waiting"].as_array().expect("waiting array");
+    let waiting = ans.body["data"]["waiting"]
+        .as_array()
+        .expect("waiting array");
     let called = ans.body["data"]["called"].as_array().expect("called array");
 
     let w_kiosk = waiting

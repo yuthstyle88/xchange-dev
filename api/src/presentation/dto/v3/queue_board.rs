@@ -15,6 +15,7 @@ pub struct QueueBoardWaiting {
     pub service_type: String,
     pub sequence: i32,
     pub issued_at: String,
+    #[ts(optional = nullable)]
     pub kiosk_code: Option<String>,
 }
 
@@ -33,6 +34,7 @@ pub struct QueueBoardCalled {
     /// `users.name` of the teller; `null` when there is no teller or the name is empty. Never the id.
     pub teller_name: Option<String>,
     pub called_at: Option<String>,
+    #[ts(optional = nullable)]
     pub kiosk_code: Option<String>,
 }
 
