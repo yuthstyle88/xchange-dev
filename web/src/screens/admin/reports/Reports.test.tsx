@@ -69,6 +69,10 @@ const REFERENCE_NOTE =
   'ไม่รวมค่าบริการและค่าใช้จ่าย ส่วนต่างนี้ไม่ถูกบวกเข้าลิ้นชัก และสำหรับเงินที่รับซื้อไว้ยังไม่ใช่กำไรจากการขายต่อ';
 /** v2's LIVE export header, `admin-html:170`, with `Unit Size` after `Rate` (#868: the owner's
  *  decision 2026-10-10; rates are per unit since #781, rates.md §4.9 R1). */
+// F20b (docs/design/backdated-keying.md §15.4): the LIVE CSV gains a last column `Backdated` (`YES` or empty). Headers and
+// whole-row expectations below are restated for it by the ticket author claude/3b81c9d5; new rows are in live-csv.backdated.test.ts.
+// F20b (docs/design/backdated-keying.md §15.4): the employee CSV gains a last column `ย้อนหลัง` (`ใช่` or empty). Restated by the
+// ticket author claude/3b81c9d5; new rows are in Reports.backdated.test.tsx.
 const CSV_HEADERS = [
   'Branch ID',
   'Branch',
@@ -91,6 +95,7 @@ const CSV_HEADERS = [
   'Reference Value THB',
   'Reference Spread THB',
   'Reference Spread %',
+  'Backdated',
 ];
 /** The employee CSV's header, `employee-summary.js:23`. */
 const EMPLOYEE_CSV_HEADERS = [
@@ -106,6 +111,7 @@ const EMPLOYEE_CSV_HEADERS = [
   'จ่ายออก THB',
   'ค่าบริการ THB',
   'ค่าธรรมเนียมธนาคาร THB',
+  'ย้อนหลัง',
 ];
 
 // ── the answer ───────────────────────────────────────────────────────────────
@@ -1067,13 +1073,13 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     expect(lines[102]).toBe(
       quoted([
         'MAIN', 'Silom #2', 'LIVE', tx(300).id, '2026-10-06', 'SELL', 'USD', '1500.50', '32.6000', '1', '48916.30',
-        '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775',
+        '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775', '',
       ]),
     );
     expect(lines[1]).toBe(
       quoted([
         'MAIN', 'Silom #2', 'LIVE', tx(199).id, '2026-10-06', 'BUY', 'USD', '100.00', '30.0000', '1', '3000.00',
-        '5.00', '0.00', '2994.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '',
+        '5.00', '0.00', '2994.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '', '',
       ]),
     );
     expect(names).toEqual(['XCHANGE-LIVE-Silom__2-2026-10-09.csv']);
@@ -1127,9 +1133,9 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     const lines = text.split('\r\n');
     expect(lines[0]).toBe(quoted(EMPLOYEE_CSV_HEADERS));
     expect(lines.slice(1)).toEqual([
-      quoted(["'=cmd", tx(1).id, '2026-10-06', 'COMPLETED', partsTh.methodCash, 'BUY', 'USD', '1.00', '0', '30.00', '0.00', '0.00']),
-      quoted(['dao', tx(2).id, '2026-10-06', 'COMPLETED', 'PromptPay', 'BUY', 'USD', '100.00', '0', '2994.99', '5.00', '0.00']),
-      quoted(['dao', tx(3).id, '2026-10-06', 'COMPLETED', partsTh.methodBankTransfer, 'SELL', 'EUR', '20.00', '763.00', '0', '3.00', '1.00']),
+      quoted(["'=cmd", tx(1).id, '2026-10-06', 'COMPLETED', partsTh.methodCash, 'BUY', 'USD', '1.00', '0', '30.00', '0.00', '0.00', '']),
+      quoted(['dao', tx(2).id, '2026-10-06', 'COMPLETED', 'PromptPay', 'BUY', 'USD', '100.00', '0', '2994.99', '5.00', '0.00', '']),
+      quoted(['dao', tx(3).id, '2026-10-06', 'COMPLETED', partsTh.methodBankTransfer, 'SELL', 'EUR', '20.00', '763.00', '0', '3.00', '1.00', '']),
     ]);
     expect(names).toEqual(['XC-Employees-2026-10-05-2026-10-06.csv']);
   });

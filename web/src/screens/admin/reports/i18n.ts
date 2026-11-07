@@ -78,6 +78,7 @@ export const th = {
   colStatus: 'สถานะ',
   colType: 'ประเภท',
   colAmount: 'จำนวนเงิน',
+  backdated: 'ย้อนหลัง',
 
   // Employee CSV headers
   csvTxId: 'เลขรายการ',
@@ -176,6 +177,7 @@ export const en = {
   colStatus: 'Status',
   colType: 'Type',
   colAmount: 'Amount',
+  backdated: 'Backdated',
 
   // Employee CSV headers
   csvTxId: 'Tx ID',

@@ -22,6 +22,7 @@ export const LIVE_CSV_HEADERS: string[] = [
   'Reference Value THB',
   'Reference Spread THB',
   'Reference Spread %',
+  'Backdated',
 ];
 
 export function liveCsvRow(
@@ -51,5 +52,6 @@ export function liveCsvRow(
     r.referenceValue ?? '',
     r.referenceSpread ?? '',
     r.referencePercent ?? '',
+    r.backdated ? 'YES' : '',
   ];
 }

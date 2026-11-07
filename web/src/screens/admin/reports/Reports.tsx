@@ -48,6 +48,7 @@ const EMPLOYEE_CSV_HEADERS = [
   'จ่ายออก THB',
   'ค่าบริการ THB',
   'ค่าธรรมเนียมธนาคาร THB',
+  'ย้อนหลัง',
 ];
 
 function employeeMethodName(method: string): string {
@@ -314,6 +315,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
       r.status === 'COMPLETED' && r.type === 'BUY' ? r.settlement : '0',
       r.status === 'COMPLETED' ? r.fee : '0',
       r.status === 'COMPLETED' ? r.bankFee : '0',
+      r.backdated ? 'ใช่' : '',
     ]);
 
     downloadCsv(fileName, EMPLOYEE_CSV_HEADERS, rowData);
@@ -745,6 +747,11 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                                   >
                                     {row.id}
                                   </button>
+                                  <Show when={row.backdated}>
+                                    <span class="pill" data-backdated="true">
+                                      {t('backdated')}
+                                    </span>
+                                  </Show>
                                 </div>
                                 <div class="small">
                                   {row.date} {formatBangkokTime(row.created)}
