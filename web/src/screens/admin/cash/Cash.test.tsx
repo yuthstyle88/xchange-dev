@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-cash (#467): the cash menu's screen (ticket §7–§10 rows A1–A4, A6, §9 edge cases; design
 // §12.2, §12.6, §12.9, W7, W10). Written before the implementation by the lane controller
 // (claude/7ca80c). Do not edit, delete or weaken; add tests in a file of your own.
@@ -372,8 +374,19 @@ function norm(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+// F55: pinned Bangkok text per instant (was rebuilt with th-TH toLocaleString, a Buddhist year and seconds).
+const WHEN: Record<string, string> = {
+  '2026-10-06T02:30:00.000Z': '06/10/2026 09:30',
+  '2026-10-06T03:00:00.000Z': '06/10/2026 10:00',
+  '2026-10-06T04:00:00.000Z': '06/10/2026 11:00',
+  '2026-10-05T02:00:00.000Z': '05/10/2026 09:00',
+  '2026-10-04T02:00:00.000Z': '04/10/2026 09:00',
+};
+
 function when(iso: string): string {
-  return norm(new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }));
+  const shown = WHEN[iso];
+  if (shown === undefined) throw new Error(`no pinned F55 text for ${iso}`);
+  return shown;
 }
 
 function buttonsNamed(el: ParentNode, name: string): HTMLButtonElement[] {

@@ -16,7 +16,8 @@ import type { DeviceEventRow } from '../../shared/api/generated/device_events';
 import type { DeviceJobRow } from '../../shared/api/generated/device_jobs';
 import type { DeviceTransactionRow } from '../../shared/api/generated/device_transactions';
 import type { DevicesOverview } from '../../shared/api/generated/devices';
-import { locale, screenT, type Locale } from '../../shared/i18n';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
+import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { ViewPoller } from '../../shared/live/view-poller';
 import { sharedSession } from '../../shared/session/session';
@@ -55,14 +56,6 @@ function defaultDownload(name: string, blob: Blob): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-
-function formatTimestamp(iso: string, currentLocale: Locale): string {
-  try {
-    return new Date(iso).toLocaleString(currentLocale, { timeZone: 'Asia/Bangkok' });
-  } catch {
-    return iso;
-  }
 }
 
 export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
@@ -714,7 +707,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                     {(j) => (
                       <tr>
                         <td data-label={t('colJobTime')}>
-                          {formatTimestamp(j.created, locale())} <small class="dev-id" title={j.id}>{j.id}</small>
+                          {formatBangkokDateTime(j.created)} <small class="dev-id" title={j.id}>{j.id}</small>
                         </td>
                         <td data-label={t('colJobKind')}>
                           {kindLabel(j.kind)} <small class="dev-id" title={j.ref || undefined}>{j.ref || t('noRef')}</small>
@@ -803,7 +796,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                   <For each={displayedEvents()}>
                     {(ev) => (
                       <tr>
-                        <td data-label={t('colTime')}>{formatTimestamp(ev.at, locale())}</td>
+                        <td data-label={t('colTime')}>{formatBangkokDateTime(ev.at)}</td>
                         <td data-label={t('colActor')}><span class="dev-id" title={ev.actor}>{ev.actor}</span></td>
                         <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
                         <td data-label={t('colRef')}>

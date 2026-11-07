@@ -1,6 +1,7 @@
 // P01 v2 stub (rate-display.md §9.2, §9.6; B8): the conditions text, SYNCED (last successful update), SOURCE
 // (the route's sourceDate), SNAPSHOT (the publication id), the opening hours (v1 D12) and the barcode.
 import { Show, type JSX } from 'solid-js';
+import { formatBangkokDate } from '../../../../shared/format/bangkok-time';
 import { BOARD_TEXT, bilingual } from './board-texts';
 import './board-stub.css';
 
@@ -21,7 +22,6 @@ function formatSynced(lastOkAt: number | undefined): string {
       timeZone: 'Asia/Bangkok',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit',
       hour12: false,
     }).format(new Date(lastOkAt));
   } catch {
@@ -52,7 +52,7 @@ export function BoardStub(props: BoardStubProps): JSX.Element {
         <small>{bilingual(BOARD_TEXT.synced_at)}</small>
         <span>{formatSynced(props.lastOkAt)}</span>
         <small>{bilingual(BOARD_TEXT.sourceDate)}</small>
-        <span>{props.sourceDate || '—'}</span>
+        <span>{props.sourceDate ? formatBangkokDate(props.sourceDate) : '—'}</span>
         <small>{bilingual(BOARD_TEXT.snapshot)}</small>
         <span>{props.snapshotId ? props.snapshotId.slice(0, 12) : '—'}</span>
       </div>

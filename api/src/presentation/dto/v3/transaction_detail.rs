@@ -122,6 +122,11 @@ pub struct TransactionDetailDto {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional = nullable)]
     pub backdate: Option<BackdateMarkDto>,
+    /// F50 (`docs/design/backdated-keying.md` §16.5): `transactions.notes`, trimmed; absent when blank. A backdated
+    /// row keeps the shop's own number and teller here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub notes: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

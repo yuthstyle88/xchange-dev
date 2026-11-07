@@ -566,3 +566,153 @@ Behaviour (the up-front tests lock these):
 
 Tests restated for the new columns (ticket author): `live-csv.test.ts`, `Transactions.test.tsx`, `Reports.test.tsx`,
 `Reports.extra.test.tsx`. Each says so in a header comment.
+
+## 16. Day-4 follow-ups (F48–F56; owner rulings 2026-11-07, sub-controller claude/3b81c9d5)
+
+The owner ruled on claude/94389a6b's day-4 report: fix F51 first (before day 5), then F48, F56, F49, F54 and F53;
+F50 is shown on the desk detail; F55 gets one date format everywhere; F47 is already fixed on main (#6341); F52 is the
+one-look lane's. These pieces are built on `feat/day4-fixes`, cut from `feat/one-look-6`, because the one-look lane has
+already rewritten `BackdatedScreen.tsx`, `Approvals.tsx` and `TransactionScreen.tsx` there.
+
+### 16.1 F51: a saved deal cannot be booked twice
+
+Root cause: `BackdatedScreen.onSubmit` calls `backdateWrite.reset()` before every send, and the form stays filled and
+live after a save. `keyedWrite` already keeps a key for the same body until a success
+(`web/src/shared/api/keyed-write.ts:11-36`). The `reset()` throws that away, so a retry after a 5xx or a lost answer is a
+second deal, and a second click after a save is a second deal too.
+
+- Remove the `reset()` before the send. A retry of a failed send reuses the key, and the server replays it.
+- After a 200 save, clear the deal fields: customer search and choice, quantity, rate, fee, expected settle, paid-at,
+  reference, account, bank fee, slip, passport and notes. Keep side, currency and method. The saved number and receipt
+  link stay. The save button is off until a field changes.
+
+### 16.2 F48 + F54: the cash-transfer approval card shows the figure, the note and the branch name
+
+Root cause: the `approval_requests` view loads a `subject` for TRANSACTION_REVERSAL and COUNT_DIFFERENCE only
+(`api/src/presentation/http/v3/views/approval_requests.rs:191-192`). A CASH_TRANSFER card has only its payload (the
+transfer id, `from_branch` as the branch id, and the limit flag), so it can show neither the amount nor the note, and
+it names the branch by its id (F54).
+
+- New `ApprovalSubject::CashTransfer(CashTransferSubject)`, loaded by `load_cash_transfer_subjects`.
+- The card shows `fromBranchName` (or the id when absent), a totals line, and the note.
+
+### 16.3 F56: the SAFE balance beside the backdated form
+
+A backdated sale posts at the branch's SAFE. The keyer learnt of a shortfall only from the refusal.
+`staff_floor` shows `safe` only to `CashManage` (`api/src/application/staff_floor/reader.rs:136-155`). The new view
+`backdate_safe` inherits `transactionBackdate`, the same rule `backdate_currencies` uses, and reads
+`compat::snapshot::ledger_safe`. `SafeBalance` shows it, reads it again after each save, and links to `/staff`.
+
+### 16.4 F49: the transfer form filters by currency and totals what was keyed
+
+`TransfersCard.tsx` lists every denomination of every currency (423 rows on day 4), with no filter and no total. A
+currency choice limits the list, and a running total per currency shows the sum of `qty × faceValue`. Web only.
+
+### 16.5 F50: the note on the desk detail
+
+`TransactionDetailDto` has no notes (`api/src/presentation/dto/v3/transaction_detail.rs:104-125`), so the desk detail,
+which the receipt link opens, cannot show the shop's number and teller kept in the note. Add `notes` (trimmed, blank ⇒
+absent; no column change, no migration) and a `NotesSection`.
+
+### 16.6 F53: the desk detail words its values
+
+`HeaderSection.statusText`, `LinesSection` (`side`, `quantity`, `rateSnapshot`) and `PaymentSection` (`method`) print raw
+wire values. Status, side and method come from the screen's own i18n table (W10), and the rate is written by
+`shared/ui/rate.ts` `formatRate`. The scope is agreed with the one-look lane before release.
+
+### 16.7 F55: one date format
+
+The format is `dd/mm/yyyy HH:mm` in Asia/Bangkok with a CE year. `web/src/shared/format/bangkok-time.ts`
+`formatBangkokDateTime` already produces it and is the one shared formatter; a date-only twin is added next to it. A
+survey at `feat/one-look-6` `46d90ea8` found about 50 file-local helpers across about 30 screen folders (most use
+`th-TH`, which prints a Buddhist year) and about 100 test assertions that pin the old shapes. The receipt's
+`2026-11-04` is the server's (`api/crates/xc-exchange/src/domain/exchange/entities/receipt.rs:91`). F55 is released in
+waves, one ticket per screen folder, after the one-look lane's tickets on the same folder land. CSV cells keep ISO
+dates, because they are machine data.
+
+The rule each F55 ticket applies:
+- An instant a person reads (`…At`, a timestamp) → `formatBangkokDateTime` → `04/11/2026 13:23`. Seconds are dropped, and a day/month without a year (`04/11 13:23`) gets its year.
+- A day (a business date, a period's ends, an expiry, a `YYYY-MM-DD` from the server) → `formatBangkokDate` → `04/11/2026`.
+- A time of day shown on its own where the row or heading already gives the day (a slot `09:00 – 09:30`, a clock-in `13:23`) stays `HH:mm` in 24-hour Bangkok time. It does not use `toLocaleTimeString` with the page locale.
+- Never `th-TH`, `toLocaleString(locale())`, the device's time zone, or a raw `2026-11-04` in text.
+- Inputs (`<input type="date">` and the like) and CSV cells are unchanged.
+
+```mermaid
+classDiagram
+  class CashTransferSubject {
+    <<api/src/presentation/dto/v3/approval_requests.rs>>
+    +transfer_id: String
+    +kind: String
+    +from_branch_id: String
+    +from_branch_name: Option~String~
+    +to_branch_name: Option~String~
+    +note: Option~String~
+    +lines: Vec~CashTransferSubjectLine~
+  }
+  class CashTransferSubjectLine {
+    <<api/src/presentation/dto/v3/approval_requests.rs>>
+    +currency: String
+    +amount: String
+  }
+  class load_cash_transfer_subjects {
+    <<api/src/presentation/dto/v3/approval_requests.rs>>
+    +(pool, branch, transfer_ids) HashMap~Uuid, CashTransferSubject~
+  }
+  class BackdateSafeView {
+    <<api/src/presentation/http/v3/views/backdate_safe.rs>>
+    NAME = "backdate_safe"
+    INHERITS = (Rpc, "transactionBackdate")
+  }
+  class BackdateSafeData {
+    <<api/src/presentation/dto/v3/backdate_safe.rs>>
+    +balances: Vec~BackdateSafeLine~
+  }
+  class TransactionDetailDto {
+    <<api/src/presentation/dto/v3/transaction_detail.rs>>
+    +notes: Option~String~
+  }
+  class SafeBalance {
+    <<web/src/screens/desk-backdated/SafeBalance.tsx>>
+    +props: api, branch, refresh
+  }
+  class NotesSection {
+    <<web/src/screens/desk-transaction/NotesSection.tsx>>
+    +props: notes
+  }
+  CashTransferSubject *-- CashTransferSubjectLine
+  load_cash_transfer_subjects --> CashTransferSubject
+  BackdateSafeView --> BackdateSafeData
+  SafeBalance ..> BackdateSafeView : GET views/backdate_safe
+  NotesSection ..> TransactionDetailDto : notes
+```
+
+| Ticket | Owns | Uses |
+|---|---|---|
+| F51 | `BackdatedScreen.tsx` (the submit, the clear, the save button) | `keyedWrite` unchanged |
+| F48a | `load_cash_transfer_subjects` | the skeleton's DTO and the view wiring |
+| F48b (F54) | `Approvals.tsx` (the cash-transfer card), `approvals/i18n.ts` | F48a's subject |
+| F56a | `BackdateSafeView::load` | `ledger_safe`, `currencies.minor_unit` |
+| F56b | `SafeBalance.tsx`, `desk-backdated/i18n.ts` | F56a's view; the mount in `BackdatedScreen` is the skeleton's |
+| F49 | `TransfersCard.tsx`, `staff/transfers/i18n.ts` | — |
+| F50a | `views/transaction.rs` (read `t.notes`) | the skeleton's field |
+| F50b | `NotesSection.tsx`, `desk-transaction/i18n.ts` | F50a; the mount in `TransactionScreen` is the skeleton's |
+| F53 | `HeaderSection.tsx`, `LinesSection.tsx`, `PaymentSection.tsx` | `formatRate`; the i18n keys F50b's table adds alongside |
+
+No data migration: no table, column or constraint changes. `notes` and the subject read existing columns.
+
+Behaviour (the up-front tests lock these):
+
+| # | Case | Required result |
+|---|---|---|
+| F51-1 | Save a deal (200) | deal fields empty; number and receipt link shown; save off |
+| F51-2 | Click save again right after | no second POST |
+| F51-3 | Change a field after a save | save on |
+| F51-4 | The first POST answers 500, then save again with the same body | same Idempotency-Key |
+| F51-5 | (restated BK-11) The next deal keyed into the cleared form | a fresh key |
+| F48a-1 | EXTERNAL_IN top-up from MAIN: THB 1000×150, USD 100×5 + 20×1, note with spaces | `fromBranchName` XC-B; lines THB `150000.00`, USD `520.00`; note trimmed |
+| F48a-2 | BRANCH transfer MAIN → BR2, blank note | `toBranchName` set; note `None` |
+| F48a-3 | A transfer leaving another branch; an unknown id | absent |
+| F48b | Card with a subject; without | `#id · XC-B · …`, `THB 150,000.00 · USD 520.00`, the note / unchanged |
+| F56a-1 | SAFE holds USD 520, THB 150000, JPY 5000 | `[JPY 5000, THB 150000.00, USD 520.00]` |
+| F56a-2 | Empty SAFE | `[]` |
+| F56b | Mount; empty; link; refresh bumped; no branch | lines shown grouped; empty mark; `/staff`; read again; no read |

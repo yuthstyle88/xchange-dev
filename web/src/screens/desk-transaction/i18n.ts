@@ -57,6 +57,19 @@ export const th = {
   at: 'เวลา',
   actor: 'ผู้ดำเนินการ',
   action: 'การดำเนินการ',
+  // F50 (docs/design/backdated-keying.md §16.5): the note section's heading.
+  notes: 'หมายเหตุ',
+  // F53: worded status, side, method
+  statusCompleted: 'สำเร็จ',
+  statusCancelled: 'ยกเลิก',
+  statusPending: 'รอบันทึกเอกสาร',
+  buy: 'ร้านรับซื้อ',
+  sell: 'ร้านขาย',
+  methodCash: 'เงินสด',
+  methodCreditCard: 'บัตรเครดิต',
+  methodPromptPay: 'พร้อมเพย์',
+  methodBankTransfer: 'โอนธนาคาร',
+  methodOther: 'อื่น ๆ',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -116,4 +129,15 @@ export const en: Record<keyof typeof th, string> = {
   at: 'At',
   actor: 'By',
   action: 'Action',
+  notes: 'Note',
+  statusCompleted: 'Completed',
+  statusCancelled: 'Cancelled',
+  statusPending: 'Pending',
+  buy: 'Buy',
+  sell: 'Sell',
+  methodCash: 'Cash',
+  methodCreditCard: 'Credit Card',
+  methodPromptPay: 'PromptPay',
+  methodBankTransfer: 'Bank Transfer',
+  methodOther: 'Other',
 };

@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5204 (web): the /staff attendance card shows each row's Bangkok clock-in/out times and marks rows from an earlier
 // day. The card filters nothing: the staff_attendance view (#5220) already sends only today's and still-open rows.
 // Written before the implementation by the up-front test writer, on the XC FE lane controller claude/8be3a451's
@@ -137,7 +138,7 @@ describe('AttendanceCard times and earlier-day mark (#5204, now = 2026-10-27T05:
 
     expect(a3!.classList.contains('xc-attendance-row-earlier')).toBe(true);
     expect(a3!.textContent).toContain('Ploy');
-    expect(flat(a3!.querySelector('span.xc-attendance-time')?.textContent)).toContain('26/10 08:00');
-    expect(flat(a3!.textContent)).toMatch(/26\/10 08:00.*ยังไม่ออก/);
+    expect(flat(a3!.querySelector('span.xc-attendance-time')?.textContent)).toContain('26/10/2026 08:00');
+    expect(flat(a3!.textContent)).toMatch(/26\/10\/2026 08:00.*ยังไม่ออก/);
   });
 });

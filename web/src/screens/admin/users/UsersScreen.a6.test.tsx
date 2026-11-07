@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type Setter } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -243,7 +245,7 @@ describe('A05 users (#3329): grant period, ended roles, employeeCode column, pag
     expect(currentTag.querySelector('.users-btn-revoke')).not.toBeNull();
 
     expect(endedTag.hasAttribute('data-role-ended')).toBe(true);
-    expect(endedTag.textContent).toContain('2026-10-05');
+    expect(endedTag.textContent).toContain('05/10/2026');
     expect(endedTag.querySelector('.users-btn-revoke')).toBeNull();
   });
 
@@ -254,7 +256,7 @@ describe('A05 users (#3329): grant period, ended roles, employeeCode column, pag
     const row2 = container.querySelector('tr[data-user-id="u-2"]')!;
     const tag = row2.querySelector('.users-role-tag')!;
     expect(tag.hasAttribute('data-role-ended')).toBe(false);
-    expect(tag.textContent).toContain('until 2026-12-31');
+    expect(tag.textContent).toContain('until 31/12/2026');
     expect(tag.querySelector('.users-btn-revoke')).not.toBeNull();
   });
 

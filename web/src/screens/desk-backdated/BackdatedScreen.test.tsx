@@ -229,7 +229,12 @@ describe('desk-backdated (BK-11 #6146)', () => {
         '/desk/transactions/tx-backdated-1',
       );
 
-      // Submitting again generates a fresh Idempotency-Key
+      // F51 (docs/design/backdated-keying.md §16.1), restated by the ticket author claude/3b81c9d5: the next deal,
+      // keyed into the cleared form, goes with a fresh Idempotency-Key. Before F51 a second click on the same filled
+      // form did this, which booked the same deal twice.
+      setInput(host.querySelector<HTMLInputElement>('input[name="quantity"]')!, '200');
+      setInput(host.querySelector<HTMLInputElement>('input[name="rate"]')!, '32.15');
+      setInput(host.querySelector<HTMLInputElement>('input[name="paidAt"]')!, '2026-11-04T14:05');
       host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click();
       await vi.waitFor(() => {
         expect(calls).toHaveLength(2);

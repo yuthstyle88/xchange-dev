@@ -1,10 +1,12 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
+// The "last updated" line is a time of day on its own: HH:mm, 24-hour, Asia/Bangkok (not the page locale or the device zone), so 20:00:00Z shows as 03:00.
 // Up-front tests for SF-b, the RequestStatus half (docs/design/web-silent-failures.md §2 SF-2, B1). Do not edit,
 // delete or weaken; add tests in a file of your own.
 //
 // RequestStatus shows a failed read: no good read yet ⇒ a worded "unavailable" line, never a blank label; a good read
 // earlier ⇒ the last status stays plus a "last updated hh:mm" line; a 401 ⇒ the sign-in link; after `expiresAt` a
 // 404 stays silent (onExpired only). The harness is RequestStatus.test.tsx's, copied. Tests run with TZ=UTC
-// (vitest.config.ts), so 20:00:00Z shows as 20:00.
+// (vitest.config.ts); the time is Bangkok's, so 20:00:00Z shows as 03:00 (F55).
 import { render } from 'solid-js/web';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiClient } from '../../../shared/api/client';
@@ -176,7 +178,7 @@ describe('SF-b: RequestStatus, a later read fails', () => {
     expect(q('[data-display-number]')?.textContent).toContain('K042');
     expect(host.textContent).toContain(th.ahead.replace('{count}', '2'));
     expect(errorLine()?.getAttribute('data-status-error')).toBe('stale');
-    expect(errorLine()?.textContent ?? '').toContain(th.statusStale.replace('{time}', '20:00'));
+    expect(errorLine()?.textContent ?? '').toContain(th.statusStale.replace('{time}', '03:00'));
     expect(signInLink()).toBeNull();
   });
 
@@ -185,8 +187,8 @@ describe('SF-b: RequestStatus, a later read fails', () => {
     await mount();
     vi.setSystemTime(new Date('2026-10-21T20:41:00Z'));
     await tick();
-    expect(errorLine()?.textContent ?? '').toContain(th.statusStale.replace('{time}', '20:00'));
-    expect(errorLine()?.textContent ?? '').not.toContain('20:41');
+    expect(errorLine()?.textContent ?? '').toContain(th.statusStale.replace('{time}', '03:00'));
+    expect(errorLine()?.textContent ?? '').not.toContain('03:41');
   });
 
   it('the network down later: the same stale line', async () => {

@@ -12,6 +12,7 @@ import type {
   FinanceSheet,
   ReconciliationCertifyInput,
 } from '../../../shared/api/generated/finance_reconciliation';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
@@ -143,7 +144,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
         {(s) => (
           <>
             <header>
-              <strong>{t('sheetDay', { date: s().date || day() })}</strong>
+              <strong>{t('sheetDay', { date: formatBangkokDate(s().date || day()) })}</strong>
               <Show when={!singleDay()}>
                 <p class="warning">{t('pickOneDay')}</p>
               </Show>

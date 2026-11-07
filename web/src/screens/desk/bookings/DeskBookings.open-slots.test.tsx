@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5568 (DESK-R4 T3, docs/design/fe-desk-round4.md §3 T3 rows D1–D6, D9): the desk dialogs offer the branch's open
 // slots from view `booking_slots`, not the slots of today's bookings (desk check round 4, P5).
 // Written before the implementation by the ticket author claude/studio-claude-15. Do not edit, delete or weaken;
@@ -160,7 +161,7 @@ describe('#5568 desk dialogs offer open slots from booking_slots (P5)', () => {
     await vi.waitFor(() => expect(enabledValues('#new-booking-slot')).toEqual(['s-a', 's-b']));
     expect(options('#new-booking-slot').map((o) => o.value)).not.toContain('past-slot');
     expect(q<HTMLSelectElement>('#new-booking-slot')!.value).toBe('s-a');
-    expect(options('#new-booking-slot')[0]!.textContent?.trim()).toBe('31 ต.ค. 10:00 - 10:30');
+    expect(options('#new-booking-slot')[0]!.textContent?.trim()).toBe('31/10/2026 10:00 - 10:30');
   });
 
   it('D3 a new date reads again; an older answer that arrives last is dropped', async () => {

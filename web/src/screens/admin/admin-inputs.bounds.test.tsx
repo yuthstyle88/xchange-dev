@@ -106,7 +106,8 @@ describe('Admin and device input bounds (#4919 §3 A1–A6)', () => {
 
     const header = host.querySelector('header');
     expect(header, 'sheet header exists').not.toBeNull();
-    expect(header!.textContent).toContain('2026-10-05');
+    // F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: the sheet day is dd/mm/yyyy.
+    expect(header!.textContent).toContain('05/10/2026');
     expect(header!.textContent).toContain(reconTable.th.pickOneDay);
 
     const certifyBtn = [...host.querySelectorAll('button')].find(

@@ -6,7 +6,8 @@ import {
   type JSX,
 } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
-import { locale, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { UsersTabProps } from './UsersScreen';
 import * as table from './i18n';
@@ -71,13 +72,6 @@ export function UserAudit(props: UsersTabProps): JSX.Element {
     loadAudit();
   });
 
-  const formatWhen = (at: string): string => {
-    try {
-      return new Date(at).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-    } catch {
-      return at;
-    }
-  };
 
   const renderJson = (val: unknown): JSX.Element => {
     if (val === null || val === undefined) return '—';
@@ -115,7 +109,7 @@ export function UserAudit(props: UsersTabProps): JSX.Element {
                 <For each={rows()}>
                   {(row) => (
                     <tr>
-                      <td class="users-td">{formatWhen(row.at)}</td>
+                      <td class="users-td">{formatBangkokDateTime(row.at)}</td>
                       <td class="users-td">
                         <div><strong title={row.actorId}>{row.actorName || shortId(row.actorId)}</strong></div>
                         <Show when={row.actorName && row.actorName !== row.actorId}>

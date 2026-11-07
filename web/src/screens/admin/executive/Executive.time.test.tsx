@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #2497: A01's "as of" and alert "since" times are shown as Bangkok date + time in the screen's locale,
 // not as the raw UTC string the server sends. The `datetime` attribute stays the server's string.
 // Setup copied from `Executive.reversals.test.tsx`.
@@ -29,10 +31,11 @@ const VERSIONS = { B1: 1, B2: 1 };
 const AS_OF = '2026-10-06T18:30:00.000Z';
 const SINCE = '2026-10-06T17:05:00.000Z';
 
-const AS_OF_TH = '7/10/2569 01:30:00';
-const SINCE_TH = '7/10/2569 00:05:00';
-const AS_OF_EN = '07/10/2026, 01:30:00';
-const SINCE_EN = '07/10/2026, 00:05:00';
+// F55: one format in both languages (was th-TH 7/10/2569 01:30:00 and en-GB 07/10/2026, 01:30:00).
+const AS_OF_TH = '07/10/2026 01:30';
+const SINCE_TH = '07/10/2026 00:05';
+const AS_OF_EN = '07/10/2026 01:30';
+const SINCE_EN = '07/10/2026 00:05';
 
 function drill(view: string, filter: Record<string, string> = {}) {
   return makeDrilldownDto({ view, filter, dropped: [] });
@@ -216,7 +219,7 @@ describe('#2497: A01 times are Bangkok date + time in the screen locale', () => 
     await vi.advanceTimersByTimeAsync(60_000);
     await settle();
     expect(rowTime(el, 'B1').getAttribute('datetime')).toBe(moved);
-    expect(text(rowTime(el, 'B1'))).toBe('7/10/2569 02:45:00');
+    expect(text(rowTime(el, 'B1'))).toBe('07/10/2026 02:45');
   });
 
   it('edge case: an unparsable string shows as sent, not "Invalid Date", while a valid one is Bangkok time', async () => {

@@ -5,7 +5,8 @@ import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { CashLimitsData } from '../../../shared/api/generated/cash_limits';
 import type { CashLimitsSaveInput } from '../../../shared/api/generated/cash_limits_save';
 import { keyedWrite } from '../../../shared/api/keyed-write';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody } from '../../../shared/ui/Card';
@@ -21,10 +22,6 @@ const OWN_TEXT: Record<string, Parameters<typeof t>[0]> = {
   roleNotAllowedHere: 'error.roleNotAllowedHere',
   idempotencyConflict: 'error.idempotencyConflict',
 };
-
-export function when(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
 
 function isLimitFieldRefusal(err: unknown): boolean {
   if (isServerFailure(err)) return false;
@@ -178,7 +175,7 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
                 {t('current', {
                   limit: c().countDifferenceLimitThb ?? '',
                   updatedBy: c().updatedByName || '—',
-                  updatedAt: c().updatedAt ? when(c().updatedAt!) : '',
+                  updatedAt: c().updatedAt ? formatBangkokDateTime(c().updatedAt!) : '',
                 })}
               </strong>
             )}

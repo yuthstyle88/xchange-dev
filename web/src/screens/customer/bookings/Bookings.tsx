@@ -33,6 +33,7 @@ import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error'
 import { PublicPoller } from '../../../shared/live/public-poller';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { IndicativeBenefit } from '../benefit-estimate/IndicativeBenefit';
+import { formatDateInZone } from '../../../shared/format/bangkok-time';
 import { formatSlotTime, getTodayInTimezone } from '../book/Book';
 import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
@@ -484,7 +485,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
                       <Show when={branchTimezone(booking.branchId)}>
                         {(tz) => (
                           <p class="xc-booking-time">
-                            {formatSlotTime(booking.startAt, booking.endAt, tz())}
+                            {`${formatDateInZone(booking.startAt, tz())} ${formatSlotTime(booking.startAt, booking.endAt, tz())}`}
                           </p>
                         )}
                       </Show>

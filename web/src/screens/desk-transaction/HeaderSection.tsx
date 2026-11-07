@@ -10,16 +10,28 @@ function tm(v: string | null | undefined): string | null | undefined {
   return v ? formatBangkokDateTime(v) : v;
 }
 
+export function statusName(status: string): string {
+  switch (status) {
+    case 'COMPLETED':
+      return t('statusCompleted');
+    case 'CANCELLED':
+      return t('statusCancelled');
+    default:
+      return t('statusPending');
+  }
+}
+
 export function statusText(tx: TransactionDetailDto): string {
+  const base = statusName(tx.status);
   const rev = tx.reversal;
   if (rev?.status === 'POSTED') {
     const timePart = rev.postedAt ? ` ${formatBangkokDateTime(rev.postedAt)}` : '';
-    return `${tx.status} · ${ht('headerReversed')}${timePart}`;
+    return `${base} · ${ht('headerReversed')}${timePart}`;
   }
   if (rev?.status === 'REQUESTED' || rev?.status === 'APPROVED') {
-    return `${tx.status} · ${ht('headerReversalPending')}`;
+    return `${base} · ${ht('headerReversalPending')}`;
   }
-  return tx.status;
+  return base;
 }
 
 export function HeaderSection(props: { tx: TransactionDetailDto }): JSX.Element {

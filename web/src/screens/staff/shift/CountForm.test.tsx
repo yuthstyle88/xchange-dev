@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5639 (DESK-SHIFT T2, docs/design/desk-shift-open.md §2.1, §3 T2 rows N1–N6): the count form and waiting line
 // /staff and /desk share. Written before the implementation by the ticket author claude/studio-claude-15.
 // Do not edit, delete or weaken; add tests in a file of your own.
@@ -298,7 +299,7 @@ describe('#5639 CountWaitingLine', () => {
     const open = host.querySelector('[data-testid="shift-open-waiting"]');
     const close = host.querySelector('[data-testid="shift-close-waiting"]');
     expect(open?.getAttribute('role')).toBe('status');
-    expect(open?.textContent).toBe(`${th.openWaiting} (11/10 11:30)`);
-    expect(close?.textContent).toBe(`${th.closeWaiting} (11/10 11:30)`);
+    expect(open?.textContent).toBe(`${th.openWaiting} (11/10/2026 11:30)`);
+    expect(close?.textContent).toBe(`${th.closeWaiting} (11/10/2026 11:30)`);
   });
 });

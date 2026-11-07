@@ -12,7 +12,8 @@ import type {
   PlannerDraftDto,
 } from '../../../shared/api/generated/my_planner_drafts';
 import type { MyQueueTicketData } from '../../../shared/api/generated/my_queue_ticket';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { en, th, zh } from './i18n';
@@ -208,21 +209,6 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
         return 'xc-journey-badge xc-journey-badge-cancelled';
       default:
         return 'xc-journey-badge';
-    }
-  };
-
-  const formatDate = (iso: string) => {
-    try {
-      const d = new Date(iso);
-      if (isNaN(d.getTime())) return iso;
-      return d.toLocaleDateString(locale(), {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        timeZone: 'Asia/Bangkok',
-      });
-    } catch {
-      return iso;
     }
   };
 
@@ -422,7 +408,7 @@ export function JourneyScreen(props: JourneyScreenProps): JSX.Element {
                     <Show when={draft.branch}>
                       <span class="draft-branch">{t('branchLabel', { branch: draft.branch! })}</span>
                     </Show>
-                    <span class="draft-expires">{t('expiresAt', { date: formatDate(draft.expiresAt) })}</span>
+                    <span class="draft-expires">{t('expiresAt', { date: formatBangkokDate(draft.expiresAt) })}</span>
                     <PlanDelete draft={draft} api={api} onDeleted={removeDraft} />
                   </div>
                 </div>

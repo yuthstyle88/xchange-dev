@@ -1,3 +1,5 @@
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+
 export type CloseForClockOutCode = 'beforeClockIn' | 'inFuture' | 'notEarlierDay';
 
 const DAY_FMT = new Intl.DateTimeFormat('en-CA', {
@@ -5,13 +7,6 @@ const DAY_FMT = new Intl.DateTimeFormat('en-CA', {
   year: 'numeric',
   month: '2-digit',
   day: '2-digit',
-});
-
-const TIME_FMT = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Bangkok',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
 });
 
 export function toRfc3339Bangkok(local: string): string {
@@ -32,10 +27,7 @@ export function defaultClockOutLocal(clockIn: string): string {
 }
 
 export function formatOpenClockIn(clockIn: string): string {
-  const d = new Date(clockIn);
-  if (Number.isNaN(d.getTime())) return '';
-  const [, mm, dd] = DAY_FMT.format(d).split('-');
-  return `${dd}/${mm} ${TIME_FMT.format(d)}`;
+  return formatBangkokDateTime(clockIn);
 }
 
 export function checkCloseFor(

@@ -36,6 +36,13 @@
   font-size: 0.875rem;
 }
 
+.xc-transfers-total {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--xc-ink);
+}
+
 .xc-transfers-error {
   padding: 0.75rem 1rem;
   background-color: var(--xc-danger-soft);

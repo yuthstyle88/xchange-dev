@@ -2,6 +2,7 @@ import type { JSX } from 'solid-js';
 import { For, Show } from 'solid-js';
 import type { AdminShiftRow } from '../../../shared/api/generated/admin_shifts';
 import { screenT } from '../../../shared/i18n';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { ApiClient } from '../../../shared/api/client';
 import { closeDialog, openDialog } from '../parts/Dialog';
@@ -17,15 +18,7 @@ export function shiftLabel(
 ): string | null {
   if (!shiftName) return null;
   if (!businessDate) return shiftName;
-  const parts = businessDate.split('T')[0].split('-');
-  if (parts.length === 3) {
-    const day = parts[2].replace(/^0/, '');
-    const month = parts[1].replace(/^0/, '');
-    if (day && month) {
-      return `${shiftName} · ${day}/${month}`;
-    }
-  }
-  return `${shiftName} · ${businessDate}`;
+  return `${shiftName} · ${formatBangkokDate(businessDate)}`;
 }
 
 export function openShiftDetail(row: AdminShiftRow, branch: string): void {

@@ -3,7 +3,8 @@
 import { createSignal, For, onMount, Show, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../../shared/api/client';
 import type { MyBookingItemDto, MyBookingsData } from '../../../shared/api/generated/my_bookings';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
 
@@ -39,16 +40,6 @@ export function JourneyBookings(props: JourneyBookingsProps): JSX.Element {
       });
   });
 
-  const formatStart = (iso: string): string => {
-    try {
-      const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return iso;
-      return d.toLocaleString(locale());
-    } catch {
-      return iso;
-    }
-  };
-
   return (
     <Show when={state() === 'ready' || state() === 'error'}>
       <div class="xc-journey-section">
@@ -73,7 +64,7 @@ export function JourneyBookings(props: JourneyBookingsProps): JSX.Element {
                 <div class="xc-journey-card" data-testid="journey-booking" data-booking-id={b.id}>
                   <div class="xc-journey-card-header">
                     <span class="xc-booking-no">{b.bookingNo}</span>
-                    <span class="xc-booking-time">{formatStart(b.startAt)}</span>
+                    <span class="xc-booking-time">{formatBangkokDateTime(b.startAt)}</span>
                   </div>
                   <Show when={b.qrToken !== null}>
                     <div class="xc-booking-qr" data-qr-token={b.qrToken!}>

@@ -1,9 +1,10 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setLang } from '../../../../shared/i18n';
 import { warmModules } from '../../../../shared/testing/warm-modules';
 import { makeReversalPendingRow, makeReversalSubject, type ReversalPendingRow } from '../../../../shared/testing/fixtures';
-import { stamp } from '../parts';
 import { ReversalsPart } from './ReversalsPart';
 
 beforeAll(() => warmModules(() => import('./ReversalsPart')), 60_000);
@@ -59,8 +60,9 @@ describe('FE-T3c: reversal row shows the shift of the reversed sale', () => {
     const s = summary();
     expect(s, 'summary element').not.toBeNull();
     const tTh = text(s);
-    const expectedShiftTh = `กะ ${stamp(shiftOpenedAt)}`;
-    const expectedCreatedTh = stamp(createdAt);
+    // F55: pinned (was rebuilt with the screen's own stamp()); 02:00Z = 09:00, 05:44:25Z = 12:44 in Bangkok.
+    const expectedShiftTh = 'กะ 01/11/2026 09:00';
+    const expectedCreatedTh = '01/11/2026 12:44';
     expect(tTh).toContain(`${expectedShiftTh} · ${expectedCreatedTh}`);
     expect(tTh.endsWith(expectedCreatedTh)).toBe(true);
 
@@ -82,8 +84,8 @@ describe('FE-T3c: reversal row shows the shift of the reversed sale', () => {
       }),
     ]);
     const tEn = text(summary());
-    const expectedShiftEn = `Shift ${stamp(shiftOpenedAt)}`;
-    const expectedCreatedEn = stamp(createdAt);
+    const expectedShiftEn = 'Shift 01/11/2026 09:00';
+    const expectedCreatedEn = '01/11/2026 12:44';
     expect(tEn).toContain(`${expectedShiftEn} · ${expectedCreatedEn}`);
     expect(tEn.endsWith(expectedCreatedEn)).toBe(true);
   });

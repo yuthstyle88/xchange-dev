@@ -8,6 +8,8 @@
 // the header says beside the status that the transaction was reversed, or that a reversal is pending.
 // The sections are rendered on their own with the props `TransactionScreen.tsx:227-255` passes them.
 // One test per row of the ticket's behaviour table; the row id is in the test name.
+// F53 (docs/design/backdated-keying.md §16.6), restated by the ticket author claude/3b81c9d5: the status is worded
+// (สำเร็จ / Completed) instead of the raw COMPLETED; the reversal suffixes and times are unchanged.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
 import type { JSX } from 'solid-js';
@@ -191,7 +193,7 @@ describe('FE-T6 #5854: times in ICT (design W1)', () => {
 describe('FE-T6 #5854 / T5: the header marks a reversal beside the status', () => {
   it('T5-1: COMPLETED with a POSTED reversal shows "COMPLETED · กลับรายการแล้ว <postedAt in ICT>"', () => {
     show(() => <HeaderSection tx={tx({ reversal: rev('POSTED') })} />);
-    expect(valueOf(th.status)).toBe(`COMPLETED · ${T5.th.reversed} 01/11/2026 12:44`);
+    expect(valueOf(th.status)).toBe(`สำเร็จ · ${T5.th.reversed} 01/11/2026 12:44`);
   });
 
   it('T5-1en: the same in English reads "COMPLETED · Reversed <postedAt in ICT>"', () => {
@@ -199,18 +201,18 @@ describe('FE-T6 #5854 / T5: the header marks a reversal beside the status', () =
     show(() => <HeaderSection tx={tx({ reversal: rev('POSTED') })} />);
     const dt = [...host.querySelectorAll('dt')].find((d) => text(d) === 'Status');
     expect(dt, 'the en status label').toBeDefined();
-    expect(text(dt!.nextElementSibling)).toBe(`COMPLETED · ${T5.en.reversed} 01/11/2026 12:44`);
+    expect(text(dt!.nextElementSibling)).toBe(`Completed · ${T5.en.reversed} 01/11/2026 12:44`);
   });
 
   it('T5-1b: a POSTED reversal without postedAt shows the mark without a time', () => {
     show(() => <HeaderSection tx={tx({ reversal: rev('POSTED', { postedAt: null }) })} />);
-    expect(valueOf(th.status)).toBe(`COMPLETED · ${T5.th.reversed}`);
+    expect(valueOf(th.status)).toBe(`สำเร็จ · ${T5.th.reversed}`);
   });
 
   it('T5-2: a REQUESTED or APPROVED reversal shows that it is pending', () => {
     for (const s of ['REQUESTED', 'APPROVED']) {
       show(() => <HeaderSection tx={tx({ reversal: rev(s) })} />);
-      expect(valueOf(th.status), s).toBe(`COMPLETED · ${T5.th.pending}`);
+      expect(valueOf(th.status), s).toBe(`สำเร็จ · ${T5.th.pending}`);
       dispose?.();
       dispose = undefined;
     }
@@ -220,13 +222,13 @@ describe('FE-T6 #5854 / T5: the header marks a reversal beside the status', () =
     setLang('en');
     show(() => <HeaderSection tx={tx({ reversal: rev('APPROVED') })} />);
     const dt = [...host.querySelectorAll('dt')].find((d) => text(d) === 'Status');
-    expect(text(dt!.nextElementSibling)).toBe(`COMPLETED · ${T5.en.pending}`);
+    expect(text(dt!.nextElementSibling)).toBe(`Completed · ${T5.en.pending}`);
   });
 
   it('T5-3: no reversal, REJECTED or EXPIRED adds no text to the status', () => {
     for (const r of [null, rev('REJECTED'), rev('EXPIRED')]) {
       show(() => <HeaderSection tx={tx({ reversal: r })} />);
-      expect(valueOf(th.status), String(r?.status ?? null)).toBe('COMPLETED');
+      expect(valueOf(th.status), String(r?.status ?? null)).toBe('สำเร็จ');
       dispose?.();
       dispose = undefined;
     }

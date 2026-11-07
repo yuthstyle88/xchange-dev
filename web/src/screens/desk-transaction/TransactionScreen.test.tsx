@@ -370,7 +370,10 @@ describe('states (D11)', () => {
 describe('content: every figure is the server string, unchanged (D3)', () => {
   it('a COMPLETED USD BUY shows quantity, rate, amount, fee and settle with their digits unchanged', async () => {
     await mount();
-    for (const s of ['1000.0000', '35.12000000', '35120.00', '0.00', 'USD', 'XC-0001']) {
+    // F53 (docs/design/backdated-keying.md §16.6), restated by the ticket author claude/3b81c9d5 on the owner's ruling
+    // of 2026-11-07 ("fix them all", F53: the detail words its values like the lists): the quantity and the rate are
+    // shown as 1,000.00 and 35.12, not the wire strings 1000.0000 and 35.12000000. The money amounts stay as sent.
+    for (const s of ['1,000.00', '35.12', '35120.00', '0.00', 'USD', 'XC-0001']) {
       expect(text(), s).toContain(s);
     }
   });
@@ -546,7 +549,9 @@ describe('reversal request (D6)', () => {
         }),
       }),
     });
-    for (const s of ['1000.0000', '35.12000000', '35120.00', 'XC-0001-R2']) expect(text(), s).toContain(s);
+    // F53 (§16.6), restated by the ticket author claude/3b81c9d5: the quantity and the rate are worded (1,000.00 and 35.12)
+    // instead of the raw wire strings 1000.0000 and 35.12000000.
+    for (const s of ['1,000.00', '35.12', '35120.00', 'XC-0001-R2']) expect(text(), s).toContain(s);
     expect(btn('reprint')).toHaveLength(2);
   });
 

@@ -81,7 +81,7 @@ impl BranchView for TransactionView {
                 "SELECT t.id, t.status, t.document_ref, t.branch_id, t.customer_id, t.quote_id, \
                  q.expires_at, t.approval_request_id, a.status AS a_status, t.completed_at, \
                  t.cancelled_at, t.cancel_reason, q.benefit_snapshot, \
-                 t.backdated, t.recorded_at, t.recorded_by \
+                 t.backdated, t.recorded_at, t.recorded_by, NULLIF(btrim(t.notes), '') \
                  FROM transactions t LEFT JOIN quotes q ON q.id = t.quote_id \
                  LEFT JOIN approval_requests a ON a.id = t.approval_request_id \
                  WHERE t.id = $1 AND t.branch_id = $2",
@@ -204,6 +204,7 @@ impl BranchView for TransactionView {
                     benefits,
                     booking,
                     backdate,
+                    notes: r.get(16),
                 }),
             })
         }
