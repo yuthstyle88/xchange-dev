@@ -671,10 +671,6 @@ export function RatesDraftCard(props: RatesDraftCardProps): JSX.Element {
           </div>
         </Show>
       </div>
-
-      <div class="section-note">
-        <p>{props.t('ratesLiveNote')}</p>
-      </div>
     </>
   );
 }

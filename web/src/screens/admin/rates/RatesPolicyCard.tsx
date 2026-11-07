@@ -675,8 +675,8 @@ export function RatesPolicyCard(props: RatesPolicyCardProps): JSX.Element {
       </div>
 
       <Show when={guardCurrencies().length > 0}>
+        <h3 class="rates-subhead">{props.t('guardsTitle')}</h3>
         <div class="table-scroll">
-          <h3>{props.t('guardsTitle')}</h3>
           <table class="rates-table">
             <thead>
               <tr>

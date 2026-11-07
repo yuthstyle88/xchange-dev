@@ -8,3 +8,18 @@
 .btn-save-lines {
   cursor: pointer;
 }
+
+.xc-admin .xc-content.xc-content .admin-rates-screen .rates-table td.rate-number {
+  white-space: normal;
+}
+
+.xc-admin .xc-content.xc-content .admin-rates-screen .rates-table td.rate-number :is(select, input) {
+  display: block;
+  width: 9rem;
+  margin-left: auto;
+}
+
+.xc-admin .xc-content.xc-content .admin-rates-screen .rates-table td input[name="reason"] {
+  min-width: 12rem;
+}
+

@@ -274,3 +274,16 @@
   margin-bottom: 3px;
 }
 
+.xc-admin .xc-content .admin-rates-screen .rates-section > .xc-rate-freshness {
+  margin: 0;
+  padding: 0 22px 12px;
+}
+
+.xc-admin .xc-content .admin-rates-screen .rates-live-note {
+  margin: 0;
+  padding: 12px 22px 18px;
+  font-size: 13px;
+  color: var(--xc-muted);
+}
+
+
