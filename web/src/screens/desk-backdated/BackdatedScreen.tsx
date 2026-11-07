@@ -9,6 +9,7 @@ import { keyedWrite } from '../../shared/api/keyed-write';
 import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { sharedApi, sharedSession } from '../../shared/session/session';
+import { FileField } from '../../shared/ui/FileField';
 import '../desk/desk.css';
 import { METHODS } from '../desk/steps/payment/channels';
 import { en, th } from './i18n';
@@ -618,11 +619,11 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
           <div class="backdated-grid2">
             <label class="desk-field">
               <span>{t('slip')}</span>
-              <input
-                ref={slipInputRef}
-                type="file"
+              <FileField
+                ref={(el) => (slipInputRef = el)}
                 name="slip"
                 accept={ACCEPT}
+                file={slipFile()}
                 onChange={(e) => {
                   const f = e.currentTarget.files?.[0];
                   if (!f) return;
@@ -637,21 +638,18 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                 }}
               />
               <Show when={slipFile()}>
-                {(f) => (
-                  <span class="desk-file">
-                    {f().name}{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSlipFile(undefined);
-                        if (slipInputRef) slipInputRef.value = '';
-                        setDirty(true);
-                      }}
-                    >
-                      {t('removeFile')}
-                    </button>
-                  </span>
-                )}
+                <span class="desk-file">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSlipFile(undefined);
+                      if (slipInputRef) slipInputRef.value = '';
+                      setDirty(true);
+                    }}
+                  >
+                    {t('removeFile')}
+                  </button>
+                </span>
               </Show>
               <Show when={fieldErrorText('payment.slip')}>
                 {(msg) => (
@@ -664,11 +662,11 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
 
             <label class="desk-field">
               <span>{t('passport')}</span>
-              <input
-                ref={passportInputRef}
-                type="file"
+              <FileField
+                ref={(el) => (passportInputRef = el)}
                 name="passport"
                 accept={ACCEPT}
+                file={passportFile()}
                 onChange={(e) => {
                   const f = e.currentTarget.files?.[0];
                   if (!f) return;
@@ -683,21 +681,18 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                 }}
               />
               <Show when={passportFile()}>
-                {(f) => (
-                  <span class="desk-file">
-                    {f().name}{' '}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPassportFile(undefined);
-                        if (passportInputRef) passportInputRef.value = '';
-                        setDirty(true);
-                      }}
-                    >
-                      {t('removeFile')}
-                    </button>
-                  </span>
-                )}
+                <span class="desk-file">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPassportFile(undefined);
+                      if (passportInputRef) passportInputRef.value = '';
+                      setDirty(true);
+                    }}
+                  >
+                    {t('removeFile')}
+                  </button>
+                </span>
               </Show>
               <Show when={fieldErrorText('passport')}>
                 {(msg) => (
