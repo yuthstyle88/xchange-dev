@@ -39,6 +39,7 @@ import type {
   VerificationQueueItem,
 } from '../../../shared/api/generated/verification_queue';
 import { screenT } from '../../../shared/i18n';
+import { FileField } from '../../../shared/ui/FileField';
 import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { can } from '../../staff/parts/can';
@@ -1110,13 +1111,13 @@ export function VerificationScreen(): JSX.Element {
               <div>
                 <label>
                   <span>{st('branchFileLabel')}</span>
-                  <input
+                  <FileField
                     ref={(el) => {
                       branchFileInputRef = el;
                     }}
-                    type="file"
                     name="file"
                     accept="image/jpeg,image/png,application/pdf"
+                    file={branchFile()}
                     onChange={(e) => {
                       setBranchFile(e.currentTarget.files?.[0] ?? null);
                       setBranchFileError(null);

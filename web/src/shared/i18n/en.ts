@@ -3,6 +3,8 @@ import type { Key } from './th';
 export const en: Record<Key, string> = {
   'field.password.show': 'Show password',
   'field.password.hide': 'Hide password',
+  'field.file.choose': 'Choose file',
+  'field.file.none': 'No file chosen',
   'shell.langSwitch': 'Switch language to {language}',
   'shell.menu': 'Menu',
   'shell.nav.counter': 'Desk',
