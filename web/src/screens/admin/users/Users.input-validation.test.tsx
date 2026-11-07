@@ -18,6 +18,20 @@ import { en } from './i18n';
 import { PermissionMatrix } from './PermissionMatrix';
 import { UsersScreen } from './UsersScreen';
 
+// OL-7 row 86 (restated by claude/94389a6b on the sub-controller claude/1cc51615's decision, /tmp/ol7/ORDER-claude-19-b.md
+// item 2): reset, grant, suspend and disable now sit in each row's "more" menu, rendered only while it is open. A lookup
+// that does not find its button opens the first closed menu under `root` that holds it; nothing else in the test changes.
+function withMore<T extends ParentNode>(root: T, sel: string): T {
+  if (!root.querySelector(sel)) {
+    for (const t of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-users-menu="toggle"]'))) {
+      if (t.getAttribute('aria-expanded') === 'true') continue;
+      t.click();
+      if (root.querySelector(sel)) break;
+    }
+  }
+  return root;
+}
+
 const B01 = 'XC-B01';
 const THAI = /[฀-๿]/;
 const SERVER_TEXT = 'ข้อมูลไม่ถูกต้อง';
@@ -143,7 +157,7 @@ function mountMatrix(): HTMLElement {
 }
 
 function el<T extends HTMLElement>(root: ParentNode, sel: string): T {
-  const found = root.querySelector<T>(sel);
+  const found = withMore(root, sel).querySelector<T>(sel);
   expect(found, sel).not.toBeNull();
   return found!;
 }
