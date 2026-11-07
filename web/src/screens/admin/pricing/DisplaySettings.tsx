@@ -152,6 +152,7 @@ export function DisplaySettings(props: DisplaySettingsProps): JSX.Element {
         </ul>
         <select
           name="featured-add"
+          aria-label={t('displayFeaturedAdd')}
           value=""
           disabled={!props.mayEdit || saving() || featured().length >= DISPLAY_FEATURED_MAX}
           onChange={(e) => {
@@ -160,7 +161,7 @@ export function DisplaySettings(props: DisplaySettingsProps): JSX.Element {
             addFeatured(val);
           }}
         >
-          <option value="" />
+          <option value="">{t('displayFeaturedAdd')}</option>
           <For each={props.currencies.filter((c) => !featured().includes(c))}>
             {(c) => <option value={c}>{c}</option>}
           </For>
