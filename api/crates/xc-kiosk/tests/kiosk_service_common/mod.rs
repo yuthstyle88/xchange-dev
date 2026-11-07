@@ -1290,13 +1290,13 @@ pub async fn play(name: &str) -> Vec<String> {
             }
         };
         let want_error = outcome["error"].as_str();
+        // F6 (#6095): a request with a queue ticket is labelled by its number (`with_ticket_numbers`).
+        let mut want_answer = outcome["answer"].clone();
+        with_ticket_numbers(&db.pool, &mut want_answer).await;
         match (&got, want_error) {
             (Ok(answer), None) => {
-                if answer != &outcome["answer"] {
-                    wrong.push(format!(
-                        "{here}: answered {answer}, expected {}",
-                        outcome["answer"]
-                    ));
+                if answer != &want_answer {
+                    wrong.push(format!("{here}: answered {answer}, expected {want_answer}"));
                 }
             }
             (Err(AppError::Domain(sentence)), Some(want)) if sentence == want => {}
@@ -1369,4 +1369,71 @@ pub fn accept_answer(outcome: AcceptOutcome) -> AppResult<Value> {
 /// `now` as the machine counts it.
 pub fn kiosk_time(now: DateTime<Utc>) -> KioskTime {
     KioskTime::from_epoch_millis(now.timestamp_millis())
+}
+
+// ── F6 (#6095): a kiosk request's queue label once it has a ticket ───────────
+
+/// Added by the ticket author of #6095 (F6, claude/01TxaRJG; lane controller's ruling
+/// issuecomment-6627017842, `docs/design/blueprint/queue-tickets.md:40-43` Q1/Q3/Q4): once a kiosk
+/// request has its queue ticket, its `queue` is the ticket's `display_number`, where v2 answered
+/// `K-<first eight>`. A recorded answer is held to that: every object whose `queue` is exactly v2's
+/// label of its own `id`, for a request that has a ticket in `pool`, expects the ticket's number.
+/// Nothing else changes, and a request with no ticket keeps v2's label.
+pub async fn with_ticket_numbers(pool: &sqlx::PgPool, recorded: &mut Value) {
+    fn label(id: &str) -> String {
+        let first_eight: String = id.chars().take(8).collect();
+        format!("K-{}", first_eight.to_uppercase())
+    }
+    fn labelled(value: &Value, ids: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                if let (Some(Value::String(id)), Some(Value::String(queue))) =
+                    (map.get("id"), map.get("queue"))
+                    && *queue == label(id)
+                {
+                    ids.push(id.clone());
+                }
+                map.values().for_each(|v| labelled(v, ids));
+            }
+            Value::Array(items) => items.iter().for_each(|v| labelled(v, ids)),
+            _ => {}
+        }
+    }
+    fn renumber(value: &mut Value, numbers: &std::collections::BTreeMap<String, String>) {
+        match value {
+            Value::Object(map) => {
+                let number = match (map.get("id"), map.get("queue")) {
+                    (Some(Value::String(id)), Some(Value::String(queue)))
+                        if *queue == label(id) =>
+                    {
+                        numbers.get(id).cloned()
+                    }
+                    _ => None,
+                };
+                if let Some(number) = number {
+                    map.insert("queue".to_owned(), Value::String(number));
+                }
+                map.values_mut().for_each(|v| renumber(v, numbers));
+            }
+            Value::Array(items) => items.iter_mut().for_each(|v| renumber(v, numbers)),
+            _ => {}
+        }
+    }
+    let mut ids = Vec::new();
+    labelled(recorded, &mut ids);
+    if ids.is_empty() {
+        return;
+    }
+    ids.sort();
+    ids.dedup();
+    let numbers = sqlx::query_as::<_, (String, String)>(
+        "SELECT kiosk_request_id, display_number FROM queue_tickets WHERE kiosk_request_id = ANY($1)",
+    )
+    .bind(&ids)
+    .fetch_all(pool)
+    .await
+    .expect("read the requests' ticket numbers")
+    .into_iter()
+    .collect();
+    renumber(recorded, &numbers);
 }

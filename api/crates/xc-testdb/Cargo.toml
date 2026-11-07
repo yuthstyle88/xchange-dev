@@ -4,11 +4,14 @@ autotests = false
 name = "xc-testdb"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version.workspace = true
 authors = ["108Heros Engineering"]
 description = "Test databases cloned from one migrated template per migrations set (#2867): the shared core every api test harness calls instead of replaying migrations per test"
 license = "Proprietary"
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 anyhow = "1"

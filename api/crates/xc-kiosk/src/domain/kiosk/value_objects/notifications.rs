@@ -9,6 +9,7 @@ pub struct WorkingRequest {
     pub staff: String,
     pub started_at: Option<KioskTime>,
     pub status: KioskStatus,
+    pub ticket_number: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

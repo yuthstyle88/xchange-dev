@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "bridge",
+  "description": "What the desk page may ask the app: one https origin, the desk and staff-kiosk paths, this app's three bridge commands (design §2 IPC pinned, §8.6).",
+  "windows": ["main"],
+  "remote": {
+    "urls": [
+      "https://xc-v3.spacing.cloud/desk*",
+      "https://xc-v3.spacing.cloud/kiosk-staff*"
+    ]
+  },
+  "permissions": ["allow-info", "allow-desk-binding", "allow-scan-passport"]
+}

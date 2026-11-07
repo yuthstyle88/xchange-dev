@@ -96,7 +96,7 @@ impl RpcAction for SaveAction {
     fn run<'a>(&'a self, call: RpcCall<'a>) -> ActionFuture<'a> {
         Box::pin(async move {
             let cmd = parse_command(&call.payload);
-            let extras = parse_extras(&call.payload);
+            let extras = parse_extras(&call.payload, call.caller.counter_agent_id.clone());
             let booking = parse_booking(&call.payload);
             let actor = save_actor(call.caller);
 
@@ -162,7 +162,7 @@ fn file_key(payload: &Map<String, Value>, field: &str) -> Option<String> {
     }
 }
 
-fn parse_extras(payload: &Map<String, Value>) -> SaveExtras {
+fn parse_extras(payload: &Map<String, Value>, counter_agent_id: Option<String>) -> SaveExtras {
     let staff_draft_id = payload.get("staffDraftId").and_then(|v| match v {
         Value::String(s) if !s.is_empty() => Some(s.clone()),
         Value::Number(n) => Some(n.to_string()),
@@ -178,6 +178,8 @@ fn parse_extras(payload: &Map<String, Value>) -> SaveExtras {
         staff_draft_id,
         count_confirmed,
         kiosk_request_id,
+        // The bound counter is the server's to fill, from the session row (xc-counter-app.md §8.5).
+        counter_agent_id,
     }
 }
 

@@ -49,17 +49,21 @@ impl SaveStep for DeviceSaveStep {
     /// save of cash must have its cash counted.
     fn before_in<'a>(
         &'a self,
-        _tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
+        tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         ctx: &'a SaveContext<'a>,
     ) -> StepFuture<'a> {
         Box::pin(async move {
             if ctx.form.customer.mode != Mode::Live || ctx.prior.is_some() {
                 return Ok(());
             }
-            DeviceService::require_count_confirmed(
-                ctx.form.method.is_cash(),
-                ctx.extras.count_confirmed,
-            )
+            let cash = ctx.form.method.is_cash();
+            DeviceService::require_count_confirmed(cash, ctx.extras.count_confirmed)?;
+            if cash {
+                self.devices
+                    .cash_payout_in(tx, ctx.branch, ctx.extras.counter_agent_id.as_deref())
+                    .await?;
+            }
+            Ok(())
         })
     }
 
@@ -79,7 +83,14 @@ impl SaveStep for DeviceSaveStep {
             }
             let saved_ex = saved_exchange(saved)?;
             self.devices
-                .after_save_in(tx, ctx.branch, &saved_ex, &ctx.actor.id, ctx.now)
+                .after_save_for_counter_in(
+                    tx,
+                    ctx.branch,
+                    &saved_ex,
+                    ctx.extras.counter_agent_id.as_deref(),
+                    &ctx.actor.id,
+                    ctx.now,
+                )
                 .await
         })
     }

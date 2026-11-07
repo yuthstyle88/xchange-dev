@@ -14,6 +14,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
 import type { AdminMenuProps } from '../menus';
+import { BranchCounters } from './BranchCounters';
 import { BranchTablets } from './BranchTablets';
 import { ShiftsEditor } from './ShiftsEditor';
 import * as table from './i18n';
@@ -79,6 +80,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
 
   // BT-F3 (kiosk-shared-phone §7.3 T-D5): pairing a branch tablet needs `SystemSettings`, as the drawer agent does.
   const canPairTablets = () => (sharedSession().me()?.permissions ?? []).includes('SystemSettings');
+  const canManageCounters = () => (sharedSession().me()?.permissions ?? []).includes('branchSettingsSave');
 
   let lastLoadedBranch = '';
   // #2247: only the latest profile read for the selected branch may fill the form.
@@ -475,6 +477,10 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
           {(branchCode) => (
             <BranchTablets branchId={selectedBranch()} branchCode={branchCode()} api={api} />
           )}
+        </Show>
+
+        <Show when={canManageCounters() && profile()}>
+          <BranchCounters branchId={selectedBranch()} api={api} />
         </Show>
       </div>
     </div>

@@ -35,8 +35,8 @@ const AGENT_B9: &str = "a0000000-0000-4000-8000-000000000009";
 /// An active agent of the branch, as the owner's `add` leaves it (row AG-1's table).
 async fn agent(db: &Devices, branch_id: &str, id: &str) {
     sqlx::query(
-        "INSERT INTO device_agents (id, branch_id, name, created_at, created_by) \
-         VALUES ($1::uuid, $2, 'Mac เคาน์เตอร์ 1', now(), 'owner')",
+        "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by) \
+         VALUES (true, $1::uuid, $2, 'Mac เคาน์เตอร์ 1', now(), 'owner')",
     )
     .bind(id)
     .bind(branch_id)

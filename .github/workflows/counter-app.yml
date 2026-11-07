@@ -1,0 +1,63 @@
+name: counter-app
+
+# XC Counter (docs/design/xc-counter-app.md). Not a required check. macOS only: the app links
+# WKWebView, the Keychain and ImageCaptureCore.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'counter-app/**'
+      - 'api/crates/xc-device-agent/**'
+      - '.github/workflows/counter-app.yml'
+
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('counter-app-pr-{0}', github.event.pull_request.number) || format('counter-app-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
+  GIT_CONFIG_VALUE_0: https://github.com/
+
+jobs:
+  macos:
+    name: macos
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: counter-app/src-tauri
+    steps:
+      - name: Refuse to report green when the run was cancelled
+        if: cancelled()
+        working-directory: .
+        run: exit 1
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up toolchain
+        run: |
+          if [ -d "$HOME/.cargo/bin" ]; then
+            echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.cargo/bin:$PATH"
+          fi
+          rustup show active-toolchain
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked

@@ -1,7 +1,6 @@
 //! CLI for xc-device-agent.
 
-use std::time::Duration;
-
+use tokio::sync::watch;
 use xc_device_agent::client::{AgentApi, DrawerInfo, HttpAgentApi, PairRequest};
 #[cfg(target_os = "linux")]
 use xc_device_agent::config::service_user_exists;
@@ -12,9 +11,8 @@ use xc_device_agent::config::{
 };
 use xc_device_agent::cups_transport::CupsTransport;
 use xc_device_agent::journal::Journal;
-use xc_device_agent::runner::{AgentConfig, AgentRunner, Step};
+use xc_device_agent::runner::{AgentConfig, AgentRunner, run_forever};
 use xc_device_agent::tcp_transport::TcpTransport9100;
-use xc_device_agent::transport::DrawerTransport;
 
 enum CliCommand {
     Version,
@@ -241,17 +239,27 @@ async fn run_daemon() -> Result<(), Box<dyn std::error::Error>> {
         build: BUILD.to_string(),
         os: current_os(),
         host: current_host(),
-        drawer: config.drawer.clone(),
+        drawer: Some(config.drawer.clone()),
         wait_ms: 20_000,
     };
 
+    let (_stop_tx, stop_rx) = watch::channel(false);
+
     if config.drawer.transport.eq_ignore_ascii_case("CUPS") {
         let transport = CupsTransport::new(&config.drawer.target);
-        run_loop(api, transport, journal, agent_config).await;
+        run_forever(
+            AgentRunner::new(api, transport, journal, agent_config),
+            stop_rx,
+        )
+        .await;
     } else {
         let (host, port) = parse_tcp_target(&config.drawer.target);
         let transport = TcpTransport9100::new(host, port);
-        run_loop(api, transport, journal, agent_config).await;
+        run_forever(
+            AgentRunner::new(api, transport, journal, agent_config),
+            stop_rx,
+        )
+        .await;
     }
 
     Ok(())
@@ -263,32 +271,6 @@ fn parse_tcp_target(target: &str) -> (String, u16) {
         (h.to_string(), port)
     } else {
         (target.to_string(), 9100)
-    }
-}
-
-async fn run_loop<A: AgentApi + 'static, T: DrawerTransport + 'static>(
-    api: A,
-    transport: T,
-    journal: Journal,
-    config: AgentConfig,
-) {
-    let mut runner = AgentRunner::new(api, transport, journal, config);
-    runner.recover().await;
-
-    loop {
-        match runner.step().await {
-            Step::Idle => {}
-            Step::Done(outcome) => {
-                eprintln!("job processed: outcome {outcome:?}");
-            }
-            Step::RePairNeeded => {
-                eprintln!("re-pair needed");
-                tokio::time::sleep(Duration::from_secs(600)).await;
-            }
-            Step::Wait(duration) => {
-                tokio::time::sleep(duration).await;
-            }
-        }
     }
 }
 

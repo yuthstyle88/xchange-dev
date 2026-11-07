@@ -101,6 +101,10 @@ pub struct SaveExtras {
     pub count_confirmed: bool,
     /// The kiosk request this exchange completes.
     pub kiosk_request_id: Option<String>,
+    /// The counter the saver's staff session is bound to (`user_sessions.counter_agent_id`,
+    /// xc-counter-app.md §5.4, §8.5). The server fills it from the session row, never from the request
+    /// body; `None` = a session with no bound counter (a plain browser).
+    pub counter_agent_id: Option<String>,
 }
 
 /// A booking claimed by the save of an exchange (T15-h).

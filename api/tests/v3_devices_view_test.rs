@@ -939,6 +939,15 @@ async fn every_writer_of_the_views_tables_moves_the_version_they_answer() {
         .await;
     assert_eq!(paired.status, 200, "pair: {:.300}", paired.text);
     let token = paired.json()["token"].as_str().expect("a token").to_owned();
+    // Restated by the XC Counter sub-controller (xc-counter-app.md §5.2, CA-0 #6373): a counter claims a drawer job
+    // with no target only while its `cash_drawer` is on, which the owner sets; a direct write stands in for that here.
+    sqlx::query(
+        "UPDATE device_agents SET cash_drawer = true WHERE branch_id = $1 AND revoked_at IS NULL",
+    )
+    .bind(MAIN)
+    .execute(&room.desk.db.pool)
+    .await
+    .expect("turn the counter's cash drawer on");
 
     let agent_call = |route: &str, body: Value| {
         Call::post(ORIGIN, route, body.to_string())

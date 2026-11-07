@@ -307,6 +307,7 @@ async fn the_steps_run_in_order_around_the_save_and_are_told_about_it() {
         staff_draft_id: Some("draft-1".to_owned()),
         count_confirmed: true,
         kiosk_request_id: Some("kiosk-9".to_owned()),
+        counter_agent_id: None,
     };
 
     let saved = flow

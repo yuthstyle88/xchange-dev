@@ -58,6 +58,7 @@ pub trait PassportDrawerDevice: Send + Sync {
         source: PassportSource,
         order_id: &'a str,
         actor: &'a str,
+        counter_agent_id: Option<&'a str>,
         now: DateTime<Utc>,
     ) -> Pin<Box<dyn Future<Output = AppResult<PassportDrawerOutcome>> + Send + 'a>>;
 }

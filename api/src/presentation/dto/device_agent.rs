@@ -36,7 +36,8 @@ pub struct ClaimRequest {
     pub build: String,
     pub os: String,
     pub host: String,
-    pub drawer: DrawerTargetDto,
+    #[serde(default)]
+    pub drawer: Option<DrawerTargetDto>,
     pub branch_id: Option<String>,
 }
 
@@ -65,4 +66,32 @@ pub struct ReportRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ReportResponse {
     pub recorded: bool,
+}
+
+/// `GET /api/device-agent/info` (xc-counter-app.md §8.2).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InfoResponse {
+    pub agent_id: String,
+    pub counter_name: String,
+    pub branch_id: String,
+    pub capabilities: CapabilitiesDto,
+}
+
+/// Each setting resolved: not set → drawer off, scanner off, kiosk lock on (§5.2).
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilitiesDto {
+    pub cash_drawer: bool,
+    pub scanner: bool,
+    pub kiosk_lock: bool,
+}
+
+/// `POST /api/device-agent/desk-binding` (§8.2, §8.3).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeskBindingResponse {
+    pub nonce: String,
+    /// RFC 3339.
+    pub expires_at: String,
 }

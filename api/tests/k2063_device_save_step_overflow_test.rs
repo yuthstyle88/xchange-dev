@@ -37,6 +37,7 @@ const COUNTED: SaveExtras = SaveExtras {
     staff_draft_id: None,
     count_confirmed: true,
     kiosk_request_id: None,
+    counter_agent_id: None,
 };
 
 fn save_step_context<'a>(

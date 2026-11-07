@@ -89,6 +89,8 @@ pub struct RpcCaller {
     pub username: String,
     /// The display name: printed in the staff view's `employee`.
     pub name: String,
+    /// The counter the request's session is bound to (`user_sessions.counter_agent_id`).
+    pub counter_agent_id: Option<String>,
 }
 
 impl RpcCaller {

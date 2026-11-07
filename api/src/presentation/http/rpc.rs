@@ -66,7 +66,7 @@ use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::extractors::actor::{
-    identity_session, identity_session_actor, same_origin, server_error,
+    caller_bound_counter, identity_session, identity_session_actor, same_origin, server_error,
 };
 use crate::presentation::http::v3::attach_referral::capture_service_for_pool;
 use crate::presentation::pages;
@@ -149,7 +149,7 @@ async fn answer(
         .app_data::<web::Data<dyn RpcClock>>()
         .map_or_else(Utc::now, |clock| clock.now());
 
-    let (request, caller) = match route {
+    let (request, mut caller) = match route {
         RpcRoute::Rpc => {
             let caller = caller_of_rpc(req, now)
                 .await?
@@ -217,6 +217,9 @@ async fn answer(
     }
 
     let (action, payload) = request.into_parts()?;
+    if action == "saveTransaction" {
+        caller.counter_agent_id = caller_bound_counter(req, now).await?;
+    }
 
     let source = rate_source(req);
     let actions = req
@@ -269,17 +272,20 @@ pub(crate) async fn caller_of_rpc(
     let Some((user, access_actor)) = identity_session_actor(req, now).await else {
         return Ok(None);
     };
-    let standing = Standing::of(&access_actor, now).or_else(|| {
+    let Some(standing) = Standing::of(&access_actor, now).or_else(|| {
         is_staff_caller(&access_actor, now).then_some(Standing {
             user_id: access_actor.user_id,
             kind: StandingKind::Owner,
             branch: None,
         })
-    });
-    Ok(standing.map(|standing| RpcCaller {
+    }) else {
+        return Ok(None);
+    };
+    Ok(Some(RpcCaller {
         standing,
         username: user.name.clone(),
         name: user.name,
+        counter_agent_id: None,
     }))
 }
 
@@ -312,6 +318,7 @@ async fn caller_of_staff_rpc(
         standing,
         username: user.name.clone(),
         name: user.name,
+        counter_agent_id: None,
     })
 }
 

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-scan-passport"
+description = "Enables the scan_passport command without any pre-configured scope."
+commands.allow = ["scan_passport"]
+
+[[permission]]
+identifier = "deny-scan-passport"
+description = "Denies the scan_passport command without any pre-configured scope."
+commands.deny = ["scan_passport"]

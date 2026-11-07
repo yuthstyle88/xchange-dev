@@ -111,6 +111,13 @@ ol.steps li[aria-current="step"] {
   color: var(--xc-ink);
 }
 
+.desk-scan-passport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .desk-rate-line {
   display: flex;
   flex-wrap: wrap;

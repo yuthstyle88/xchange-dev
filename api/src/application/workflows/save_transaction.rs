@@ -599,7 +599,13 @@ impl SaveTransactionWorkflow {
                         Arc::new(ExchangeEffects::new(vec![])),
                     );
                     let completed = complete_tx
-                        .run_in(tx, draft.id, &save_actor, now)
+                        .run_with_counter_in(
+                            tx,
+                            draft.id,
+                            &save_actor,
+                            confirm_extras.counter_agent_id,
+                            now,
+                        )
                         .await?;
 
                     sqlx::query(

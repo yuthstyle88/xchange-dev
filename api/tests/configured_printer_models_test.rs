@@ -96,9 +96,9 @@ async fn setup_app_and_state(desk: &Desk) -> (App, AppState, Cookies) {
 
 async fn setup_active_agent(desk: &Desk) {
     sqlx::query(
-        "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, token_hash, \
+        "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, token_hash, \
          paired_at, last_seen_at, agent_version, agent_build, agent_os, agent_host, \
-         drawer_transport, drawer_target) VALUES ($1::uuid, $2, 'Counter 1', now(), 'owner', $3, now(), now(), \
+         drawer_transport, drawer_target) VALUES (true, $1::uuid, $2, 'Counter 1', now(), 'owner', $3, now(), now(), \
          '1.0.0', 'abc1234', 'macos-14.6-arm64', 'counter-1.local', 'CUPS', 'POS80_')",
     )
     .bind(AGENT_ID)

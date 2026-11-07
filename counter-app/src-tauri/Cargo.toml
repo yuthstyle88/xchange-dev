@@ -1,0 +1,41 @@
+[package]
+name = "xc-counter"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+authors = ["108Heros Engineering"]
+description = "XC Counter: the Mac app that wraps the staff desk and drives the counter's devices (docs/design/xc-counter-app.md)"
+license = "Proprietary"
+publish = false
+
+# Standalone on purpose: not a member of api/Cargo.toml's workspace, with its own Cargo.lock
+# (design §8.6). Every dependency is pinned exactly; an upgrade happens only in a release commit
+# (design §2 "Stable only").
+[workspace]
+
+[lib]
+name = "xc_counter"
+path = "src/lib.rs"
+
+[[bin]]
+name = "xc-counter"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+tauri = { version = "=2.12.5", features = [] }
+tokio = { version = "=1.53.3", features = ["macros", "rt-multi-thread", "sync", "time"] }
+url = "=2.5.8"
+xc-device-agent = { path = "../../api/crates/xc-device-agent" }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "=0.6.5"
+objc2-core-foundation = "=0.3.2"
+objc2-foundation = "=0.3.2"
+objc2-image-capture-core = "=0.3.2"
+security-framework = "=3.7.0"

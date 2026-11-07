@@ -329,17 +329,16 @@ async fn the_migration_adds_branch_tablets_and_touches_nothing_else() {
         "{}",
         indexes[0].1
     );
-    let agent_index = room
-        .text(
-            "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() \
-             AND indexname = 'device_agents_one_active_per_branch_idx'",
-        )
-        .await
-        .expect("the drawer's index is still there");
-    assert!(
-        agent_index.ends_with("(branch_id) WHERE (revoked_at IS NULL)"),
-        "{agent_index}"
-    );
+    // Restated by the XC Counter skeleton: `20261227000000_xc_counter.sql` drops the drawer's one-per-branch index
+    // (xc-counter-app.md §5.1), so a branch may have several counters.
+    let agent_index: Option<String> = sqlx::query_scalar(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() \
+         AND indexname = 'device_agents_one_active_per_branch_idx'",
+    )
+    .fetch_optional(&room.pool)
+    .await
+    .expect("read the index");
+    assert_eq!(agent_index, None, "the one-per-branch index is gone");
     room.finish().await;
 }
 
@@ -489,8 +488,8 @@ async fn me_answers_the_live_tablet_and_touches_it_and_list_names_each_state() {
 async fn t9_tablets_beside_a_drawer_agent_change_nothing_for_the_drawer() {
     let room = Room::start().await;
     room.sql(
-        "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, pair_code_hash, \
-         pair_code_expires_at) VALUES ('a0000000-0000-4000-8000-000000000001'::uuid, 'MAIN', 'drawer', \
+        "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, pair_code_hash, \
+         pair_code_expires_at) VALUES (true, 'a0000000-0000-4000-8000-000000000001'::uuid, 'MAIN', 'drawer', \
          now(), 'owner', 'h', now() + interval '10 minutes')",
     )
     .await;
@@ -545,8 +544,8 @@ async fn t9_tablets_beside_a_drawer_agent_change_nothing_for_the_drawer() {
 async fn t10_a_drawer_code_and_a_tablet_code_do_not_cross() {
     let room = Room::start().await;
     sqlx::query(
-        "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, pair_code_hash, \
-         pair_code_expires_at) VALUES ('a0000000-0000-4000-8000-000000000001'::uuid, 'MAIN', 'drawer', \
+        "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, pair_code_hash, \
+         pair_code_expires_at) VALUES (true, 'a0000000-0000-4000-8000-000000000001'::uuid, 'MAIN', 'drawer', \
          now(), 'owner', $1, now() + interval '10 minutes')",
     )
     .bind(sha256_hex(DRAWER_CODE_CANONICAL))

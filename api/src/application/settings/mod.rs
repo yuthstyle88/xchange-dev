@@ -1,5 +1,6 @@
 //! Settings application services and parsers.
 
+pub mod cash_from_browser;
 pub mod payment_input;
 pub mod payment_json;
 pub mod payment_settings;

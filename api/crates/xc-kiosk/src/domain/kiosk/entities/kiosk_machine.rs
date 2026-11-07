@@ -3,7 +3,7 @@ use xc_kernel::money::{CurrencyUnits, ExchangeArithmetic, ForeignAmount, Money, 
 
 use crate::domain::kiosk::commands::kiosk_command::KioskCommand;
 use crate::domain::kiosk::commands::quote_input::QuoteInput;
-use crate::domain::kiosk::entities::kiosk_request::KioskRequest;
+use crate::domain::kiosk::entities::kiosk_request::{KioskRequest, queue_label};
 use crate::domain::kiosk::value_objects::amount_in::AmountIn;
 use crate::domain::kiosk::value_objects::cancel_reason::CancelReason;
 use crate::domain::kiosk::value_objects::counter_facts::{CounterFacts, CounterLine};
@@ -152,6 +152,7 @@ impl KioskMachine {
                 payment_method,
             },
             transaction: None,
+            ticket_number: None,
         })
     }
 
@@ -291,8 +292,7 @@ impl KioskMachine {
         now: KioskTime,
     ) -> Result<RequestIdentity, KioskError> {
         let req = request.ok_or(KioskError::RequestNotFound)?;
-        let first_eight: String = req.id.chars().take(8).collect();
-        let queue = format!("K-{}", first_eight.to_uppercase());
+        let queue = queue_label(&req.id, req.ticket_number.as_deref());
         let order_no = format!("ORD-{}", req.id.to_uppercase());
         let transaction_no = req.transaction.as_ref().map(|t| t.document_ref.clone());
 
@@ -309,7 +309,7 @@ impl KioskMachine {
             order_no,
             transaction_no,
             status,
-            ticket_number: None,
+            ticket_number: req.ticket_number.clone(),
         })
     }
 

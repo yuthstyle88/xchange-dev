@@ -178,3 +178,53 @@ A later Windows (WIA) or Linux (SANE) counter is one more `Scanner` file, plus a
 
 **Still needed from the owner:** the scanner model. The check is to open Image Capture on the counter Mac and see whether the scanner is listed.
 §5 and rule A are decided.
+
+## 8. Skeleton contract (sub-controller claude/4beadaaf, `feat/xc-counter`, 2026-11-06)
+
+This section fixes the names and wire shapes that the skeleton commits and the CA tickets share. If a ticket and this section disagree, the ticket says why. It also settles the carried review items (PR 6361, issuecomment-6675718900).
+
+### 8.1 Migration (skeleton, not CA-0)
+The skeleton writes the §5 migration, so CA-0 and CA-1 can run their DB tests in parallel instead of in a chain. The DDL is exactly §5.1–§5.4: drop `device_agents_one_active_per_branch_idx`; add `device_agents.counter_name`, `cash_drawer`, `scanner`, `kiosk_lock`, `device_jobs.target_agent_id` and `user_sessions.counter_agent_id`. The skeleton also turns `insert_agent` into a plain insert (§5.1 bullet 1), because an `ON CONFLICT` with no matching index errors. CA-0 keeps the rest of §5.1 and §5.3.
+
+### 8.2 Agent HTTP (agent bearer token, `api/src/presentation/http/device_agent.rs`)
+| Route | Body | 200 answer |
+|---|---|---|
+| `POST /api/device-agent/claim` | as today, `drawer` optional (absent or `null` = this counter has no drawer configured locally) | as today |
+| `GET /api/device-agent/info` | — | `{ agentId, counterName, branchId, capabilities: { cashDrawer, scanner, kioskLock } }`, each capability a resolved boolean (NULL → false, false, true) |
+| `POST /api/device-agent/desk-binding` | `{}` | `{ nonce, expiresAt }` |
+
+- A revoked or unknown token answers 401, as today.
+- **Release gate (review item 3a):** the app runs its agent runner only after `GET /api/device-agent/info` answers 200. On 404 (a server older than CA-1), the app shows "เซิร์ฟเวอร์ยังไม่รองรับเคาน์เตอร์" and claims nothing, so no build can send `drawer: None` to a server that does not take it.
+
+### 8.3 Desk nonce (review item 3b)
+- `DeskNonce { agent_id, branch_id, exp }` in `api/src/infrastructure/device_agents/desk_binding.rs`.
+- Wire form: `v1.<agentId>.<branchId b64url>.<exp unix seconds>.<mac b64url>`.
+- Key: `xc_kernel::pii::derive_subkey(keys, b"xc-desk-binding-v1")`, the same PII key file the OTP seal derives from (`APP_PII__KEY_PATH`). HMAC-SHA256, compared in constant time. TTL 60 s.
+
+### 8.4 v3 view and commands (owner-only = `Permission::BranchSettingsSave`, as `branch_alert_settings_save.rs`)
+| Name | File | Body | Answer |
+|---|---|---|---|
+| view `branch_counters` | `api/src/presentation/http/v3/views/branch_counters.rs` | `?branch=` | `{ counters: [{ agentId, name, pairedAt, lastSeenAt, cashDrawer, scanner, kioskLock }], cashFromBrowser, cashFromBrowserVersion }`. Every setting is `boolean \| null` (null = not set). `cashFromBrowserVersion` is 0 when the setting row does not exist. |
+| command `branchCounterSave` | `api/src/presentation/http/v3/commands/branch_counter_save.rs` | `{ branch, agentId, name, cashDrawer, scanner, kioskLock }`, each setting `boolean \| null` | `{ counter }` (one list row) |
+| command `branchCashFromBrowserSave` | `api/src/presentation/http/v3/commands/branch_cash_from_browser_save.rs` | `{ branch, expectedVersion, value: boolean \| null }`; stored in `branch_settings` as `cashFromBrowser`, body `{"value": true\|false\|null}` | `{ value, version }` |
+| command `deskBindCounter` | `api/src/presentation/http/v3/commands/desk_bind_counter.rs` | `{ nonce }`, staff session cookie | `{ counterAgentId }`; refusals `NONCE_INVALID`, `NONCE_EXPIRED`, `COUNTER_REVOKED`, `COUNTER_OTHER_BRANCH` |
+
+### 8.5 Rule A and drawer targeting
+- The server, never the request body, sets `SaveExtras.counter_agent_id` from the session row's `user_sessions.counter_agent_id`.
+- The pure decision is `counter_policy::cash_payout(bound, cash_from_browser) -> CashPayout`, in `api/src/infrastructure/device_agents/counter_policy.rs`.
+- A refusal is the code `COUNTER_NO_DRAWER` with the §4 message.
+- Switching branch (`session_service.rs` `switch_branch`) clears `counter_agent_id`, as do sign-out and revoke. The survey found that `switch_branch` changes `branch_id` in place, so a binding left behind would point at another branch's counter.
+
+### 8.6 The app (`counter-app/`, standalone Cargo workspace, own `Cargo.lock`, toolchain pinned like `api/`)
+- **One owner per file (review item 3c).** The skeleton writes `Cargo.toml` with every dependency pinned, `tauri.conf.json`, `capabilities/bridge.json`, the command registration in `lib.rs`, and `src/bridge/init.js`, the script that defines `window.xcCounter`. CA-3 and CA-4 each fill only their own modules.
+- `window.xcCounter = { info(), scanPassport(), bindingNonce() }`. The web wrapper `web/src/shared/xc-counter/bridge.ts` adds `bindCounter()`, which gets `bindingNonce()` and calls `deskBindCounter` through the desk's own API client, because the staff cookie belongs to the page and not to Rust.
+- Tauri commands: `info`, `scan_passport` (answers JPEG bytes; `init.js` wraps them in a `Blob`) and `desk_binding`.
+- **The `MacScanner` run loop (review item 3d), corrected by measurement.** ImageCaptureCore delivered `deviceBrowserDidEnumerateLocalDevices:` on the app's UI thread, never on a private `CFRunLoop` thread (claude/2d01aa4f, #6391). So the UI thread owns every ImageCaptureCore object and the delegate state (`MainThreadMarker`). `scan()` posts the request to that thread's run loop through a `CFRunLoopSource` and awaits a oneshot. Callbacks only record and answer; reading the scanned file runs in `spawn_blocking`, and the 60 s timeout runs on the async side. Each scan carries an id, so a late callback cannot finish the next scan or feed it bytes.
+
+### 8.7 Rulings made while building (sub-controller claude/4beadaaf; each one is on its ticket)
+- **The kiosk lock follows the server's answer only** (#6403). "Not set = lock on" is a rule about the owner's setting, so it applies once `GET /api/device-agent/info` has answered. With no answer there is no counter identity, so the app does not lock, and a failed read never unlocks. Debug builds never lock.
+- **A 401 is an answer, not a failed read** (#6413). A revoked counter unlocks, stops its runner and shows the pair page.
+- **The way out of a locked release build,** until the exit route is decided (#564 issuecomment-6676949646), is the owner turning `kioskLock` off on Admin → เคาน์เตอร์. The app applies it within 60 s.
+- **Revoke also fails the job `LEASED` to the revoked counter,** whatever its target (#6373).
+- **`branchCounterSave` writes one audit row** with each setting's before and after values (#6414).
+- **The navigation allow-list is the measured desk and sign-in pages** (`/desk…`, `/login`, `/staff/desk`). The IPC capability stays `/desk*` and `/kiosk-staff*` (#6377).

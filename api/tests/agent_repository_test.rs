@@ -225,8 +225,8 @@ impl Db {
     /// An agent written straight into the table. `paired` gives it a token hash.
     async fn agent(&self, branch_id: &str, id: &str, name: &str, created: DateTime<Utc>) {
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by) \
-             VALUES ($1::uuid, $2, $3, $4, 'owner')",
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by) \
+             VALUES (true, $1::uuid, $2, $3, $4, 'owner')",
         )
         .bind(id)
         .bind(branch_id)
@@ -390,6 +390,11 @@ async fn the_table_and_the_four_job_columns_are_as_designed() {
         ("claim_count", "integer", false),
         // OR-1 (#550 D-1): every table carries the organisation.
         ("organization_id", "uuid", false),
+        // XC Counter (`20261227000000_xc_counter.sql`, xc-counter-app.md §5.1-§5.2), restated by its skeleton.
+        ("counter_name", "text", false),
+        ("cash_drawer", "boolean", true),
+        ("scanner", "boolean", true),
+        ("kiosk_lock", "boolean", true),
     ];
     let got: BTreeSet<(String, String, bool)> = agents.into_iter().collect();
     let want: BTreeSet<(String, String, bool)> = expected
@@ -412,8 +417,8 @@ async fn the_table_and_the_four_job_columns_are_as_designed() {
     }
     assert_eq!(
         jobs.len(),
-        15,
-        "ten columns of today, four new and OR-1's organization_id: {jobs:?}"
+        16,
+        "ten columns of today, four new, OR-1's organization_id and XC Counter's target_agent_id: {jobs:?}"
     );
 
     // claim_count defaults to 0; leased_by refers to device_agents.
@@ -454,6 +459,7 @@ async fn a_job_can_be_stored_as_drawer_opened() {
                 kind: JobKind::DrawerRequest,
                 actor: "front1",
                 at: t(0),
+                target_agent_id: None,
             },
         )
         .await
@@ -550,7 +556,7 @@ async fn existing_jobs_keep_everything_and_get_no_lease() {
 
     let after: Vec<String> = sqlx::query_scalar(
         "SELECT (to_jsonb(j) - 'lease_id' - 'leased_by' - 'lease_until' - 'outcome_reason' \
-         - 'organization_id')::text \
+         - 'organization_id' - 'target_agent_id')::text \
          FROM device_jobs j ORDER BY branch_id, id",
     )
     .fetch_all(&db.pool)
@@ -600,8 +606,9 @@ async fn the_older_binarys_statements_work_on_the_new_schema() {
     db.finish().await;
 }
 
-/// Data-migration item 4 and the indexes: one active agent per branch is the database's rule
-/// (a revoked one does not count; another branch is free); the two hashes are unique; the
+/// Data-migration item 4 and the indexes. Restated by the XC Counter skeleton: a branch may have several active
+/// counters (`20261227000000_xc_counter.sql` drops the one-per-branch index, xc-counter-app.md §5.1); the two
+/// hashes are unique; the
 /// drawer transport is `CUPS` or `TCP`; the two partial indexes of `device_jobs` exist with
 /// their predicates; narrowing the CHECK back fails while a row holds a new status.
 #[tokio::test(flavor = "multi_thread")]
@@ -609,20 +616,22 @@ async fn the_rules_the_schema_holds() {
     let db = Db::migrated().await;
     db.agent(MAIN, A1, "Mac 1", t(0)).await;
     let second = sqlx::query(
-        "INSERT INTO device_agents (id, branch_id, name, created_at, created_by) \
-         VALUES ($1::uuid, 'MAIN', 'Mac 2', $2, 'owner')",
+        "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by) \
+         VALUES (true, $1::uuid, 'MAIN', 'Mac 2', $2, 'owner')",
     )
     .bind(A2)
     .bind(t(1))
     .execute(&db.pool)
     .await;
-    assert!(second.is_err(), "a second active agent in MAIN is refused");
+    assert!(
+        second.is_ok(),
+        "a second active counter in MAIN is taken: {second:?}"
+    );
     db.set(
         "UPDATE device_agents SET revoked_at = now(), revoked_by = 'owner' WHERE id = $1::uuid",
         A1,
     )
     .await;
-    db.agent(MAIN, A2, "Mac 2", t(2)).await;
     db.agent(B9, A9, "Mac 9", t(2)).await;
 
     db.set(
@@ -821,10 +830,11 @@ async fn has_active_agent_in_sees_only_unrevoked_agents_of_the_branch() {
     db.finish().await;
 }
 
-/// `insert_agent` answers `false`, writing nothing, while the branch has an active agent —
-/// a PENDING one included — and `true` once it is revoked; `find` and `list` read it back.
+/// Restated by the XC Counter skeleton (xc-counter-app.md §5.1, owner "อนุมัติ + กฎ A" 2026-11-06): a branch may
+/// have several counters, so `insert_agent` answers `true` while another one — PENDING or paired — is active;
+/// `find` and `list` read them back. (Until then it pinned one active agent per branch.)
 #[tokio::test(flavor = "multi_thread")]
-async fn insert_agent_keeps_one_active_agent_per_branch() {
+async fn insert_agent_adds_several_counters_to_a_branch() {
     let db = Db::migrated().await;
     let repo = db.repo();
     let new = |id: &'static str, name: &'static str| NewAgent {
@@ -842,11 +852,10 @@ async fn insert_agent_keeps_one_active_agent_per_branch() {
             .expect("add")
     );
     assert!(
-        !repo
-            .insert_agent(&mut tx, &branch(MAIN), &new(A2, "Mac 2"))
+        repo.insert_agent(&mut tx, &branch(MAIN), &new(A2, "Mac 2"))
             .await
             .expect("add"),
-        "the first is PENDING and still counts"
+        "a second counter while the first is PENDING"
     );
     assert!(
         repo.insert_agent(&mut tx, &branch(B9), &new(A9, "Mac 9"))
@@ -866,24 +875,22 @@ async fn insert_agent_keeps_one_active_agent_per_branch() {
     );
     assert_eq!(first.pair_code_expires_at, Some(t(600)));
     assert_eq!((first.paired_at, first.revoked_at), (None, None));
+    let second = repo.find(A2).await.expect("find").expect("A2");
     assert_eq!(
-        repo.find(A2).await.expect("find"),
-        None,
-        "the refused one was not stored"
+        (second.branch_id.as_str(), second.revoked_at),
+        (MAIN, None),
+        "both are active in MAIN"
     );
-
-    db.set(
-        "UPDATE device_agents SET revoked_at = now(), revoked_by = 'owner' WHERE id = $1::uuid",
-        A1,
-    )
-    .await;
-    let mut tx = db.tx().await;
-    assert!(
-        repo.insert_agent(&mut tx, &branch(MAIN), &new(A2, "Mac 2"))
-            .await
-            .expect("add")
+    assert_eq!(
+        (
+            second.counter_name.as_str(),
+            second.cash_drawer,
+            second.scanner,
+            second.kiosk_lock
+        ),
+        ("", None, None, None),
+        "a new counter starts with every setting not set (§5.2)"
     );
-    tx.commit().await.expect("commit");
 
     let listed: Vec<String> = repo
         .list()
@@ -1079,10 +1086,15 @@ async fn touch_counts_claims_in_a_window_of_sixty_seconds() {
         .expect("touch")
         .expect("active");
     let agent = repo.find(A1).await.expect("find").expect("A1");
+    // Restated by the XC Counter sub-controller (xc-counter-app.md §5.2, review round 2 item 1): a claim with no
+    // drawer is a counter without one, so the drawer is written as sent (CA-0, PR 6398).
     assert_eq!(
-        agent.drawer_target.as_deref(),
-        Some("POS80_"),
-        "no drawer named: kept"
+        (
+            agent.drawer_transport.as_deref(),
+            agent.drawer_target.as_deref()
+        ),
+        (None, None),
+        "no drawer named: written as sent"
     );
 
     db.set(
@@ -1110,22 +1122,33 @@ async fn claim_in_expires_lapses_and_leases_the_oldest() {
     let now = t(20);
 
     assert!(
-        !repo.has_claimable(&branch(MAIN), now).await.expect("probe"),
+        !repo
+            .has_claimable(&branch(MAIN), A1, now)
+            .await
+            .expect("probe"),
         "nothing yet"
     );
     db.job(MAIN, "r-1", "PRINT_RECEIPT", "QUEUED", t(11)).await;
     assert!(
-        !repo.has_claimable(&branch(MAIN), now).await.expect("probe"),
+        !repo
+            .has_claimable(&branch(MAIN), A1, now)
+            .await
+            .expect("probe"),
         "a receipt is not"
     );
     db.leased_job(MAIN, "lease-now", A1, L0, now).await;
     assert!(
-        !repo.has_claimable(&branch(MAIN), now).await.expect("probe"),
+        !repo
+            .has_claimable(&branch(MAIN), A1, now)
+            .await
+            .expect("probe"),
         "a lease ending exactly now has not ended"
     );
     db.leased_job(MAIN, "lease-old", A1, L0, now - ms(1)).await;
     assert!(
-        repo.has_claimable(&branch(MAIN), now).await.expect("probe"),
+        repo.has_claimable(&branch(MAIN), A1, now)
+            .await
+            .expect("probe"),
         "an ended lease"
     );
 
@@ -1136,7 +1159,11 @@ async fn claim_in_expires_lapses_and_leases_the_oldest() {
     db.job(MAIN, "q-later", "DRAWER_REQUEST", "QUEUED", t(12))
         .await;
     db.job(B9, "q-9", "DRAWER_REQUEST", "QUEUED", t(0)).await;
-    assert!(repo.has_claimable(&branch(B9), now).await.expect("probe"));
+    assert!(
+        repo.has_claimable(&branch(B9), A9, now)
+            .await
+            .expect("probe")
+    );
 
     let mut tx = db.tx().await;
     let step = repo
@@ -1344,10 +1371,12 @@ async fn report_in_moves_only_from_the_named_status_under_the_same_lease() {
 }
 
 /// `revoke_in` (§5.4c *Identity* item 5): the agent is revoked by the actor at `now`; the
-/// branch's `QUEUED` drawer jobs fail `AGENT_REVOKED`; receipts, `LEASED` jobs and another
-/// branch's jobs stay; a second revoke, or another branch's agent, finds nothing.
+/// branch's `QUEUED` drawer jobs fail `AGENT_REVOKED` (MAIN has no other drawer counter);
+/// receipts and another branch's jobs stay; a second revoke, or another branch's agent, finds
+/// nothing. Restated by the XC Counter skeleton (xc-counter-app.md §5.3, review item 2): the job
+/// `LEASED` to the revoked agent now fails too, instead of being left to lapse. CA-0.
 #[tokio::test(flavor = "multi_thread")]
-async fn revoke_in_fails_the_branch_s_queued_drawer_jobs_and_leaves_leases() {
+async fn revoke_in_fails_the_branch_s_queued_drawer_jobs_and_its_leases() {
     let db = Db::migrated().await;
     let repo = db.repo();
     db.agent(MAIN, A1, "Mac 1", t(0)).await;
@@ -1375,9 +1404,9 @@ async fn revoke_in_fails_the_branch_s_queued_drawer_jobs_and_leaves_leases() {
     tx.commit().await.expect("commit");
     let mut failed_ids = ids(&failed);
     failed_ids.sort();
-    assert_eq!(failed_ids, ["q-1", "q-2"]);
+    assert_eq!(failed_ids, ["l-1", "q-1", "q-2"]);
     assert!(failed.iter().all(|j| j.status == JobStatus::Failed));
-    for id in ["q-1", "q-2"] {
+    for id in ["l-1", "q-1", "q-2"] {
         let (status, _, _, _, reason, updated) = db.job_row(MAIN, id).await;
         assert_eq!(
             (status.as_str(), reason.as_deref(), updated),
@@ -1385,11 +1414,6 @@ async fn revoke_in_fails_the_branch_s_queued_drawer_jobs_and_leaves_leases() {
         );
     }
     assert_eq!(db.job_row(MAIN, "r-1").await.0, "QUEUED");
-    assert_eq!(
-        db.job_row(MAIN, "l-1").await.0,
-        "LEASED",
-        "a lease is left to lapse"
-    );
     assert_eq!(db.job_row(MAIN, "f-1").await.4, None);
     assert_eq!(db.job_row(B9, "q-9").await.0, "QUEUED");
 

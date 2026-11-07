@@ -47,7 +47,15 @@ pub(crate) async fn authenticate_caller(
         _ => callers.user,
     };
 
-    let session_hash = crate::presentation::extractors::actor::caller_session_hash(req, now).await;
+    let session_hash =
+        match crate::presentation::extractors::actor::try_caller_session_hash(req, now).await {
+            Ok(hash) => hash,
+            Err(e) => {
+                // Fail closed, but never echo the database's error text to the client.
+                tracing::error!(error = %e, "reading the session hash failed");
+                return Err(super::command::server_error().error_response());
+            }
+        };
 
     let user = match user {
         Some(u) => {

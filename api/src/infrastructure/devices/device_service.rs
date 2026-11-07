@@ -15,7 +15,11 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_rate::application::branch::service::BranchService;
 
+use crate::application::settings::cash_from_browser;
 use crate::infrastructure::device_agents::agent_repository::AgentRepository;
+use crate::infrastructure::device_agents::counter_policy::{
+    COUNTER_NO_DRAWER_MESSAGE, CashPayout, Seat, cash_payout,
+};
 use crate::infrastructure::device_agents::pg_agent_repository::PgAgentRepository;
 
 use super::device_commands::{QueueJob, SavedExchange};
@@ -174,6 +178,26 @@ impl DeviceService {
         Ok(())
     }
 
+    /// Rule A (`docs/design/xc-counter-app.md` §4, §5.4, §8.5): checks whether a cash payout is
+    /// allowed for `counter_agent_id` in `branch`, and returns the drawer job's `target_agent_id`.
+    pub(crate) async fn cash_payout_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        counter_agent_id: Option<&str>,
+    ) -> AppResult<Option<String>> {
+        let active = self.agents.active_agents_in(tx, branch).await?;
+        let seat = match counter_agent_id {
+            Some(id) => Seat::Bound(active.iter().find(|a| a.id == id)),
+            None => Seat::Unbound,
+        };
+        let (from_browser, _) = cash_from_browser::read_in(tx, branch).await?;
+        match cash_payout(seat, from_browser) {
+            CashPayout::Allowed { target_agent_id } => Ok(target_agent_id),
+            CashPayout::Refused => refuse(COUNTER_NO_DRAWER_MESSAGE),
+        }
+    }
+
     async fn require_branch(&self, branch: &BranchId) -> AppResult<()> {
         if !is_branch_name(branch.as_str()) {
             return refuse(BAD_BRANCH);
@@ -244,6 +268,7 @@ impl DeviceService {
                         kind,
                         actor: &actor,
                         at: now,
+                        target_agent_id: None,
                     };
                     if repo.insert_job(tx, &b, &new).await? {
                         let line = NewEvent {
@@ -290,6 +315,19 @@ impl DeviceService {
         actor: &str,
         now: DateTime<Utc>,
     ) -> AppResult<DrawerJobOutcome> {
+        self.queue_drawer_targeted_in(tx, branch, key, None, actor, now)
+            .await
+    }
+
+    pub(crate) async fn queue_drawer_targeted_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        key: DrawerJobKey,
+        target_agent_id: Option<&str>,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<DrawerJobOutcome> {
         if !is_branch_name(branch.as_str()) {
             return refuse(BAD_BRANCH);
         }
@@ -305,7 +343,12 @@ impl DeviceService {
             return Ok(DrawerJobOutcome::Existing(stored.job));
         }
 
-        if !self.agents.has_active_agent_in(tx, branch).await? {
+        let active = self.agents.active_agents_in(tx, branch).await?;
+        let has_opener = match target_agent_id {
+            Some(target) => active.iter().any(|a| a.id == target),
+            None => active.iter().any(|a| a.cash_drawer == Some(true)),
+        };
+        if !has_opener {
             return Ok(DrawerJobOutcome::NoAgent);
         }
 
@@ -344,6 +387,7 @@ impl DeviceService {
             kind,
             actor,
             at: now,
+            target_agent_id,
         };
 
         if self.repo.insert_job(tx, branch, &new_job).await? {
@@ -719,6 +763,19 @@ impl DeviceService {
         actor: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
+        self.after_save_for_counter_in(tx, branch, saved, None, actor, now)
+            .await
+    }
+
+    pub(crate) async fn after_save_for_counter_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+        saved: &SavedExchange,
+        counter_agent_id: Option<&str>,
+        actor: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<()> {
         let now = cut_to_millis(now)?;
         let b = branch.as_str();
         if saved.cash {
@@ -785,6 +842,7 @@ impl DeviceService {
             kind: JobKind::PrintReceipt,
             actor,
             at: now,
+            target_agent_id: None,
         };
         if self.repo.insert_job(tx, branch, &job).await? {
             let detail = json!({
@@ -803,12 +861,14 @@ impl DeviceService {
         }
 
         if saved.cash {
-            self.queue_drawer_in(
+            let target = self.cash_payout_in(tx, branch, counter_agent_id).await?;
+            self.queue_drawer_targeted_in(
                 tx,
                 branch,
                 DrawerJobKey::CashSave {
                     reference: saved.document_ref.clone(),
                 },
+                target.as_deref(),
                 actor,
                 now,
             )

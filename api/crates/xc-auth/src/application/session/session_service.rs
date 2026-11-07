@@ -1097,12 +1097,14 @@ impl SessionService {
         if !session.switchable(now).iter().any(|b| b.id == chosen) {
             return Err(SwitchBranchError::OutOfScope);
         }
-        sqlx::query("UPDATE user_sessions SET branch_id = $2 WHERE hash = $1")
-            .bind(sha256_hex(session_token))
-            .bind(chosen.as_str())
-            .execute(&mut *tx)
-            .await
-            .map_err(db)?;
+        sqlx::query(
+            "UPDATE user_sessions SET branch_id = $2, counter_agent_id = NULL WHERE hash = $1",
+        )
+        .bind(sha256_hex(session_token))
+        .bind(chosen.as_str())
+        .execute(&mut *tx)
+        .await
+        .map_err(db)?;
         sqlx::query("UPDATE users SET last_branch_id = $2 WHERE id = $1::uuid")
             .bind(&session.user.id)
             .bind(chosen.as_str())

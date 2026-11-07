@@ -184,6 +184,86 @@ pub async fn caller_session_hash(req: &HttpRequest, now: DateTime<Utc>) -> Optio
     .flatten()
 }
 
+/// Fallible variant of [`caller_session_hash`]: propagates database errors instead of mapping
+/// them to `None` (#6424, §8.5).
+pub async fn try_caller_session_hash(
+    req: &HttpRequest,
+    now: DateTime<Utc>,
+) -> pos_error::AppResult<Option<String>> {
+    let token = cookie(req, SESSION_COOKIE);
+    if token.is_empty() {
+        return Ok(None);
+    }
+    let Some(pool) = req
+        .app_data::<web::Data<crate::bootstrap::AppState>>()
+        .map(|s| &s.db)
+        .or_else(|| {
+            req.app_data::<web::Data<SessionService>>()
+                .map(|s| s.pool())
+        })
+    else {
+        return Ok(None);
+    };
+    let hash = xc_auth::application::session::sha256_hex(&token);
+    let row = sqlx::query_scalar::<_, String>(
+        "SELECT hash FROM user_sessions WHERE hash = $1 AND expires > $2",
+    )
+    .bind(&hash)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+/// The counter bound to `session_hash` (`user_sessions.counter_agent_id`), or `None` when
+/// there is no hash, no such row, or the session is unbound (#6424, §8.5).
+pub async fn bound_counter_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    session_hash: Option<&str>,
+) -> pos_error::AppResult<Option<String>> {
+    let Some(hash) = session_hash else {
+        return Ok(None);
+    };
+    let row: Option<Option<String>> =
+        sqlx::query_scalar("SELECT counter_agent_id::text FROM user_sessions WHERE hash = $1")
+            .bind(hash)
+            .fetch_optional(&mut **tx)
+            .await?;
+    Ok(row.flatten())
+}
+
+/// The counter bound to the live Blueprint session (`__Host-xc_session`) a request carries
+/// (`expires > now`), or `None` when there is no such cookie, no live row, or the session is
+/// unbound (#6424, §8.5).
+pub async fn caller_bound_counter(
+    req: &HttpRequest,
+    now: DateTime<Utc>,
+) -> pos_error::AppResult<Option<String>> {
+    let token = cookie(req, SESSION_COOKIE);
+    if token.is_empty() {
+        return Ok(None);
+    }
+    let Some(pool) = req
+        .app_data::<web::Data<crate::bootstrap::AppState>>()
+        .map(|s| &s.db)
+        .or_else(|| {
+            req.app_data::<web::Data<SessionService>>()
+                .map(|s| s.pool())
+        })
+    else {
+        return Ok(None);
+    };
+    let hash = xc_auth::application::session::sha256_hex(&token);
+    let row: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT counter_agent_id::text FROM user_sessions WHERE hash = $1 AND expires > $2",
+    )
+    .bind(&hash)
+    .bind(now)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row.flatten())
+}
+
 /// The Blueprint session a request carries as its user and `access::Actor` (`customer_id` from the customer link,
 /// #654), or `None` as [`identity_session`] answers it.
 pub async fn identity_session_actor(
