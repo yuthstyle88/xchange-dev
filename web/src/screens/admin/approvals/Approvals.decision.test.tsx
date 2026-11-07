@@ -238,7 +238,7 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
     expect(decisionBlock!.querySelector('time')?.getAttribute('dateTime')).toBe('2026-10-15T10:00:00Z');
 
     expect(card.querySelectorAll('button').length).toBe(0);
-    expect(card.querySelector('input[type="text"]')).toBeNull();
+    expect(card.querySelector('textarea')).toBeNull();
   });
 
   it('4. a REJECTED item with a reason shows the rejected label and the reason', async () => {
@@ -275,7 +275,7 @@ describe('RE-5b (#1984): A06 status switch and decision block (§9)', () => {
 
     const card = root.querySelector('[data-request="req-pending-1"]') as HTMLElement;
     expect(card.querySelector('.approval-decision-form')).not.toBeNull();
-    expect(card.querySelector('input[type="text"]')).not.toBeNull();
+    expect(card.querySelector('textarea')).not.toBeNull();
     expect(card.querySelectorAll('button').length).toBe(2);
     expect(card.querySelector('[data-decision]')).toBeNull();
     expect(normText(card)).not.toContain(screenTh.decidedBy.trim());

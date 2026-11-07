@@ -255,7 +255,7 @@ describe('Admin Approvals: decide-switch behavior (#2715)', () => {
     });
 
     const card = root.querySelector('[data-request="req-pending-1"]') as HTMLElement;
-    const reasonInput = card.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = card.querySelector('textarea') as HTMLTextAreaElement;
     reasonInput.value = 'invalid publication parameters';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
 
