@@ -43,7 +43,10 @@ describe('admin queue toast placement', () => {
   it('QT-1 the toast is not pinned to the top of the viewport (it covered the white header)', () => {
     const d = decls(css, sel);
     expect(d, 'the toast rule exists').toBeDefined();
-    expect(d!.has('top'), 'no top offset').toBe(false);
+    // Restated after the OL-7 verification (claude/55ced2aa, 01cc9299): shared/ui/queue-panel.css:245 also sets
+    // `top: 24px` on .admin-queue-toast, so "no top here" let the box stretch from the top to the bottom offset
+    // (215×437, over the header's sign-out). The admin rule must reset it.
+    expect(d!.get('top'), 'top reset so the shared 24px does not apply').toBe('auto');
   });
 
   it('QT-2 the toast stands on the queue card: bottom is the card reserve, 20px when there is no card', () => {
