@@ -1,0 +1,9 @@
+.xc-admin .xc-content .members-screen form {
+  display: grid;
+  gap: 16px;
+}
+
+.members-hint {
+  color: var(--xc-muted);
+  font-size: 14px;
+}

@@ -15,6 +15,7 @@ import { MoneyText } from '../../../shared/ui/MoneyText';
 
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import './members.css';
 
 const t = screenT('admin.members', table);
 
@@ -226,7 +227,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
 
   return (
-    <div class="xc-campaigns-screen">
+    <div class="xc-campaigns-screen members-screen">
       <Show when={error() && !error()!.field ? error()!.message : null}>
         {(msg) => (
           <div class="xc-campaigns-error" role="alert">
@@ -235,7 +236,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
         )}
       </Show>
 
-      <section class="xc-campaign-detail">
+      <section class="card xc-campaign-detail">
         <div class="xc-detail-header">
           <h3>{t('defineTitle')}</h3>
         </div>
@@ -341,12 +342,26 @@ export function Members(_props: AdminMenuProps): JSX.Element {
               {snapshotting() ? t('snapshotting') : t('snapshotBtn')}
             </button>
           </div>
+          <Show when={definition() && !snapshotInfo()}>
+            <p class="members-hint" data-members-hint="snapshot">
+              {t('snapshotHint')}
+            </p>
+          </Show>
         </form>
       </section>
 
+      <Show when={!definition()}>
+        <section class="card xc-campaign-detail">
+          <div class="members-hint" data-members-hint="empty">
+            <strong>{t('empty')}</strong>
+            <p>{t('emptyHint')}</p>
+          </div>
+        </section>
+      </Show>
+
       <Show when={snapshotInfo()}>
         {(snap) => (
-          <section class="xc-campaign-detail">
+          <section class="card xc-campaign-detail">
             <div class="xc-detail-header">
               <h3>{t('snapshotTitle')}</h3>
             </div>
@@ -361,7 +376,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
 
       <Show when={preview()}>
         {(prev) => (
-          <section class="xc-campaign-detail">
+          <section class="card xc-campaign-detail">
             <div class="xc-detail-header">
               <h3>{t('previewTitle')}</h3>
             </div>
@@ -398,7 +413,14 @@ export function Members(_props: AdminMenuProps): JSX.Element {
                   </tr>
                 </thead>
                 <tbody>
-                  <For each={prev().sample}>
+                  <For
+                    each={prev().sample}
+                    fallback={
+                      <tr>
+                        <td colspan="5">{t('sampleEmpty')}</td>
+                      </tr>
+                    }
+                  >
                     {(row: MaskedMemberSample) => (
                       <tr>
                         <td>{row.maskedName}</td>
