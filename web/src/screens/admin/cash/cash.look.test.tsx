@@ -316,9 +316,9 @@ describe('admin-cash: cash.css', () => {
   beforeAll(async () => {
     const specifier = 'node:fs';
     const fs = (await import(/* @vite-ignore */ specifier)) as NodeFs;
-    // the suite runs from web/ (`npx vitest run` there); jsdom's import.meta.url is not a file URL
-    const cwd = (globalThis as { process?: { cwd(): string } }).process!.cwd();
-    css = fs.readFileSync(cwd + '/src/screens/admin/cash/cash.css', 'utf8');
+    // Resolve next to this file, not process.cwd(): main's web job runs vitest with --root web from the repo root.
+    const here = decodeURIComponent(import.meta.url.replace(/^file:\/\//, '').replace(/[^/]*$/, ''));
+    css = fs.readFileSync(here + 'cash.css', 'utf8');
   });
 
   it('CL-8 .cell-wrap wraps: white-space normal, overflow-wrap anywhere, min-width 18ch', () => {

@@ -172,9 +172,9 @@ describe('admin-denomination-groups: denomination-groups.css', () => {
   beforeAll(async () => {
     const specifier = 'node:fs';
     const fs = (await import(/* @vite-ignore */ specifier)) as NodeFs;
-    // the suite runs from web/ (`npx vitest run` there); jsdom's import.meta.url is not a file URL
-    const cwd = (globalThis as { process?: { cwd(): string } }).process!.cwd();
-    css = fs.readFileSync(cwd + '/src/screens/admin/denomination-groups/denomination-groups.css', 'utf8');
+    // Resolve next to this file, not process.cwd(): main's web job runs vitest with --root web from the repo root.
+    const here = decodeURIComponent(import.meta.url.replace(/^file:\/\//, '').replace(/[^/]*$/, ''));
+    css = fs.readFileSync(here + 'denomination-groups.css', 'utf8');
   });
 
   it("DG-6 the pick card stacks label and hint (column, 8px) and drops card.css's bottom margin", () => {
