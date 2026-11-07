@@ -4,11 +4,14 @@ autotests = false
 name = "xc-kernel"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version.workspace = true
 authors = ["108Heros Engineering"]
 description = "Kernel types for xchange"
 license = "Proprietary"
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
