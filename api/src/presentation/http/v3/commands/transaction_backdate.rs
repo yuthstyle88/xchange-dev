@@ -10,6 +10,7 @@ use actix_web::http::{Method, StatusCode};
 use actix_web::web;
 use chrono::{DateTime, NaiveDate, Utc};
 use pos_error::AppError;
+use pos_infra::transactions::Transactor;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use ts_rs::TS;
@@ -18,8 +19,11 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_exchange::domain::exchange::value_objects::payment_method::PaymentMethod;
 use xc_exchange::domain::transaction::repository::TransactionStore;
 use xc_exchange::infrastructure::transaction::store::PgTransactionStore;
+use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{Bound, CurrencyCode, ForeignAmount, Money, Rate, Side, Sign};
+use xc_shift::application::shift_plan::service::ShiftPlanService;
+use xc_shift::infrastructure::shift_plan::pg_store::PgShiftTemplateStore;
 
 use super::transactions::{TransactionPaymentInput, UploadRef};
 use crate::application::workflows::exchange::backdate::{BackdateRequest, BackdateSale};
@@ -61,8 +65,10 @@ pub struct TransactionBackdateInput {
     pub expected_settle_thb: Option<String>,
     /// `paidAt` is the deal's real time (RFC 3339).
     pub payment: TransactionPaymentInput,
-    /// The business date, `YYYY-MM-DD`: `paidAt`'s date in the branch's timezone.
-    pub value_date: String,
+    /// Optional. Absent or null: the business date of `paidAt` under the branch's plan (§15.1).
+    #[serde(default)]
+    #[ts(optional = nullable)]
+    pub value_date: Option<String>,
     #[serde(default)]
     #[ts(optional = nullable)]
     pub passport: Option<UploadRef>,
@@ -159,8 +165,21 @@ impl CommandAction for TransactionBackdateCommand {
         let paid_at = DateTime::parse_from_rfc3339(&input.payment.paid_at)
             .map(|at| at.with_timezone(&Utc))
             .map_err(|_| invalid("payment.paidAt", "invalid paidAt"))?;
-        let value_date = NaiveDate::parse_from_str(&input.value_date, "%Y-%m-%d")
-            .map_err(|_| invalid("valueDate", "invalid valueDate"))?;
+        let value_date = match input.value_date {
+            Some(ref s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| invalid("valueDate", "invalid valueDate"))?,
+            None => {
+                let plan = ShiftPlanService::new(
+                    Arc::new(PgShiftTemplateStore),
+                    BranchTx::new(Transactor::new(self.pool.clone())),
+                )
+                .plan_in(tx, branch)
+                .await
+                .map_err(refusal)?;
+                plan.business_date_of(paid_at)
+                    .unwrap_or_else(|| paid_at.with_timezone(&plan.timezone()).date_naive())
+            }
+        };
         input::text(
             "payment.reference",
             &input.payment.reference,

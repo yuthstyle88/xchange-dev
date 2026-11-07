@@ -14,7 +14,6 @@ export function makeTransactionBackdateInput(o: Partial<TransactionBackdateInput
     quantity: '0.00',
     rate: '0.00',
     payment: makeTransactionPaymentInput(),
-    valueDate: '2026-01-01',
     notes: 'notes',
     ...o,
   };
