@@ -219,7 +219,8 @@ fn row_ids(a: &Answer) -> Vec<String> {
 
 /// Gap 4: an exception the new cash flow wrote (`xc-cash` `count_service.rs`, `{countId, currency, difference}`)
 /// cannot be decoded by the custody reader. A01 still answers 200, and that branch has one `countDifference` alert
-/// whose detail is the row's id, nothing read from `data`.
+/// with nothing read from `data`. Restated for OL-7 #6856 (audit row 64): `detail` is gone from the wire and the
+/// undecodable row carries `differences: []` and no record id (`executive_alert_detail_test.rs` ED-6).
 #[actix_web::test]
 async fn an_exception_the_custody_reader_cannot_decode_is_one_alert_with_its_id() {
     let room = Room::start().await;
@@ -251,10 +252,15 @@ async fn an_exception_the_custody_reader_cannot_decode_is_one_alert_with_its_id(
         .collect();
     assert_eq!(alerts.len(), 1, "{}", a.text);
     assert_eq!(alerts[0]["branchId"], B1, "{}", a.text);
-    assert_eq!(
-        alerts[0]["detail"],
-        id.as_str(),
-        "the row's id only: {}",
+    assert_eq!(alerts[0]["differences"], json!([]), "{}", a.text);
+    assert!(
+        alerts[0].get("detail").is_none(),
+        "no detail key: {}",
+        a.text
+    );
+    assert!(
+        !a.text.contains(id.as_str()),
+        "no record id on the wire: {}",
         a.text
     );
     room.finish().await;

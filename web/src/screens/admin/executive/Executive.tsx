@@ -21,6 +21,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
 import { fetchOverview, type OverviewQuery } from './api';
+import { alertDetail } from './alert-detail';
 import { drilldownHash } from './drilldown';
 import * as table from './i18n';
 import './executive.css';
@@ -452,7 +453,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
                       </span>
                       <span class="executive-alert-branch">{branchName(a.branchId)}</span>
                       <Show when={a.since}>{(since) => <time datetime={since()}>{formatBangkokDateTime(since())}</time>}</Show>
-                      <span class="executive-alert-detail">{a.detail}</span>
+                      <Show when={alertDetail(a)}>{(d) => <span class="executive-alert-detail">{d()}</span>}</Show>
                       <Drilldown drilldown={a.drilldown} />
                     </li>
                   )}

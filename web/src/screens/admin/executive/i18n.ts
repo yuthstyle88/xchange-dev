@@ -39,6 +39,8 @@ export const th = {
   alertRatePending: 'เรทรออนุมัติ',
   alertCountDifference: 'เงินนับไม่ตรง',
   alertLowStock: 'สต็อกต่ำ',
+  alertStaleMinutes: 'ค้างเกิน {n} นาที',
+  alertStock: '{currency} ใช้ได้ {available} · ขั้นต่ำ {floor} (คงเหลือ {onHand} · จองไว้ {reserved})',
   noAlerts: 'ไม่มีรายการที่ต้องดำเนินการ',
   // drill-down (§4.4)
   open: 'ดูรายการ',
@@ -91,6 +93,8 @@ export const en: Record<keyof typeof th, string> = {
   alertRatePending: 'Rate awaiting approval',
   alertCountDifference: 'Count difference',
   alertLowStock: 'Low stock',
+  alertStaleMinutes: 'Unfinished for over {n} min',
+  alertStock: '{currency} available {available} · floor {floor} (on hand {onHand} · reserved {reserved})',
   noAlerts: 'Nothing needs action',
   open: 'Open',
   dropped: 'Filters not passed on yet',

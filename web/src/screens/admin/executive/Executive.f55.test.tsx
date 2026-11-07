@@ -53,7 +53,7 @@ function branchRow(id: string, asOf: string | null) {
 }
 
 function alert(branchId: string, since: string | null) {
-  return makeAlertDto({ kind: 'staleData', branchId, since, detail: 'detail', drilldown: null });
+  return makeAlertDto({ kind: 'staleData', branchId, since, staleMinutes: 30, drilldown: null });
 }
 
 function sampleData(over: Partial<ExecutiveOverviewData> = {}) {
