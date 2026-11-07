@@ -13,6 +13,7 @@ import { bangkokToday, type DeskStore, type PassportFields } from '../../desk-st
 import { hasEntryKey, readHeldTicket } from '../../held-ticket';
 import type { DeskStep } from '../../steps';
 import * as texts from './i18n';
+import { ScanPassportButton } from './ScanPassportButton';
 import { NATIONALITIES, UNSPECIFIED_NATIONALITY } from './nationalities';
 
 const t = screenT('desk.steps.customer', texts);
@@ -32,7 +33,7 @@ const ocrModules = import.meta.glob<{ PassportOcr?: Component<{ store: DeskStore
 const PassportOcr = Object.values(ocrModules)[0]?.PassportOcr;
 
 /** v2's refusal of a file it cannot take (dh:104), or undefined when the file is kept. */
-function fileRefusal(file: File): string | undefined {
+export function fileRefusal(file: File): string | undefined {
   const name = file.name.toLowerCase();
   const heic = file.type === 'image/heic' || file.type === 'image/heif' || /\.(heic|heif)$/.test(name);
   const known = ACCEPTED_TYPES.includes(file.type) || /\.(jpe?g|png|webp|pdf)$/.test(name);
@@ -288,6 +289,8 @@ function CustomerStep(props: { store: DeskStore }): JSX.Element {
           )}
         </Show>
       </label>
+
+      <ScanPassportButton store={store} />
 
       <Show when={PassportOcr}>{(ocr) => <Dynamic component={ocr()} store={store} />}</Show>
 

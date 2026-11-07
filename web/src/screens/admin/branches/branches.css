@@ -278,6 +278,32 @@
   gap: 8px;
 }
 
+.branches-counters {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.branches-counters-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.branches-counters-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--xc-bg);
+  border-radius: 6px;
+}
+
+.branches-counters-meta {
+  color: var(--xc-muted);
+  font-size: 13px;
+}
+
 .branches-shifts {
   display: flex;
   flex-direction: column;

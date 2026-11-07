@@ -494,6 +494,7 @@ async fn the_family_answers_the_owners_links_for_the_branch_it_is_given() {
         },
         username: front.username.clone(),
         name: front.name.clone(),
+        counter_agent_id: None,
     };
     let call = |payload: Value, branch: &'static str| {
         let payload: Map<String, Value> = payload.as_object().expect("an object").clone();

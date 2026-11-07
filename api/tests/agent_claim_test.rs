@@ -74,9 +74,9 @@ impl Shop {
         let desk = Desk::open().await;
         desk.db.seed_branch(B9, "Nine").await;
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, token_hash, \
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, token_hash, \
              paired_at, last_seen_at, agent_version, agent_build, agent_os, agent_host, \
-             drawer_transport, drawer_target) VALUES ($1::uuid, $2, $3, $4, 'owner', $5, $4, $4, \
+             drawer_transport, drawer_target) VALUES (true, $1::uuid, $2, $3, $4, 'owner', $5, $4, $4, \
              '1.0.0', 'abc1234', 'macos-14.6-arm64', 'counter-1.local', 'CUPS', 'POS80_')",
         )
         .bind(AGENT)

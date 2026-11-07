@@ -116,10 +116,10 @@ fn config() -> AgentConfig {
         build: "abc1234".to_owned(),
         os: "linux-x86_64".to_owned(),
         host: "counter-1.local".to_owned(),
-        drawer: DrawerInfo {
+        drawer: Some(DrawerInfo {
             transport: "CUPS".to_owned(),
             target: "POS80_".to_owned(),
-        },
+        }),
         wait_ms: 20_000,
     }
 }

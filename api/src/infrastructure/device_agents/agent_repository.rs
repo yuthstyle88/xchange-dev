@@ -34,6 +34,14 @@ pub struct DeviceAgent {
     pub drawer_transport: Option<String>,
     /// A CUPS queue name, or `host:port`.
     pub drawer_target: Option<String>,
+    /// The counter's name the owner gave it, e.g. "เคาน์เตอร์ 1" (xc-counter-app.md §5.1); empty until set.
+    pub counter_name: String,
+    /// Owner-set; `None` = not set = **off**: no cash payout and no drawer jobs here (§5.2, rule A).
+    pub cash_drawer: Option<bool>,
+    /// Owner-set; `None` = not set = **off**.
+    pub scanner: Option<bool>,
+    /// Owner-set; `None` = not set = **on**.
+    pub kiosk_lock: Option<bool>,
 }
 
 /// An agent about to be stored: the owner's `add`.
@@ -84,7 +92,8 @@ pub struct ClaimStep {
     pub expired: Vec<DeviceJob>,
     /// `LEASED` jobs whose lease ended before `now`, now `FAILED` `LEASE_LAPSED`.
     pub lapsed: Vec<DeviceJob>,
-    /// The oldest `QUEUED` drawer job left, now `LEASED` to the agent.
+    /// The oldest `QUEUED` drawer job this agent may claim (xc-counter-app.md §5.3: one that targets it, or one
+    /// with no target while its `cash_drawer` is on), now `LEASED` to it.
     pub leased: Option<DeviceJob>,
 }
 
@@ -122,6 +131,14 @@ pub trait AgentRepository: Send + Sync {
         branch: &BranchId,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
+    /// The branch's counters that are not revoked (paired or not), oldest first, then id, as the
+    /// transaction sees them (xc-counter-app.md §5.1). CA-0.
+    fn active_agents_in(
+        &self,
+        tx: Tx<'_, '_>,
+        branch: &BranchId,
+    ) -> impl Future<Output = AppResult<Vec<DeviceAgent>>> + Send;
+
     /// The agent whose token hashes to `token_hash`, revoked or not.
     fn find_by_token_hash(
         &self,
@@ -131,8 +148,8 @@ pub trait AgentRepository: Send + Sync {
     /// One agent by id, revoked or not.
     fn find(&self, agent_id: &str) -> impl Future<Output = AppResult<Option<DeviceAgent>>> + Send;
 
-    /// Stores a new, unpaired agent unless the branch already has an active
-    /// one. `true` when it was stored.
+    /// Stores a new, unpaired counter; a branch may have several (xc-counter-app.md §5.1). `true` when
+    /// it was stored.
     fn insert_agent(
         &self,
         tx: Tx<'_, '_>,
@@ -173,11 +190,13 @@ pub trait AgentRepository: Send + Sync {
         now: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<Option<ClaimWindow>>> + Send;
 
-    /// The lock-free probe: does the branch have a `QUEUED` drawer job, or a
-    /// `LEASED` job whose lease ended before `now`.
+    /// The lock-free probe: does the branch have a `QUEUED` drawer job this agent may claim (§5.3:
+    /// `target_agent_id` = the agent, or `NULL` while the agent's `cash_drawer` is on), or a `LEASED` job
+    /// whose lease ended before `now`.
     fn has_claimable(
         &self,
         branch: &BranchId,
+        agent_id: &str,
         now: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
@@ -213,8 +232,9 @@ pub trait AgentRepository: Send + Sync {
         now: DateTime<Utc>,
     ) -> impl Future<Output = AppResult<bool>> + Send;
 
-    /// Revokes an active agent of the branch and fails the branch's `QUEUED`
-    /// drawer jobs with `AGENT_REVOKED`; `LEASED` ones are left to lapse.
+    /// Revokes an active agent of the branch, clears `user_sessions.counter_agent_id` bound to it, and
+    /// fails with `AGENT_REVOKED` the `QUEUED` and `LEASED` drawer jobs that target it; `NULL`-target ones
+    /// fail only when no other active agent of the branch has `cash_drawer` on (xc-counter-app.md §5.3).
     /// `None` when the branch has no such active agent.
     fn revoke_in(
         &self,

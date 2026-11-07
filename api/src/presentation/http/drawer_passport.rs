@@ -15,7 +15,9 @@ use crate::application::workflows::passport_drawer::{
 use crate::bootstrap::AppState;
 use crate::infrastructure::devices::passport_drawer_device::passport_drawer_device;
 use crate::presentation::dto::drawer_passport::{PassportDrawerAnswer, PassportDrawerInput};
-use crate::presentation::extractors::actor::{authorize, callers, failure, same_origin};
+use crate::presentation::extractors::actor::{
+    authorize, caller_bound_counter, callers, failure, same_origin,
+};
 use crate::presentation::http::rpc::RpcClock;
 use crate::presentation::pages;
 
@@ -129,8 +131,15 @@ async fn handle_drawer_passport(
         .as_ref()
         .map(|u| u.user_id.as_str())
         .unwrap_or("");
+    let counter_agent_id = match caller_bound_counter(&req, now).await {
+        Ok(id) => id,
+        Err(err) => return failure(err),
+    };
 
-    match workflow.enter(&branch, &input, actor_id, now).await {
+    match workflow
+        .enter_for_counter(&branch, &input, actor_id, counter_agent_id.as_deref(), now)
+        .await
+    {
         Ok(reply) => HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .content_type("application/json")

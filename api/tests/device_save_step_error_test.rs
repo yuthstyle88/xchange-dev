@@ -48,6 +48,7 @@ const COUNTED: SaveExtras = SaveExtras {
     staff_draft_id: None,
     count_confirmed: true,
     kiosk_request_id: None,
+    counter_agent_id: None,
 };
 
 /// A shop ready for a purchase, `FRONT`'s passport, and a workflow with the device step only.

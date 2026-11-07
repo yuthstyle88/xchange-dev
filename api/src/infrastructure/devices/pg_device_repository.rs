@@ -176,8 +176,9 @@ impl DeviceRepository for PgDeviceRepository {
     ) -> AppResult<bool> {
         let done = sqlx::query(
             "INSERT INTO device_jobs \
-             (id, request_id, request_hash, branch_id, ref, kind, status, actor, created_at, updated_at) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9) \
+             (id, request_id, request_hash, branch_id, ref, kind, status, actor, created_at, updated_at, \
+             target_agent_id) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10::uuid) \
              ON CONFLICT (branch_id, request_id) DO NOTHING",
         )
         .bind(job.id)
@@ -189,6 +190,7 @@ impl DeviceRepository for PgDeviceRepository {
         .bind(JobStatus::Queued.as_str())
         .bind(job.actor)
         .bind(job.at)
+        .bind(job.target_agent_id)
         .execute(&mut **tx)
         .await?;
         Ok(done.rows_affected() == 1)

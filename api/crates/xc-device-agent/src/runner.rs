@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
+use tokio::sync::watch;
 
 use crate::client::{AgentApi, ApiError, ClaimRequest, DrawerInfo, Outcome, Report};
 pub use crate::clock::{Clock, FakeClock, ManualClock, SystemClock};
@@ -31,7 +32,8 @@ pub struct AgentConfig {
     pub build: String,
     pub os: String,
     pub host: String,
-    pub drawer: DrawerInfo,
+    /// `None` when this counter has no drawer configured locally.
+    pub drawer: Option<DrawerInfo>,
     /// The long-poll asked for; at most 20,000.
     pub wait_ms: u64,
 }
@@ -361,6 +363,56 @@ fn owed_key(item: &Pending) -> (String, String) {
     match item {
         Pending::Sending { job_id, lease_id } => (job_id.clone(), lease_id.clone()),
         Pending::Unacknowledged(report) => (report.job_id.clone(), report.lease_id.clone()),
+    }
+}
+
+/// Runs `runner` until `stop` holds `true`: recover once, then step, sleeping as each step asks
+/// (`Step::Wait`, and 10 minutes after `Step::RePairNeeded`). The sleeps end as soon as `stop`
+/// fires; a step already under way finishes first, so a kick is never cut off half-recorded.
+/// A dropped sender counts as a stop. Filled by CA-3e, which lifts `main.rs`'s `run_loop` here.
+pub async fn run_forever<A, T, C>(mut runner: AgentRunner<A, T, C>, mut stop: watch::Receiver<bool>)
+where
+    A: AgentApi,
+    T: DrawerTransport,
+    C: Clock,
+{
+    if *stop.borrow() || stop.has_changed().is_err() {
+        return;
+    }
+    runner.recover().await;
+
+    loop {
+        if *stop.borrow() || stop.has_changed().is_err() {
+            break;
+        }
+
+        match runner.step().await {
+            Step::Idle => {}
+            Step::Done(outcome) => {
+                eprintln!("job processed: outcome {outcome:?}");
+            }
+            Step::RePairNeeded => {
+                eprintln!("re-pair needed");
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(600)) => {}
+                    res = stop.changed() => {
+                        if res.is_err() || *stop.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+            Step::Wait(duration) => {
+                tokio::select! {
+                    _ = tokio::time::sleep(duration) => {}
+                    res = stop.changed() => {
+                        if res.is_err() || *stop.borrow() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

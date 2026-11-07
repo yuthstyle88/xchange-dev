@@ -14,10 +14,10 @@ fn dummy_claim_request(wait_ms: u64) -> ClaimRequest {
         build: "abc".to_owned(),
         os: "linux".to_owned(),
         host: "test-host".to_owned(),
-        drawer: DrawerInfo {
+        drawer: Some(DrawerInfo {
             transport: "CUPS".to_owned(),
             target: "POS80".to_owned(),
-        },
+        }),
     }
 }
 

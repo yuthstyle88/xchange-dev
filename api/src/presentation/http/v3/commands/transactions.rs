@@ -56,6 +56,9 @@ use crate::application::workflows::payment_save_step::PaymentSaveStep;
 use crate::application::workflows::save_step::{SaveActor, SaveExtras, SaveStep};
 use crate::bootstrap::AppState;
 use crate::infrastructure::custody::custody_service::pg_custody_service;
+use crate::infrastructure::device_agents::counter_policy::{
+    COUNTER_NO_DRAWER, COUNTER_NO_DRAWER_MESSAGE,
+};
 use crate::infrastructure::devices::device_service::{COUNT_FIRST, DeviceService};
 use crate::infrastructure::devices::job_ids::UuidJobIds;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
@@ -66,12 +69,15 @@ use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::infrastructure::kiosk::kiosk_ports::{PgKioskAuditLog, PgKioskPorts};
 use crate::infrastructure::settings::branch_setting_store::BranchSettingStore;
 use crate::presentation::dto::v3::transaction::TransactionDto;
+use crate::presentation::extractors::actor::bound_counter_in;
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::input::{self, TextBound};
 use crate::presentation::http::v3::negative_stock::{shortfall_details, shortfall_message};
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 
 // ------------------------------------------------------------ inputs
 
@@ -182,6 +188,8 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
         ("noOpenShift", StatusCode::CONFLICT)
     } else if m == COUNT_FIRST {
         ("countFirst", StatusCode::CONFLICT)
+    } else if m == COUNTER_NO_DRAWER_MESSAGE {
+        (COUNTER_NO_DRAWER, StatusCode::CONFLICT)
     } else {
         let code = m
             .split(|c: char| c == ':' || c.is_whitespace())
@@ -195,6 +203,7 @@ pub(crate) fn refusal(e: AppError) -> V3Error {
             "alreadyPending" => ("alreadyPending", StatusCode::CONFLICT),
             "countFirst" => ("countFirst", StatusCode::CONFLICT),
             "dayClosed" => ("dayClosed", StatusCode::CONFLICT),
+            COUNTER_NO_DRAWER => (COUNTER_NO_DRAWER, StatusCode::CONFLICT),
             "bookingNotThisCustomer" => ("bookingNotThisCustomer", StatusCode::BAD_REQUEST),
             _ => ("validationFailed", StatusCode::BAD_REQUEST),
         }
@@ -224,6 +233,7 @@ async fn extras_of(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     branch: &BranchId,
     id: TransactionId,
+    counter_agent_id: Option<String>,
 ) -> Result<SaveExtras, V3Error> {
     let row: Option<(String, Option<String>, Option<String>, bool)> = sqlx::query_as(
         "SELECT branch_id, kiosk_request_id, staff_draft_id, count_confirmed \
@@ -248,6 +258,7 @@ async fn extras_of(
         staff_draft_id,
         count_confirmed,
         kiosk_request_id,
+        counter_agent_id,
     })
 }
 
@@ -473,14 +484,32 @@ impl CommandAction for TransactionConfirmCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let id = transaction_id(&input.id)?;
-        let extras = extras_of(tx, branch, id).await?;
+        let counter_agent_id = bound_counter_in(tx, caller.session_hash.as_deref())
+            .await
+            .map_err(refusal)?;
+        let extras = extras_of(tx, branch, id, counter_agent_id).await?;
         self.service
             .run_in(tx, id, &save_actor(who)?, &extras, Utc::now())
             .await
@@ -520,7 +549,7 @@ impl CommandAction for TransactionCancelCommand {
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
         let id = transaction_id(&input.id)?;
-        extras_of(tx, branch, id).await?;
+        extras_of(tx, branch, id, None).await?;
         let cancelled = self
             .service
             .run_in(tx, id, &input.reason, &save_actor(who)?, Utc::now())

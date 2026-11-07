@@ -288,6 +288,7 @@ async fn every_registered_step_runs_before_in_once_with_this_confirm_and_never_a
         staff_draft_id: Some("draft-9".to_owned()),
         count_confirmed: true,
         kiosk_request_id: None,
+        counter_agent_id: None,
     };
 
     desk.confirm_with(vec![first, second], t.id, &extras, later(now, 10))

@@ -242,8 +242,8 @@ impl Room {
     /// An active agent of the branch, as the owner's `add` leaves it (row AG-1's table).
     async fn agent(&self, branch: &str, id: &str) {
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by) \
-             VALUES ($1::uuid, $2, 'Mac เคาน์เตอร์ 1', now(), 'owner')",
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by) \
+             VALUES (true, $1::uuid, $2, 'Mac เคาน์เตอร์ 1', now(), 'owner')",
         )
         .bind(id)
         .bind(branch)

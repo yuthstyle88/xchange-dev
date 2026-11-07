@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "local-pages",
+  "description": "What the app's own two pages may ask: pair (ui/pair.html) and exit (ui/exit.html). Local only, so the desk page can never reach them.",
+  "windows": ["main"],
+  "local": true,
+  "permissions": ["allow-pair", "allow-exit-kiosk"]
+}

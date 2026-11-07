@@ -284,6 +284,17 @@ impl CompleteExchange {
         who: &SaveActor,
         now: DateTime<Utc>,
     ) -> AppResult<CompletedExchange> {
+        self.run_with_counter_in(tx, id, who, None, now).await
+    }
+
+    pub async fn run_with_counter_in(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        id: TransactionId,
+        who: &SaveActor,
+        counter_agent_id: Option<String>,
+        now: DateTime<Utc>,
+    ) -> AppResult<CompletedExchange> {
         // 1. CONFIRMED only (the route's Idempotency-Key replays a repeat, CM-1)
         let Some(t) = self.store.find_in(tx, id).await? else {
             return stale(format!("transaction {} does not exist", id.0));
@@ -442,6 +453,7 @@ impl CompleteExchange {
             staff_draft_id: t.staff_draft_id.clone(),
             count_confirmed: t.count_confirmed,
             kiosk_request_id: t.kiosk_request_id.clone(),
+            counter_agent_id,
         };
         let booking = t.booking_id.clone().map(|booking_id| BookingClaim {
             booking_id,

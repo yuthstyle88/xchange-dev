@@ -28,11 +28,14 @@ use crate::bootstrap::AppState;
 use crate::infrastructure::files::file_service::FileService;
 use crate::infrastructure::idempotency::store::IdempotencyKey;
 use crate::presentation::dto::v3::transaction::TransactionDto;
+use crate::presentation::extractors::actor::bound_counter_in;
+use crate::presentation::http::v3::caller::Caller;
 use crate::presentation::http::v3::command::{
     CommandAction, CommandEndpoint, out_of_scope, role_not_allowed_here, server_error,
 };
 use crate::presentation::http::v3::error::V3Error;
 use crate::presentation::http::v3::negative_stock::{stock_insufficient, stock_refusal_answer};
+use xc_auth::domain::policy::value_objects::policy_error::PolicyError;
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -145,15 +148,37 @@ impl CommandAction for TransactionCompleteCommand {
 
     async fn run(
         &self,
+        _tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        _branch: &BranchId,
+        _who: &Actor,
+        _input: Self::Input,
+        _key: IdempotencyKey,
+    ) -> Result<Self::Output, V3Error> {
+        Err(V3Error::from(PolicyError::SignIn))
+    }
+
+    async fn run_as(
+        &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         branch: &BranchId,
-        who: &Actor,
+        caller: &Caller,
         input: Self::Input,
         _key: IdempotencyKey,
     ) -> Result<Self::Output, V3Error> {
+        let who = caller
+            .user
+            .as_ref()
+            .ok_or_else(|| V3Error::from(PolicyError::SignIn))?;
         let id = this_branchs(tx, branch, &input.id).await?;
         let actor = save_actor(who)?;
-        let done = match self.service.run_in(tx, id, &actor, Utc::now()).await {
+        let counter_agent_id = bound_counter_in(tx, caller.session_hash.as_deref())
+            .await
+            .map_err(refusal)?;
+        let done = match self
+            .service
+            .run_with_counter_in(tx, id, &actor, counter_agent_id, Utc::now())
+            .await
+        {
             Ok(done) => done,
             Err(e) => {
                 if let Some(refusal) = stock_insufficient(&e) {

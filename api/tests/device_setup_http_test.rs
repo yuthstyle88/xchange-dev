@@ -31,9 +31,6 @@ const SIGN_IN: &str = "กรุณาเข้าสู่ระบบ";
 const OWNER_ONLY: &str = "เฉพาะเจ้าของระบบเท่านั้น";
 const BAD_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const NO_SUCH_BRANCH: &str = "ไม่พบสาขาที่เลือก กรุณารีเฟรช";
-/// §5.4c *One agent, one drawer, one per branch* ([required] sentence).
-const BRANCH_HAS_AGENT: &str = "สาขานี้มีเครื่องคุมลิ้นชักแล้ว";
-
 const CROCKFORD: &str = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 
 fn sha256_hex(text: &str) -> String {
@@ -251,26 +248,16 @@ async fn add_shows_the_code_once_and_stores_only_its_hash() {
     room.finish().await;
 }
 
-/// Follow-up 2 of the review of PR 324: the one-active-agent rule counts an agent that is
-/// still PENDING (added, never paired), so it is the **second add** that is refused — not the
-/// second pairing. Another branch is free; after a revoke the branch is free again.
+/// Restated by the XC Counter skeleton (xc-counter-app.md §5.1): a branch may have several counters, so a second
+/// add is taken while the first is still PENDING. (Until then the second add was refused with
+/// "สาขานี้มีเครื่องคุมลิ้นชักแล้ว".)
 #[actix_web::test]
-async fn a_second_agent_in_a_branch_is_refused_at_add() {
+async fn a_second_counter_in_a_branch_is_added() {
     let room = Room::open().await;
     let first = room.add(at(0), MAIN, "Mac 1").await;
-    let answer = room
-        .ask(
-            "OWNER",
-            at(1),
-            "add",
-            json!({ "branchId": MAIN, "name": "Mac 2" }),
-        )
-        .await;
-    answer.assert_refused(400, BRANCH_HAS_AGENT, "the first is PENDING and counts");
+    let second = room.add(at(1), MAIN, "Mac 2").await;
+    assert_ne!(first["agentId"], second["agentId"], "two counters");
     room.add(at(2), B9, "Mac 9").await;
-    room.ok(at(3), "revoke", json!({ "agentId": first["agentId"] }))
-        .await;
-    room.add(at(4), MAIN, "Mac 2").await;
 
     let answer = room
         .ask(

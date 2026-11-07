@@ -21,7 +21,7 @@ use crate::infrastructure::paired_devices::store::{
 
 #[derive(Clone)]
 pub struct PgAgentRepository {
-    pool: PgPool,
+    pub(super) pool: PgPool,
 }
 
 impl PgAgentRepository {
@@ -33,18 +33,20 @@ impl PgAgentRepository {
 /// The reason a lease that ended without a report is failed with; a late report may still
 /// replace it.
 const LEASE_LAPSED: &str = "LEASE_LAPSED";
-/// The reason the branch's queued drawer jobs are failed with when its agent is revoked.
+/// The reason a revoked counter's drawer jobs (and `NULL`-target ones when no drawer counter
+/// remains) are failed with.
 const AGENT_REVOKED: &str = "AGENT_REVOKED";
 
-const AGENT_COLUMNS: &str = "id::text AS id, branch_id, name, created_at, created_by, \
+pub(super) const AGENT_COLUMNS: &str = "id::text AS id, branch_id, name, created_at, created_by, \
      pair_code_expires_at, paired_at, revoked_at, revoked_by, last_seen_at, agent_version, \
-     agent_build, agent_os, agent_host, drawer_transport, drawer_target";
+     agent_build, agent_os, agent_host, drawer_transport, drawer_target, counter_name, cash_drawer, \
+     scanner, kiosk_lock";
 
 const JOB_COLUMNS: &str =
     "id, request_id, branch_id, ref, kind, status, actor, created_at, updated_at";
 
 #[derive(sqlx::FromRow)]
-struct AgentRow {
+pub(super) struct AgentRow {
     id: String,
     branch_id: String,
     name: String,
@@ -61,6 +63,10 @@ struct AgentRow {
     agent_host: Option<String>,
     drawer_transport: Option<String>,
     drawer_target: Option<String>,
+    counter_name: String,
+    cash_drawer: Option<bool>,
+    scanner: Option<bool>,
+    kiosk_lock: Option<bool>,
 }
 
 impl From<AgentRow> for DeviceAgent {
@@ -82,6 +88,10 @@ impl From<AgentRow> for DeviceAgent {
             agent_host: r.agent_host,
             drawer_transport: r.drawer_transport,
             drawer_target: r.drawer_target,
+            counter_name: r.counter_name,
+            cash_drawer: r.cash_drawer,
+            scanner: r.scanner,
+            kiosk_lock: r.kiosk_lock,
         }
     }
 }
@@ -143,6 +153,44 @@ fn ordered(rows: Vec<JobRow>) -> AppResult<Vec<DeviceJob>> {
     Ok(jobs)
 }
 
+/// Clears sessions bound to the revoked counter and fails with `AGENT_REVOKED` its targeted
+/// `QUEUED` and `LEASED` drawer jobs, plus `NULL`-target `QUEUED` ones when no active drawer
+/// counter remains in the branch (xc-counter-app.md §5.3).
+async fn fail_revoked_jobs_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    branch: &BranchId,
+    agent_id: &str,
+    now: DateTime<Utc>,
+) -> AppResult<Vec<DeviceJob>> {
+    sqlx::query(
+        "UPDATE user_sessions SET counter_agent_id = NULL WHERE counter_agent_id = $1::uuid",
+    )
+    .bind(agent_id)
+    .execute(&mut **tx)
+    .await?;
+    let failed: Vec<JobRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "UPDATE device_jobs SET status = 'FAILED', outcome_reason = $4, updated_at = $3 \
+         WHERE branch_id = $1 AND kind = 'DRAWER_REQUEST' \
+         AND ( \
+             (status = 'LEASED' AND leased_by = $2::uuid) \
+             OR (status = 'QUEUED' AND ( \
+                 target_agent_id = $2::uuid \
+                 OR (target_agent_id IS NULL AND NOT EXISTS ( \
+                     SELECT 1 FROM device_agents \
+                     WHERE branch_id = $1 AND revoked_at IS NULL AND cash_drawer IS TRUE)) \
+             )) \
+         ) \
+         RETURNING {JOB_COLUMNS}"
+    )))
+    .bind(branch.as_str())
+    .bind(agent_id)
+    .bind(now)
+    .bind(AGENT_REVOKED)
+    .fetch_all(&mut **tx)
+    .await?;
+    ordered(failed)
+}
+
 impl AgentRepository for PgAgentRepository {
     async fn has_active_agent_in(
         &self,
@@ -157,6 +205,22 @@ impl AgentRepository for PgAgentRepository {
         .fetch_one(&mut **tx)
         .await?;
         Ok(found)
+    }
+
+    async fn active_agents_in(
+        &self,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        branch: &BranchId,
+    ) -> AppResult<Vec<DeviceAgent>> {
+        let rows: Vec<AgentRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {AGENT_COLUMNS} FROM device_agents \
+             WHERE branch_id = $1 AND revoked_at IS NULL \
+             ORDER BY created_at, id"
+        )))
+        .bind(branch.as_str())
+        .fetch_all(&mut **tx)
+        .await?;
+        Ok(rows.into_iter().map(DeviceAgent::from).collect())
     }
 
     async fn find_by_token_hash(&self, token_hash: &str) -> AppResult<Option<DeviceAgent>> {
@@ -185,13 +249,11 @@ impl AgentRepository for PgAgentRepository {
         branch: &BranchId,
         agent: &NewAgent<'_>,
     ) -> AppResult<bool> {
-        // The unique partial index decides: while the branch has an active agent (a PENDING
-        // one counts) nothing is written.
+        // A branch may have several counters (xc-counter-app.md §5.1): a new pair code adds one.
         let done = sqlx::query(
             "INSERT INTO device_agents \
              (id, branch_id, name, created_at, created_by, pair_code_hash, pair_code_expires_at) \
-             VALUES ($1::uuid, $2, $3, $4, $5, $6, $7) \
-             ON CONFLICT (branch_id) WHERE revoked_at IS NULL DO NOTHING",
+             VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)",
         )
         .bind(agent.id)
         .bind(branch.as_str())
@@ -238,8 +300,8 @@ impl AgentRepository for PgAgentRepository {
             "UPDATE device_agents SET token_hash = $2, paired_at = $3, last_seen_at = $3, \
              pair_code_hash = NULL, pair_code_expires_at = NULL, \
              agent_version = $4, agent_build = $5, agent_os = $6, agent_host = $7, \
-             drawer_transport = COALESCE($8, drawer_transport), \
-             drawer_target = COALESCE($9, drawer_target) \
+             drawer_transport = $8, \
+             drawer_target = $9 \
              WHERE pair_code_hash = $1 AND revoked_at IS NULL AND pair_code_expires_at > $3 \
              RETURNING {AGENT_COLUMNS}"
         )))
@@ -267,8 +329,8 @@ impl AgentRepository for PgAgentRepository {
         let row: Option<(i32, DateTime<Utc>)> = sqlx::query_as(
             "UPDATE device_agents SET last_seen_at = $2, \
              agent_version = $3, agent_build = $4, agent_os = $5, agent_host = $6, \
-             drawer_transport = COALESCE($7, drawer_transport), \
-             drawer_target = COALESCE($8, drawer_target), \
+             drawer_transport = $7, \
+             drawer_target = $8, \
              claim_count = CASE \
                  WHEN claim_window_start IS NULL \
                    OR claim_window_start + interval '60 seconds' <= $2 THEN 1 \
@@ -296,14 +358,24 @@ impl AgentRepository for PgAgentRepository {
         }))
     }
 
-    async fn has_claimable(&self, branch: &BranchId, now: DateTime<Utc>) -> AppResult<bool> {
+    async fn has_claimable(
+        &self,
+        branch: &BranchId,
+        agent_id: &str,
+        now: DateTime<Utc>,
+    ) -> AppResult<bool> {
         let found: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM device_jobs \
-                 WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST') \
+                 WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST' \
+                 AND (target_agent_id = $2::uuid \
+                      OR (target_agent_id IS NULL AND EXISTS ( \
+                          SELECT 1 FROM device_agents \
+                          WHERE id = $2::uuid AND cash_drawer IS TRUE)))) \
              OR EXISTS (SELECT 1 FROM device_jobs \
-                 WHERE branch_id = $1 AND status = 'LEASED' AND lease_until < $2)",
+                 WHERE branch_id = $1 AND status = 'LEASED' AND lease_until < $3)",
         )
         .bind(branch.as_str())
+        .bind(agent_id)
         .bind(now)
         .fetch_one(&self.pool)
         .await?;
@@ -346,6 +418,10 @@ impl AgentRepository for PgAgentRepository {
              WHERE branch_id = $1 AND id = ( \
                  SELECT id FROM device_jobs \
                  WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST' \
+                 AND (target_agent_id = $4::uuid \
+                      OR (target_agent_id IS NULL AND EXISTS ( \
+                          SELECT 1 FROM device_agents \
+                          WHERE id = $4::uuid AND cash_drawer IS TRUE))) \
                  ORDER BY created_at, id LIMIT 1 FOR UPDATE) \
              RETURNING {JOB_COLUMNS}"
         )))
@@ -436,31 +512,12 @@ impl AgentRepository for PgAgentRepository {
         actor: &str,
         now: DateTime<Utc>,
     ) -> AppResult<Option<Vec<DeviceJob>>> {
-        let revoked = sqlx::query(
-            "UPDATE device_agents SET revoked_at = $4, revoked_by = $3 \
-             WHERE branch_id = $1 AND id = $2::uuid AND revoked_at IS NULL",
-        )
-        .bind(branch.as_str())
-        .bind(agent_id)
-        .bind(actor)
-        .bind(now)
-        .execute(&mut **tx)
-        .await?;
-        if revoked.rows_affected() == 0 {
+        if !PairedDeviceStore::revoke_in(self, tx, branch, agent_id, actor, now).await? {
             return Ok(None);
         }
-        // Leased jobs are left to lapse; only the queue that no agent will now take fails.
-        let failed: Vec<JobRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "UPDATE device_jobs SET status = 'FAILED', outcome_reason = $3, updated_at = $2 \
-             WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST' \
-             RETURNING {JOB_COLUMNS}"
-        )))
-        .bind(branch.as_str())
-        .bind(now)
-        .bind(AGENT_REVOKED)
-        .fetch_all(&mut **tx)
-        .await?;
-        ordered(failed).map(Some)
+        fail_revoked_jobs_in(tx, branch, agent_id, now)
+            .await
+            .map(Some)
     }
 
     async fn list(&self) -> AppResult<Vec<DeviceAgent>> {
@@ -567,22 +624,13 @@ impl PairedDeviceStore for PgAgentRepository {
         &self,
         tx: Tx<'_, '_>,
         branch: &BranchId,
-        _id: &str,
+        id: &str,
         actor: &str,
         now: DateTime<Utc>,
     ) -> AppResult<()> {
-        let failed: Vec<JobRow> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "UPDATE device_jobs SET status = 'FAILED', outcome_reason = $3, updated_at = $2 \
-             WHERE branch_id = $1 AND status = 'QUEUED' AND kind = 'DRAWER_REQUEST' \
-             RETURNING {JOB_COLUMNS}"
-        )))
-        .bind(branch.as_str())
-        .bind(now)
-        .bind(AGENT_REVOKED)
-        .fetch_all(&mut **tx)
-        .await?;
+        let failed = fail_revoked_jobs_in(tx, branch, id, now).await?;
         let device_repo = PgDeviceRepository::new(self.pool.clone());
-        for job in ordered(failed)? {
+        for job in failed {
             let detail = serde_json::json!({
                 "job": job.id,
                 "reason": AGENT_REVOKED,

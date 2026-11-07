@@ -155,8 +155,8 @@ impl Room {
         let cookies = sign_in(&app, ORIGIN, &people).await;
         let room = Room { desk, app, cookies };
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by) \
-             VALUES ($1::uuid, 'MAIN', 'Mac เคาน์เตอร์ 1', now(), 'owner')",
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by) \
+             VALUES (true, $1::uuid, 'MAIN', 'Mac เคาน์เตอร์ 1', now(), 'owner')",
         )
         .bind(AGENT_MAIN)
         .execute(&room.desk.db.pool)

@@ -64,8 +64,7 @@ pub struct ClaimParams<'a> {
     pub build: &'a str,
     pub os: &'a str,
     pub host: &'a str,
-    pub drawer_transport: &'a str,
-    pub drawer_target: &'a str,
+    pub drawer: Option<DrawerTarget<'a>>,
     pub branch_id: Option<&'a str>,
 }
 
@@ -123,10 +122,7 @@ impl AgentService {
             build: params.build,
             os: params.os,
             host: params.host,
-            drawer: Some(DrawerTarget {
-                transport: params.drawer_transport,
-                target: params.drawer_target,
-            }),
+            drawer: params.drawer,
         };
         let Some(window) = self.agent_repo.touch(&agent.id, &seen, now).await? else {
             return Ok(ClaimOutcome::Revoked);
@@ -145,7 +141,10 @@ impl AgentService {
         let start = std::time::Instant::now();
         let mut current_now = now;
 
-        let mut claimable = self.agent_repo.has_claimable(&branch, current_now).await?;
+        let mut claimable = self
+            .agent_repo
+            .has_claimable(&branch, &agent.id, current_now)
+            .await?;
         if !claimable && !max_wait.is_zero() {
             while start.elapsed() < max_wait {
                 let remaining = max_wait.saturating_sub(start.elapsed());
@@ -155,7 +154,11 @@ impl AgentService {
                 }
                 tokio::time::sleep(sleep_step).await;
                 current_now = now_fn();
-                if self.agent_repo.has_claimable(&branch, current_now).await? {
+                if self
+                    .agent_repo
+                    .has_claimable(&branch, &agent.id, current_now)
+                    .await?
+                {
                     claimable = true;
                     break;
                 }

@@ -58,9 +58,11 @@ impl PassportDrawerDevice for DevicePassportDrawer {
         source: PassportSource,
         order_id: &'a str,
         actor: &'a str,
+        counter_agent_id: Option<&'a str>,
         now: DateTime<Utc>,
     ) -> Pin<Box<dyn Future<Output = AppResult<PassportDrawerOutcome>> + Send + 'a>> {
         Box::pin(async move {
+            let counter_agent_id = counter_agent_id.map(str::to_owned);
             let key = DrawerJobKey::Passport {
                 source,
                 order_id: order_id.to_string(),
@@ -102,8 +104,19 @@ impl PassportDrawerDevice for DevicePassportDrawer {
                             }
                         }
 
-                        let outcome =
-                            service.queue_drawer_in(tx, &b, key, &actor_str, now).await?;
+                        let target = service
+                            .cash_payout_in(tx, &b, counter_agent_id.as_deref())
+                            .await?;
+                        let outcome = service
+                            .queue_drawer_targeted_in(
+                                tx,
+                                &b,
+                                key,
+                                target.as_deref(),
+                                &actor_str,
+                                now,
+                            )
+                            .await?;
                         match outcome {
                             DrawerJobOutcome::NoAgent => {
                                 Ok(ImmediateOrQueued::Immediate(PassportDrawerOutcome::State {

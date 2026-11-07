@@ -29,7 +29,9 @@ pub struct ClaimRequest {
     pub build: String,
     pub os: String,
     pub host: String,
-    pub drawer: DrawerInfo,
+    /// `None` when this counter has no drawer configured locally: the key is left out.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drawer: Option<DrawerInfo>,
 }
 
 /// The 200 answer of a claim. Nothing else is ever sent to the counter.

@@ -67,8 +67,8 @@ impl Room {
     /// An agent of MAIN added by the owner at t0 with the code `CODE`, valid 10 minutes.
     async fn pending_agent(&self) {
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, \
-             pair_code_hash, pair_code_expires_at) VALUES ($1::uuid, 'MAIN', $2, $3, 'owner', $4, $5)",
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, \
+             pair_code_hash, pair_code_expires_at) VALUES (true, $1::uuid, 'MAIN', $2, $3, 'owner', $4, $5)",
         )
         .bind(AGENT)
         .bind(AGENT_NAME)
@@ -83,8 +83,8 @@ impl Room {
     /// An agent of MAIN already paired with `TOKEN`.
     async fn paired_agent(&self) {
         sqlx::query(
-            "INSERT INTO device_agents (id, branch_id, name, created_at, created_by, token_hash, \
-             paired_at) VALUES ($1::uuid, 'MAIN', $2, $3, 'owner', $4, $3)",
+            "INSERT INTO device_agents (cash_drawer, id, branch_id, name, created_at, created_by, token_hash, \
+             paired_at) VALUES (true, $1::uuid, 'MAIN', $2, $3, 'owner', $4, $3)",
         )
         .bind(AGENT)
         .bind(AGENT_NAME)

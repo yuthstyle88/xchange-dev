@@ -58,6 +58,18 @@ impl PassportDrawerWorkflow {
         actor: &str,
         now: DateTime<Utc>,
     ) -> Result<PassportDrawerReply, PassportDrawerRefusal> {
+        self.enter_for_counter(branch, input, actor, None, now)
+            .await
+    }
+
+    pub async fn enter_for_counter(
+        &self,
+        branch: &BranchId,
+        input: &PassportDrawerInput,
+        actor: &str,
+        counter_agent_id: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<PassportDrawerReply, PassportDrawerRefusal> {
         // Row 5: branch shape check
         if !BranchId::is_well_formed(branch.as_str()) {
             return Err(PassportDrawerRefusal::InvalidBranch);
@@ -98,7 +110,9 @@ impl PassportDrawerWorkflow {
             PassportSource::Desk
         };
 
-        let outcome = device.request(branch, source, order_id, actor, now).await?;
+        let outcome = device
+            .request(branch, source, order_id, actor, counter_agent_id, now)
+            .await?;
         match outcome {
             PassportDrawerOutcome::State { state, duplicate } => {
                 Ok(PassportDrawerReply { state, duplicate })
@@ -137,6 +151,7 @@ mod tests {
             _source: PassportSource,
             _order_id: &'a str,
             _actor: &'a str,
+            _counter_agent_id: Option<&'a str>,
             _now: DateTime<Utc>,
         ) -> std::pin::Pin<
             Box<

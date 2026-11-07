@@ -24,6 +24,9 @@ pub struct NewJob<'a> {
     pub kind: JobKind,
     pub actor: &'a str,
     pub at: DateTime<Utc>,
+    /// The counter a drawer job is for (xc-counter-app.md §5.3); `None` = any active counter of the
+    /// branch whose `cash_drawer` is on. Always `None` for a receipt.
+    pub target_agent_id: Option<&'a str>,
 }
 
 /// The keys of a line's detail that hold an amount. They are stored as exact

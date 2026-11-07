@@ -388,6 +388,7 @@ mod tests {
             staff_draft_id: None,
             count_confirmed: false,
             kiosk_request_id: None,
+            counter_agent_id: None,
         };
         let actor = SaveActor {
             id: "owner".to_string(),
@@ -471,6 +472,7 @@ mod tests {
             staff_draft_id: None,
             count_confirmed: false,
             kiosk_request_id: None,
+            counter_agent_id: None,
         };
         let actor = SaveActor {
             id: "owner".to_string(),

@@ -54,10 +54,10 @@ async fn requests_send_bearer_token_and_never_origin_or_cookie() {
         build: "abc".to_owned(),
         os: "linux".to_owned(),
         host: "test-host".to_owned(),
-        drawer: DrawerInfo {
+        drawer: Some(DrawerInfo {
             transport: "CUPS".to_owned(),
             target: "POS80".to_owned(),
-        },
+        }),
     };
 
     let result = api.claim(&req).await;
@@ -107,10 +107,10 @@ async fn unauthorized_and_rate_limited_responses_are_handled() {
         build: "abc".to_owned(),
         os: "linux".to_owned(),
         host: "test-host".to_owned(),
-        drawer: DrawerInfo {
+        drawer: Some(DrawerInfo {
             transport: "CUPS".to_owned(),
             target: "POS80".to_owned(),
-        },
+        }),
     };
 
     let res1 = api.claim(&req).await;

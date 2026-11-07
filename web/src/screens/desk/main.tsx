@@ -1,6 +1,8 @@
 import { render } from 'solid-js/web';
 import { screenT } from '../../shared/i18n';
+import { sharedApi, sharedSession } from '../../shared/session/session';
 import { AppShell } from '../../shared/ui/AppShell';
+import { useCounterBinding } from '../../shared/xc-counter/binding';
 import { DeskPage } from './DeskPage';
 import { createDeskStore, type DeskStore } from './desk-store';
 import { openEntry } from './entries';
@@ -20,6 +22,7 @@ void openEntry(store).then(() => openHeldTicket(store));
 
 function Desk() {
   const shift = createDeskShiftGate();
+  useCounterBinding(sharedApi(), sharedSession());
   return <DeskPage store={store} steps={steps} aside={<Summary store={store} />} shift={shift} />;
 }
 
