@@ -48,6 +48,8 @@ const THAI = /[฀-๿]/;
 const HEADERS = ['รายการ / เวลา', 'ลูกค้า', 'ประเภท', 'จำนวนเงิน', 'ยอดชำระ THB', 'สถานะ'];
 /** v2's LIVE export header, `admin-html:170`, with `Unit Size` after `Rate` (#868: the owner's
  *  decision 2026-10-10; rates are per unit since #781, rates.md §4.9 R1). */
+// F20b (docs/design/backdated-keying.md §15.4): the LIVE CSV gains a last column `Backdated` (`YES` or empty). Headers and
+// whole-row expectations below are restated for it by the ticket author claude/3b81c9d5; new rows are in live-csv.backdated.test.ts.
 const CSV_HEADERS = [
   'Branch ID',
   'Branch',
@@ -70,6 +72,7 @@ const CSV_HEADERS = [
   'Reference Value THB',
   'Reference Spread THB',
   'Reference Spread %',
+  'Backdated',
 ];
 
 function tx(n: number, over: Partial<TransactionRow> = {}) {
@@ -643,13 +646,13 @@ describe('V2-transactions: CSV (#464 T5; design §12.8)', () => {
     expect(lines[1]).toBe(
       quoted([
         'B1', 'Silom #2', 'LIVE', tx(300).id, '2026-10-08', 'SELL', 'USD', '1500.50', '32.6000', '1', '48916.30',
-        '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775',
+        '5.25', '1.50', '48921.55', 'Bank Transfer', 'COMPLETED', '', '32.8731', '49326.09', '409.79', '0.830775', '',
       ]),
     );
     expect(lines[2]).toBe(
       quoted([
         'B1', 'Silom #2', 'LIVE', tx(299).id, '2026-10-08', 'BUY', 'USD', '100.00', '32.1000', '1', '3210.00',
-        '0.00', '0.00', '3209.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '',
+        '0.00', '0.00', '3209.99', 'Cash', 'COMPLETED', 'SH-1', '', '', '', '', '',
       ]),
     );
     expect(lines.slice(1).map((l) => l.split(',')[3])).toEqual(
@@ -670,7 +673,8 @@ describe('V2-transactions: CSV (#464 T5; design §12.8)', () => {
     const cells = row!.split('","');
     expect(cells[1]).toBe(`'=HYPERLINK(""x"")`);
     expect(cells[19]).toBe(`'-54.80`);
-    expect(cells[20]).toBe(`'-5.351563"`);
+    expect(cells[20]).toBe(`'-5.351563`);
+    expect(cells[21]).toBe('"');
     expect(names).toEqual(['XCHANGE-LIVE-_HYPERLINK__x__-2026-10-09.csv']);
   });
 

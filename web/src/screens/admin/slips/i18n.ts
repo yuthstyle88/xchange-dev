@@ -34,6 +34,7 @@ export const th = {
   page: 'หน้า {page}',
   typeBuy: 'ร้านรับซื้อ',
   typeSell: 'ร้านขาย',
+  backdated: 'ย้อนหลัง',
 };
 
 export const en = {
@@ -70,4 +71,5 @@ export const en = {
   page: 'Page {page}',
   typeBuy: 'Buy',
   typeSell: 'Sell',
+  backdated: 'Backdated',
 };

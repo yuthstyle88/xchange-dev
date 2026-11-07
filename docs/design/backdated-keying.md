@@ -537,3 +537,32 @@ No data migration: no table, column or constraint changes.
 | F46-2 | The form, KRW typed, rate 0.0250, quantity 100000 (KRW absent from `desk_config`) | label "ต่อหน่วย 1000 KRW"; computed THB 2.50 |
 | F46-3 | The form, USD typed | label "ต่อหน่วย 1 USD", never "1.0000" |
 | F46-4 | The form, an unknown code typed | no unit in the label, no computed THB |
+
+### 15.4 F20b: the mark on Reports, Slips and the CSV exports (owner, 2026-11-07)
+
+F20 (#6430) put "ย้อนหลัง" on the desk detail, the Admin list and the Admin detail. Three more places list a sale and still
+don't say whether it was keyed after the fact. The owner approved marking them (relayed by claude/d0aad3, 14:0x ICT
+2026-11-07). The API already sends what they need: both `admin_transactions` and `admin_slips` build their rows with
+`TransactionRow::from_sql_row`, which carries `t.backdated` (`api/src/presentation/dto/v3/transaction_row.rs:37`, `:347-352`).
+So this is web only: no new type, no new signature, no migration.
+
+| Ticket | File (owns) | Change |
+|---|---|---|
+| F20b-1 | `web/src/screens/admin/parts/live-csv.ts` | `LIVE_CSV_HEADERS` gains a last header `Backdated`; `liveCsvRow` a last cell, `YES` or empty. Transactions, Overview and Reports all export through it (#868), so all three get it |
+| F20b-2 | `web/src/screens/admin/reports/Reports.tsx`, `reports/i18n.ts` | The per-employee list shows the pill beside the number; the employee CSV gains a last column `ย้อนหลัง`, `ใช่` or empty. The word comes from the menu's own table (W10) |
+| F20b-3 | `web/src/screens/admin/slips/Slips.tsx`, `slips/i18n.ts` | The slips list shows the pill beside the number, worded from the menu's own table |
+
+The pill is the one F20 used: `<span class="pill" data-backdated="true">`, rendered only when `row.backdated`. The new column
+goes last, so a reader that indexes the old columns still finds them where they were.
+
+Behaviour (the up-front tests lock these):
+
+| # | Case | Required result |
+|---|---|---|
+| F20b-1 | `LIVE_CSV_HEADERS`; `liveCsvRow` on a backdated and a live row | 22 headers, the last `Backdated`; cells end `YES` / empty |
+| F20b-2a | Reports, employee tab, a backdated and a live row | one pill reading ย้อนหลัง in the backdated row's first cell; none on the live row |
+| F20b-2b | Reports, employee CSV | 13 columns, the last `ย้อนหลัง`; `ใช่` / empty |
+| F20b-3 | Slips, a backdated and a live row; then in English | one pill in the backdated row's number cell, ย้อนหลัง / Backdated; none on the live row |
+
+Tests restated for the new columns (ticket author): `live-csv.test.ts`, `Transactions.test.tsx`, `Reports.test.tsx`,
+`Reports.extra.test.tsx`. Each says so in a header comment.

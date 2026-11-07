@@ -260,6 +260,11 @@ export function Slips(props: AdminMenuProps): JSX.Element {
                         >
                           {row.id}
                         </button>
+                        <Show when={row.backdated}>
+                          <span class="pill" data-backdated="true">
+                            {t('backdated')}
+                          </span>
+                        </Show>
                       </div>
                       <div>
                         {row.currency} · {row.type === 'BUY' ? t('typeBuy') : t('typeSell')}

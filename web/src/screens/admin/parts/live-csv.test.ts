@@ -32,6 +32,8 @@ function liveCsv(): LiveCsv {
   return m!;
 }
 
+// F20b (docs/design/backdated-keying.md §15.4): the LIVE CSV gains a last column `Backdated` (`YES` or empty). Headers and
+// whole-row expectations below are restated for it by the ticket author claude/3b81c9d5; new rows are in live-csv.backdated.test.ts.
 const HEADERS = [
   'Branch ID',
   'Branch',
@@ -54,6 +56,7 @@ const HEADERS = [
   'Reference Value THB',
   'Reference Spread THB',
   'Reference Spread %',
+  'Backdated',
 ];
 
 function row(over: Partial<TransactionRow> = {}) {
@@ -97,7 +100,7 @@ describe('#868 the LIVE transaction CSV', () => {
     expect(liveCsv().liveCsvRow('MAIN', 'Silom #2', row())).toEqual([
       'MAIN', 'Silom #2', 'LIVE', 'XC-20261010-000001', '2026-10-10', 'BUY', 'KRW', '100000.00',
       '25.12345678', '1000', '2512.35', '0.00', '0.00', '2512.35', 'Cash', 'COMPLETED', 'SH-1',
-      '25.00000000', '2500.00', '-12.35', '-0.494',
+      '25.00000000', '2500.00', '-12.35', '-0.494', '',
     ]);
   });
 
@@ -115,7 +118,7 @@ describe('#868 the LIVE transaction CSV', () => {
       row({ shiftId: null, referenceRate: null, referenceValue: null, referenceSpread: null, referencePercent: null }),
     );
     expect(cells).toHaveLength(HEADERS.length);
-    expect(cells.slice(HEADERS.indexOf('Shift ID'))).toEqual(['', '', '', '', '']);
+    expect(cells.slice(HEADERS.indexOf('Shift ID'))).toEqual(['', '', '', '', '', '']);
   });
 
   it('the three screens use the one builder and keep no headers of their own', () => {
