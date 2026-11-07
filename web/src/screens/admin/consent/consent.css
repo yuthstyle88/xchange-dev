@@ -89,3 +89,10 @@
   font-weight: 600;
   font-size: 14px;
 }
+
+.xc-admin .xc-content .consent-body-count {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--xc-muted);
+  text-align: right;
+}
