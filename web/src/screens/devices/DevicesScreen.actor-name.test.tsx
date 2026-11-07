@@ -8,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import type { ApiClient, PageParams, ViewAnswer, ViewParams } from '../../shared/api/client';
 import {
-  type DeviceEventRow,
   makeDeviceBranch,
   makeDeviceEventRow,
   makeDevicesOverview,
@@ -22,9 +21,9 @@ type Api = Pick<ApiClient, 'view' | 'post' | 'page'>;
 const ANNA_ID = '5fe9d9ce-5400-4000-8000-000000000001';
 const AGENT = 'agent:7b1c2a90-0000-4000-8000-000000000001';
 
-/** A row as the view answers it now; built by spread so this file type-checks before and after `actorName` exists. */
-function eventRow(seq: string, actor: string, actorName: string | null): DeviceEventRow {
-  return { ...makeDeviceEventRow({ seq, kind: 'PRINT_RECEIPT', ref: `TX-${seq}`, actor, detail: '{}' }), actorName } as DeviceEventRow;
+/** A row as the view answers it now (restated by the sub-controller: the no-inline-dto guard forbids naming or casting the generated type). */
+function eventRow(seq: string, actor: string, actorName: string | null) {
+  return makeDeviceEventRow({ seq, kind: 'PRINT_RECEIPT', ref: `TX-${seq}`, actor, actorName, detail: '{}' });
 }
 
 const EVENTS = [eventRow('3', ANNA_ID, 'Anna Teller'), eventRow('2', AGENT, null), eventRow('1', 'ลูกค้า (ตู้)', null)];
