@@ -125,7 +125,7 @@ describe('DeskBookingsScreen (B02) — §9 language switching (#2149)', () => {
     const qrInput = host.querySelector<HTMLInputElement>('input[data-action="scan-qr"]')!;
     const qrBtn = host.querySelector<HTMLButtonElement>('button[data-action="lookup-qr"]')!;
     const newBookingBtn = host.querySelector<HTMLButtonElement>('button[data-action="new-booking"]')!;
-    expect(qrInput.placeholder).toBe(th.scanQr);
+    expect(qrInput.placeholder).toBe(th.qrPlaceholder); // restated OL-7 row 11: the hint differs from the button
     expect(qrBtn.textContent?.trim()).toBe(th.scanQr);
     expect(newBookingBtn.textContent?.trim()).toBe(th.newBooking);
 
@@ -160,7 +160,7 @@ describe('DeskBookingsScreen (B02) — §9 language switching (#2149)', () => {
     const qrInput = host.querySelector<HTMLInputElement>('input[data-action="scan-qr"]')!;
     const qrBtn = host.querySelector<HTMLButtonElement>('button[data-action="lookup-qr"]')!;
     const newBookingBtn = host.querySelector<HTMLButtonElement>('button[data-action="new-booking"]')!;
-    expect(qrInput.placeholder).toBe(en.scanQr);
+    expect(qrInput.placeholder).toBe(en.qrPlaceholder); // restated OL-7 row 11: the hint differs from the button
     expect(qrBtn.textContent?.trim()).toBe(en.scanQr);
     expect(newBookingBtn.textContent?.trim()).toBe(en.newBooking);
 
@@ -248,7 +248,7 @@ describe('DeskBookingsScreen (B02) — §9 language switching (#2149)', () => {
     const cancelBtn = host.querySelector<HTMLButtonElement>('button[data-action="cancel"]')!;
     const rescheduleBtn = host.querySelector<HTMLButtonElement>('button[data-action="reschedule"]')!;
 
-    expect(qrInput.placeholder).toBe(en.scanQr);
+    expect(qrInput.placeholder).toBe(en.qrPlaceholder); // restated OL-7 row 11: the hint differs from the button
     expect(qrBtn.textContent?.trim()).toBe(en.scanQr);
     expect(newBookingBtn.textContent?.trim()).toBe(en.newBooking);
     expect(statusTag.textContent?.trim()).toBe(en['status.CONFIRMED']);

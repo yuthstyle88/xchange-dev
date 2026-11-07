@@ -916,7 +916,7 @@ export function DeskBookingsScreen(): JSX.Element {
                   name="qrToken"
                   data-action="scan-qr"
                   class="xc-qr-input"
-                  placeholder={t('scanQr')}
+                  placeholder={t('qrPlaceholder')}
                   value={qrInput()}
                   onInput={(e) => setQrInput(e.currentTarget.value)}
                   onKeyDown={handleQrKeyDown}
