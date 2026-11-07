@@ -361,7 +361,7 @@ describe('BookingSlots branch switching & stale-read guard (#2183)', () => {
     expect(horizonDaysInput.value).toBe('21');
     expect(container.textContent).toContain('2026-12-25');
     expect(container.textContent).toContain('Christmas Day');
-    expect(container.textContent).toContain('OPEN');
+    expect(container.querySelector('.slot-status[data-status="OPEN"]'), 'the OPEN slot is listed').not.toBeNull();
 
     const cutoffInput = container.querySelector<HTMLInputElement>(
       'input[name="cancelCutoffMinutes"], input[data-field="cancelCutoffMinutes"]',
@@ -538,7 +538,7 @@ describe('BookingSlots branch switching & stale-read guard (#2183)', () => {
     expect(capacityInput.value).toBe('8');
     expect(horizonDaysInput.value).toBe('21');
     expect(container.textContent).toContain('Christmas Day');
-    expect(container.textContent).toContain('OPEN');
+    expect(container.querySelector('.slot-status[data-status="OPEN"]'), 'the OPEN slot is listed').not.toBeNull();
 
     // Save rule succeeds, triggering same-branch loadView(B01) which fails 500
     saveRuleBtn.click();
