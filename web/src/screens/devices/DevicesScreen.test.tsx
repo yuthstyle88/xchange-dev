@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // V1-devices-screen (#404): the device-jobs screen at /devices (ticket §7, §8, §9, §10).
 // Written before the implementation by the lane controller (claude/7ca80c). Do not edit, delete or
 // weaken; add tests in a file of your own.
@@ -435,8 +436,19 @@ function metric(label: string): string {
   return textOf(box).replace(label, '').trim();
 }
 
-function stamp(iso: string, locale = 'th-TH'): string {
-  return new Date(iso).toLocaleString(locale, { timeZone: 'Asia/Bangkok' });
+/** F55: the Bangkok `dd/mm/yyyy HH:mm` (CE year, seconds dropped) each fixture instant shows, in any language. */
+const STAMP: Record<string, string> = {
+  '2026-10-08T03:04:05.000Z': '08/10/2026 10:04',
+  '2026-10-08T03:00:00.000Z': '08/10/2026 10:00',
+  '2026-10-08T02:58:00.000Z': '08/10/2026 09:58',
+  '2026-10-08T02:59:00.000Z': '08/10/2026 09:59',
+  '2026-10-08T01:00:00.000Z': '08/10/2026 08:00',
+};
+
+function stamp(iso: string): string {
+  const s = STAMP[iso];
+  if (!s) throw new Error(`no F55 stamp for ${iso}`);
+  return s;
 }
 
 async function loaded(jobs = B1_JOBS.length): Promise<void> {
@@ -757,7 +769,9 @@ describe('DevicesScreen tables (#404 D12-D15, D21)', () => {
     const links = (id: string) => [...jobRow(id).cells[4]!.querySelectorAll('a')];
     const sample = links('J3');
     expect(sample.map(textOf)).toEqual([th.receipt]);
-    expect(sample[0]!.getAttribute('href')).toBe('/devices/receipt?branch=B1&ref=TX-2');
+    // Restated for OL-6 B devices-receipt-page (claude/94389a6b): the link opens the staff preview page, which frames
+    // the unchanged /devices/receipt slip (devices-receipt-preview/DevicesReceiptPreview.test.tsx RP-2).
+    expect(sample[0]!.getAttribute('href')).toBe('/devices/receipt-preview?branch=B1&ref=TX-2');
     expect(sample[0]!.getAttribute('target')).toBe('_blank');
     expect(sample[0]!.getAttribute('rel') ?? '').toContain('noopener');
     expect(links('J2')).toEqual([]);

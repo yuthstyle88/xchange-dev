@@ -15,7 +15,8 @@ import type {
   ExecutiveOverviewData,
   MetricDto,
 } from '../../../shared/api/generated/executive_overview';
-import { lang, locale, screenT } from '../../../shared/i18n';
+import { lang, screenT } from '../../../shared/i18n';
+import { formatBangkokDate, formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
@@ -120,17 +121,10 @@ function MetricValue(props: { metric: MetricDto; money: boolean; class: string }
   );
 }
 
-/** A server time (UTC ISO-8601) as Bangkok date and time in the screen's locale; an unparsable one as sent. */
-function bangkok(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
-
 function Time(props: { at: string | null }): JSX.Element {
   return (
     <Show when={props.at} fallback={<span class="executive-never">{t('never')}</span>}>
-      {(at) => <time datetime={at()}>{bangkok(at())}</time>}
+      {(at) => <time datetime={at()}>{formatBangkokDateTime(at())}</time>}
     </Show>
   );
 }
@@ -272,7 +266,9 @@ export function Executive(props: AdminMenuProps): JSX.Element {
 
   const period = () => {
     const p = props.period();
-    return p.from === p.to ? p.from : `${p.from} – ${p.to}`;
+    const from = formatBangkokDate(p.from);
+    const to = formatBangkokDate(p.to);
+    return from === to ? from : `${from} – ${to}`;
   };
 
   const toggleBranch = (id: string, checked: boolean) => {
@@ -336,6 +332,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
           <input
             name="currency"
             maxLength={3}
+            placeholder={t('currencyPlaceholder')}
             value={currencyInput()}
             onInput={(e) => {
               e.currentTarget.value = e.currentTarget.value.toUpperCase();
@@ -399,45 +396,49 @@ export function Executive(props: AdminMenuProps): JSX.Element {
             </For>
           </section>
 
-          <table class="executive-branches">
-            <thead>
-              <tr>
-                <th>{t('colBranch')}</th>
-                <th>{t('colVolume')}</th>
-                <th>{t('colCash')}</th>
-                <th>{t('colShifts')}</th>
-                <th>{t('colSync')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rows()}>
-                {(r) => (
-                  <tr data-branch={r.branchId}>
-                    <td>{r.name}</td>
-                    <td class="executive-money">{formatMoney(r.volumeThb)}</td>
-                    <td class="executive-money">
-                      <MetricValue metric={r.availableCash} money class="executive-cash" />
-                      <span class="executive-transit">
-                        {t('inTransit')} <MetricValue metric={r.inTransit} money class="executive-cash" />
-                      </span>
-                    </td>
-                    <td class="executive-shifts">
-                      <span>{t('shiftsOpen', { n: r.shifts.open })}</span>
-                      <span>{t('shiftsVerified', { n: r.shifts.closedVerified })}</span>
-                      <span>{t('shiftsUnverified', { n: r.shifts.closedUnverified })}</span>
-                    </td>
-                    <td>
-                      <Time at={r.asOf} />
-                    </td>
-                    <td>
-                      <Drilldown drilldown={r.drilldown} />
-                    </td>
+          <div class="card">
+            <div class="table-scroll">
+              <table class="executive-branches">
+                <thead>
+                  <tr>
+                    <th>{t('colBranch')}</th>
+                    <th>{t('colVolume')}</th>
+                    <th>{t('colCash')}</th>
+                    <th>{t('colShifts')}</th>
+                    <th>{t('colSync')}</th>
+                    <th />
                   </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  <For each={rows()}>
+                    {(r) => (
+                      <tr data-branch={r.branchId}>
+                        <td>{r.name}</td>
+                        <td class="executive-money">{formatMoney(r.volumeThb)}</td>
+                        <td class="executive-money">
+                          <MetricValue metric={r.availableCash} money class="executive-cash" />
+                          <span class="executive-transit">
+                            {t('inTransit')} <MetricValue metric={r.inTransit} money class="executive-cash" />
+                          </span>
+                        </td>
+                        <td class="executive-shifts">
+                          <span>{t('shiftsOpen', { n: r.shifts.open })}</span>
+                          <span>{t('shiftsVerified', { n: r.shifts.closedVerified })}</span>
+                          <span>{t('shiftsUnverified', { n: r.shifts.closedUnverified })}</span>
+                        </td>
+                        <td>
+                          <Time at={r.asOf} />
+                        </td>
+                        <td>
+                          <Drilldown drilldown={r.drilldown} />
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <section class="executive-alerts">
             <h3 class="executive-alerts-title">{t('alerts')}</h3>
@@ -450,7 +451,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
                         {ALERT_LABEL[a.kind] ? t(ALERT_LABEL[a.kind]!) : a.kind}
                       </span>
                       <span class="executive-alert-branch">{branchName(a.branchId)}</span>
-                      <Show when={a.since}>{(since) => <time datetime={since()}>{bangkok(since())}</time>}</Show>
+                      <Show when={a.since}>{(since) => <time datetime={since()}>{formatBangkokDateTime(since())}</time>}</Show>
                       <span class="executive-alert-detail">{a.detail}</span>
                       <Drilldown drilldown={a.drilldown} />
                     </li>

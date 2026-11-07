@@ -1,3 +1,6 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter. The typed rate date (a day) reads dd/mm/yyyy too, so the "not the UTC day"
+// checks now name the computed-at line itself.
 // #2514: ShiftValuationPanel formats the "computed at" time in Asia/Bangkok regardless of device TZ (§8, §9).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -123,22 +126,24 @@ describe('ShiftValuationPanel computedAt Bangkok timezone (#2514 §8, §9)', () 
     return norm(live.textContent ?? '');
   }
 
-  it("row 1: Computed at 2026-10-15T18:30:00Z, device TZ UTC -> Line shows 16 Oct 01:30 (Bangkok) in the screen's locale (th and en)", async () => {
+  it("row 1: Computed at 2026-10-15T18:30:00Z, device TZ UTC -> Line shows 16/10/2026 01:30 (Bangkok) in the screen's locale (th and en)", async () => {
     vi.stubEnv('TZ', 'UTC');
 
     setLang('th');
     const thText = await mountAndSubmit();
-    // In Bangkok (UTC+7), 2026-10-15T18:30:00Z is 16/10/2569 01:30:00 (not 15/10/2569 18:30:00)
-    expect(thText).toContain('คำนวณเมื่อ 16/10/2569');
-    expect(thText).toContain('01:30:00');
-    expect(thText).not.toContain('15/10/2569');
+    // In Bangkok (UTC+7), 2026-10-15T18:30:00Z is 16/10/2026 01:30 (not 15/10/2026 18:30)
+    expect(thText).toContain('คำนวณเมื่อ 16/10/2026 01:30');
+    expect(thText).not.toContain('คำนวณเมื่อ 16/10/2026 01:30:');
+    expect(thText).not.toContain('คำนวณเมื่อ 15/10/2026');
+    expect(thText).toContain('เรทวันที่ 15/10/2026 ·');
     expect(thText).not.toContain('18:30');
 
     setLang('en');
     const enText = await mountAndSubmit();
-    // In Bangkok (UTC+7), 2026-10-15T18:30:00Z is 16/10/2026, 01:30:00 (not 15/10/2026, 18:30:00)
-    expect(enText).toContain('Calculated at 16/10/2026, 01:30:00');
-    expect(enText).not.toContain('15/10/2026');
+    // In Bangkok (UTC+7), 2026-10-15T18:30:00Z is 16/10/2026 01:30 (not 15/10/2026 18:30)
+    expect(enText).toContain('Calculated at 16/10/2026 01:30');
+    expect(enText).not.toContain('Calculated at 16/10/2026 01:30:');
+    expect(enText).not.toContain('Calculated at 15/10/2026');
     expect(enText).not.toContain('18:30');
   });
 
@@ -150,8 +155,7 @@ describe('ShiftValuationPanel computedAt Bangkok timezone (#2514 §8, §9)', () 
     vi.stubEnv('TZ', 'UTC');
     const thUtc = await mountAndSubmit();
 
-    expect(thBangkok).toContain('คำนวณเมื่อ 16/10/2569');
-    expect(thBangkok).toContain('01:30:00');
+    expect(thBangkok).toContain('คำนวณเมื่อ 16/10/2026 01:30');
     expect(thBangkok).toBe(thUtc);
 
     setLang('en');
@@ -161,7 +165,7 @@ describe('ShiftValuationPanel computedAt Bangkok timezone (#2514 §8, §9)', () 
     vi.stubEnv('TZ', 'UTC');
     const enUtc = await mountAndSubmit();
 
-    expect(enBangkok).toContain('Calculated at 16/10/2026, 01:30:00');
+    expect(enBangkok).toContain('Calculated at 16/10/2026 01:30');
     expect(enBangkok).toBe(enUtc);
   });
 
@@ -170,9 +174,8 @@ describe('ShiftValuationPanel computedAt Bangkok timezone (#2514 §8, §9)', () 
     setLang('th');
 
     const rendered = await mountAndSubmit();
-    expect(rendered).toContain('คำนวณเมื่อ 16/10/2569');
-    expect(rendered).toContain('01:30:00');
-    expect(rendered).not.toContain('15/10/2569');
+    expect(rendered).toContain('คำนวณเมื่อ 16/10/2026 01:30');
+    expect(rendered).not.toContain('คำนวณเมื่อ 15/10/2026');
     expect(rendered).not.toContain('14:30');
 
     // Valuation table and totals stay intact

@@ -1,5 +1,6 @@
 export const th = {
   title: 'เข้าสู่ระบบพนักงาน',
+  subtitle: 'ใช้อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้',
   identifier: 'อีเมล เบอร์โทรศัพท์ หรือชื่อผู้ใช้',
   password: 'รหัสผ่าน',
   submit: 'เข้าสู่ระบบ',
@@ -28,6 +29,7 @@ export const th = {
 
 export const en: Record<keyof typeof th, string> = {
   title: 'Staff Login',
+  subtitle: 'Use your email, phone number or username',
   identifier: 'Email, phone number, or username',
   password: 'Password',
   submit: 'Sign In',

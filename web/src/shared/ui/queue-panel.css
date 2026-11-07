@@ -268,7 +268,7 @@
 .queue-page {
   max-width: 1000px;
   margin: 32px auto;
-  padding: 20px;
+  padding: 20px 0;
   font: 16px/1.6 var(--xc-font-sans);
   color: var(--xc-ink);
 }

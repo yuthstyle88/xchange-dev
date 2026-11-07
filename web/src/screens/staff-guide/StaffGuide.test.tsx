@@ -23,7 +23,11 @@ const THAI = /[฀-๿]/;
 
 // v2's text, verbatim (G1–G8b). The screen shows it through its table; these literals are what the table must hold.
 const TITLE = 'คู่มือพนักงาน XC Desk v2';
-const BACK = 'กลับแอดมิน';
+// Restated (OL-6 guide-back): the owner chose 3A on #564 (issuecomment-6705475792, 2026-11-07): the back link
+// depends on the caller. These tests mount with no signed-in `me`, so they see everyone else's link,
+// "กลับหน้าพนักงาน" → /staff; v2's "กลับแอดมิน" → / is now the admins' and managers' link
+// (StaffGuide.back.test.tsx).
+const BACK = 'กลับหน้าพนักงาน';
 const PRINT = 'พิมพ์คู่มือ';
 const SECTIONS: readonly { heading: string; paragraphs: readonly string[] }[] = [
   {
@@ -170,10 +174,10 @@ describe('V1-staff-guide: the screen', () => {
     expect(Array.from(host.querySelectorAll('h1')).map((h) => h.textContent)).toEqual([TITLE]);
   });
 
-  it('shows the nav line: link กลับแอดมิน to /, " · ", button พิมพ์คู่มือ, in one <nav> (G2)', () => {
+  it('shows the nav line: link กลับหน้าพนักงาน to /staff, " · ", button พิมพ์คู่มือ, in one <nav> (G2, restated for 3A)', () => {
     const host = mount();
     const link = backLink(host, 'th');
-    expect(link.getAttribute('href')).toBe('/');
+    expect(link.getAttribute('href')).toBe('/staff');
     const nav = link.closest('nav');
     expect(nav).not.toBeNull();
     expect(nav!.contains(printButton(host, 'th'))).toBe(true);

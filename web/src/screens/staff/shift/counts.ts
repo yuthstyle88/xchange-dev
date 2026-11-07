@@ -2,28 +2,11 @@
 // Lifted unchanged from ShiftCard.tsx (`isWaitingCount`, `countsToVerify`, `waitingOpenCount`, `waitingCloseCount`,
 // `formatCountTime`) so the two pages decide "waiting" the same way.
 import type { CashCountRow } from '../../../shared/api/generated/cash_counts';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 
-const COUNT_DAY_FMT = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'Asia/Bangkok',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
-
-const COUNT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Bangkok',
-  hour: '2-digit',
-  minute: '2-digit',
-  hourCycle: 'h23',
-});
-
-/** `dd/mm hh:mm` in Bangkok time; the input itself when it is not a date. */
+/** `dd/mm/yyyy HH:mm` in Bangkok time; the input itself when it is not a date. */
 export function formatCountTime(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const [, mm, dd] = COUNT_DAY_FMT.format(d).split('-');
-  const time = COUNT_TIME_FMT.format(d);
-  return `${dd}/${mm} ${time}`;
+  return formatBangkokDateTime(iso);
 }
 
 /** WAITING and not yet verified. */

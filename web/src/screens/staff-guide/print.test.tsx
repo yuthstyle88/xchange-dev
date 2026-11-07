@@ -12,7 +12,9 @@ type StaffGuideScreen = (props: { print?: () => void }) => JSX.Element;
 const screenModules = import.meta.glob<{ StaffGuide?: StaffGuideScreen }>('./StaffGuide.tsx', { eager: true });
 
 const TITLE = 'คู่มือพนักงาน XC Desk v2';
-const BACK = 'กลับแอดมิน';
+// Restated (OL-6 guide-back, owner 3A on #564 issuecomment-6705475792): with no signed-in `me` the link reads
+// "กลับหน้าพนักงาน" (→ /staff); the print rules below are unchanged.
+const BACK = 'กลับหน้าพนักงาน';
 const PRINT = 'พิมพ์คู่มือ';
 
 // G9, xchange-v2-source@4d0bdbb:src/devices-public/staff-guide.html:1 (the print rule is checked by matching below).

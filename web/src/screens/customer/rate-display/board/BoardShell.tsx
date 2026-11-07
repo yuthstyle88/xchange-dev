@@ -34,15 +34,20 @@ export function BoardShell(props: BoardShellProps): JSX.Element {
 
   function updateScale(): void {
     if (!rootRef) return;
-    const scale = Math.min(window.innerWidth / 1080, window.innerHeight / 1920);
+    const toolbar = document.querySelector<HTMLElement>('.xc-rate-display-fullscreen-btn');
+    const reserved = toolbar ? toolbar.getBoundingClientRect().bottom + 8 : 0;
+    const scale = Math.min(window.innerWidth / 1080, (window.innerHeight - reserved) / 1920);
     rootRef.style.setProperty('--scale', String(scale));
+    rootRef.style.setProperty('--xc-rb-top', `${reserved + (window.innerHeight - reserved) / 2}px`);
   }
 
   onMount(() => {
     updateScale();
     window.addEventListener('resize', updateScale);
+    document.addEventListener('fullscreenchange', updateScale);
     onCleanup(() => {
       window.removeEventListener('resize', updateScale);
+      document.removeEventListener('fullscreenchange', updateScale);
     });
   });
 

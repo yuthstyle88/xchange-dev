@@ -53,3 +53,14 @@
   border-top: 1px solid var(--line);
 }
 
+.xc-admin .xc-content .approvals-filters { display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; }
+.approvals-filter-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 12px; }
+.approvals-filter-label { font-size: 13px; font-weight: 600; color: var(--xc-muted); }
+.xc-admin .xc-content.xc-content .approvals-filter-row button.pill { min-height: 36px; padding: 6px 14px; border: 1px solid var(--xc-line); border-radius: var(--xc-radius-pill); background: var(--xc-surface); color: var(--xc-ink); font-size: 13px; }
+.xc-admin .xc-content.xc-content .approvals-filter-row button.pill[aria-pressed="true"] { background: var(--xc-brand); border-color: var(--xc-brand); color: var(--xc-on-brand); }
+.approval-reason-count { margin-top: 4px; font-size: 12px; color: var(--xc-muted); text-align: right; }
+@media (max-width: 800px) {
+  .approvals-filter-row { grid-template-columns: 1fr; gap: 6px; }
+}
+
+

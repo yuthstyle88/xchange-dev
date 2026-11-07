@@ -20,8 +20,9 @@ use xc_kernel::ids::BranchId;
 use crate::bootstrap::AppState;
 use crate::presentation::dto::v3::approval_requests::{
     ApprovalDecisionDto, ApprovalRequestItemDto, ApprovalRequestsData, ApprovalRequestsFilter,
-    ApprovalSubject, CountDifferenceSubject, CountSubjectLine, ReversalSubject,
-    ReversalSubjectLine, load_count_difference_subjects, load_reversal_subjects,
+    ApprovalSubject, CashTransferSubject, CashTransferSubjectLine, CountDifferenceSubject,
+    CountSubjectLine, ReversalSubject, ReversalSubjectLine, load_cash_transfer_subjects,
+    load_count_difference_subjects, load_reversal_subjects,
 };
 use crate::presentation::http::v3::commands::make_approval_registry;
 use crate::presentation::http::v3::view::{BranchView, ViewEndpoint};
@@ -102,6 +103,7 @@ impl BranchView for ApprovalRequestsBranchView {
             let mut requests = Vec::new();
             let mut reversal_ids = Vec::new();
             let mut count_requests = Vec::new();
+            let mut transfer_ids = Vec::new();
 
             for r in rows {
                 let id: Uuid = r.get(0);
@@ -148,6 +150,8 @@ impl BranchView for ApprovalRequestsBranchView {
                             reversal_ids.push(obj_uuid);
                         } else if type_name == "COUNT_DIFFERENCE" {
                             count_requests.push((obj_uuid, payload.clone()));
+                        } else if type_name == "CASH_TRANSFER" {
+                            transfer_ids.push(obj_uuid);
                         }
                     }
 
@@ -190,6 +194,7 @@ impl BranchView for ApprovalRequestsBranchView {
 
             let reversals = load_reversal_subjects(&pool, &branch, &reversal_ids).await?;
             let counts = load_count_difference_subjects(&pool, &branch, &count_requests).await?;
+            let transfers = load_cash_transfer_subjects(&pool, &branch, &transfer_ids).await?;
 
             for item in &mut requests {
                 if let Ok(obj_uuid) = Uuid::parse_str(&item.object_id) {
@@ -202,6 +207,10 @@ impl BranchView for ApprovalRequestsBranchView {
                             .get(&obj_uuid)
                             .cloned()
                             .map(ApprovalSubject::CountDifference),
+                        "CASH_TRANSFER" => transfers
+                            .get(&obj_uuid)
+                            .cloned()
+                            .map(ApprovalSubject::CashTransfer),
                         _ => None,
                     };
                 }
@@ -227,6 +236,8 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     ReversalSubject::export_all(&cfg)?;
     CountSubjectLine::export_all(&cfg)?;
     CountDifferenceSubject::export_all(&cfg)?;
+    CashTransferSubjectLine::export_all(&cfg)?;
+    CashTransferSubject::export_all(&cfg)?;
     ApprovalSubject::export_all(&cfg)?;
     ApprovalRequestItemDto::export_all(&cfg)?;
     ApprovalRequestsData::export_all(&cfg)?;

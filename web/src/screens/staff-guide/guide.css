@@ -27,71 +27,13 @@ a {
   footer {
     display: none;
   }
+
+  .staff-guide .card { box-shadow: none; }
 }
 
-/* v2 staff-guide.html:1 body margin */
-html body:has(.xc-shell) {
-  margin: 40px auto;
-}
-
-/* v2 staff-guide.html:1 header in plain flow */
-.xc-shell .xc-shell-header {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0;
-  padding: 0;
-  background: transparent;
-  border-bottom: 0;
-  font: inherit;
-  color: inherit;
-}
-
-/* v2 account-bar.js:12 bar is body's first child, above nav */
-.xc-shell .xc-shell-header .account-bar {
-  order: -1;
-  align-self: stretch;
-  width: auto;
-  margin: 0;
-}
-
-/* v2 staff-guide.html:1 nav line */
-.xc-shell .xc-shell-nav,
-.xc-shell .xc-shell-nav nav {
-  display: block;
-  font-size: inherit;
-}
-
-/* v2 staff-guide.html:1 title */
-.xc-shell .xc-shell-header .xc-shell-title {
-  font-size: 2em;
-  line-height: inherit;
-  margin: 0.67em 0;
-}
-
-/* v2 staff-guide.html:1 nav link colour */
-.xc-shell .xc-shell-nav a {
-  color: var(--xc-brand);
-}
-
-/* v2 staff-guide.html:1 browser default focus ring */
-.xc-shell .xc-shell-nav a:focus-visible {
-  outline: revert;
-  outline-offset: revert;
-}
-
-/* v2 staff-guide.html:1 browser default print button */
-.xc-shell .xc-shell-nav button {
-  all: revert;
-}
-
-/* v2 staff-guide.html:1 section width */
-.xc-shell .xc-shell-main {
-  max-width: none;
-  padding: 0;
-}
-
-/* v2 staff-guide.html:1 no footer */
-.xc-shell .xc-shell-footer {
-  display: none;
-}
+/* The shell fills the page: v2's body column above (pinned by print.test.tsx) stops here. */
+html body:has(.xc-shell) { max-width: none; margin: 0; padding: 0; }
+.staff-guide { display: grid; gap: 16px; max-width: 880px; margin: 0 auto; padding: 16px; }
+.staff-guide h2 { margin: 0 0 8px; }
+.staff-guide p { margin: 0; }
+.staff-guide p + p { margin-top: 8px; }

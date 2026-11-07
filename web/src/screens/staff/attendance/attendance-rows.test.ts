@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5204 (web): the Bangkok clock-in/out times of each attendance row on the /staff card, and which rows are from an
 // earlier day. The card filters nothing: the staff_attendance view (#5220) already sends only today's rows plus rows
 // still clocked in from any day.
@@ -35,26 +36,26 @@ describe('attendanceLines (#5204 behaviour table, now = 2026-10-27T05:00:00Z = 1
     });
   });
 
-  it('A2 a row clocked in and out yesterday is kept (the card filters nothing): earlierDay, "26/10 08:00" and "17:00"', () => {
+  it('A2 a row clocked in and out yesterday is kept (the card filters nothing): earlierDay, "26/10/2026 08:00" and "17:00"', () => {
     const lines = only('a2', '2026-10-26T01:00:00Z', '2026-10-26T10:00:00Z');
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       id: 'a2',
       name: 'name-a2',
-      inText: '26/10 08:00',
+      inText: '26/10/2026 08:00',
       outText: '17:00',
       stillIn: false,
       earlierDay: true,
     });
   });
 
-  it('A3 a row still open from yesterday: earlierDay, inText "26/10 08:00", outText null, stillIn', () => {
+  it('A3 a row still open from yesterday: earlierDay, inText "26/10/2026 08:00", outText null, stillIn', () => {
     const lines = only('a3', '2026-10-26T01:00:00Z', null);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       id: 'a3',
       name: 'name-a3',
-      inText: '26/10 08:00',
+      inText: '26/10/2026 08:00',
       outText: null,
       stillIn: true,
       earlierDay: true,
@@ -78,7 +79,7 @@ describe('attendanceLines (#5204 behaviour table, now = 2026-10-27T05:00:00Z = 1
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       id: 'a5',
-      inText: '26/10 23:59',
+      inText: '26/10/2026 23:59',
       outText: '00:10',
       stillIn: false,
       earlierDay: true,

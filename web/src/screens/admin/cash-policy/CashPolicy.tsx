@@ -9,10 +9,11 @@ import type {
   CashTransferPolicyData,
   TransferPolicySaveInput,
 } from '../../../shared/api/generated/cash_transfer_policy';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
-import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
+import { Card, CardBody } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
@@ -31,8 +32,10 @@ const OWN_FIELD_TEXT: Record<string, Parameters<typeof t>[0]> = {
   limits: 'error.limits',
 };
 
-function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+function shortVersion(version: string): string {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(version)
+    ? version.slice(0, 8)
+    : version;
 }
 
 function isFieldRefusal(err: unknown): boolean {
@@ -210,7 +213,9 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
         >
           <Show when={policy()} fallback={<strong>{t('noLimit')}</strong>}>
             {(p) => (
-              <strong>{t('current', { version: p().version, setBy: p().setByName || '—', when: when(p().createdAt) })}</strong>
+              <strong title={p().version}>
+                {t('current', { version: shortVersion(p().version), setBy: p().setByName || '—', when: formatBangkokDateTime(p().createdAt) })}
+              </strong>
             )}
           </Show>
         </Show>
@@ -230,7 +235,6 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Card>
-        <CardHead eyebrow={t('eyebrow')} title={t('title')} />
         <CardBody>
           <Show when={policy()?.valid === false}>
             <div role="status">
@@ -257,7 +261,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                 <thead>
                   <tr>
                     <th>{t('headerCurrency')}</th>
-                    <th class="num">{t('headerLimit')}</th>
+                    <th>{t('headerLimit')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -269,7 +273,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
                             <strong>{cur}</strong>
                           </label>
                         </td>
-                        <td class="num">
+                        <td>
                           <input
                             id={`cash-policy-${cur}`}
                             type="text"

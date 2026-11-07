@@ -114,28 +114,47 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
   const cashTransferDetail = () => {
     if (props.request.type !== 'CASH_TRANSFER') return null;
+    const subj =
+      props.request.subject?.kind === 'cashTransfer'
+        ? props.request.subject
+        : null;
     const payload = payloadObject();
-    if (!payload) return null;
+    if (!payload && !subj) return null;
 
-    const rawTransferId = payload.transfer_id ?? payload.transferId;
+    const rawTransferId = payload?.transfer_id ?? payload?.transferId ?? subj?.transferId;
     const transferId =
       typeof rawTransferId === 'string' && rawTransferId.trim().length > 0
         ? rawTransferId.trim()
         : null;
-    const rawBranch = payload.from_branch ?? payload.fromBranch;
-    const fromBranch =
+    const rawBranch = payload?.from_branch ?? payload?.fromBranch ?? subj?.fromBranchId;
+    const fromBranchFallback =
       typeof rawBranch === 'string' && rawBranch.trim().length > 0
         ? rawBranch.trim()
         : null;
+    const subjBranch =
+      typeof subj?.fromBranchName === 'string' && subj.fromBranchName.trim().length > 0
+        ? subj.fromBranchName.trim()
+        : null;
+    const fromBranch = subjBranch ?? fromBranchFallback;
     const withinLimit =
-      typeof payload.within_limit === 'boolean'
+      typeof payload?.within_limit === 'boolean'
         ? payload.within_limit
-        : typeof payload.withinLimit === 'boolean'
+        : typeof payload?.withinLimit === 'boolean'
           ? payload.withinLimit
           : null;
 
-    if (!transferId && !fromBranch && withinLimit === null) return null;
-    return { transferId, fromBranch, withinLimit };
+    if (!transferId && !fromBranch && withinLimit === null && !subj) return null;
+
+    const amounts =
+      subj && Array.isArray(subj.lines)
+        ? subj.lines.map((l) => `${l.currency} ${formatMoney(l.amount)}`).join(' · ')
+        : null;
+    const note =
+      subj && typeof subj.note === 'string' && subj.note.trim().length > 0
+        ? subj.note.trim()
+        : null;
+
+    return { transferId, fromBranch, withinLimit, amounts, note };
   };
 
   const reversalDetail = () => {
@@ -304,15 +323,27 @@ function RequestCard(props: RequestCardProps): JSX.Element {
 
         <Show when={cashTransferDetail()}>
           {(d) => (
-            <div class="approval-proposer">
-              {d().transferId && <span title={d().transferId!}>#{d().transferId!.slice(0, 8)}</span>}
-              {d().transferId && (d().fromBranch || d().withinLimit !== null) && ' · '}
-              {d().fromBranch && <span>{d().fromBranch}</span>}
-              {d().fromBranch && d().withinLimit !== null && ' · '}
-              {d().withinLimit !== null && (
-                <span>{d().withinLimit ? t('withinLimit') : t('aboveLimit')}</span>
-              )}
-            </div>
+            <>
+              <div class="approval-proposer">
+                {d().transferId && <span title={d().transferId!}>#{d().transferId!.slice(0, 8)}</span>}
+                {d().transferId && (d().fromBranch || d().withinLimit !== null) && ' · '}
+                {d().fromBranch && <span>{d().fromBranch}</span>}
+                {d().fromBranch && d().withinLimit !== null && ' · '}
+                {d().withinLimit !== null && (
+                  <span>{d().withinLimit ? t('withinLimit') : t('aboveLimit')}</span>
+                )}
+              </div>
+              <Show when={d().amounts !== null}>
+                <div class="approval-proposer" data-testid="transfer-amounts">
+                  {d().amounts}
+                </div>
+              </Show>
+              <Show when={d().note !== null}>
+                <div class="approval-proposer" data-testid="transfer-note">
+                  {d().note}
+                </div>
+              </Show>
+            </>
           )}
         </Show>
 
@@ -445,7 +476,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   disabled={busy()}
                 />
               </label>
-              <div>{reason().length} / 500</div>
+              <div class="approval-reason-count">{reason().length} / 500</div>
 
               <Show when={error()}>
                 <div class="error" role="alert">{error()}</div>
@@ -544,44 +575,52 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="admin-approvals-screen">
-      <div class="approval-out-of-bound-list" data-status-switch>
-        <For each={STATUS_FILTERS}>
-          {(st) => (
+      <div class="approvals-filters card">
+        <div class="approvals-filter-row">
+          <span class="approvals-filter-label">{t('filterStatus')}</span>
+          <div class="approval-out-of-bound-list" data-status-switch>
+            <For each={STATUS_FILTERS}>
+              {(st) => (
+                <button
+                  type="button"
+                  class={`pill${statusFilter() === st ? ' active' : ' neutral'}`}
+                  aria-pressed={statusFilter() === st}
+                  data-status-filter={st}
+                  onClick={() => setStatusFilter(st)}
+                >
+                  {statusLabel(st)}
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
+        <div class="approvals-filter-row">
+          <span class="approvals-filter-label">{t('filterType')}</span>
+          <div class="approval-out-of-bound-list" data-type-switch>
             <button
               type="button"
-              class={`pill${statusFilter() === st ? ' active' : ' neutral'}`}
-              aria-pressed={statusFilter() === st}
-              data-status-filter={st}
-              onClick={() => setStatusFilter(st)}
+              class={`pill${typeFilter() === '' ? ' active' : ' neutral'}`}
+              aria-pressed={typeFilter() === ''}
+              data-type-filter=""
+              onClick={() => setTypeFilter('')}
             >
-              {statusLabel(st)}
+              {t('all')}
             </button>
-          )}
-        </For>
-      </div>
-      <div class="approval-out-of-bound-list" data-type-switch>
-        <button
-          type="button"
-          class={`pill${typeFilter() === '' ? ' active' : ' neutral'}`}
-          aria-pressed={typeFilter() === ''}
-          data-type-filter=""
-          onClick={() => setTypeFilter('')}
-        >
-          {t('all')}
-        </button>
-        <For each={APPROVAL_TYPES}>
-          {(tp) => (
-            <button
-              type="button"
-              class={`pill${typeFilter() === tp ? ' active' : ' neutral'}`}
-              aria-pressed={typeFilter() === tp}
-              data-type-filter={tp}
-              onClick={() => setTypeFilter(tp)}
-            >
-              {TYPE_LABEL[tp] ? t(TYPE_LABEL[tp]) : tp}
-            </button>
-          )}
-        </For>
+            <For each={APPROVAL_TYPES}>
+              {(tp) => (
+                <button
+                  type="button"
+                  class={`pill${typeFilter() === tp ? ' active' : ' neutral'}`}
+                  aria-pressed={typeFilter() === tp}
+                  data-type-filter={tp}
+                  onClick={() => setTypeFilter(tp)}
+                >
+                  {TYPE_LABEL[tp] ? t(TYPE_LABEL[tp]) : tp}
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
       </div>
       <Show when={error()}>
         <div role="alert" class="error">

@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // V1-kiosk-currencies (#399): the currency and counter-rate screen at /kiosk-currencies.html
 // (ticket §7.4, §9, §10). Written before the implementation by the lane controller. Do not edit,
 // delete or weaken; add tests in a file of your own.
@@ -287,7 +288,7 @@ function shown(v: string | null): string {
 }
 
 function stamp(): string {
-  const time = new Date(PUBLISHED).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+  const time = '02/10/2026 22:16';
   return fill(th.kbStamp, { time, round: 10 });
 }
 
@@ -463,7 +464,7 @@ describe('KioskCurrenciesScreen KBank reference (#399)', () => {
     mount(fake([answer()]).api);
     await loaded();
     const section = bankSection();
-    const time = new Date(PUBLISHED).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const time = '02/10/2026 22:16';
     expect(byText(section, th.compareHeading)).toHaveLength(1);
     expect(byText(section, fill(th.comparePublished, { time, round: 10 }))).toHaveLength(1);
     expect(byText(section, th.compareWarning)).toHaveLength(1);

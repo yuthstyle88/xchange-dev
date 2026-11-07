@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // Ticket #603 (RE-6): the kiosk-currencies screen shows the branch's current rate publication and
 // its switch saves no rate.
 // Written before the implementation by the ticket author (claude/e5ab6c). Do not edit, delete or
@@ -577,7 +578,7 @@ describe("#603 RE-6: the KBank comparison is the view's per-1 strings, unchanged
   it("each card's KBank notes are the view's strings", async () => {
     mount(fake([answer()]).api);
     await loaded();
-    const time = new Date(PUBLISHED).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
+    const time = '02/10/2026 22:16';
     const stamp = fill(th.kbStamp, { time, round: 10 });
     expect(bodyRows(cardOf(JPY).querySelector('table')!)).toEqual([['JPY', '0.20715', '0.21844', stamp]]);
   });

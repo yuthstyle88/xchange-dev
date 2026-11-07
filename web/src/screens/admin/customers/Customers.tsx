@@ -13,6 +13,7 @@ import type { AdminCustomerRow, AdminCustomersFilter } from '../../../shared/api
 import type { AdminCustomerHistoryFilter } from '../../../shared/api/generated/admin_customer_history';
 import type { TransactionRow } from '../../../shared/api/generated/transaction_row';
 import { screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import type { AdminMenuProps } from '../menus';
@@ -22,22 +23,6 @@ import { TransactionDetail } from '../parts/TransactionDetail';
 import { Card } from '../../../shared/ui/Card';
 import { en, th } from './i18n';
 import './customers.css';
-
-function formatBangkokDateTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const date = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
-    const time = d.toLocaleTimeString('en-GB', {
-      timeZone: 'Asia/Bangkok',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    return `${date} ${time}`;
-  } catch {
-    return iso;
-  }
-}
 
 interface CustomerHistoryProps {
   api: ApiClient;

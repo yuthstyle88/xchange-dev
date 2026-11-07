@@ -64,81 +64,84 @@ export function CounterBar(props: CounterBarProps): JSX.Element {
   }
 
   return (
-    <div class="desk-actions">
-      <button
-        type="button"
-        name="issueWalkIn"
-        disabled={busy()}
-        onClick={() => runTicket(() => props.commands.issueWalkIn())}
-      >
-        {t('issueWalkIn')}
-      </button>
-      <button
-        type="button"
-        name="callNext"
-        disabled={!isActive() || busy()}
-        onClick={() => runTicket(() => props.commands.callNext())}
-      >
-        {t('callNext')}
-      </button>
-      <Show when={isActive()}>
+    <div class="desk-queue-counter card">
+      <div class="desk-actions">
         <button
           type="button"
-          name="pause"
+          name="issueWalkIn"
           disabled={busy()}
-          onClick={() =>
-            void run(async () => {
-              await props.commands.counter('pause');
-              await props.store.refresh();
-            })
-          }
+          onClick={() => runTicket(() => props.commands.issueWalkIn())}
         >
-          {t('pause')}
-        </button>
-      </Show>
-      <Show when={isPaused()}>
-        <button
-          type="button"
-          name="resume"
-          disabled={busy()}
-          onClick={() =>
-            void run(async () => {
-              await props.commands.counter('resume');
-              await props.store.refresh();
-            })
-          }
-        >
-          {t('resume')}
-        </button>
-      </Show>
-      <Show when={isManager()}>
-        <button
-          type="button"
-          name="openQueue"
-          disabled={busy()}
-          onClick={() =>
-            void run(async () => {
-              await props.commands.queue('open');
-              await props.store.refresh();
-            })
-          }
-        >
-          {t('openQueue')}
+          {t('issueWalkIn')}
         </button>
         <button
           type="button"
-          name="closeQueue"
-          disabled={busy()}
-          onClick={() =>
-            void run(async () => {
-              await props.commands.queue('close');
-              await props.store.refresh();
-            })
-          }
+          name="callNext"
+          class="xc-btn--primary"
+          disabled={!isActive() || busy()}
+          onClick={() => runTicket(() => props.commands.callNext())}
         >
-          {t('closeQueue')}
+          {t('callNext')}
         </button>
-      </Show>
+        <Show when={isActive()}>
+          <button
+            type="button"
+            name="pause"
+            disabled={busy()}
+            onClick={() =>
+              void run(async () => {
+                await props.commands.counter('pause');
+                await props.store.refresh();
+              })
+            }
+          >
+            {t('pause')}
+          </button>
+        </Show>
+        <Show when={isPaused()}>
+          <button
+            type="button"
+            name="resume"
+            disabled={busy()}
+            onClick={() =>
+              void run(async () => {
+                await props.commands.counter('resume');
+                await props.store.refresh();
+              })
+            }
+          >
+            {t('resume')}
+          </button>
+        </Show>
+        <Show when={isManager()}>
+          <button
+            type="button"
+            name="openQueue"
+            disabled={busy()}
+            onClick={() =>
+              void run(async () => {
+                await props.commands.queue('open');
+                await props.store.refresh();
+              })
+            }
+          >
+            {t('openQueue')}
+          </button>
+          <button
+            type="button"
+            name="closeQueue"
+            disabled={busy()}
+            onClick={() =>
+              void run(async () => {
+                await props.commands.queue('close');
+                await props.store.refresh();
+              })
+            }
+          >
+            {t('closeQueue')}
+          </button>
+        </Show>
+      </div>
       <Show when={myCounter() === null}>
         <p class="desk-notice">{t('noCounter')}</p>
       </Show>

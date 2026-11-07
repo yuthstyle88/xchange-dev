@@ -89,7 +89,9 @@ const SERVED: Record<string, Served> = {
     group: 'money',
     order: 6,
     label: 'วิธีชำระเงิน',
-    icon: '▣',
+    // Restated by claude/88867fb6 for OL-6 B admin-sidebar-icons (sub-controller claude/1cc51615): v2 served ▣ for
+    // both cash and payments; one icon per menu now, so payments moves to ▭ (menus.icons.test.ts SI-2).
+    icon: '▭',
     dated: false,
     eyebrow: 'PAYMENT SETTINGS',
     title: 'ตั้งค่าวิธีชำระเงิน',

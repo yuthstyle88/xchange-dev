@@ -1,0 +1,13 @@
+.desk-shift-gate .desk-actions button:not(:disabled) {
+  background: var(--xc-brand);
+  border-color: var(--xc-brand);
+  color: var(--xc-on-brand);
+}
+
+.desk-shift-admin-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--xc-brand);
+  font-weight: 600;
+}

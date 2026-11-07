@@ -10,6 +10,7 @@ body:has(.xc-shell) {
   background: var(--xc-bg);
   color: var(--xc-ink);
   font: 15px/1.6 var(--xc-font-sans);
+  padding-bottom: var(--xc-queue-card-space, 0px);
 }
 
 .xc-shell-banner {
@@ -32,11 +33,28 @@ body:has(.xc-shell) {
 
 /* Brand line */
 .xc-shell-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-weight: 850;
   color: var(--xc-ink);
   font-size: 23px;
   letter-spacing: -1px;
   text-decoration: none;
+}
+
+.xc-shell-brand::before {
+  content: 'XC';
+  width: 32px;
+  height: 32px;
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  display: inline-grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex: none;
 }
 
 .xc-shell-brand span {
@@ -48,6 +66,10 @@ body:has(.xc-shell) {
   font-size: 10px;
   letter-spacing: 2px;
   color: var(--xc-muted);
+}
+
+.xc-shell-header:has(.xc-shell-nav .xc-shell-brand) > .xc-shell-brand {
+  display: none;
 }
 
 /* Title & brand mark inline in the header */
@@ -64,18 +86,12 @@ body:has(.xc-shell) {
   box-sizing: border-box;
 }
 
-.xc-shell-header .xc-shell-title::before {
-  content: 'XC';
-  width: 32px;
-  height: 32px;
-  border-radius: var(--xc-radius-md);
-  background: var(--xc-brand);
-  color: var(--xc-on-brand);
-  display: inline-grid;
-  place-items: center;
-  font-size: 14px;
-  font-weight: 700;
-  flex: none;
+.xc-shell-main > .xc-shell-title,
+.xc-content > .xc-shell-title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .xc-devices .xc-shell-title,
@@ -118,6 +134,7 @@ body:has(.xc-shell) {
   text-decoration: none;
   font-weight: 600;
   font-size: 14px;
+  white-space: nowrap;
 }
 
 .xc-shell-nav a[aria-current="page"],
@@ -129,6 +146,10 @@ body:has(.xc-shell) {
 .xc-shell-nav a:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+.xc-shell-nav-icon {
+  display: none;
 }
 
 .xc-shell-nav button,
@@ -189,9 +210,9 @@ body:has(.xc-shell) {
 
 /* Main container */
 .xc-shell-main {
-  max-width: 1440px;
+  max-width: 1040px;
   margin: auto;
-  padding: 24px 16px 48px;
+  padding: 24px 24px 48px;
   box-sizing: border-box;
 }
 
@@ -216,11 +237,9 @@ body:has(.xc-shell) {
 
 /* Account bar */
 .account-bar {
-  background: var(--xc-gray-900) !important;
-  border-bottom: 3px solid var(--xc-brand);
+  order: 5;
   font: 14px/1.5 var(--xc-font-sans);
-  padding: 10px 24px;
-  color: var(--xc-on-brand);
+  color: var(--xc-ink);
   position: relative;
   z-index: 10;
   display: flex;
@@ -230,7 +249,7 @@ body:has(.xc-shell) {
 }
 
 .account-bar a {
-  color: var(--xc-on-brand);
+  color: var(--xc-ink);
   white-space: nowrap;
   text-decoration: none !important;
 }
@@ -260,6 +279,26 @@ body:has(.xc-shell) {
   box-shadow: 0 0 0 3px var(--xc-focus-ring);
 }
 
+/* Tablet header layout (761px - 1279px, #6546 item 1) */
+@media (min-width: 761px) and (max-width: 1279px) {
+  .xc-shell-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .xc-shell-panel:not(:empty) {
+    flex: 1 0 calc(100% - 240px);
+  }
+
+  .xc-shell-header:has(.xc-shell-nav .xc-shell-brand) > .xc-shell-panel {
+    flex-basis: 100%;
+  }
+
+  .xc-shell-header > .xc-lang-switch {
+    margin-left: auto;
+  }
+}
+
 /* Mobile menu & layout at 760px or less (design §2.3 & ticket §1 item 5) */
 @media (max-width: 760px) {
   .account-bar button {
@@ -285,10 +324,24 @@ body:has(.xc-shell) {
     gap: 8px;
   }
 
+  .xc-shell-brand {
+    font-size: 16px;
+    white-space: nowrap;
+  }
+
+  .xc-shell-header:has(.xc-shell-nav .xc-shell-brand) > .xc-shell-brand {
+    display: inline-flex;
+  }
+
+  .xc-shell-nav .xc-shell-brand {
+    display: none;
+  }
+
   .xc-shell-title {
     order: 1;
     flex: 1;
     min-width: 0;
+    max-width: 100%;
     font-size: 16px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -323,6 +376,31 @@ body:has(.xc-shell) {
     display: flex;
   }
 
+  .account-bar {
+    order: 5;
+    visibility: hidden;
+    position: absolute;
+    left: 0;
+    pointer-events: none;
+    width: 100%;
+  }
+
+  .xc-shell-header[data-menu-open="true"] .account-bar {
+    visibility: visible;
+    position: relative;
+    pointer-events: auto;
+  }
+
+  .account-bar .notice-bell-toasts {
+    visibility: visible;
+    position: fixed;
+  }
+
+  .account-bar > span:first-child,
+  .account-bar .account-bar-signout {
+    display: none;
+  }
+
   .xc-shell-panel-account {
     display: flex;
     justify-content: space-between;
@@ -339,16 +417,9 @@ body:has(.xc-shell) {
     font-weight: 600;
   }
 
-  .xc-shell-panel-branch {
-    display: inline-flex;
-    padding: 3px 10px;
-    border-radius: var(--xc-radius-pill);
-    background: var(--xc-brand-soft);
-    color: var(--xc-brand);
-    font-size: 12px;
-    font-weight: 600;
-  }
-
+  .xc-shell .xc-shell-panel .xc-shell-nav,
+  .xc-shell-panel .xc-shell-nav,
+  .xc-shell-panel .xc-shell-nav nav,
   .xc-shell-nav,
   .xc-shell-nav nav {
     display: grid;
@@ -358,15 +429,42 @@ body:has(.xc-shell) {
     box-sizing: border-box;
   }
 
+  .xc-shell .xc-shell-panel .xc-shell-nav {
+    justify-content: stretch;
+  }
+
+  .xc-shell-panel .xc-shell-nav a {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
   .xc-shell-nav a {
     display: flex;
     align-items: center;
+    gap: 12px;
     min-height: 48px;
     padding: 0 12px;
     border-radius: var(--xc-radius-lg);
     color: var(--xc-ink);
     font-size: 15px;
     font-weight: 600;
+  }
+
+  .xc-shell-nav-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--xc-radius-md);
+    background: var(--xc-gray-75);
+    color: var(--xc-muted);
+    display: grid;
+    place-items: center;
+    flex: none;
+  }
+
+  .xc-shell-nav a[aria-current="page"] .xc-shell-nav-icon,
+  .xc-shell-nav a.on .xc-shell-nav-icon {
+    background: var(--xc-brand);
+    color: var(--xc-on-brand);
   }
 
   .xc-shell-panel-footer {
@@ -380,6 +478,25 @@ body:has(.xc-shell) {
   }
 
   .xc-shell-main {
-    padding: 16px 12px 40px;
+    padding: 16px 16px 40px;
+  }
+}
+
+@media (max-width: 360px) {
+  .xc-shell-brand,
+  .xc-shell-header:has(.xc-shell-nav .xc-shell-brand) > .xc-shell-brand {
+    display: block;
+  }
+
+  .xc-shell-brand {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .xc-shell-brand::before {
+    margin-right: 8px;
+    vertical-align: middle;
   }
 }

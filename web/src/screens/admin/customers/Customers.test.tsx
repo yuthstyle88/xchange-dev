@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-customers (#466): the admin menu ลูกค้าและสมาชิก (`customers`) — ticket §7, §8, §9, §10 (C1–C4);
 // design §12.1, §12.3, §12.6, §12.10, §12.14. Written before the implementation by the lane
 // controller (claude/7ca80c). Do not edit, delete or weaken; add tests in a file of your own.
@@ -584,7 +586,7 @@ describe('V2-customers: the search, the summary and the table (C1; customers.js:
     expect(c1[2]!.trim()).toBe('THA');
     expect(c1[3]!.trim()).toBe('12');
     expect(c1[4]!.trim(), 'the server’s volume, formatted, never computed').toBe(formatMoney(BIG));
-    expect(c1[5], 'the last activity in Bangkok (03:04Z = 10:04)').toContain('10:04');
+    expect(c1[5]!.trim(), 'the last activity in Bangkok (03:04Z = 10:04), F55 dd/mm/yyyy HH:mm').toBe('08/10/2026 10:04');
     expect(c1[6]!.trim()).toBe(own(T.showHistory));
 
     const c2 = cells(r2!);
@@ -713,7 +715,7 @@ describe('V2-customers: the history dialog (C2; customers.js:15-17, :22; design 
     expect(values[0]).toBe(row.id);
     expect(values[1]).toBe('Malee Rakdee');
     expect(values[2]).toBe('JAPANESE');
-    expect(values[3], 'when the customer was added, in Bangkok (02:03Z = 09:03)').toContain('09:03');
+    expect(values[3], 'when the customer was added, in Bangkok (02:03Z = 09:03), F55 dd/mm/yyyy HH:mm').toBe('01/10/2026 09:03');
     expect(values[4]).toBe('7 รายการ');
     expect(values[5], 'the server’s volume, never computed').toBe(`${formatMoney(BIG)} THB`);
     expect(d).toContain(own(T.volumeNote));
@@ -754,7 +756,7 @@ describe('V2-customers: the history dialog (C2; customers.js:15-17, :22; design 
     const ids = rows.map((tr) => tr.querySelectorAll('td')[1]!.querySelector('button')?.textContent);
     expect(ids, 'the server’s order, ids as buttons').toEqual(answered.map((t) => t.id));
     const c1 = cells(rows[0]!);
-    expect(c1[0], 'the time in Bangkok (09:00Z = 16:00)').toContain('16:00');
+    expect(c1[0]!.trim(), 'the time in Bangkok (09:00Z = 16:00), F55 dd/mm/yyyy HH:mm').toBe('08/10/2026 16:00');
     expect(c1[2]!.trim()).toBe('ร้านรับซื้อ');
     expect(c1[3]!.trim()).toBe(`${formatMoney(BIG)} EUR`);
     expect(c1[4]!.trim(), 'the server’s principal').toBe('1.10');

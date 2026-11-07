@@ -361,21 +361,6 @@ export function Reports(props: AdminMenuProps): JSX.Element {
         <div role="alert" class="error">{error()}</div>
       </Show>
 
-      <div class="reports-toolbar">
-        <Show when={canExport()}>
-          <button
-            type="button"
-            class="secondary"
-            id="export"
-            hidden={activeTab() === 2}
-            disabled={busyExport()}
-            onClick={() => void exporting(handleExport)}
-          >
-            {t('exportCsv')}
-          </button>
-        </Show>
-      </div>
-
       <div role="tablist" class="admin-tabs" aria-label={t('tablistAria')}>
         <For each={tabsDefs}>
           {(tabDef, i) => (
@@ -430,7 +415,22 @@ export function Reports(props: AdminMenuProps): JSX.Element {
           <CardHead
             eyebrow={t('settlementEyebrow')}
             title={t('settlementHeading')}
-            aside={<span class="unit">THB</span>}
+            aside={
+              <div class="reports-card-actions">
+                <span class="unit">THB</span>
+                <Show when={canExport()}>
+                  <button
+                    type="button"
+                    class="secondary"
+                    id="export"
+                    disabled={busyExport()}
+                    onClick={() => void exporting(handleExport)}
+                  >
+                    {t('exportCsv')}
+                  </button>
+                </Show>
+              </div>
+            }
           />
           <CardBody flush>
             <div class="table-scroll">
@@ -475,6 +475,19 @@ export function Reports(props: AdminMenuProps): JSX.Element {
           <CardHead
             eyebrow={t('currenciesEyebrow')}
             title={t('currenciesHeading')}
+            aside={
+              <Show when={canExport() && activeTab() === 1}>
+                <button
+                  type="button"
+                  class="secondary"
+                  id="export-currencies"
+                  disabled={busyExport()}
+                  onClick={() => void exporting(handleExport)}
+                >
+                  {t('exportCsv')}
+                </button>
+              </Show>
+            }
           />
           <CardBody flush>
             <div class="table-scroll">

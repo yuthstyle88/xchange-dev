@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
+// Member dates (effectiveUntil, nextExpiry.at) are days: formatBangkokDate -> dd/mm/yyyy (CE, Bangkok day), in every language.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { setAudience, setLang } from '../../../shared/i18n';
@@ -67,7 +69,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     await new Promise((r) => setTimeout(r, 20));
   }
 
-  it("Row 1: th, nextExpiry.at='2026-12-31T23:59:59Z' -> Expiry line contains '1 มกราคม 2570'; no 'T', no 'Z', no '2026-12-31'", async () => {
+  it("Row 1: th, nextExpiry.at='2026-12-31T23:59:59Z' -> Expiry line contains '01/01/2027'; no 'T', no 'Z', no '2026-12-31'", async () => {
     setLang('th');
     viewResponse = {
       ...BASE_MEMBER,
@@ -81,13 +83,13 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     expect(expiryEl).not.toBeNull();
     const text = expiryEl!.textContent ?? '';
     expect(text).toContain('50');
-    expect(text).toContain('1 มกราคม 2570');
+    expect(text).toContain('01/01/2027');
     expect(text).not.toContain('T');
     expect(text).not.toContain('Z');
     expect(text).not.toContain('2026-12-31');
   });
 
-  it("Row 2: en, effectiveUntil='2026-11-15T00:00:00Z' -> 'Effective until 15 November 2026'", async () => {
+  it("Row 2: en, effectiveUntil='2026-11-15T00:00:00Z' -> 'Effective until 15/11/2026'", async () => {
     setLang('en');
     viewResponse = {
       ...BASE_MEMBER,
@@ -99,10 +101,10 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
 
     const untilEl = host.querySelector('.xc-member-effective-until');
     expect(untilEl).not.toBeNull();
-    expect(untilEl!.textContent?.trim()).toBe('Effective until 15 November 2026');
+    expect(untilEl!.textContent?.trim()).toBe('Effective until 15/11/2026');
   });
 
-  it("Row 3: en, effectiveUntil='2026-12-31T18:30:00Z' -> '1 January 2027' (the Bangkok day)", async () => {
+  it("Row 3: en, effectiveUntil='2026-12-31T18:30:00Z' -> '01/01/2027' (the Bangkok day)", async () => {
     setLang('en');
     viewResponse = {
       ...BASE_MEMBER,
@@ -115,11 +117,11 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
 
     const untilEl = host.querySelector('.xc-member-effective-until');
     expect(untilEl).not.toBeNull();
-    expect(untilEl!.textContent?.trim()).toBe('Effective until 1 January 2027');
+    expect(untilEl!.textContent?.trim()).toBe('Effective until 01/01/2027');
 
     const expiryEl = host.querySelector('.xc-member-expiry');
     expect(expiryEl).not.toBeNull();
-    expect(expiryEl!.textContent?.trim()).toBe('50 points expiring on 1 January 2027');
+    expect(expiryEl!.textContent?.trim()).toBe('50 points expiring on 01/01/2027');
   });
 
   it("Edge case 1: effectiveUntil: null / nextExpiry: null render no line while present date is formatted", async () => {
@@ -134,7 +136,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     await settle();
 
     expect(host.querySelector('.xc-member-effective-until')).toBeNull();
-    expect(host.querySelector('.xc-member-expiry')?.textContent).toContain('1 มกราคม 2570');
+    expect(host.querySelector('.xc-member-expiry')?.textContent).toContain('01/01/2027');
 
     dispose();
     host.innerHTML = '';
@@ -148,10 +150,10 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     await settle();
 
     expect(host.querySelector('.xc-member-expiry')).toBeNull();
-    expect(host.querySelector('.xc-member-effective-until')?.textContent).toContain('15 พฤศจิกายน 2569');
+    expect(host.querySelector('.xc-member-effective-until')?.textContent).toContain('15/11/2026');
   });
 
-  it("Edge case 2: zh renders '2026年12月31日' for '2026-12-31T16:59:59Z'", async () => {
+  it("Edge case 2: zh renders '31/12/2026' for '2026-12-31T16:59:59Z'", async () => {
     setLang('zh');
     viewResponse = {
       ...BASE_MEMBER,
@@ -164,11 +166,11 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
 
     const untilEl = host.querySelector('.xc-member-effective-until');
     expect(untilEl).not.toBeNull();
-    expect(untilEl!.textContent?.trim()).toBe('有效期至 2026年12月31日');
+    expect(untilEl!.textContent?.trim()).toBe('有效期至 31/12/2026');
 
     const expiryEl = host.querySelector('.xc-member-expiry');
     expect(expiryEl).not.toBeNull();
-    expect(expiryEl!.textContent?.trim()).toBe('50 积分将于 2026年12月31日 过期');
+    expect(expiryEl!.textContent?.trim()).toBe('50 积分将于 31/12/2026 过期');
   });
 
   it('Edge case 3: unparsable string shows the raw value, never "Invalid Date", while valid date is formatted', async () => {
@@ -186,7 +188,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     expect(untilEl?.textContent?.trim()).toBe('Effective until not-a-valid-date');
     expect(host.textContent).not.toContain('Invalid Date');
     expect(host.querySelector('.xc-member-expiry')?.textContent?.trim()).toBe(
-      '50 points expiring on 1 January 2027',
+      '50 points expiring on 01/01/2027',
     );
 
     dispose();
@@ -201,7 +203,7 @@ describe('108-Plaza/xchange#2369: Customer MemberScreen Bangkok localized dates'
     await settle();
 
     expect(host.querySelector('.xc-member-effective-until')?.textContent?.trim()).toBe(
-      'Effective until 15 November 2026',
+      'Effective until 15/11/2026',
     );
     expect(host.querySelector('.xc-member-expiry')?.textContent?.trim()).toBe(
       '50 points expiring on unparsable-expiry',

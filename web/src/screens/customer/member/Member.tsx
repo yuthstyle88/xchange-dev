@@ -1,7 +1,8 @@
 import { Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyMembershipData } from '../../../shared/api/generated/my_membership';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
@@ -9,17 +10,6 @@ import './member.css';
 
 const api = new ApiClient();
 const t = screenT('customer.member', table);
-
-function formatDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(locale(), {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
 
 export function MemberScreen(): JSX.Element {
   const [loading, setLoading] = createSignal(true);
@@ -60,6 +50,7 @@ export function MemberScreen(): JSX.Element {
     <div class="xc-member-screen">
       <header class="xc-member-header">
         <h1 class="xc-member-title">{t('title')}</h1>
+        <p class="xc-member-subtitle">{t('subtitle')}</p>
       </header>
 
       <Show when={loading()}>
@@ -102,7 +93,7 @@ export function MemberScreen(): JSX.Element {
                 <Show when={member().effectiveUntil}>
                   {(until) => (
                     <p class="xc-member-effective-until">
-                      {t('effectiveUntil', { date: formatDate(until()) })}
+                      {t('effectiveUntil', { date: formatBangkokDate(until()) })}
                     </p>
                   )}
                 </Show>
@@ -138,7 +129,7 @@ export function MemberScreen(): JSX.Element {
                 <div class="xc-member-expiry">
                   {t('nextExpiry', {
                     points: String(expiry().points),
-                    date: formatDate(expiry().at),
+                    date: formatBangkokDate(expiry().at),
                   })}
                 </div>
               )}

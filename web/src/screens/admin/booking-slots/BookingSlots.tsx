@@ -1,5 +1,5 @@
 // BK-9 (#1410): Admin Booking Slots screen (design `docs/design/blueprint/booking-slots.md` §4.4, §7, §8, §9 BK-9).
-import { createEffect, createSignal, For, Show, type JSX } from 'solid-js';
+import { createEffect, createMemo, createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import { keyedWrite } from '../../../shared/api/keyed-write';
 import { locale, screenT } from '../../../shared/i18n';
@@ -18,7 +18,9 @@ import type {
   SlotCapacitySetInput,
   SlotRuleSetInput,
 } from '../../../shared/api/generated/bookings';
+import '../../../shared/ui/card.css';
 import * as table from './i18n';
+import { groupSlotsByDay } from './slot-days';
 import './booking-slots.css';
 
 function formatSlotTime(iso: string): string {
@@ -67,6 +69,22 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
   // Slots
   const [slots, setSlots] = createSignal<AdminSlotDto[]>([]);
   const [slotCapacities, setSlotCapacities] = createSignal<Record<string, string>>({});
+  const days = createMemo(() => groupSlotsByDay(slots()));
+  const [openDays, setOpenDays] = createSignal<ReadonlySet<string> | null>(null);
+
+  function isDayOpen(date: string): boolean {
+    const cur = openDays();
+    return cur ? cur.has(date) : days()[0]?.date === date;
+  }
+
+  function toggleDay(date: string, open: boolean) {
+    if (isDayOpen(date) === open) return;
+    const first = days()[0]?.date;
+    const next = new Set(openDays() ?? (first ? [first] : []));
+    if (open) next.add(date);
+    else next.delete(date);
+    setOpenDays(next);
+  }
 
   // Policy
   const [cutoff, setCutoff] = createSignal('');
@@ -81,6 +99,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
     setHorizonDays('');
     setClosures([]);
     setSlots([]);
+    setOpenDays(null);
     setSlotCapacities({});
     setFieldErrors({});
   }
@@ -457,72 +476,74 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       </Show>
 
       {/* Section 1: Slot Rule */}
-      <section class="booking-slots-section">
+      <section class="booking-slots-section card">
         <h3>{t('ruleSection')}</h3>
-        <div class="form-group">
-          <label for="slotMinutes">{t('slotMinutes')}</label>
-          <input
-            id="slotMinutes"
-            name="slotMinutes"
-            data-field="slotMinutes"
-            type="number"
-            aria-invalid={fieldErrors().slotMinutes ? 'true' : undefined}
-            value={slotMinutes()}
-            onInput={(e) => setSlotMinutes(e.currentTarget.value)}
-          />
-          <Show when={fieldErrors().slotMinutes}>
-            {(msg) => (
-              <div role="alert" class="error field-error" data-error-for="slotMinutes">
-                {msg()}
-              </div>
-            )}
-          </Show>
+        <div class="bs-fields">
+          <div class="form-group">
+            <label for="slotMinutes">{t('slotMinutes')}</label>
+            <input
+              id="slotMinutes"
+              name="slotMinutes"
+              data-field="slotMinutes"
+              type="number"
+              aria-invalid={fieldErrors().slotMinutes ? 'true' : undefined}
+              value={slotMinutes()}
+              onInput={(e) => setSlotMinutes(e.currentTarget.value)}
+            />
+            <Show when={fieldErrors().slotMinutes}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="slotMinutes">
+                  {msg()}
+                </div>
+              )}
+            </Show>
+          </div>
+          <div class="form-group">
+            <label for="capacity">{t('capacity')}</label>
+            <input
+              id="capacity"
+              name="capacity"
+              data-field="capacity"
+              type="number"
+              aria-invalid={fieldErrors().capacity ? 'true' : undefined}
+              value={capacity()}
+              onInput={(e) => setCapacity(e.currentTarget.value)}
+            />
+            <Show when={fieldErrors().capacity}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="capacity">
+                  {msg()}
+                </div>
+              )}
+            </Show>
+          </div>
+          <div class="form-group">
+            <label for="horizonDays">{t('horizonDays')}</label>
+            <input
+              id="horizonDays"
+              name="horizonDays"
+              data-field="horizonDays"
+              type="number"
+              aria-invalid={fieldErrors().horizonDays ? 'true' : undefined}
+              value={horizonDays()}
+              onInput={(e) => setHorizonDays(e.currentTarget.value)}
+            />
+            <Show when={fieldErrors().horizonDays}>
+              {(msg) => (
+                <div role="alert" class="error field-error" data-error-for="horizonDays">
+                  {msg()}
+                </div>
+              )}
+            </Show>
+          </div>
         </div>
-        <div class="form-group">
-          <label for="capacity">{t('capacity')}</label>
-          <input
-            id="capacity"
-            name="capacity"
-            data-field="capacity"
-            type="number"
-            aria-invalid={fieldErrors().capacity ? 'true' : undefined}
-            value={capacity()}
-            onInput={(e) => setCapacity(e.currentTarget.value)}
-          />
-          <Show when={fieldErrors().capacity}>
-            {(msg) => (
-              <div role="alert" class="error field-error" data-error-for="capacity">
-                {msg()}
-              </div>
-            )}
-          </Show>
-        </div>
-        <div class="form-group">
-          <label for="horizonDays">{t('horizonDays')}</label>
-          <input
-            id="horizonDays"
-            name="horizonDays"
-            data-field="horizonDays"
-            type="number"
-            aria-invalid={fieldErrors().horizonDays ? 'true' : undefined}
-            value={horizonDays()}
-            onInput={(e) => setHorizonDays(e.currentTarget.value)}
-          />
-          <Show when={fieldErrors().horizonDays}>
-            {(msg) => (
-              <div role="alert" class="error field-error" data-error-for="horizonDays">
-                {msg()}
-              </div>
-            )}
-          </Show>
-        </div>
-        <button type="button" disabled={writing()} onClick={handleSaveRule}>
+        <button type="button" class="primary" disabled={writing()} onClick={handleSaveRule}>
           {t('saveRule')}
         </button>
       </section>
 
       {/* Section 2: Branch Closures */}
-      <section class="booking-slots-section">
+      <section class="booking-slots-section card">
         <h3>{t('closuresSection')}</h3>
         <div class="closures-form">
           <div class="form-group">
@@ -556,7 +577,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               value={newReason()}
               onInput={(e) => setNewReason(e.currentTarget.value)}
             />
-            <div>{newReason().length} / 200</div>
+            <div class="bs-count">{newReason().length} / 200</div>
             <Show when={fieldErrors().reason}>
               {(msg) => (
                 <div role="alert" class="error field-error" data-error-for="reason" data-field-error="reason">
@@ -571,7 +592,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
         </div>
 
         <div class="closures-list">
-          <For each={closures()} fallback={<div>{t('noClosures')}</div>}>
+          <For each={closures()} fallback={<div class="bs-empty">{t('noClosures')}</div>}>
             {(closure) => (
               <div class="closure-item">
                 <span class="closure-date">{closure.closedOn}</span>
@@ -586,132 +607,159 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
       </section>
 
       {/* Section 3: Booking Slots */}
-      <section class="booking-slots-section">
+      <section class="booking-slots-section card">
         <h3>{t('slotsSection')}</h3>
-        <div class="slots-list">
-          <For each={slots()} fallback={<div>{t('noSlots')}</div>}>
-            {(slot) => (
-              <div class="slot-item" data-slot-id={slot.id}>
-                <span class="slot-date">{slot.serviceDate}</span>
-                <span class="slot-time">
-                  {formatSlotTime(slot.startAt)} - {formatSlotTime(slot.endAt)}
-                </span>
-                <span class="slot-status">{slot.status}</span>
-                <span class="slot-reserved">
-                  {t('reserved')}: {slot.reserved}
-                </span>
-                <div class="slot-capacity-control">
-                  <input
-                    name="slotCapacity"
-                    data-slot-id={slot.id}
-                    type="number"
-                    value={slotCapacities()[slot.id] ?? slot.capacity}
-                    onInput={(e) => {
-                      setSlotCapacities((prev) => ({
-                        ...prev,
-                        [slot.id]: e.currentTarget.value,
-                      }));
-                    }}
-                  />
-                  <button type="button" disabled={writing()} onClick={() => void handleUpdateSlotCapacity(slot.id)}>
-                    {t('updateCapacity')}
-                  </button>
-                </div>
-                <button type="button" disabled={writing()} onClick={() => void handleCloseSlot(slot.id)}>
-                  {t('close')}
-                </button>
-                <button type="button" disabled={writing()} onClick={() => void handleOpenSlot(slot.id)}>
-                  {t('open')}
-                </button>
-              </div>
-            )}
-          </For>
+        <div class="bs-days">
+          <Show when={days().length > 0} fallback={<div class="bs-empty">{t('noSlots')}</div>}>
+            <For each={days()}>
+              {(day) => (
+                <details
+                  class="bs-day"
+                  data-day={day.date}
+                  open={isDayOpen(day.date)}
+                  onToggle={(e) => toggleDay(day.date, e.currentTarget.open)}
+                >
+                  <summary>
+                    <span class="bs-day-date">{day.date}</span>
+                    <span class="bs-day-count">{t('slotsDayCount', { open: day.open, total: day.slots.length })}</span>
+                  </summary>
+                  <div class="slots-list">
+                    <For each={day.slots}>
+                      {(slot) => (
+                        <div class="slot-item" data-slot-id={slot.id}>
+                          <span class="slot-date">{slot.serviceDate}</span>
+                          <span class="slot-time">
+                            {formatSlotTime(slot.startAt)} - {formatSlotTime(slot.endAt)}
+                          </span>
+                          <span class="slot-status" data-status={slot.status}>
+                            {slot.status}
+                          </span>
+                          <span class="slot-reserved">
+                            {t('reserved')}: {slot.reserved}
+                          </span>
+                          <div class="slot-capacity-control">
+                            <input
+                              name="slotCapacity"
+                              data-slot-id={slot.id}
+                              type="number"
+                              value={slotCapacities()[slot.id] ?? slot.capacity}
+                              onInput={(e) => {
+                                setSlotCapacities((prev) => ({
+                                  ...prev,
+                                  [slot.id]: e.currentTarget.value,
+                                }));
+                              }}
+                            />
+                            <button
+                              type="button"
+                              disabled={writing()}
+                              onClick={() => void handleUpdateSlotCapacity(slot.id)}
+                            >
+                              {t('updateCapacity')}
+                            </button>
+                          </div>
+                          <button type="button" disabled={writing()} onClick={() => void handleCloseSlot(slot.id)}>
+                            {t('close')}
+                          </button>
+                          <button type="button" disabled={writing()} onClick={() => void handleOpenSlot(slot.id)}>
+                            {t('open')}
+                          </button>
+                        </div>
+                      )}
+                    </For>
+                  </div>
+                </details>
+              )}
+            </For>
+          </Show>
         </div>
       </section>
 
       {/* Section 4: Booking Policy */}
       <Show when={mayEditBookingPolicy()}>
-        <section class="booking-slots-section">
+        <section class="booking-slots-section card">
           <h3>{t('policySection')}</h3>
-          <div class="form-group">
-            <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
-            <input
-              id="cancelCutoffMinutes"
-              name="cancelCutoffMinutes"
-              data-field="cancelCutoffMinutes"
-              type="number"
-              min="0"
-              max="129600"
-              aria-invalid={fieldErrors().cancelCutoffMinutes ? 'true' : undefined}
-              value={cutoff()}
-              onInput={(e) => setCutoff(e.currentTarget.value)}
-            />
-            <Show when={fieldErrors().cancelCutoffMinutes}>
-              {(msg) => (
-                <div
-                  role="alert"
-                  class="error field-error"
-                  data-error-for="cancelCutoffMinutes"
-                  data-field-error="cancelCutoffMinutes"
-                >
-                  {msg()}
-                </div>
-              )}
-            </Show>
+          <div class="bs-fields">
+            <div class="form-group">
+              <label for="cancelCutoffMinutes">{t('cancelCutoffMinutes')}</label>
+              <input
+                id="cancelCutoffMinutes"
+                name="cancelCutoffMinutes"
+                data-field="cancelCutoffMinutes"
+                type="number"
+                min="0"
+                max="129600"
+                aria-invalid={fieldErrors().cancelCutoffMinutes ? 'true' : undefined}
+                value={cutoff()}
+                onInput={(e) => setCutoff(e.currentTarget.value)}
+              />
+              <Show when={fieldErrors().cancelCutoffMinutes}>
+                {(msg) => (
+                  <div
+                    role="alert"
+                    class="error field-error"
+                    data-error-for="cancelCutoffMinutes"
+                    data-field-error="cancelCutoffMinutes"
+                  >
+                    {msg()}
+                  </div>
+                )}
+              </Show>
+            </div>
+            <div class="form-group">
+              <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
+              <input
+                id="noShowGraceMinutes"
+                name="noShowGraceMinutes"
+                data-field="noShowGraceMinutes"
+                type="number"
+                min="0"
+                max="129600"
+                aria-invalid={fieldErrors().noShowGraceMinutes ? 'true' : undefined}
+                value={grace()}
+                onInput={(e) => setGrace(e.currentTarget.value)}
+              />
+              <Show when={fieldErrors().noShowGraceMinutes}>
+                {(msg) => (
+                  <div
+                    role="alert"
+                    class="error field-error"
+                    data-error-for="noShowGraceMinutes"
+                    data-field-error="noShowGraceMinutes"
+                  >
+                    {msg()}
+                  </div>
+                )}
+              </Show>
+            </div>
+            <div class="form-group">
+              <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
+              <input
+                id="confirmExpiryMinutes"
+                name="confirmExpiryMinutes"
+                data-field="confirmExpiryMinutes"
+                type="number"
+                min="1"
+                max="129600"
+                aria-invalid={fieldErrors().confirmExpiryMinutes ? 'true' : undefined}
+                value={expiry()}
+                onInput={(e) => setExpiry(e.currentTarget.value)}
+              />
+              <Show when={fieldErrors().confirmExpiryMinutes}>
+                {(msg) => (
+                  <div
+                    role="alert"
+                    class="error field-error"
+                    data-error-for="confirmExpiryMinutes"
+                    data-field-error="confirmExpiryMinutes"
+                  >
+                    {msg()}
+                  </div>
+                )}
+              </Show>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="noShowGraceMinutes">{t('noShowGraceMinutes')}</label>
-            <input
-              id="noShowGraceMinutes"
-              name="noShowGraceMinutes"
-              data-field="noShowGraceMinutes"
-              type="number"
-              min="0"
-              max="129600"
-              aria-invalid={fieldErrors().noShowGraceMinutes ? 'true' : undefined}
-              value={grace()}
-              onInput={(e) => setGrace(e.currentTarget.value)}
-            />
-            <Show when={fieldErrors().noShowGraceMinutes}>
-              {(msg) => (
-                <div
-                  role="alert"
-                  class="error field-error"
-                  data-error-for="noShowGraceMinutes"
-                  data-field-error="noShowGraceMinutes"
-                >
-                  {msg()}
-                </div>
-              )}
-            </Show>
-          </div>
-          <div class="form-group">
-            <label for="confirmExpiryMinutes">{t('confirmExpiryMinutes')}</label>
-            <input
-              id="confirmExpiryMinutes"
-              name="confirmExpiryMinutes"
-              data-field="confirmExpiryMinutes"
-              type="number"
-              min="1"
-              max="129600"
-              aria-invalid={fieldErrors().confirmExpiryMinutes ? 'true' : undefined}
-              value={expiry()}
-              onInput={(e) => setExpiry(e.currentTarget.value)}
-            />
-            <Show when={fieldErrors().confirmExpiryMinutes}>
-              {(msg) => (
-                <div
-                  role="alert"
-                  class="error field-error"
-                  data-error-for="confirmExpiryMinutes"
-                  data-field-error="confirmExpiryMinutes"
-                >
-                  {msg()}
-                </div>
-              )}
-            </Show>
-          </div>
-          <button type="button" disabled={writing()} onClick={handleSavePolicy}>
+          <button type="button" class="primary" disabled={writing()} onClick={handleSavePolicy}>
             {t('savePolicy')}
           </button>
         </section>

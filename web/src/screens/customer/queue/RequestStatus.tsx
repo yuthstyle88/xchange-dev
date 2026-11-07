@@ -25,21 +25,25 @@
 // Texts: statusLabel, status_<W5 status>, number, ahead, statusUnavailable, statusStale, statusSignIn.
 import { createEffect, createSignal, onCleanup, Show, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../shared/api/client';
-import { locale, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
 import { ViewPoller } from '../../../shared/live/view-poller';
 import * as table from './i18n';
 import type { MyWebRequestData, WebRequestStatus } from './queue-api';
 
 const t = screenT('customer.queue', table);
 
+const TIME_FMT = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Bangkok',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
 function formatTime(ms: number): string {
   try {
     const d = new Date(ms);
     if (Number.isNaN(d.getTime())) return String(ms);
-    return d.toLocaleTimeString(locale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return TIME_FMT.format(d);
   } catch {
     return String(ms);
   }

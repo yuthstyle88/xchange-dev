@@ -12,6 +12,7 @@ import { deskPathFor } from '../desk-path';
 import { pageBranch } from '../desk-store';
 import * as screenI18n from '../i18n';
 import { deskShiftPhase } from './phase';
+import './shift-gate.css';
 
 export interface DeskShift {
   open(): boolean;
@@ -74,6 +75,7 @@ export function createDeskShiftGate(opts?: {
     });
 
   const open = () => phase() === 'open';
+  const adminHref = () => (branch() ? `/?branch=${encodeURIComponent(branch())}` : '/');
 
   const Panel = (): JSX.Element => (
     <div class="desk-shift-gate" data-desk-shift={phase()}>
@@ -98,7 +100,9 @@ export function createDeskShiftGate(opts?: {
         </div>
       </Show>
       <Show when={phase() === 'noAccess'}>
-        <p class="desk-notice">{t('shift.noShift')}</p>
+        <p class="desk-notice">
+          <a class="desk-shift-admin-link" href={adminHref()}>{t('shift.noShift')}</a>
+        </p>
       </Show>
       <Show when={phase() === 'clockIn' && staff.ctx()}>
         {(ctx) => (

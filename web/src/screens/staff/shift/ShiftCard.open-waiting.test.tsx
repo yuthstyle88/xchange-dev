@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5399: Open count waiting for certification notice and open count button visibility (§8)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -162,13 +163,13 @@ describe('#5399 ShiftCard open waiting notice and button visibility (§8)', () =
     expect(waitingNotice, 'waiting notice is shown').not.toBeNull();
     expect(waitingNotice?.getAttribute('role')).toBe('status');
     expect(waitingNotice?.className).toBe('xc-shift-close-waiting');
-    expect(waitingNotice?.textContent).toContain('11/10 11:30');
+    expect(waitingNotice?.textContent).toContain('11/10/2026 11:30');
     expect(waitingNotice?.textContent).toContain(th.openWaiting ?? 'ยอดนับเปิดกะรอผู้จัดการตรวจรับรอง');
 
     // Language rule: the new text is Thai only, copied unchanged into en
     setLang('en');
     await settle();
-    expect(waitingNotice?.textContent).toContain('11/10 11:30');
+    expect(waitingNotice?.textContent).toContain('11/10/2026 11:30');
     expect(waitingNotice?.textContent).toContain(en.openWaiting ?? 'ยอดนับเปิดกะรอผู้จัดการตรวจรับรอง');
   });
 

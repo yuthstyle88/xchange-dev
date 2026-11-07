@@ -40,10 +40,6 @@
 
 .xc-holds-form {
   margin: 1rem 0;
-  padding: 1rem;
-  border: 1px solid var(--xc-line);
-  border-radius: 0.375rem;
-  background: var(--xc-paper);
 }
 
 .xc-holds-form-group {
@@ -66,28 +62,17 @@
 
 .xc-holds-input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
-  border: 1px solid var(--xc-line);
-  border-radius: 0.375rem;
-  background: var(--xc-surface);
-  color: var(--xc-ink);
-  box-sizing: border-box;
-}
-
-.xc-holds-input:focus {
-  outline: none;
-  border-color: var(--xc-brand);
 }
 
 .xc-holds-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--xc-ink);
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--xc-brand);
   background: var(--xc-surface);
   border: 1px solid var(--xc-line);
-  border-radius: 0.375rem;
+  border-radius: var(--xc-radius-md);
   cursor: pointer;
   white-space: nowrap;
 }
@@ -97,18 +82,18 @@
 }
 
 .xc-holds-save-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
+  min-height: 44px;
+  padding: 10px 18px;
+  font-size: 15px;
+  font-weight: 600;
   color: var(--xc-on-brand);
   background: var(--xc-brand);
-  border: 1px solid transparent;
-  border-radius: 0.375rem;
+  border: 1px solid var(--xc-brand);
+  border-radius: var(--xc-radius-md);
   cursor: pointer;
 }
 
 .xc-holds-save-btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 

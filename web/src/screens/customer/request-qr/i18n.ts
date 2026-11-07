@@ -4,6 +4,7 @@ export const th = {
   instruction: 'แสดงคิวอาร์นี้แก่เจ้าหน้าที่',
   qrLabel: 'คิวอาร์คำขอคิว',
   invalid: 'ลิงก์คิวอาร์ไม่ถูกต้อง',
+  backHome: 'กลับหน้าแรก',
 };
 
 export const en = {
@@ -11,6 +12,7 @@ export const en = {
   instruction: 'Show this QR to staff',
   qrLabel: 'Queue request QR',
   invalid: 'Invalid QR link',
+  backHome: 'Back to home',
 };
 
 export const zh = {
@@ -18,4 +20,5 @@ export const zh = {
   instruction: '请向工作人员出示此二维码',
   qrLabel: '排队请求二维码',
   invalid: '无效的二维码链接',
+  backHome: '返回首页',
 };

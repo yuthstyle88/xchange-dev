@@ -9,7 +9,11 @@ import { QueueSoundControls } from './QueueSoundControls';
 import { queueCardYielding } from './queue-card-yield';
 import './queue-card.css';
 
-function checkInitialFold(): boolean {
+/** How a page shows the card, set by the page's AppShell. */
+export type QueueCardMode = 'open' | 'folded' | 'hidden';
+
+function checkInitialFold(startFolded: boolean): boolean {
+  if (startFolded) return true;
   if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
     try {
       return window.matchMedia('(max-width: 700px)').matches;
@@ -25,16 +29,16 @@ function holdsQueueOperate(session: SessionStore): boolean {
   return session.me()?.permissions.includes('QueueOperate') ?? false;
 }
 
-export function QueueCard(props: { session: SessionStore }): JSX.Element {
+export function QueueCard(props: { session: SessionStore; startFolded?: boolean }): JSX.Element {
   return (
     <Show when={holdsQueueOperate(props.session)}>
-      <OperatorCard session={props.session} />
+      <OperatorCard session={props.session} startFolded={props.startFolded ?? false} />
     </Show>
   );
 }
 
-function OperatorCard(props: { session: SessionStore }): JSX.Element {
-  const [isFolded, setIsFolded] = createSignal(checkInitialFold());
+function OperatorCard(props: { session: SessionStore; startFolded: boolean }): JSX.Element {
+  const [isFolded, setIsFolded] = createSignal(checkInitialFold(props.startFolded));
   let preYieldFolded = false;
   let userTouchedDuringYield = false;
   let wasYielding = false;

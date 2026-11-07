@@ -13,7 +13,8 @@ import type {
   KioskCurrencies,
   KioskCurrency,
 } from '../../shared/api/generated/kiosk_currencies';
-import { lang, locale, screenT } from '../../shared/i18n';
+import { lang, screenT } from '../../shared/i18n';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
@@ -21,6 +22,7 @@ import { matches } from './filter';
 import * as screenI18n from './i18n';
 import { KioskScreenSettings } from './KioskScreenSettings';
 import { configure, type CurrencyDisplay } from './kiosk-api';
+import '../../shared/ui/card.css';
 import './kiosk-currencies.css';
 
 type CardStatusState =
@@ -39,14 +41,12 @@ interface CardProps {
   currency: KioskCurrency;
   status: () => string;
   saving: () => boolean;
+  collapsed: () => boolean;
   kbankRef: () => KbankReference | null;
   t: ReturnType<typeof screenT<typeof screenI18n>>;
   onToggle: (code: string, display: CurrencyDisplay) => Promise<void>;
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
 
 function CurrencyCard(props: CardProps): JSX.Element {
   let showRef: HTMLInputElement | undefined;
@@ -69,7 +69,12 @@ function CurrencyCard(props: CardProps): JSX.Element {
   };
 
   return (
-    <form class="quote" onSubmit={(e) => e.preventDefault()}>
+    <form
+      class="quote card"
+      data-display={displayOf(props.currency)}
+      hidden={props.collapsed()}
+      onSubmit={(e) => e.preventDefault()}
+    >
       <h3>
         {props.currency.code} · {props.currency.name} / {props.currency.nameEn}
       </h3>
@@ -80,46 +85,48 @@ function CurrencyCard(props: CardProps): JSX.Element {
         </p>
       </Show>
       <div role="radiogroup" aria-label={props.t('enabled')}>
-        <label>{props.t('enabled')}</label>
-        <label for={`display-show-${props.currency.code}`}>
-          <input
-            id={`display-show-${props.currency.code}`}
-            type="radio"
-            name={`display-${props.currency.code}`}
-            value="SHOW"
-            ref={showRef}
-            checked={displayOf(props.currency) === 'SHOW'}
-            disabled={props.saving()}
-            onChange={() => void handleSelect('SHOW')}
-          />
-          SHOW
-        </label>
-        <label for={`display-ask-${props.currency.code}`}>
-          <input
-            id={`display-ask-${props.currency.code}`}
-            type="radio"
-            name={`display-${props.currency.code}`}
-            value="ASK"
-            ref={askRef}
-            checked={displayOf(props.currency) === 'ASK'}
-            disabled={props.saving()}
-            onChange={() => void handleSelect('ASK')}
-          />
-          ASK
-        </label>
-        <label for={`display-hide-${props.currency.code}`}>
-          <input
-            id={`display-hide-${props.currency.code}`}
-            type="radio"
-            name={`display-${props.currency.code}`}
-            value="HIDE"
-            ref={hideRef}
-            checked={displayOf(props.currency) === 'HIDE'}
-            disabled={props.saving()}
-            onChange={() => void handleSelect('HIDE')}
-          />
-          HIDE
-        </label>
+        <label class="kc-display-label">{props.t('enabled')}</label>
+        <div class="kc-segments">
+          <label class="kc-segment" for={`display-show-${props.currency.code}`}>
+            <input
+              id={`display-show-${props.currency.code}`}
+              type="radio"
+              name={`display-${props.currency.code}`}
+              value="SHOW"
+              ref={showRef}
+              checked={displayOf(props.currency) === 'SHOW'}
+              disabled={props.saving()}
+              onChange={() => void handleSelect('SHOW')}
+            />
+            {props.t('displayShow')}
+          </label>
+          <label class="kc-segment" for={`display-ask-${props.currency.code}`}>
+            <input
+              id={`display-ask-${props.currency.code}`}
+              type="radio"
+              name={`display-${props.currency.code}`}
+              value="ASK"
+              ref={askRef}
+              checked={displayOf(props.currency) === 'ASK'}
+              disabled={props.saving()}
+              onChange={() => void handleSelect('ASK')}
+            />
+            {props.t('displayAsk')}
+          </label>
+          <label class="kc-segment" for={`display-hide-${props.currency.code}`}>
+            <input
+              id={`display-hide-${props.currency.code}`}
+              type="radio"
+              name={`display-${props.currency.code}`}
+              value="HIDE"
+              ref={hideRef}
+              checked={displayOf(props.currency) === 'HIDE'}
+              disabled={props.saving()}
+              onChange={() => void handleSelect('HIDE')}
+            />
+            {props.t('displayHide')}
+          </label>
+        </div>
       </div>
 
       <div class="rate-side">
@@ -167,7 +174,7 @@ function CurrencyCard(props: CardProps): JSX.Element {
                           <td>{r.bankSell ?? '—'}</td>
                           <td>
                             {props.t('kbStamp', {
-                              time: formatTime(ref().publishedAt),
+                              time: formatBangkokDateTime(ref().publishedAt),
                               round: ref().round,
                             })}
                           </td>
@@ -205,6 +212,7 @@ export function KioskCurrenciesScreen(props: {
   >({});
   const [savingCodes, setSavingCodes] = createSignal<Record<string, boolean>>({});
   const [addCode, setAddCode] = createSignal('');
+  const [showOff, setShowOff] = createSignal(false);
 
   let readingBranch = '';
   // Bumped by every list read (first read and toggle re-read); a list read
@@ -251,6 +259,7 @@ export function KioskCurrenciesScreen(props: {
     setSettingsError(undefined);
     setResultSecondsDirty(false);
     setKnown(false);
+    setShowOff(false);
     if (!b) {
       setLoaded(false);
       setCurrencies([]);
@@ -268,6 +277,16 @@ export function KioskCurrenciesScreen(props: {
     const q = searchQuery();
     return currencies().filter((c) => matches(c, q));
   });
+
+  const searching = () => searchQuery().trim() !== '';
+  const offCount = createMemo(
+    () => filteredCurrencies().filter((c) => displayOf(c) === 'HIDE').length,
+  );
+  const collapsed = (c: KioskCurrency) =>
+    displayOf(c) === 'HIDE' &&
+    !showOff() &&
+    !searching() &&
+    !cardStatuses()[c.code];
 
   const pageMessage = createMemo(() => {
     const err = loadError();
@@ -463,7 +482,7 @@ export function KioskCurrenciesScreen(props: {
 
   return (
     <div>
-      <a href="/">{t('back')}</a>
+      <a class="kc-back" href="/">{t('back')}</a>
       <h1>{t('heading')}</h1>
       <p>{t('intro')}</p>
 
@@ -483,7 +502,7 @@ export function KioskCurrenciesScreen(props: {
               <h3>{t('compareHeading')}</h3>
               <p>
                 {t('comparePublished', {
-                  time: formatTime(ref().publishedAt),
+                  time: formatBangkokDateTime(ref().publishedAt),
                   round: ref().round,
                 })}
               </p>
@@ -632,6 +651,17 @@ export function KioskCurrenciesScreen(props: {
 
       <div role="status">{pageMessage()}</div>
 
+      <Show when={!searching() && offCount() > 0}>
+        <button
+          type="button"
+          class="kc-off-toggle"
+          aria-expanded={showOff() ? 'true' : 'false'}
+          onClick={() => setShowOff((open) => !open)}
+        >
+          {showOff() ? t('offHide') : t('offShow', { n: offCount() })}
+        </button>
+      </Show>
+
       <div class="cards">
         <For each={filteredCurrencies()}>
           {(c) => (
@@ -639,6 +669,7 @@ export function KioskCurrenciesScreen(props: {
               currency={c}
               status={() => getCardStatusText(c.code)}
               saving={() => Boolean(savingCodes()[c.code])}
+              collapsed={() => collapsed(c)}
               kbankRef={kbankRef}
               t={t}
               onToggle={handleToggle}

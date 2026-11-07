@@ -234,7 +234,7 @@ export function ShiftsEditor(props: ShiftsEditorProps): JSX.Element {
   };
 
   return (
-    <section class="branches-card branches-shifts" data-section="branch-shifts">
+    <section class="branches-card card branches-shifts" data-section="branch-shifts">
       <h2 class="branches-heading">{t('shiftsHeading')}</h2>
 
       <Show when={cutover()}>
@@ -278,57 +278,71 @@ export function ShiftsEditor(props: ShiftsEditorProps): JSX.Element {
           {(row, index) => (
             <div class="branches-shifts-row" data-shift-row={index}>
               <div class="branches-shifts-row-fields">
-                <input
-                  type="text"
-                  name={`shift-name-${index}`}
-                  class="branches-input"
-                  aria-label={t('shiftName')}
-                  placeholder={t('shiftName')}
-                  maxLength={40}
-                  value={row().name}
-                  onInput={(e) => updateRow(index, { name: e.currentTarget.value })}
-                />
-                <input
-                  type="time"
-                  name={`shift-start-${index}`}
-                  class="branches-time-input"
-                  aria-label={t('shiftStart')}
-                  value={row().startsAt}
-                  onInput={(e) => updateRow(index, { startsAt: e.currentTarget.value })}
-                  onChange={(e) => updateRow(index, { startsAt: e.currentTarget.value })}
-                />
-                <span>–</span>
-                <input
-                  type="time"
-                  name={`shift-end-${index}`}
-                  class="branches-time-input"
-                  aria-label={t('shiftEnd')}
-                  value={row().endsAt}
-                  onInput={(e) =>
-                    updateRow(index, { endsAt: e.currentTarget.value, endTouched: true })
-                  }
-                  onChange={(e) =>
-                    updateRow(index, { endsAt: e.currentTarget.value, endTouched: true })
-                  }
-                />
-                <input
-                  type="time"
-                  name={`shift-break-start-${index}`}
-                  class="branches-time-input"
-                  aria-label={t('shiftBreakStart')}
-                  value={row().breakStartsAt}
-                  onInput={(e) => updateRow(index, { breakStartsAt: e.currentTarget.value })}
-                  onChange={(e) => updateRow(index, { breakStartsAt: e.currentTarget.value })}
-                />
-                <input
-                  type="time"
-                  name={`shift-break-end-${index}`}
-                  class="branches-time-input"
-                  aria-label={t('shiftBreakEnd')}
-                  value={row().breakEndsAt}
-                  onInput={(e) => updateRow(index, { breakEndsAt: e.currentTarget.value })}
-                  onChange={(e) => updateRow(index, { breakEndsAt: e.currentTarget.value })}
-                />
+                <label class="branches-shift-field">
+                  <span class="branches-shift-label">{t('shiftName')}</span>
+                  <input
+                    type="text"
+                    name={`shift-name-${index}`}
+                    class="branches-input"
+                    aria-label={t('shiftName')}
+                    placeholder={t('shiftName')}
+                    maxLength={40}
+                    value={row().name}
+                    onInput={(e) => updateRow(index, { name: e.currentTarget.value })}
+                  />
+                </label>
+                <label class="branches-shift-field">
+                  <span class="branches-shift-label">{t('shiftStart')}</span>
+                  <input
+                    type="time"
+                    name={`shift-start-${index}`}
+                    class="branches-time-input"
+                    aria-label={t('shiftStart')}
+                    value={row().startsAt}
+                    onInput={(e) => updateRow(index, { startsAt: e.currentTarget.value })}
+                    onChange={(e) => updateRow(index, { startsAt: e.currentTarget.value })}
+                  />
+                </label>
+                <label class="branches-shift-field">
+                  <span class="branches-shift-label">{t('shiftEnd')}</span>
+                  <input
+                    type="time"
+                    name={`shift-end-${index}`}
+                    class="branches-time-input"
+                    aria-label={t('shiftEnd')}
+                    value={row().endsAt}
+                    onInput={(e) =>
+                      updateRow(index, { endsAt: e.currentTarget.value, endTouched: true })
+                    }
+                    onChange={(e) =>
+                      updateRow(index, { endsAt: e.currentTarget.value, endTouched: true })
+                    }
+                  />
+                </label>
+                <label class="branches-shift-field">
+                  <span class="branches-shift-label">{t('shiftBreakStart')}</span>
+                  <input
+                    type="time"
+                    name={`shift-break-start-${index}`}
+                    class="branches-time-input"
+                    aria-label={t('shiftBreakStart')}
+                    value={row().breakStartsAt}
+                    onInput={(e) => updateRow(index, { breakStartsAt: e.currentTarget.value })}
+                    onChange={(e) => updateRow(index, { breakStartsAt: e.currentTarget.value })}
+                  />
+                </label>
+                <label class="branches-shift-field">
+                  <span class="branches-shift-label">{t('shiftBreakEnd')}</span>
+                  <input
+                    type="time"
+                    name={`shift-break-end-${index}`}
+                    class="branches-time-input"
+                    aria-label={t('shiftBreakEnd')}
+                    value={row().breakEndsAt}
+                    onInput={(e) => updateRow(index, { breakEndsAt: e.currentTarget.value })}
+                    onChange={(e) => updateRow(index, { breakEndsAt: e.currentTarget.value })}
+                  />
+                </label>
                 <button
                   type="button"
                   class="branches-btn"

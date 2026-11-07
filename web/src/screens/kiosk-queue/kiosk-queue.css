@@ -4,10 +4,19 @@
   margin: 0.67em 0;
 }
 
-/* v2 kiosk-queue.html:1: main.queue-page sits in <body> with the browser's 8px margin (queue-panel.css has no body rule) */
+.xc-shell-main .queue-page .kq-back {
+  color: var(--xc-brand);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.xc-shell-main .queue-page .kq-back:hover {
+  text-decoration: underline;
+}
+
 .xc-shell-main:has(> .queue-page) {
   max-width: none;
-  padding: 0 8px;
+  padding: 0 16px;
 }
 
 /* v2 kiosk-queue.html:1 — no header; the page heading is the body h2 */

@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5306: /staff waiting counts show worded kind, Bangkok time, short id, and totals (not counter's raw user id)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -109,7 +110,7 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
     expect(title?.textContent).toBe(th.OPEN ?? 'เปิดกะ');
 
     const sub = item!.querySelector('.xc-shift-item-sub');
-    expect(sub?.textContent).toContain('28/10 03:16');
+    expect(sub?.textContent).toContain('28/10/2026 03:16');
     expect(sub?.textContent).toContain('#606bdfcc');
     expect(sub?.textContent).toContain('THB 5000');
     expect(sub?.textContent).not.toContain(COUNTER);
@@ -148,9 +149,9 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
     const subA = itemA?.querySelector('.xc-shift-item-sub')?.textContent;
     const subB = itemB?.querySelector('.xc-shift-item-sub')?.textContent;
 
-    expect(subA).toContain('28/10 03:16');
+    expect(subA).toContain('28/10/2026 03:16');
     expect(subA).toContain('#606bdfcc');
-    expect(subB).toContain('25/10 12:03');
+    expect(subB).toContain('25/10/2026 12:03');
     expect(subB).toContain('#bb2d97ae');
     expect(subA).not.toEqual(subB);
   });
@@ -212,12 +213,12 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
 
     const item = host.querySelector(`[data-count-id="${countId}"]`);
     const sub = item?.querySelector('.xc-shift-item-sub');
-    expect(sub?.textContent).toBe('28/10 03:16 · #c-empty-');
+    expect(sub?.textContent).toBe('28/10/2026 03:16 · #c-empty-');
     expect(sub?.textContent?.endsWith('·')).toBe(false);
     expect(sub?.textContent?.endsWith('· ')).toBe(false);
   });
 
-  it('Edge case: midnight countedAt 2026-10-27T17:00:00Z shows 28/10 00:00 (Bangkok)', async () => {
+  it('Edge case: midnight countedAt 2026-10-27T17:00:00Z shows 28/10/2026 00:00 (Bangkok)', async () => {
     const countId = 'c-midnight-001';
     const count = makeCashCountRow({
       id: countId,
@@ -233,6 +234,6 @@ describe('#5306 ShiftCard waiting counts row display (§8, §9)', () => {
 
     const item = host.querySelector(`[data-count-id="${countId}"]`);
     const sub = item?.querySelector('.xc-shift-item-sub');
-    expect(sub?.textContent).toContain('28/10 00:00');
+    expect(sub?.textContent).toContain('28/10/2026 00:00');
   });
 });

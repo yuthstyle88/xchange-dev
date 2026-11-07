@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #2521: Admin cash flows — count (countedAt) and movement (createdAt) times are formatted
 // in Asia/Bangkok regardless of the device timezone.
 // #6065: the flow line names the creator by `createdByName`, so the rows carry a name.
@@ -163,26 +165,26 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     return (cell!.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  it('row 1: countedAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2569 01:30:00 in the count row', async () => {
+  it('row 1: countedAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2026 01:30 in the count row', async () => {
     vi.stubEnv('TZ', 'UTC');
     expect(new Date(ISO_A).getHours()).toBe(18);
 
     await mount('A');
 
     const text = countTimeText();
-    expect(text).toBe('16/10/2569 01:30:00');
+    expect(text).toBe('16/10/2026 01:30');
     expect(text).not.toContain('15/10');
     expect(text).not.toContain('18:30');
   });
 
-  it('row 2: createdAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2569 01:30:00 · Name-A in the flow line', async () => {
+  it('row 2: createdAt 2026-10-15T18:30:00Z with device TZ UTC shows 16/10/2026 01:30 · Name-A in the flow line', async () => {
     vi.stubEnv('TZ', 'UTC');
     expect(new Date(ISO_A).getHours()).toBe(18);
 
     await mount('A');
 
     const text = transferTimeText();
-    expect(text).toBe('16/10/2569 01:30:00 · Name-A');
+    expect(text).toBe('16/10/2026 01:30 · Name-A');
     expect(text).not.toContain('15/10');
     expect(text).not.toContain('18:30');
   });
@@ -200,8 +202,8 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
     const bkkCount = countTimeText();
     const bkkTransfer = transferTimeText();
 
-    expect(bkkCount).toBe('16/10/2569 01:30:00');
-    expect(bkkTransfer).toBe('16/10/2569 01:30:00 · Name-A');
+    expect(bkkCount).toBe('16/10/2026 01:30');
+    expect(bkkTransfer).toBe('16/10/2026 01:30 · Name-A');
     expect(utcCount).toBe(bkkCount);
     expect(utcTransfer).toBe(bkkTransfer);
   });
@@ -209,8 +211,8 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
   it('row 4: branch switch updates counts and transfers and formats the new branch times in Bangkok time under TZ=UTC', async () => {
     vi.stubEnv('TZ', 'UTC');
     const { setBranch } = await mount('A');
-    expect(countTimeText()).toBe('16/10/2569 01:30:00');
-    expect(transferTimeText()).toBe('16/10/2569 01:30:00 · Name-A');
+    expect(countTimeText()).toBe('16/10/2026 01:30');
+    expect(transferTimeText()).toBe('16/10/2026 01:30 · Name-A');
 
     setBranch('B');
     await vi.waitFor(() => {
@@ -218,7 +220,7 @@ describe('#2521: CashFlows formats countedAt and createdAt in Asia/Bangkok', () 
       expect(root?.querySelector('[data-section="transfers"]')?.textContent).toContain('note-B');
     });
 
-    expect(countTimeText()).toBe('17/10/2569 02:45:00');
-    expect(transferTimeText()).toBe('17/10/2569 02:45:00 · Name-B');
+    expect(countTimeText()).toBe('17/10/2026 02:45');
+    expect(transferTimeText()).toBe('17/10/2026 02:45 · Name-B');
   });
 });

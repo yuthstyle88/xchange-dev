@@ -1,5 +1,9 @@
 /* RD-3 rate display styling (design rate-display.md D6, D8, LK-6). */
 
+body:has(.xc-rate-display) {
+  margin: 0;
+}
+
 .xc-rate-display {
   display: flex;
   flex-direction: column;
@@ -8,7 +12,17 @@
   padding: 1.5rem 2rem;
   background-color: var(--xc-bg);
   color: var(--xc-ink);
-  font-family: inherit;
+  font-family: var(--xc-font-sans);
+}
+
+.xc-rate-display:has(.xc-rb) {
+  padding: 0;
+}
+
+.xc-rate-display > .xc-rate-display-fullscreen-btn {
+  align-self: flex-end;
+  min-height: 44px;
+  margin: 8px 12px 0;
 }
 
 .xc-rate-display-message,

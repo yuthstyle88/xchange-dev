@@ -13,7 +13,7 @@ export const menu: AdminMenu = {
   group: 'data',
   needs: 'OverviewRead',
   dated: true,
-  icon: '🏢',
+  icon: '♔',
   label: () => t('label'),
   heading: {
     eyebrow: () => t('eyebrow'),

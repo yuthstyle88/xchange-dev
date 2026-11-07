@@ -12,6 +12,10 @@
 //
 // The shared session is a page singleton, so every test loads fresh modules. Nothing here is JSX: the test builds the
 // shell with the freshly loaded Solid, so both sides share one Solid instance (as AppShell.lock.test.tsx does).
+//
+// Restated for OL-6 L4 (#6537), issuecomment-6688832431, docs/design/xchange-one-look-layout.md §2 Q1: rows 1 and 2 pinned
+// the wrapping bar before the header. The bar now sits inside the one header, and only the brand, the language switch and
+// the menu button show in the header row at 760px or less. Rows 3 to 8 are unchanged.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Me } from '../api/generated/common';
 import { meOf } from '../../test-support/me';
@@ -208,6 +212,86 @@ function onPhone(rules: Rule[], selector: string, prop: string): string | undefi
   return value(rules, selector, prop, PHONE) ?? value(rules, selector, prop);
 }
 
+// Restated for OL-6 L4 (#6537): what shows at a width comes from shell.css's own rules, because jsdom has no layout and
+// no media queries. Base rules cascade first, then the 760px ones, as in the file. Only `display` and `hidden` count.
+type Width = 'phone' | 'wide';
+
+function specificity(selector: string): number {
+  const s = selector.replace(/"[^"]*"/g, '');
+  const ids = (s.match(/#[\w-]+/g) ?? []).length;
+  const classes = (s.match(/\.[\w-]+|\[[^\]]*\]|(?<!:):(?!not\b)[\w-]+/g) ?? []).length;
+  const types = (s.replace(/:[\w-]+|\.[\w-]+|\[[^\]]*\]|#[\w-]+/g, ' ').match(/[a-z][\w-]*/gi) ?? []).length;
+  return ids * 10000 + classes * 100 + types;
+}
+
+function matches(el: Element, selector: string): boolean {
+  if (selector.includes('::')) return false;
+  try {
+    return el.matches(selector);
+  } catch {
+    return false;
+  }
+}
+
+function displayOf(rules: Rule[], el: Element, width: Width): string {
+  const applies = (r: Rule) => r.media === '' || (width === 'phone' && r.media === PHONE);
+  const ordered = [...rules.filter((r) => r.media === ''), ...rules.filter((r) => r.media !== '')];
+  let best: { important: boolean; spec: number; value: string } | undefined;
+  for (const r of ordered) {
+    const raw = r.decls.get('display');
+    if (raw === undefined || !applies(r) || !matches(el, r.selector)) continue;
+    const important = raw.includes('!important');
+    const spec = specificity(r.selector);
+    if (!best || (important && !best.important) || (important === best.important && spec >= best.spec)) {
+      best = { important, spec, value: raw.replace('!important', '').trim() };
+    }
+  }
+  return best?.value ?? '';
+}
+
+// Restated for OL-6 L5 (#6542, added 23:26 ICT): the closed account area may hide with `visibility: hidden` out of flow,
+// so a fixed toast inside it can stay visible. `visibility` inherits, so the nearest element that sets it decides; a
+// `visibility: hidden` element still in flow would leave a gap in the row, and it does not count as hidden.
+function visibilityOf(rules: Rule[], el: Element, width: Width): { visibility: string; outOfFlow: boolean } {
+  const applies = (r: Rule) => r.media === '' || (width === 'phone' && r.media === PHONE);
+  const last = (e: Element, prop: string) => {
+    let best: { spec: number; value: string } | undefined;
+    for (const r of [...rules.filter((x) => x.media === ''), ...rules.filter((x) => x.media !== '')]) {
+      const raw = r.decls.get(prop);
+      if (raw === undefined || !applies(r) || !matches(e, r.selector)) continue;
+      const spec = specificity(r.selector);
+      if (!best || spec >= best.spec) best = { spec, value: raw };
+    }
+    return best?.value;
+  };
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    const visibility = last(e, 'visibility');
+    if (visibility !== undefined) {
+      return { visibility, outOfFlow: ['absolute', 'fixed'].includes(last(e, 'position') ?? '') };
+    }
+  }
+  return { visibility: 'visible', outOfFlow: false };
+}
+
+function shown(rules: Rule[], el: Element, width: Width): boolean {
+  for (let e: Element | null = el; e; e = e.parentElement) {
+    if ((e as HTMLElement).hidden || displayOf(rules, e, width) === 'none') return false;
+  }
+  const { visibility, outOfFlow } = visibilityOf(rules, el, width);
+  return !(visibility === 'hidden' && outOfFlow);
+}
+
+function shownUserNames(rules: Rule[], host: HTMLElement, width: Width, name: string): number {
+  const leaves = Array.from(host.querySelectorAll('*')).filter((e) => e.children.length === 0 && e.textContent?.includes(name));
+  return leaves.filter((e) => shown(rules, e, width)).length;
+}
+
+function shownSignOuts(m: Loaded, rules: Rule[], host: HTMLElement, width: Width): number {
+  const label = m.th['shell.account.signOut'];
+  const buttons = Array.from(host.querySelectorAll('button')).filter((b) => b.textContent?.trim() === label);
+  return buttons.filter((b) => shown(rules, b, width)).length;
+}
+
 function expectDecls(rules: Rule[], selector: string, media: string, want: Record<string, string>) {
   for (const [prop, v] of Object.entries(want)) {
     expect(value(rules, selector, prop, media), `${media || '(no media)'} ${selector} { ${prop} }`).toBe(v);
@@ -258,17 +342,37 @@ afterEach(() => {
 // ── §9 ───────────────────────────────────────────────────────────────────────
 
 describe('AppShell on a phone (OL-1R-b, #6451)', () => {
-  it('row 1: staff session at 375px keeps the account bar, its branch menu and bell, and nothing wider than the viewport', async () => {
+  // Restated for OL-6 L4 (#6537), §2 Q1: the bar no longer shows and wraps in the page at 760px or less. The header row
+  // shows the brand, the language switch and the menu button; the open panel reaches the branch menu and the bell.
+  it('row 1: staff session at 375px shows brand, language switch and menu button in the header row; the open panel reaches the branch menu and bell; one user name, one sign-out; nothing wider than the viewport', async () => {
     stubNetwork();
-    const host = mount(await load());
+    const m = await load();
+    const host = mount(m);
     await signedIn(host);
     const bar = host.querySelector<HTMLElement>('.account-bar')!;
     expect(bar.querySelector('button[aria-haspopup="menu"]'), 'the branch menu is in the bar').not.toBeNull();
     expect(bar.querySelector('.notice-bell'), 'the bell is in the bar').not.toBeNull();
 
     const rules = await sheet();
-    expect(onPhone(rules, '.account-bar', 'display'), 'the bar is not hidden at 760px or less').not.toBe('none');
-    expect(onPhone(rules, '.account-bar', 'flex-wrap'), 'the bar wraps at 760px or less').toBe('wrap');
+    const header = host.querySelector<HTMLElement>('header.xc-shell-header')!;
+    const branchMenu = bar.querySelector('button[aria-haspopup="menu"]')!;
+    const bell = bar.querySelector('.notice-bell')!;
+    const inRow = Array.from(header.children).filter((c) => shown(rules, c, 'phone'));
+    expect(inRow.map((c) => c.classList[0] ?? c.tagName).sort(), 'the header row with the menu closed').toEqual([
+      'xc-lang-switch',
+      'xc-shell-brand',
+      'xc-shell-menu-btn',
+    ]);
+    expect(shown(rules, branchMenu, 'phone'), 'the branch menu is not in the closed header').toBe(false);
+    expect(shown(rules, bell, 'phone'), 'the bell is not in the closed header').toBe(false);
+
+    menuButton(host).click();
+    await settle();
+    expect(shown(rules, branchMenu, 'phone'), 'the open panel reaches the branch menu').toBe(true);
+    expect(shown(rules, bell, 'phone'), 'the open panel reaches the bell').toBe(true);
+    expect(shownUserNames(rules, host, 'phone', 'Somchai'), 'one visible user name').toBe(1);
+    expect(shownSignOuts(m, rules, host, 'phone'), 'one visible sign-out').toBe(1);
+
     expect(
       onPhone(rules, '.account-bar button', 'max-width'),
       'a nowrap button with a long branch name stays inside the bar',
@@ -285,26 +389,27 @@ describe('AppShell on a phone (OL-1R-b, #6451)', () => {
     }
   });
 
-  it('row 2: staff session at 1280px is unchanged', async () => {
+  it('row 2: staff session at 1280px has the bar inside the header, one user name and one sign-out, and the header rules unchanged', async () => {
     stubNetwork();
-    const host = mount(await load());
+    const m = await load();
+    const host = mount(m);
     await signedIn(host);
     const bar = host.querySelector<HTMLElement>('.account-bar')!;
     const header = host.querySelector<HTMLElement>('header')!;
-    expect(header.contains(bar), 'the bar is outside the header').toBe(false);
-    expect(
-      bar.compareDocumentPosition(header) & Node.DOCUMENT_POSITION_FOLLOWING,
-      'the bar comes before the header',
-    ).toBeTruthy();
+    // Restated for OL-6 L4 (#6537), §2 Q1: the bar is inside the one header, not before it.
+    expect(header.contains(bar), 'the bar is inside the header').toBe(true);
     expect(header.querySelector('#nav-one'), 'the nav is in the header').not.toBeNull();
 
     const rules = await sheet();
+    // Restated for OL-6 L4 (#6537), §2 Q1: the bar's own 10px 24px padding was the dark bar's; the header has the padding now.
     expectDecls(rules, '.account-bar', '', {
       display: 'flex',
       'flex-wrap': 'wrap',
       gap: '16px',
-      padding: '10px 24px',
     });
+    // Restated for OL-6 L4 (#6537), §3 item 3: one user name and one sign-out at any width.
+    expect(shownUserNames(rules, host, 'wide', 'Somchai'), 'one visible user name').toBe(1);
+    expect(shownSignOuts(m, rules, host, 'wide'), 'one visible sign-out').toBe(1);
     expectDecls(rules, '.account-bar button', '', { 'white-space': 'nowrap', 'min-height': '36px' });
     expectDecls(rules, '.xc-shell-header', '', { display: 'flex', padding: '14px 24px' });
     expectDecls(rules, '.xc-shell-menu-btn', '', { display: 'none', order: '4' });

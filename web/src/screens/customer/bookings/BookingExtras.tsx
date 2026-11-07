@@ -10,7 +10,8 @@ import type {
   BookingQrReissueOutput,
 } from '../../../shared/api/generated/bookings';
 import type { MyBookingItemDto } from '../../../shared/api/generated/my_bookings';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatDateTimeInZone } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
 
@@ -75,11 +76,7 @@ export function BookingExtras(props: BookingExtrasProps): JSX.Element {
     if (FINISHED.includes(props.booking.status) || !props.booking.cancelCutoffAt) return null;
     const cutoff = new Date(props.booking.cancelCutoffAt);
     if (cutoff.getTime() <= Date.now()) return null;
-    const date = cutoff.toLocaleString(locale(), {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-      timeZone: props.timeZone,
-    });
+    const date = formatDateTimeInZone(props.booking.cancelCutoffAt, props.timeZone);
     return t('rescheduleDeadline', { date });
   };
 

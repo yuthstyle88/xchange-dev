@@ -29,7 +29,8 @@ export type CustomerRoute =
   | '/app/member'
   | '/app/profile'
   | '/app/sign-in'
-  | '/app/sign-up';
+  | '/app/sign-up'
+  | '/app/verification';
 
 type NavKey = 'home' | 'branches' | 'bookings' | 'history' | 'assistant';
 
@@ -83,6 +84,7 @@ const NAV_OF: Record<CustomerRoute, CustomerRoute | undefined> = {
   '/app/profile': undefined,
   '/app/sign-in': undefined,
   '/app/sign-up': undefined,
+  '/app/verification': undefined,
 };
 
 type Profile = { signedIn: true; name: string } | { signedIn: false };

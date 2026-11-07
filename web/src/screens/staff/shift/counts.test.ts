@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // docs/design/desk-shift-open.md §2: the count rules /staff and /desk share.
 import { describe, expect, it } from 'vitest';
 import { makeCashCountRow } from '../../../shared/testing/fixtures';
@@ -43,8 +44,8 @@ describe('counts', () => {
     expect(countsToVerify(rows, ME).map((c) => c.id)).toEqual(['theirs-open', 'theirs-close']);
   });
 
-  it('C5 count time is dd/mm hh:mm in Bangkok; a non-date comes back as is', () => {
-    expect(formatCountTime('2026-10-11T04:30:00Z')).toBe('11/10 11:30');
+  it('C5 count time is dd/mm/yyyy HH:mm in Bangkok; a non-date comes back as is', () => {
+    expect(formatCountTime('2026-10-11T04:30:00Z')).toBe('11/10/2026 11:30');
     expect(formatCountTime('soon')).toBe('soon');
   });
 });

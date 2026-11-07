@@ -12,17 +12,8 @@
   display: block;
 }
 
-.xc-admin .xc-content .reports-screen .reports-toolbar {
+.xc-admin .xc-content .reports-screen .reports-card-actions {
   display: flex;
-  justify-content: flex-end;
-}
-
-.xc-admin .xc-content .reports-screen .reports-toolbar button {
-  margin-bottom: 12px;
-}
-
-.xc-admin .xc-content .reports-screen .reports-toolbar .secondary,
-.xc-admin .xc-content .reports-screen button.secondary#export {
-  font-size: 12px;
-  color: var(--xc-brand);
+  align-items: center;
+  gap: 12px;
 }

@@ -182,7 +182,7 @@ export function BranchTablets(props: BranchTabletsProps): JSX.Element {
   };
 
   return (
-    <section class="branches-card branches-tablets" data-section="branch-tablets">
+    <section class="branches-card card branches-tablets" data-section="branch-tablets">
       <h2 class="branches-heading">{t('tabletsHeading')}</h2>
       <p class="branches-tablets-intro">{t('tabletsIntro')}</p>
 

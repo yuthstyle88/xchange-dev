@@ -1,6 +1,7 @@
 import { createEffect, For, Show, type JSX } from 'solid-js';
 import { screenT } from '../../shared/i18n';
 import { sharedSession, type SessionStore } from '../../shared/session/session';
+import '../../shared/ui/card.css';
 import './desk.css';
 import * as screenI18n from './i18n';
 import { LowCashBanner } from './LowCashBanner';
@@ -83,7 +84,7 @@ export function DeskPage<S extends FrameStore>(props: {
       </nav>
 
       <div class="desk-body">
-        <section class="panel" id="panel">
+        <section class="panel card" id="panel">
           <Show
             when={task?.isOpen()}
             fallback={
@@ -106,7 +107,7 @@ export function DeskPage<S extends FrameStore>(props: {
         </section>
 
         <Show when={shiftOpen() && props.aside}>
-          <aside class="desk-aside">{props.aside}</aside>
+          <aside class="desk-aside card">{props.aside}</aside>
         </Show>
       </div>
     </div>

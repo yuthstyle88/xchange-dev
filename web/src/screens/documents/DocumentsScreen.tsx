@@ -7,6 +7,7 @@ import { screenLookup, screenT, translator } from '../../shared/i18n';
 import type { Audience } from './audiences';
 import * as table from './i18n';
 import { refusalText } from './refusal';
+import '../../shared/ui/card.css';
 import './documents.css';
 
 const t = screenT('documents', table);
@@ -45,14 +46,17 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
 
   return (
     <div class="documents-screen">
-      <Show when={props.audience.showDownload} fallback={<h2 class="documents-title">{data()?.ref ?? ''}</h2>}>
+      <Show
+        when={props.audience.showDownload}
+        fallback={<h2 class="documents-title">{data() ? t('refTitle', { ref: data()!.ref }) : ''}</h2>}
+      >
         <h2 class="documents-title">{t('title')}</h2>
         <Show when={data()}>{(d) => <p class="documents-ref">{t('refLine', { ref: d().ref })}</p>}</Show>
       </Show>
 
       <Show when={refused()}>
         {(r) => (
-          <p class="documents-refusal" role="alert">
+          <p class="documents-refusal card" role="alert">
             {refusalText(r().err, tr)}
           </p>
         )}
@@ -63,16 +67,18 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
           <Show
             when={props.audience.showDownload}
             fallback={
-              <For each={d().links}>
-                {(link) => (
-                  <p data-kind={link.kind}>
-                    <a href={link.href}>{label(link.kind)}</a>
-                  </p>
-                )}
-              </For>
+              <div class="documents-list card">
+                <For each={d().links}>
+                  {(link) => (
+                    <p data-kind={link.kind}>
+                      <a href={link.href}>{label(link.kind)}</a>
+                    </p>
+                  )}
+                </For>
+              </div>
             }
           >
-            <ul class="documents-list">
+            <ul class="documents-list card">
               <For each={d().links}>
                 {(link) => (
                   <li data-kind={link.kind}>
@@ -82,7 +88,7 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
                     </a>{' '}
                     ·{' '}
                     <a href={link.href} download={link.download ?? ''}>
-                      {t('download', { name: link.download ?? '' })}
+                      {t('download', { name: `${label(link.kind)} ${d().ref}` })}
                     </a>
                   </li>
                 )}
@@ -92,7 +98,7 @@ export function DocumentsScreen(props: DocumentsScreenProps): JSX.Element {
         )}
       </Show>
 
-      <a class="documents-back" href={props.audience.backHref(props.branch)}>
+      <a class="documents-back xc-btn" href={props.audience.backHref(props.branch)}>
         {t(props.audience.backText)}
       </a>
     </div>

@@ -4,10 +4,23 @@
   gap: 24px;
 }
 
+.xc-admin .xc-content .denomination-groups-pick-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 0;
+}
+
 .xc-admin .xc-content .denomination-groups-currency-picker {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.xc-admin .xc-content .denomination-groups-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .denomination-groups-list {

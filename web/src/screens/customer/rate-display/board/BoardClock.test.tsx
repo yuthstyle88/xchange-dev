@@ -1,6 +1,8 @@
 // RB-5 tests (feat/fe-rateboard; rate-display.md §9.2, §9.6): BoardClock and BoardHeader.
 // Behaviour table rows:
-// 1. now = 2026-10-19T12:56:00Z -> 19:56, วันจันทร์ที่ 19 ตุลาคม 2569
+// 1. now = 2026-10-19T12:56:00Z -> 19:56, วันจันทร์ 19/10/2026
+//    (F55, owner ruling 2026-11-07, restated by the ticket author claude/3b81c9d5: the weekday is kept, the date is
+//    dd/mm/yyyy with a CE year, docs/design/backdated-keying.md §16.7)
 // 2. the minute changes -> the time text changes
 // 3. within the same minute -> the time nodes are not rebuilt
 // 4. header -> brand and sub-brand text
@@ -29,7 +31,7 @@ afterEach(() => {
 });
 
 describe('BoardClock & BoardHeader (RB-5)', () => {
-  it('now = 2026-10-19T12:56:00Z: renders 19:56 and วันจันทร์ที่ 19 ตุลาคม 2569', () => {
+  it('now = 2026-10-19T12:56:00Z: renders 19:56 and วันจันทร์ 19/10/2026', () => {
     const fixed = new Date('2026-10-19T12:56:00Z');
     dispose = render(() => <BoardClock now={() => fixed} />, host);
     const time = host.querySelector('.xc-rb-time');
@@ -37,7 +39,7 @@ describe('BoardClock & BoardHeader (RB-5)', () => {
     const colon = host.querySelector('.xc-rb-colon');
     expect(time?.textContent).toBe('19:56');
     expect(colon?.textContent).toBe(':');
-    expect(date?.textContent).toBe('วันจันทร์ที่ 19 ตุลาคม 2569');
+    expect(date?.textContent).toBe('วันจันทร์ 19/10/2026');
   });
 
   it('the minute changes: the time text changes', () => {

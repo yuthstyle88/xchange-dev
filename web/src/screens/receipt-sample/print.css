@@ -1,4 +1,5 @@
 .xc-shell .xc-shell-header,
+.xc-shell .xc-shell-title,
 .xc-shell .xc-shell-footer,
 .xc-shell > .account-bar {
   display: none;
@@ -14,6 +15,7 @@
   .print-tip,
   header:not(.brand),
   footer:not(.stub),
+  .xc-shell-title,
   .xc-shell-footer,
   .xc-shell > .account-bar {
     display: none;

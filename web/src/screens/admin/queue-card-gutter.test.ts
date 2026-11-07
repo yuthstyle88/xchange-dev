@@ -9,8 +9,9 @@
 //
 // jsdom lays nothing out, so a "control outside the card's box" check cannot run here. These tests pin the CSS that
 // makes the room, read as text (like QueueCard.float.test.tsx); the end-to-end proof is qa/e2e F12b leg 2 on a host.
-//   - [required] G1: ≥1024 px: `.xc-admin:has(.queue-card) .xc-content .admin-main` has `padding-right` of at least the
-//     admin card's width + its right offset, both read from queue-card.css;
+//   - [required] G1 (restated OL-6 A5, owner ruling #564 issuecomment-6703173879 item 2): ≥1024 px: the same selector
+//     reserves the card's room at the BOTTOM only (`padding-bottom` ≥ 240px) and declares no `padding-right`. A full-height
+//     right gutter cut the admin content column to ~660 of 1280 px (audit R5) though the card sits bottom-right;
 //   - [required] G2: ≤1023 px: the same selector has `padding-bottom` of at least 240px (an open admin card's height);
 //   - [required] G3: the gutter is scoped to "while the card shows" (`:has(.queue-card)`), so a page with no card keeps
 //     today's padding;
@@ -96,13 +97,12 @@ async function read(rel: string): Promise<Rule[]> {
 const GUTTERED = '.xc-admin:has(.queue-card) .xc-content .admin-main';
 
 describe('#4302 the admin content container makes room for the queue card', () => {
-  it('[required] G1: ≥1024px, padding-right ≥ the admin card width + its right offset', async () => {
-    const card = await read('../../shared/ui/queue-card.css');
+  it('[required] G1: ≥1024px, the room is at the bottom only: padding-bottom ≥ 240px and no padding-right', async () => {
     const admin = await read('admin.css');
-    const width = px(value(card, 'body:has(.xc-admin) .queue-card', 'width'), 'admin card width');
-    const right = px(value(card, '.queue-card', 'right'), 'card right offset');
-    const gutter = px(value(admin, GUTTERED, 'padding-right', '(min-width:1024px)'), `${GUTTERED} padding-right ≥1024`);
-    expect(gutter).toBeGreaterThanOrEqual(width + right);
+    const gutter = px(value(admin, GUTTERED, 'padding-bottom', '(min-width:1024px)'), `${GUTTERED} padding-bottom ≥1024`);
+    expect(gutter).toBeGreaterThanOrEqual(240);
+    const right = admin.filter((r) => r.selector.includes('.admin-main') && r.decls.has('padding-right'));
+    expect(right.map((r) => `${r.media} ${r.selector}`), 'no .admin-main padding-right gutter').toEqual([]);
   });
 
   it('[required] G2: ≤1023px, padding-bottom ≥ 240px', async () => {

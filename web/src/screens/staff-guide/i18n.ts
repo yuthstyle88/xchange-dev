@@ -1,6 +1,7 @@
 export const th = {
   title: 'คู่มือพนักงาน XC Desk v2',
   back: 'กลับแอดมิน',
+  backStaff: 'กลับหน้าพนักงาน',
   print: 'พิมพ์คู่มือ',
   section1Heading: '1. เข้าสู่ระบบและตรวจสาขา',
   section1Body:
@@ -27,6 +28,7 @@ export const th = {
 export const en: Record<keyof typeof th, string> = {
   title: 'XC Desk v2 Staff Guide',
   back: 'Back to Admin',
+  backStaff: 'Back to the staff page',
   print: 'Print Guide',
   section1Heading: '1. Sign in and verify branch',
   section1Body:

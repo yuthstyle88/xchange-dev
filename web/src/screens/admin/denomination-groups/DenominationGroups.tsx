@@ -285,33 +285,38 @@ export function DenominationGroups(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="denomination-groups-screen">
-      <label class="denomination-groups-currency-picker">
-        {t('currency')}
-        <select
-          value={selectedCurrency()}
-          onInput={(e) => {
-            setSelectedCurrency(e.currentTarget.value);
-            setAddError(null);
-            setNoteError(null);
-          }}
-          onChange={(e) => {
-            setSelectedCurrency(e.currentTarget.value);
-            setAddError(null);
-            setNoteError(null);
-          }}
-        >
-          <option value="" disabled selected={selectedCurrency() === ''}>
-            {t('currency')}
-          </option>
-          <For each={data()?.currencies ?? []}>
-            {(c) => (
-              <option value={c.currency} selected={c.currency === selectedCurrency()}>
-                {c.currency}
-              </option>
-            )}
-          </For>
-        </select>
-      </label>
+      <div class="card denomination-groups-pick-card">
+        <label class="denomination-groups-currency-picker">
+          {t('currency')}
+          <select
+            value={selectedCurrency()}
+            onInput={(e) => {
+              setSelectedCurrency(e.currentTarget.value);
+              setAddError(null);
+              setNoteError(null);
+            }}
+            onChange={(e) => {
+              setSelectedCurrency(e.currentTarget.value);
+              setAddError(null);
+              setNoteError(null);
+            }}
+          >
+            <option value="" disabled selected={selectedCurrency() === ''}>
+              {t('chooseCurrency')}
+            </option>
+            <For each={data()?.currencies ?? []}>
+              {(c) => (
+                <option value={c.currency} selected={c.currency === selectedCurrency()}>
+                  {c.currency}
+                </option>
+              )}
+            </For>
+          </select>
+        </label>
+        <Show when={selectedCurrency() === ''}>
+          <p class="denomination-groups-hint">{t('pickHint')}</p>
+        </Show>
+      </div>
 
       <Show when={selectedCurrency() !== ''}>
         <div class="denomination-groups-list">

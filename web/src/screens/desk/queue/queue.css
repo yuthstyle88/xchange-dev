@@ -1,0 +1,12 @@
+.desk-queue { display: grid; gap: 16px; padding: 16px; }
+.desk-queue-board, .desk-queue-sections { display: grid; gap: 16px; }
+.desk-queue-counter { display: grid; gap: 12px; }
+.desk-queue .desk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.desk-queue .desk-empty { margin: 0; padding: 24px 16px; text-align: center; color: var(--xc-muted); }
+.desk-queue .desk-notice { margin: 0; color: var(--xc-muted); }
+.desk-queue .desk-error { margin: 0; color: var(--xc-danger); }
+.desk-queue-section h3 { margin: 0 0 12px; font-size: var(--xc-text-lg); }
+.desk-queue-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.desk-queue-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--xc-line); }
+.desk-queue-row:first-child { padding-top: 0; border-top: 0; }
+.desk-queue-row > .desk-actions { margin-left: auto; }

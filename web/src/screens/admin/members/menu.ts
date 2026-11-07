@@ -11,7 +11,7 @@ export const menu: AdminMenu = {
   group: 'data',
   needs: 'MarketingMembers',
   dated: false,
-  icon: '👥',
+  icon: '♗',
   label: () => t('label'),
   heading: {
     eyebrow: () => t('eyebrow'),

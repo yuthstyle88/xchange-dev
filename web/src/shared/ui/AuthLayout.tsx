@@ -1,11 +1,13 @@
 import type { JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
 import { VersionFooter } from './VersionFooter';
+import '@fontsource-variable/noto-sans-thai/wght.css';
 import './xc-theme.css';
 import './auth.css';
 
 export function AuthLayout(props: {
   title: string;
+  subtitle?: string;
   help?: JSX.Element;
   children?: JSX.Element;
 }): JSX.Element {
@@ -18,6 +20,7 @@ export function AuthLayout(props: {
             <LangSwitch />
           </div>
           <h1>{props.title}</h1>
+          {props.subtitle && <p class="xc-auth-subtitle">{props.subtitle}</p>}
         </header>
         {props.help}
         {props.children}

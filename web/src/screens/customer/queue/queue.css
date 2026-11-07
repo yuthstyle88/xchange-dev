@@ -47,7 +47,10 @@
 }
 
 .xc-queue-signin {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   margin: 1rem 0;
   padding: 0.75rem 1.25rem;
   border-radius: var(--xc-radius-lg);

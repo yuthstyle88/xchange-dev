@@ -15,6 +15,7 @@ import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ConfirmDialog } from '../parts/ConfirmDialog';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { formatAmount } from '../../../shared/ui/currency-count/face-value';
 import { ClockButton } from './ClockButton';
 import { th, en } from './i18n';
@@ -55,17 +56,11 @@ function getCurrencies(
   return [THB, ...sorted];
 }
 
-function formatBusinessDate(dateStr: string): string {
-  const dateOnly = dateStr.split('T')[0];
-  const parts = dateOnly.split('-');
-  if (parts.length === 3) {
-    const day = parseInt(parts[2], 10);
-    const month = parseInt(parts[1], 10);
-    if (!Number.isNaN(day) && !Number.isNaN(month)) {
-      return `${day}/${month}`;
-    }
-  }
-  return dateStr;
+/** THB first, then A-Z, so the order never follows the answer's key order. */
+function sortedAmounts(amounts: Record<string, string>): [string, string][] {
+  return Object.entries(amounts).sort(([a], [b]) =>
+    a === THB ? -1 : b === THB ? 1 : a.localeCompare(b),
+  );
 }
 
 function formatShiftName(name: string, t: (key: any, params?: any) => string): string {
@@ -253,7 +248,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
           const shiftText = () => {
             const s = shift();
             const namePart = s.shiftName ? formatShiftName(s.shiftName, t) : '';
-            const datePart = s.businessDate ? formatBusinessDate(s.businessDate) : '';
+            const datePart = s.businessDate ? formatBangkokDate(s.businessDate) : '';
             if (namePart && datePart) return `${namePart} · ${datePart}`;
             return namePart || datePart;
           };
@@ -329,7 +324,6 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
                 <input
                   type="text"
                   data-currency={cur}
-                  class="xc-floor-target-input"
                   value={targetAmounts()[cur] ?? ''}
                   onInput={(e) => {
                     const val = e.currentTarget.value;
@@ -353,29 +347,31 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
 
       <Show when={props.ctx.floor?.target}>
         {(tg) => (
-          <div data-testid="floor-target" class="xc-floor-target">
-            <For each={Object.entries(tg().amounts ?? {})}>
+          <ul data-testid="floor-target" class="xc-floor-balances">
+            <For each={sortedAmounts(tg().amounts ?? {})}>
               {([cur, amount]) => (
-                <span class="xc-floor-target-amount">
-                  {cur}: {formatAmount(amount)}
-                </span>
+                <li class="xc-floor-balance" data-currency={cur}>
+                  <span class="xc-floor-balance-code">{cur}</span>
+                  <span class="xc-floor-balance-amount">{formatAmount(amount)}</span>
+                </li>
               )}
             </For>
-          </div>
+          </ul>
         )}
       </Show>
 
       <Show when={props.ctx.floor?.safe}>
         {(sf) => (
-          <div data-testid="floor-safe" class="xc-floor-safe">
-            <For each={Object.entries(sf())}>
+          <ul data-testid="floor-safe" class="xc-floor-balances">
+            <For each={sortedAmounts(sf())}>
               {([cur, amount]) => (
-                <span class="xc-floor-safe-amount">
-                  {cur}: {formatAmount(amount)}
-                </span>
+                <li class="xc-floor-balance" data-currency={cur}>
+                  <span class="xc-floor-balance-code">{cur}</span>
+                  <span class="xc-floor-balance-amount">{formatAmount(amount)}</span>
+                </li>
               )}
             </For>
-          </div>
+          </ul>
         )}
       </Show>
 

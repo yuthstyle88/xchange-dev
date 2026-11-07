@@ -15,6 +15,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import '../../../shared/ui/card.css';
 import './rate-alert-settings.css';
 
 const t = screenT('admin.rate-alert-settings', table);
@@ -260,7 +261,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Show when={!loading() && !loadError()}>
-        <div data-state={isEmpty() ? 'empty' : 'loaded'}>
+        <div class="rate-alert-body" data-state={isEmpty() ? 'empty' : 'loaded'}>
           <Show when={isEmpty()}>
             <div class="rate-alert-banner" data-state="empty">
               <div class="rate-alert-banner-title">{t('emptyTitle')}</div>
@@ -274,7 +275,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
             </div>
           </Show>
 
-          <div class="rate-alert-card">
+          <div class="rate-alert-card card">
             <div class="rate-alert-card-title">{t('title')}</div>
 
             <form class="rate-alert-form" noValidate onSubmit={handleSave}>

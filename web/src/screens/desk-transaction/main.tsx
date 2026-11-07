@@ -12,7 +12,7 @@ const t = screenT('desk-transaction', { th, en });
 
 render(
   () => (
-    <AppShell title={t('title')}>
+    <AppShell title={t('title')} queueCard="hidden">
       <TransactionScreen pathname={window.location.pathname} search={window.location.search} />
     </AppShell>
   ),

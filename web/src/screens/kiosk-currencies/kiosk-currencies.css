@@ -26,6 +26,16 @@
   margin: 28px auto 36px;
 }
 
+.xc-kiosk .xc-shell-main .kc-back {
+  color: var(--xc-brand);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.xc-kiosk .xc-shell-main .kc-back:hover {
+  text-decoration: underline;
+}
+
 .xc-kiosk .xc-shell-main h1 {
   font-size: clamp(32px, 4vw, 48px);
   letter-spacing: -1.6px;
@@ -39,11 +49,15 @@
   gap: 20px;
 }
 
+.xc-kiosk .cards .quote[data-display="HIDE"] {
+  order: 1;
+}
+
+.xc-kiosk .xc-shell-main .quote[hidden] {
+  display: none;
+}
+
 .xc-kiosk .xc-shell-main .quote {
-  padding: 18px 22px;
-  background: var(--xc-surface);
-  border: 1px solid var(--line);
-  border-radius: 14px;
   margin: 20px 0;
 }
 
@@ -92,6 +106,9 @@
 }
 
 .xc-kiosk .xc-shell-main .rate-side {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   margin: 12px 0 8px;
 }
 
@@ -204,6 +221,7 @@
 
 .xc-kiosk .xc-shell-main .kbank-box th {
   padding: 8px;
+  white-space: nowrap;
 }
 
 .xc-kiosk .xc-shell-main .kbank-box td {
@@ -325,4 +343,75 @@
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.xc-kiosk .xc-shell-main .kc-segments {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--xc-surface);
+}
+
+.xc-kiosk .xc-shell-main .kc-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  min-height: 44px;
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 15px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.xc-kiosk .xc-shell-main .kc-segment + .kc-segment {
+  border-left: 1px solid var(--line);
+}
+
+.xc-kiosk .xc-shell-main .kc-segment input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.xc-kiosk .xc-shell-main .kc-segment:has(input:checked) {
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+}
+
+.xc-kiosk .xc-shell-main .kc-segment:has(input:focus-visible) {
+  outline: 3px solid var(--xc);
+  outline-offset: -3px;
+}
+
+.xc-kiosk .xc-shell-main .kc-segment:has(input:disabled) {
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-600);
+  cursor: not-allowed;
+}
+
+/* Screen-look gate (LK-6): every static class has a rule. The caption above the SHOW/ASK/HIDE control (#6613). */
+.xc-kiosk .xc-shell-main .kc-display-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* The "show disabled currencies (n)" toggle (#6618) is a secondary button. */
+.xc-kiosk .xc-shell-main .kc-off-toggle {
+  align-self: flex-start;
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  font-weight: 600;
 }

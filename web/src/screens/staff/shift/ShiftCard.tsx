@@ -442,6 +442,13 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     );
   };
 
+  const nothingToShow = () =>
+    !(canOperate() && isClockedIn()) &&
+    !(error() ?? counts.error()) &&
+    (!canCertify() || counts.loaded()) &&
+    !(canCertify() && countsToVerify(counts.rows(), props.ctx.me.userId).length > 0) &&
+    !(canOperate() && handoversToMe().length > 0);
+
   const availableReceivers = () => {
     return handoverReceivers().filter((r) => r.userId !== props.ctx.me.userId);
   };
@@ -462,6 +469,12 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
         <div data-testid="shift-error" class="xc-shift-error">
           {error() ?? counts.error()}
         </div>
+      </Show>
+
+      <Show when={nothingToShow()}>
+        <p data-testid="shift-empty" class="xc-shift-empty">
+          {t(canOperate() && !isClockedIn() ? 'emptyClockIn' : 'emptyNothing')}
+        </p>
       </Show>
 
       <Show when={canOperate() && isClockedIn()}>
@@ -553,7 +566,6 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
             <label class="xc-shift-form-label">{t('receiver')}</label>
             <select
               data-testid="shift-receiver"
-              class="xc-shift-select"
               value={selectedReceiver()}
               onInput={(e) => setSelectedReceiver(e.currentTarget.value)}
               onChange={(e) => setSelectedReceiver(e.currentTarget.value)}

@@ -127,20 +127,25 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
         </section>
         <section class="queue-display-section">
           <h2 class="queue-display-heading">{tr('recentCalled')}</h2>
-          <div class="queue-display-list">
-            <For each={recent()}>
-              {(entry) => (
-                <div
-                  class="queue-display-recent"
-                  data-recent={entry.displayNumber}
-                  data-status={entry.status}
-                  data-called-at={entry.calledAt}
-                >
-                  {entry.displayNumber}
-                </div>
-              )}
-            </For>
-          </div>
+          <Show
+            when={recent().length > 0}
+            fallback={<div class="queue-display-empty">{tr('empty')}</div>}
+          >
+            <div class="queue-display-list">
+              <For each={recent()}>
+                {(entry) => (
+                  <div
+                    class="queue-display-recent"
+                    data-recent={entry.displayNumber}
+                    data-status={entry.status}
+                    data-called-at={entry.calledAt}
+                  >
+                    {entry.displayNumber}
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </section>
       </div>
     </main>

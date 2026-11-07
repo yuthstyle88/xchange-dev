@@ -1,6 +1,7 @@
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { createNotifications } from '../../../shared/notifications';
 import type { MyNotificationObject } from '../../../shared/api/generated/my_notifications';
 import { SignInNeeded, watchSignedOut } from '../_shell/SignInNeeded';
@@ -14,10 +15,6 @@ export function objectHref(o: MyNotificationObject | undefined): string | undefi
   if (o.objectType === 'rate_alert_event') return '/app/rate-alerts';
   if (o.objectType === 'rate_publication') return '/rates';
   return undefined;
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
 }
 
 export interface NotificationsScreenProps {
@@ -113,7 +110,7 @@ export function NotificationsScreen(props: NotificationsScreenProps): JSX.Elemen
                   >
                     {item.read ? t('readBadge') : t('unreadBadge')}
                   </span>
-                  <span class="xc-notifications-time">{formatTime(item.createdAt)}</span>
+                  <span class="xc-notifications-time">{formatBangkokDateTime(item.createdAt)}</span>
                 </div>
                 <div class="xc-notifications-body">{item.body}</div>
                 <Show when={objectHref(item.object) || !item.read}>

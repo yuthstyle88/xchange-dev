@@ -20,6 +20,7 @@ import { screenT, t as sharedT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import './loyalty.css';
 
 const t = screenT('admin.loyalty', table);
 
@@ -73,6 +74,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
   const [tierVersions, setTierVersions] = createSignal<TierRuleVersionItem[]>([]);
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
+  const [readFailed, setReadFailed] = createSignal(false);
 
   // POINT draft form signals (no business threshold or ratio is hard-coded)
   const [basis, setBasis] = createSignal('SETTLE_THB');
@@ -89,6 +91,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
     const mine = ++reading;
     setLoading(true);
     setError(null);
+    setReadFailed(false);
     try {
       const res = await api.viewBare<LoyaltyRuleVersionsData>('loyalty_rule_versions');
       if (mine !== reading) return;
@@ -98,6 +101,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
       if (mine !== reading) return;
       setPointVersions([]);
       setTierVersions([]);
+      setReadFailed(true);
       setError(loyaltyError(err));
     } finally {
       if (mine === reading) {
@@ -151,11 +155,16 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
   }
 
   return (
-    <div>
+    <div class="loyalty-screen">
       <Show when={error()}>
         {(msg) => (
-          <div role="alert">
-            {msg()}
+          <div class="loyalty-error">
+            <div role="alert">{msg()}</div>
+            <Show when={readFailed()}>
+              <button type="button" data-action="retry" onClick={() => void loadVersions()}>
+                {t('retry')}
+              </button>
+            </Show>
           </div>
         )}
       </Show>
@@ -164,60 +173,69 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
         <div>{t('loading')}</div>
       </Show>
 
-      <section>
-        <h4>{t('pointVersionsTitle')}</h4>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('headerVersion')}</th>
-              <th>{t('headerStatus')}</th>
-              <th>{t('headerBasis')}</th>
-              <th>{t('headerPointsRatio')}</th>
-              <th>{t('headerRounding')}</th>
-              <th>{t('headerMinimumBasisAmount')}</th>
-              <th>{t('headerExpiryMonths')}</th>
-              <th>{t('headerValidFrom')}</th>
-              <th>{t('headerValidTo')}</th>
-              <th>{t('headerActions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={pointVersions()}>
-              {(row) => (
-                <tr
-                  data-version-id={row.versionId}
-                  data-kind="POINT"
-                  data-version={String(row.version)}
-                  data-status={row.status}
-                >
-                  <td>{row.version}</td>
-                  <td>{statusLabel(row.status)}</td>
-                  <td>{row.basis}</td>
-                  <td>{row.pointsRatio}</td>
-                  <td>{row.rounding}</td>
-                  <td>{row.minimumBasisAmount}</td>
-                  <td>{row.expiryMonths ?? t('dash')}</td>
-                  <td>{row.validFrom}</td>
-                  <td>{row.validTo ?? t('dash')}</td>
-                  <td>
-                    <Show when={row.status === 'DRAFT'}>
-                      <button
-                        type="button"
-                        data-action="submit"
-                        onClick={() => void handleSubmit(row.versionId)}
-                      >
-                        {t('submit')}
-                      </button>
-                    </Show>
-                  </td>
+      <Show when={!readFailed()}>
+        <section class="card">
+          <h4>{t('pointVersionsTitle')}</h4>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('headerVersion')}</th>
+                  <th>{t('headerStatus')}</th>
+                  <th>{t('headerBasis')}</th>
+                  <th>{t('headerPointsRatio')}</th>
+                  <th>{t('headerRounding')}</th>
+                  <th>{t('headerMinimumBasisAmount')}</th>
+                  <th>{t('headerExpiryMonths')}</th>
+                  <th>{t('headerValidFrom')}</th>
+                  <th>{t('headerValidTo')}</th>
+                  <th>{t('headerActions')}</th>
                 </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-      </section>
+              </thead>
+              <tbody>
+                <Show when={!loading() && pointVersions().length === 0}>
+                  <tr>
+                    <td colspan="10">{t('noVersions')}</td>
+                  </tr>
+                </Show>
+                <For each={pointVersions()}>
+                  {(row) => (
+                    <tr
+                      data-version-id={row.versionId}
+                      data-kind="POINT"
+                      data-version={String(row.version)}
+                      data-status={row.status}
+                    >
+                      <td>{row.version}</td>
+                      <td>{statusLabel(row.status)}</td>
+                      <td>{row.basis}</td>
+                      <td>{row.pointsRatio}</td>
+                      <td>{row.rounding}</td>
+                      <td>{row.minimumBasisAmount}</td>
+                      <td>{row.expiryMonths ?? t('dash')}</td>
+                      <td>{row.validFrom}</td>
+                      <td>{row.validTo ?? t('dash')}</td>
+                      <td>
+                        <Show when={row.status === 'DRAFT'}>
+                          <button
+                            type="button"
+                            data-action="submit"
+                            onClick={() => void handleSubmit(row.versionId)}
+                          >
+                            {t('submit')}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </Show>
 
-      <section data-form="point-draft">
+      <section class="card" data-form="point-draft">
         <h4>{t('draftPointTitle')}</h4>
         <div class="xc-form-grid">
           <div class="xc-form-group">
@@ -314,6 +332,7 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
         </div>
         <button
           type="button"
+          class="primary"
           data-action="save-draft"
           onClick={() => void handleSavePointDraft()}
         >
@@ -321,50 +340,59 @@ export function Loyalty(props: AdminMenuProps): JSX.Element {
         </button>
       </section>
 
-      <section>
-        <h4>{t('tierVersionsTitle')}</h4>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('headerVersion')}</th>
-              <th>{t('headerStatus')}</th>
-              <th>{t('headerRollingMonths')}</th>
-              <th>{t('headerValidFrom')}</th>
-              <th>{t('headerValidTo')}</th>
-              <th>{t('headerActions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <For each={tierVersions()}>
-              {(row) => (
-                <tr
-                  data-version-id={row.versionId}
-                  data-kind="TIER"
-                  data-version={String(row.version)}
-                  data-status={row.status}
-                >
-                  <td>{row.version}</td>
-                  <td>{statusLabel(row.status)}</td>
-                  <td>{row.rollingMonths}</td>
-                  <td>{row.validFrom}</td>
-                  <td>{row.validTo ?? t('dash')}</td>
-                  <td>
-                    <Show when={row.status === 'DRAFT'}>
-                      <button
-                        type="button"
-                        data-action="submit"
-                        onClick={() => void handleSubmit(row.versionId)}
-                      >
-                        {t('submit')}
-                      </button>
-                    </Show>
-                  </td>
+      <Show when={!readFailed()}>
+        <section class="card">
+          <h4>{t('tierVersionsTitle')}</h4>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>{t('headerVersion')}</th>
+                  <th>{t('headerStatus')}</th>
+                  <th>{t('headerRollingMonths')}</th>
+                  <th>{t('headerValidFrom')}</th>
+                  <th>{t('headerValidTo')}</th>
+                  <th>{t('headerActions')}</th>
                 </tr>
-              )}
-            </For>
-          </tbody>
-        </table>
-      </section>
+              </thead>
+              <tbody>
+                <Show when={!loading() && tierVersions().length === 0}>
+                  <tr>
+                    <td colspan="6">{t('noVersions')}</td>
+                  </tr>
+                </Show>
+                <For each={tierVersions()}>
+                  {(row) => (
+                    <tr
+                      data-version-id={row.versionId}
+                      data-kind="TIER"
+                      data-version={String(row.version)}
+                      data-status={row.status}
+                    >
+                      <td>{row.version}</td>
+                      <td>{statusLabel(row.status)}</td>
+                      <td>{row.rollingMonths}</td>
+                      <td>{row.validFrom}</td>
+                      <td>{row.validTo ?? t('dash')}</td>
+                      <td>
+                        <Show when={row.status === 'DRAFT'}>
+                          <button
+                            type="button"
+                            data-action="submit"
+                            onClick={() => void handleSubmit(row.versionId)}
+                          >
+                            {t('submit')}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </Show>
     </div>
   );
 }

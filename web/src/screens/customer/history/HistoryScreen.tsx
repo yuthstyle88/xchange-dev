@@ -1,6 +1,7 @@
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyTransactionItem, MyTransactionsData } from '../../../shared/api/generated/my_transactions';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { lang, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -65,6 +66,7 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
 
   return (
     <div class="xc-history-screen">
+      <h1 class="xc-history-title">{t('title')}</h1>
       <Show when={loading()}>
         <div class="xc-history-loading" role="status">
           {t('loading')}
@@ -90,7 +92,12 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
       </Show>
 
       <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length === 0}>
-        <div class="xc-history-empty">{t('empty')}</div>
+        <div class="xc-history-empty">
+          <p>{t('empty')}</p>
+          <a class="xc-c-primary" href="/app/book">
+            {t('emptyCta')}
+          </a>
+        </div>
       </Show>
 
       <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length > 0}>
@@ -99,7 +106,7 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
             {(tx) => (
               <div class="xc-history-item">
                 <div class="xc-history-item-header">
-                  <span class="xc-history-date">{tx.date}</span>
+                  <span class="xc-history-date">{formatBangkokDate(tx.date)}</span>
                   <span class="xc-history-branch">{tx.branchName || tx.branch}</span>
                   <span
                     class={`xc-history-status ${tx.status === 'REVERSED' ? 'xc-history-status-reversed' : ''}`}

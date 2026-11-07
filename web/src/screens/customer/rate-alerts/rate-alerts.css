@@ -5,7 +5,7 @@
   flex-direction: column;
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 1rem 1.25rem 2.5rem;
+  padding: 1rem 1rem 2.5rem;
   background-color: var(--xc-bg);
   color: var(--xc-text);
   font-family: inherit;
@@ -72,6 +72,7 @@
 
 .xc-form-input,
 .xc-form-select {
+  width: 100%;
   padding: 0.625rem 0.75rem;
   font-size: 0.9375rem;
   border: 2px solid var(--xc-border);
@@ -171,7 +172,8 @@
 
 .xc-alerts-retry-btn:disabled,
 .xc-btn-primary:disabled {
-  opacity: 0.6;
+  background-color: var(--xc-gray-100);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
 }
 

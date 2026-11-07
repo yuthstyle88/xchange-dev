@@ -13,7 +13,7 @@ export const menu: AdminMenu = {
   group: 'money',
   needs: 'FinanceReconcile',
   dated: true,
-  icon: '🧾',
+  icon: '=',
   label: () => t('label'),
   heading: {
     eyebrow: () => t('eyebrow'),

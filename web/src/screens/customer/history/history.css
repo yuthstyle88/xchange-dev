@@ -6,6 +6,12 @@
   margin: 0 auto;
 }
 
+.xc-history-title {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
 .xc-history-loading {
   text-align: center;
   padding: 2rem;
@@ -34,6 +40,16 @@
   text-align: center;
   padding: 2rem;
   color: var(--xc-text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--xc-card);
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
+}
+
+.xc-history-empty p {
+  margin: 0;
 }
 
 .xc-history-list {

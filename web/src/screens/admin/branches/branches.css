@@ -21,6 +21,10 @@
   gap: 8px;
 }
 
+.branches-select-group .branches-label {
+  white-space: nowrap;
+}
+
 .branches-label {
   font-size: 14px;
   font-weight: 500;
@@ -47,11 +51,9 @@
   color: var(--xc-muted);
 }
 
-.branches-card {
-  background: var(--xc-surface);
-  border-radius: 8px;
+.xc-admin .xc-content .branches-card {
   padding: 20px;
-  box-shadow: var(--xc-shadow-sm);
+  margin-bottom: 0;
 }
 
 .branches-heading {
@@ -361,8 +363,16 @@
 }
 
 .branches-shifts-row-fields {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) repeat(4, minmax(110px, 1fr)) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.xc-admin .xc-content.xc-content .branches-shift-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.branches-shift-label { font-size: 12px; font-weight: 500; color: var(--xc-muted); }
+.xc-admin .xc-content.xc-content .branches-shift-field input { margin-top: 0; }
+@media (max-width: 800px) {
+  .branches-shifts-row-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .branches-shifts-row-fields .branches-shift-field:first-child { grid-column: 1 / -1; }
 }

@@ -12,12 +12,13 @@ import type {
   FinanceSheet,
   ReconciliationCertifyInput,
 } from '../../../shared/api/generated/finance_reconciliation';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
 import './reconciliation.css';
-import { Empty, PartBox, stamp } from './parts';
+import { Empty, PartBox, stamp, Who } from './parts';
 import { ReversalsPart } from './reversals/ReversalsPart';
 import { TransfersPart } from './transfers/TransfersPart';
 
@@ -44,7 +45,7 @@ function today(): string {
 function Certification(props: { row: CertificationRow }): JSX.Element {
   return (
     <li data-certification={props.row.id} data-stale={props.row.stale ? 'true' : 'false'}>
-      <span>{stamp(props.row.certifiedAt)}</span> <span>{props.row.certifiedBy}</span>{' '}
+      <span>{stamp(props.row.certifiedAt)}</span> <Who id={props.row.certifiedBy} />{' '}
       <span>{props.row.stale ? t('stale') : t('current')}</span>
       <Show when={props.row.note}>
         {' '}
@@ -143,7 +144,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
         {(s) => (
           <>
             <header>
-              <strong>{t('sheetDay', { date: s().date || day() })}</strong>
+              <strong>{t('sheetDay', { date: formatBangkokDate(s().date || day()) })}</strong>
               <Show when={!singleDay()}>
                 <p class="warning">{t('pickOneDay')}</p>
               </Show>
@@ -151,33 +152,37 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
             <PartBox name="transactions" part={s().transactions}>
               {(tx) => (
                 <>
-                  <table class="reconciliation-table">
-                    <thead>
-                      <tr>
-                        <th>{t('method')}</th>
-                        <th>{t('buyThb')}</th>
-                        <th>{t('sellThb')}</th>
-                        <th>{t('fees')}</th>
-                        <th>{t('bankFees')}</th>
-                        <th>{t('count')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <For each={tx.byMethod}>
-                        {(m) => (
+                  <Show when={tx.byMethod.length > 0} fallback={<Empty />}>
+                    <div class="table-scroll">
+                      <table class="reconciliation-table">
+                        <thead>
                           <tr>
-                            <td>{m.method}</td>
-                            <td>{m.buyThb}</td>
-                            <td>{m.sellThb}</td>
-                            <td>{m.fees}</td>
-                            <td>{m.bankFees}</td>
-                            <td>{m.count}</td>
+                            <th>{t('method')}</th>
+                            <th class="num">{t('buyThb')}</th>
+                            <th class="num">{t('sellThb')}</th>
+                            <th class="num">{t('fees')}</th>
+                            <th class="num">{t('bankFees')}</th>
+                            <th class="num">{t('count')}</th>
                           </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                  <p>
+                        </thead>
+                        <tbody>
+                          <For each={tx.byMethod}>
+                            {(m) => (
+                              <tr>
+                                <td>{m.method}</td>
+                                <td class="num">{m.buyThb}</td>
+                                <td class="num">{m.sellThb}</td>
+                                <td class="num">{m.fees}</td>
+                                <td class="num">{m.bankFees}</td>
+                                <td class="num">{m.count}</td>
+                              </tr>
+                            )}
+                          </For>
+                        </tbody>
+                      </table>
+                    </div>
+                  </Show>
+                  <p class="reconciliation-reversed">
                     {t('reversedThb')}: {tx.reversedThb}
                   </p>
                 </>
@@ -190,7 +195,8 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
                     <For each={rows}>
                       {(c) => (
                         <li>
-                          {c.kind} {c.countedBy} {c.verifiedBy ?? ''}{' '}
+                          {c.kind} <Who id={c.countedBy} />{' '}
+                          <Show when={c.verifiedBy}>{(v) => <Who id={v()} />}</Show>{' '}
                           <For each={c.lines}>
                             {(l) => (
                               <span>
@@ -236,7 +242,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
               )}
             </PartBox>
 
-            <section class="reconciliation-certify">
+            <section class="card reconciliation-certify">
               <h3>{t('certifications')}</h3>
               <Show when={s().certifications.length > 0} fallback={<Empty />}>
                 <ul>
@@ -253,7 +259,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
                   onInput={(e) => setNote(e.currentTarget.value)}
                 />
               </label>
-              <div>{note().length} / 500</div>
+              <div class="reconciliation-counter">{note().length} / 500</div>
               <Show when={resolvedError()?.field === 'note'}>
                 <div class="reconciliation-error" role="alert" data-field-error="note">
                   {resolvedError()?.message}
@@ -261,6 +267,7 @@ export function Reconciliation(props: AdminMenuProps): JSX.Element {
               </Show>
               <button
                 type="button"
+                class="primary"
                 disabled={busy() || !singleDay()}
                 title={!singleDay() ? t('pickOneDay') : undefined}
                 onClick={() => void certify()}

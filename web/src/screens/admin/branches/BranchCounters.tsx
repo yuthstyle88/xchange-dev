@@ -211,7 +211,7 @@ export function BranchCounters(props: BranchCountersProps): JSX.Element {
   };
 
   return (
-    <section class="branches-card branches-counters" data-counters-panel>
+    <section class="branches-card card branches-counters" data-counters-panel>
       <h2 class="branches-heading">{t('countersHeading')}</h2>
 
       <Show when={error()}>

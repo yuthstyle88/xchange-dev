@@ -11,7 +11,7 @@
   --soft: var(--xc-brand-soft);
   --green: var(--xc-ok);
   margin: 0;
-  font: 16px/1.6 Tahoma, Arial, sans-serif;
+  font: 16px/1.6 var(--xc-font-sans);
   color: var(--ink);
   background: var(--bg);
   min-height: 100vh;
@@ -45,7 +45,10 @@
 
 .xc-admin .xc-content.xc-content button:disabled {
   cursor:not-allowed;
-  opacity:.5;
+  background:var(--xc-gray-100);
+  border-color:var(--xc-line);
+  color:var(--xc-gray-600);
+  box-shadow:none;
 }
 
 .xc-admin .xc-content.xc-content button, .xc-admin .xc-content.xc-content input, .xc-admin .xc-content.xc-content select {
@@ -55,18 +58,22 @@
 .xc-admin .xc-content.xc-content button {
   min-height:44px;
   padding:9px 16px;
-  border:1px solid transparent;
+  border:1px solid var(--xc-line);
   font-size:14px;
   font-weight:600;
 }
 
-.xc-admin .xc-content.xc-content input:not([type="checkbox"]), .xc-admin .xc-content.xc-content select {
+.xc-admin .xc-content.xc-content input:not([type="checkbox"]):not([type="radio"]), .xc-admin .xc-content.xc-content select, .xc-admin .xc-content.xc-content textarea {
   width:100%;
   background:var(--xc-surface);
   border:1px solid var(--xc-line);
   color:var(--ink);
   padding:10px 12px;
   min-height:44px;
+}
+
+.xc-admin .xc-content.xc-content textarea {
+  min-height:88px;
 }
 
 .xc-admin .xc-content.xc-content button:focus-visible, .xc-admin .xc-content.xc-content a:focus-visible, .xc-admin .xc-content.xc-content input:focus-visible, .xc-admin .xc-content.xc-content select:focus-visible {
@@ -83,6 +90,17 @@
 .xc-admin .xc-content.xc-content label:not(.check-field) input, .xc-admin .xc-content.xc-content label:not(.check-field) select {
   display:block;
   margin-top:6px;
+}
+
+.xc-admin .xc-content.xc-content label:not(.check-field):has(> input[type="checkbox"], > input[type="radio"]) {
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.xc-admin .xc-content.xc-content label:not(.check-field) input:is([type="checkbox"], [type="radio"]) {
+  display:inline-block;
+  margin-top:0;
 }
 
 .xc-admin .xc-content.xc-content h1, .xc-admin .xc-content.xc-content h2, .xc-admin .xc-content.xc-content p {
@@ -190,7 +208,7 @@
 }
 
 .xc-admin .xc-shell-header {
-  height:83px;
+  min-height:83px;
   background:var(--xc-surface);
   border-bottom:1px solid var(--line);
   padding:0 38px;
@@ -204,6 +222,10 @@
   letter-spacing:1.8px;
   color:var(--muted);
   font-weight:600;
+}
+
+.xc-admin .xc-content.xc-content .eyebrow:lang(th) {
+  letter-spacing:0;
 }
 
 .xc-admin .xc-content.xc-content .header-label {
@@ -828,7 +850,7 @@
   }
 
   .xc-admin .xc-shell-header {
-    height:62px;
+    min-height:62px;
     padding-inline:18px;
   }
 
@@ -1117,6 +1139,32 @@
   gap:16px;
 }
 
+@media(min-width:761px) and (max-width:1279px) {
+  .xc-admin .xc-shell-header {
+    padding-block:14px;
+  }
+}
+
+.xc-admin .xc-content.xc-content .xc-shell-title {
+  padding-left: 38px;
+}
+
+@media(max-width:760px) {
+  .xc-admin .xc-shell-header {
+    gap:8px;
+  }
+
+  .xc-admin .xc-content.xc-content .xc-shell-title {
+    padding-left:16px;
+  }
+
+  .xc-admin .xc-shell-panel {
+    flex:0 0 calc(100% + 36px);
+    width:calc(100% + 36px);
+    margin:0 -18px;
+  }
+}
+
 @media(max-width:800px) {
   .xc-admin .xc-shell-header {
     flex-wrap:wrap;
@@ -1161,8 +1209,8 @@
   box-sizing: border-box;
 }
 
-.xc-admin .account-bar,
 .xc-admin .xc-shell-header,
+.xc-admin .xc-content.xc-content .xc-shell-title,
 .xc-admin .xc-shell-alert,
 .xc-admin .xc-shell-footer,
 .xc-admin .xc-content .admin-shell-container,
@@ -1170,6 +1218,7 @@
 .xc-admin .xc-content .xc-workspace .shell {
   margin-left: 248px;
 }
+
 
 .xc-admin .xc-content .branch-manager {
   display: flex;
@@ -1396,7 +1445,8 @@
 .xc-admin .xc-content .xc-workspace .toolbar {
   background: var(--xc-surface);
   border: 1px solid var(--xc-line);
-  border-radius: 8px;
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
   padding: 14px 18px;
   margin-bottom: 22px;
   align-items: center;
@@ -1410,20 +1460,20 @@
   font-size: 12px;
 }
 
-.xc-admin .xc-content .period-toolbar input[type="date"],
-.xc-admin .xc-content .xc-workspace .range input {
-  min-height: 40px;
-  font-size: 13px;
-  width: 148px;
-  padding: 8px;
+.xc-admin .xc-content.xc-content .period-toolbar input[type="date"],
+.xc-admin .xc-content.xc-content .xc-workspace .range input {
+  min-height: 44px;
+  font-size: 14px;
+  width: 168px;
+  padding: 8px 10px;
   box-sizing: border-box;
 }
 
 .xc-admin .xc-content .period-toolbar button,
 .xc-admin .xc-content .xc-workspace .range button,
 .xc-admin .xc-content .xc-workspace #export {
-  font-size: 12px;
-  padding: 4px 10px;
+  font-size: 13px;
+  padding: 8px 14px;
   cursor: pointer;
 }
 
@@ -1438,11 +1488,12 @@
   grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr) auto;
   gap: 20px;
   align-items: center;
-  background: var(--xc-gray-100);
+  background: var(--xc-surface);
   border: 1px solid var(--xc-line);
   padding: 22px 24px;
   margin-bottom: 24px;
-  border-radius: 8px;
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
 }
 
 .xc-admin .xc-content #workspace-status > div,
@@ -2009,6 +2060,7 @@
   }
   .xc-admin .account-bar,
   .xc-admin .xc-shell-header,
+  .xc-admin .xc-content.xc-content .xc-shell-title,
   .xc-admin .xc-shell-alert,
   .xc-admin .xc-shell-footer,
   .xc-admin .xc-content .admin-shell-container,
@@ -2129,9 +2181,11 @@
   .xc-admin .xc-content .period-toolbar {
     padding: 14px;
   }
-  .xc-admin .xc-content .xc-workspace .range input,
-  .xc-admin .xc-content .period-toolbar input[type="date"] {
-    width: 100%;
+  .xc-admin .xc-content.xc-content .xc-workspace .range input,
+  .xc-admin .xc-content.xc-content .period-toolbar input[type="date"] {
+    flex: 1 1 130px;
+    width: auto;
+    min-width: 0;
   }
   .xc-admin .xc-content .xc-workspace .range,
   .xc-admin .xc-content .period-toolbar {
@@ -2288,7 +2342,7 @@
 /* 4302 ruling A: while the floating queue card shows (queue-card.css), the admin content makes room for it. */
 @media (min-width: 1024px) {
   .xc-admin:has(.queue-card) .xc-content .admin-main,
-  body:has(.queue-card) .xc-admin .xc-content .admin-main { padding-right: 335px; }
+  body:has(.queue-card) .xc-admin .xc-content .admin-main { padding-bottom: 260px; }
 }
 @media (max-width: 1023px) {
   .xc-admin:has(.queue-card) .xc-content .admin-main,

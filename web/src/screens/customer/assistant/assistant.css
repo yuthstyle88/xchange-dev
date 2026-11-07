@@ -5,12 +5,20 @@
   flex-direction: column;
   height: 100%;
   max-width: 640px;
-  margin: 0 auto;
+  margin: 12px auto;
   padding: 16px;
   box-sizing: border-box;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: inherit;
   color: var(--xc-text);
-  background-color: var(--xc-surface);
+  background-color: var(--xc-card);
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
+}
+
+@media (max-width: 672px) {
+  .assistant-container {
+    margin: 12px 16px;
+  }
 }
 
 .assistant-header {
@@ -231,11 +239,18 @@
 
 .assistant-input {
   flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  box-sizing: border-box;
   padding: 10px 14px;
   border: 1px solid var(--xc-border);
   border-radius: var(--xc-radius-md);
   font-size: 0.9375rem;
   outline: none;
+}
+
+.assistant-input:placeholder-shown {
+  text-overflow: ellipsis;
 }
 
 .assistant-input:focus {
@@ -257,8 +272,19 @@
 }
 
 .assistant-send-button:disabled {
-  background-color: var(--xc-brand-line);
+  background-color: var(--xc-gray-100);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+  .assistant-form {
+    flex-wrap: wrap;
+  }
+  .assistant-input,
+  .assistant-send-button {
+    flex: 1 0 100%;
+  }
 }
 
 .assistant-security-note {
@@ -309,7 +335,8 @@
 }
 
 .assistant-preview-confirm:disabled {
-  background-color: var(--xc-brand-line);
+  background-color: var(--xc-gray-100);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
 }
 

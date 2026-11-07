@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-cash-calculators (#511): the valuation panel of the shift detail (ticket §8–§10 rows W1–W4,
 // W6–W8, §9 edge cases; design §12.20.1 V1–V7, §12.20.4, §12.20.6). Written before the
 // implementation by the lane controller (claude/7ca80c). Do not edit, delete or weaken; add tests
@@ -476,15 +478,16 @@ describe('V2-cash-calculators: the valuation submit and its result (W3; shift-va
     expect(sent[0]!.body.rates).toEqual({ USD: '34.5', EUR: '40', AUD: '1' });
   });
 
-  it("shows the answer: the date and kind as typed, ผู้ใช้กรอกเอง, คำนวณเมื่อ with the browser's clock (th-TH)", async () => {
+  it("shows the answer: the date and kind as typed, ผู้ใช้กรอกเอง, คำนวณเมื่อ with the browser's clock (dd/mm/yyyy HH:mm Bangkok)", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const now = new Date('2026-10-28T05:06:07.000Z');
     vi.setSystemTime(now);
     const el = await mount();
     await submit(el, RATES, { date: '2026-10-27', kind: 'ซื้อตั๋วเงิน' });
     const all = spaced(resultArea(el));
-    expect(all).toContain('เรทวันที่ 2026-10-27 · ซื้อตั๋วเงิน · ผู้ใช้กรอกเอง');
-    expect(all).toContain(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }))}`);
+    expect(all).toContain('เรทวันที่ 27/10/2026 · ซื้อตั๋วเงิน · ผู้ใช้กรอกเอง');
+    expect(all).toContain('คำนวณเมื่อ 28/10/2026 12:06');
+    expect(all).not.toContain('12:06:07');
   });
 
   it("the table: one row per answered currency, in the answer's order, with the answer's figures and the server's rate string", async () => {

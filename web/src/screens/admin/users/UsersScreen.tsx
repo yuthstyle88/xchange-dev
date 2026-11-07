@@ -23,8 +23,11 @@ import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import { shortId } from './short-id';
+import '../../../shared/ui/card.css';
 import './users.css';
 
 const t = screenT('admin.users', table);
@@ -470,7 +473,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
 
     const validFrom = grantValidFrom().trim();
     const validTo = grantValidTo().trim();
-    const fromFloor = validFrom || formatBkkDate(new Date(Date.now()).toISOString());
+    const fromFloor = validFrom || bkkDayIso(new Date(Date.now()).toISOString());
     if (validTo && validTo <= fromFloor) {
       setGrantValidToError(t('invalidGrantPeriod'));
       return;
@@ -709,7 +712,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   const isRoleEnded = (r: AdminUserRole): boolean =>
     r.validTo !== null && Date.parse(r.validTo) <= Date.now();
 
-  const formatBkkDate = (iso: string): string =>
+  const bkkDayIso = (iso: string): string =>
     new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
 
   return (
@@ -723,7 +726,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                 type="button"
                 role="tab"
                 aria-selected={activeTab() === tab.id}
-                class={activeTab() === tab.id ? 'users-btn users-btn-secondary' : 'users-btn'}
+                class="users-btn users-tab"
                 data-users-tab={tab.id}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -801,7 +804,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
           )}
         </Show>
 
-        <div class="users-card">
+        <div class="users-card card">
           <Show
             when={users().length > 0}
             fallback={
@@ -835,7 +838,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                           <td class="users-td">{user.employeeCode ?? '—'}</td>
                           <td class="users-td">
                             <div><strong>{user.name}</strong></div>
-                            <small class="users-intro">{user.userId}</small>
+                            <small class="users-intro" title={user.userId}>{shortId(user.userId)}</small>
                           </td>
                           <td class="users-td">
                             <div class="users-roles-list">
@@ -855,8 +858,8 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                       <Show when={r.validTo !== null}>
                                         <span class="users-role-branch">
                                           {ended
-                                            ? t('roleEnded', { date: formatBkkDate(r.validTo!) })
-                                            : t('roleUntil', { date: formatBkkDate(r.validTo!) })}
+                                            ? t('roleEnded', { date: formatBangkokDate(r.validTo!) })
+                                            : t('roleUntil', { date: formatBangkokDate(r.validTo!) })}
                                         </span>
                                       </Show>
                                       <Show when={isActive() && !ended}>
@@ -1261,7 +1264,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                     id="grant-valid-to"
                     name="grantValidTo"
                     type="date"
-                    min={grantValidFrom().trim() || formatBkkDate(new Date(Date.now() + 86_400_000).toISOString())}
+                    min={grantValidFrom().trim() || bkkDayIso(new Date(Date.now() + 86_400_000).toISOString())}
                     class="users-input"
                     value={grantValidTo()}
                     onInput={(e) => {

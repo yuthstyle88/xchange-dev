@@ -274,3 +274,14 @@
   flex-direction: column;
   gap: 14px;
 }
+
+.xc-admin .xc-content .cell-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 18ch;
+}
+
+.xc-admin .xc-content .stock-card .footnote {
+  margin: 0;
+  padding: 12px 22px 18px;
+}

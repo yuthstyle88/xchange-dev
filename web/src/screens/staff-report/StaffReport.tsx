@@ -14,6 +14,7 @@ import { lang, screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { formatMoney } from '../../shared/ui/MoneyText';
 import * as table from './i18n';
+import '../../shared/ui/card.css';
 import './staff-report.css';
 
 const t = screenT('staff-report', table);
@@ -73,7 +74,7 @@ function Sheet(props: { report: StaffDailyReportData }): JSX.Element {
           .join(' / ');
   return (
     <article class="staff-report-sheet">
-      <header class="staff-report-heading">
+      <header class="staff-report-heading card">
         <p class="staff-report-eyebrow">{t('sheetTitle')}</p>
         <h2>{r().company ?? t('noEntity')}</h2>
         <h3>{t('siteDay', { site: r().site ?? r().branchName, day: r().day })}</h3>
@@ -83,39 +84,41 @@ function Sheet(props: { report: StaffDailyReportData }): JSX.Element {
       </header>
 
       <section class="staff-report-metrics">
-        <p>
-          {t('completed')} <b>{r().completed}</b>
+        <p class="staff-report-stat card">
+          <span class="staff-report-stat-label">{t('completed')}</span> <b>{r().completed}</b>
         </p>
-        <p>
-          {t('buyVolume')} <b>{formatMoney(r().buyVolume)}</b> THB
+        <p class="staff-report-stat card">
+          <span class="staff-report-stat-label">{t('buyVolume')}</span> <span><b>{formatMoney(r().buyVolume)}</b> THB</span>
         </p>
-        <p>
-          {t('sellVolume')} <b>{formatMoney(r().sellVolume)}</b> THB
+        <p class="staff-report-stat card">
+          <span class="staff-report-stat-label">{t('sellVolume')}</span> <span><b>{formatMoney(r().sellVolume)}</b> THB</span>
         </p>
-        <p>
-          {t('reversedVolume')} <b>{formatMoney(r().reversedVolume)}</b> THB
+        <p class="staff-report-stat card">
+          <span class="staff-report-stat-label">{t('reversedVolume')}</span> <span><b>{formatMoney(r().reversedVolume)}</b> THB</span>
         </p>
-        <p>
-          {t('pendingTransactions')} <b>{r().pendingTransactions}</b>
+        <p class="staff-report-stat card">
+          <span class="staff-report-stat-label">{t('pendingTransactions')}</span> <b>{r().pendingTransactions}</b>
         </p>
       </section>
 
-      <table class="staff-report-table">
-        <thead>
-          <tr>
-            <th>{t('currency')}</th>
-            <th>{t('drawerCounted')}</th>
-            <th>{t('safeCounted')}</th>
-            <th>{t('drawerDifference')}</th>
-            <th>{t('safeDifference')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={r().currencies}>{(row) => <CurrencyRow row={row} />}</For>
-        </tbody>
-      </table>
+      <div class="staff-report-table-card card">
+        <table class="staff-report-table">
+          <thead>
+            <tr>
+              <th>{t('currency')}</th>
+              <th>{t('drawerCounted')}</th>
+              <th>{t('safeCounted')}</th>
+              <th>{t('drawerDifference')}</th>
+              <th>{t('safeDifference')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <For each={r().currencies}>{(row) => <CurrencyRow row={row} />}</For>
+          </tbody>
+        </table>
+      </div>
 
-      <section class="staff-report-checks">
+      <section class="staff-report-checks card">
         <h3>{t('handoverHeading')}</h3>
         <p>{t('requestsLine', { requests: r().pendingRequests, exceptions: r().openExceptions })}</p>
         <For each={r().notes}>
@@ -129,7 +132,7 @@ function Sheet(props: { report: StaffDailyReportData }): JSX.Element {
         <p>{t('inTransitLine', { list: transit() })}</p>
       </section>
 
-      <section class="staff-report-signers">
+      <section class="staff-report-signers card">
         <h3>{t('signersHeading')}</h3>
         <p>{signers()}</p>
         <p>{t('finance', { note: r().financeNote ?? t('financeFallback') })}</p>
@@ -176,7 +179,7 @@ export function StaffReport(): JSX.Element {
 
   return (
     <div class="staff-report">
-      <div class="staff-report-tools">
+      <div class="staff-report-tools card">
         <label>
           {t('day')}{' '}
           <input
@@ -192,16 +195,16 @@ export function StaffReport(): JSX.Element {
         <button type="button" onClick={() => window.print()}>
           {t('print')}
         </button>
-        <a href="/staff">{t('back')}</a>
+        <a class="xc-btn staff-report-back" href="/staff">{t('back')}</a>
       </div>
       <Switch>
         <Match when={state().kind === 'loading'}>
           <p class="staff-report-loading">{t('loading')}</p>
         </Match>
         <Match when={state().kind === 'refused'}>
-          <div class="staff-report-refusal">
+          <div class="staff-report-refusal card">
             <p>{(state() as { message: string }).message}</p>
-            <a href="/staff">{t('signInAgain')}</a>
+            <a class="xc-btn staff-report-back" href="/staff">{t('signInAgain')}</a>
           </div>
         </Match>
         <Match when={state().kind === 'ready'}>

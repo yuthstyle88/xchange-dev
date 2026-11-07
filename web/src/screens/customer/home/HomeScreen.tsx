@@ -22,7 +22,7 @@ import type { PlannerPreviewAnswer } from '../../../shared/api/generated/planner
 import type { PlannerDraftDto } from '../../../shared/api/generated/my_planner_drafts';
 import { MoneyText } from '../../../shared/ui/MoneyText';
 import { RateFreshness } from '../../../shared/ui/RateFreshness';
-import { formatOpeningHours } from '../../../shared/ui/openingHours';
+import { openingHoursRows } from '../../../shared/ui/openingHours';
 import { formatRate } from '../../../shared/ui/rate';
 import { th, en, zh } from './i18n';
 import './home.css';
@@ -407,12 +407,19 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                   <Show when={b().address}>
                     <p class="xc-home-branch-address">{b().address}</p>
                   </Show>
-                  <Show when={formatOpeningHours(b().openingHours, lang())}>
-                    {(hours) => (
-                      <p class="xc-home-branch-hours">
-                        <strong>{t('hours')}:</strong> {hours()}
-                      </p>
-                    )}
+                  <Show when={openingHoursRows(b().openingHours, lang()).length > 0}>
+                    <div class="xc-home-branch-hours">
+                      <strong>{t('hours')}:</strong>
+                      <ul class="xc-home-hours">
+                        <For each={openingHoursRows(b().openingHours, lang())}>
+                          {(row) => (
+                            <li class="xc-home-hours-row">
+                              <span>{row.day}:</span> <span>{row.text}</span>
+                            </li>
+                          )}
+                        </For>
+                      </ul>
+                    </div>
                   </Show>
                   <div class="xc-home-branch-badges">
                     <span

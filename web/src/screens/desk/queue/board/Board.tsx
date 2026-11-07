@@ -20,7 +20,7 @@ export function Board(props: BoardProps): JSX.Element {
   const state = () => props.store.state();
 
   return (
-    <div>
+    <div class="desk-queue-board">
       <Show when={error()?.kind === 'offline'}>
         <p role="status" class="desk-error">{t('offline')}</p>
       </Show>
@@ -33,14 +33,14 @@ export function Board(props: BoardProps): JSX.Element {
         }
       >
         {(s) => (
-          <div>
-            <section>
+          <div class="desk-queue-sections">
+            <section class="card desk-queue-section">
               <h3>{t('waiting')}</h3>
               <Show when={s().waiting.length > 0} fallback={<p class="desk-empty">{t('emptyWaiting')}</p>}>
-                <ul>
+                <ul class="desk-queue-list">
                   <For each={s().waiting}>
                     {(w) => (
-                      <li data-ticket={w.id}>
+                      <li class="desk-queue-row" data-ticket={w.id}>
                         <span>{w.displayNumber}</span>
                         <Show when={w.kioskCode}>
                           {(code) => (
@@ -68,13 +68,13 @@ export function Board(props: BoardProps): JSX.Element {
                 </ul>
               </Show>
             </section>
-            <section>
+            <section class="card desk-queue-section">
               <h3>{t('nowServing')}</h3>
               <Show when={s().called.length > 0} fallback={<p class="desk-empty">{t('emptyCalled')}</p>}>
-                <ul>
+                <ul class="desk-queue-list">
                   <For each={s().called}>
                     {(c) => (
-                      <li data-ticket={c.id}>
+                      <li class="desk-queue-row" data-ticket={c.id}>
                         <span>{c.displayNumber}</span>
                         <Show when={c.kioskCode}>
                           {(code) => (

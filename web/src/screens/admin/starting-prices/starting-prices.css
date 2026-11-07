@@ -221,16 +221,18 @@
 
 .xc-sp-add-code-btn {
   padding: 0.5rem 1rem;
-  background-color: var(--xc-gray-75);
+  background-color: var(--xc-surface);
   border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
+  flex: none;
+  white-space: nowrap;
 }
 
 .xc-sp-add-code-btn:hover {
-  background-color: var(--xc-gray-150);
+  background-color: var(--xc-brand-soft);
 }
 
 .xc-sp-reason-field {
@@ -286,6 +288,6 @@
 }
 
 .xc-sp-save-btn:disabled {
-  opacity: 0.5;
+  opacity: 1;
   cursor: not-allowed;
 }

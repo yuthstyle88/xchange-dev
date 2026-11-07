@@ -23,6 +23,7 @@ import { ReasonDialog } from '../staff/parts/ReasonDialog';
 import { AuditSection } from './AuditSection';
 import { HeaderSection } from './HeaderSection';
 import { LinesSection } from './LinesSection';
+import { NotesSection } from './NotesSection';
 import { PaymentSection } from './PaymentSection';
 import { ReceiptsSection } from './ReceiptsSection';
 import { ReversalSection } from './ReversalSection';
@@ -224,7 +225,6 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
   return (
     <div class="xc-dtx" data-state={state()}>
       <div class="xc-dtx-bar">
-        <h1 class="xc-dtx-title">{t('title')}</h1>
         <button type="button" data-action="refresh" disabled={state() === 'loading' || busy()} onClick={refresh}>
           {t('refresh')}
         </button>
@@ -239,13 +239,17 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
           <p class="xc-dtx-muted">{t('loading')}</p>
         </Match>
         <Match when={state() === 'not-found'}>
-          <p class="xc-dtx-muted">{t('notFound')}</p>
+          <div class="xc-dtx-section xc-dtx-empty">
+            <p class="xc-dtx-muted">{t('notFound')}</p>
+          </div>
         </Match>
         <Match when={state() === 'error'}>
-          <p class="xc-dtx-muted">{t('loadFailed')}</p>
-          <button type="button" data-action="retry" disabled={state() === 'loading' || busy()} onClick={refresh}>
-            {t('retry')}
-          </button>
+          <div class="xc-dtx-section xc-dtx-empty">
+            <p class="xc-dtx-muted">{t('loadFailed')}</p>
+            <button type="button" data-action="retry" disabled={state() === 'loading' || busy()} onClick={refresh}>
+              {t('retry')}
+            </button>
+          </div>
         </Match>
         <Match when={state() === 'ready' && tx()}>
           {(current) => (
@@ -253,6 +257,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
               <PermissionsUnavailable error={meError()} onRetry={() => void retryMe()} busy={meBusy()} />
               <HeaderSection tx={current()} />
               <LinesSection lines={current().lines} />
+              <NotesSection notes={current().notes} />
               <Show when={current().payment}>{(p) => <PaymentSection payment={p()} />}</Show>
               <Show when={current().receipts.length > 0}>
                 <ReceiptsSection

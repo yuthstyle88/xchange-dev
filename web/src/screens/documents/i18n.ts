@@ -1,6 +1,7 @@
 // #1349 V3-documents (design §A D-A7): the documents pages' texts. The Thai values are v2's words verbatim.
 export const th = {
   title: 'เอกสารรายการ',
+  refTitle: 'เอกสารของรายการ {ref}',
   refLine: '{ref} · ใบเสร็จและพาสปอร์ตผูกกับรหัสออเดอร์เดียวกัน',
   open: 'เปิดดู',
   download: 'ดาวน์โหลด {name}',
@@ -15,6 +16,7 @@ export const th = {
 
 export const en: Record<keyof typeof th, string> = {
   title: 'Exchange documents',
+  refTitle: 'Documents for {ref}',
   refLine: '{ref} · the receipt and the passport share one order number',
   open: 'Open',
   download: 'Download {name}',

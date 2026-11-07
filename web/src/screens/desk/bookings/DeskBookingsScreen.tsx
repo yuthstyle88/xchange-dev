@@ -15,6 +15,7 @@ import type {
 import type { MeView } from '../../../shared/api/generated/me';
 import type { QuoteDto } from '../../../shared/api/generated/quote';
 import type { QuotesCommandInput } from '../../../shared/api/generated/quotes';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
@@ -24,6 +25,7 @@ import { QrCode } from '../../../shared/ui/QrCode';
 import { BenefitLines } from '../benefits/BenefitLines';
 import { newKey } from '../save';
 import { en, th } from './i18n';
+import '../../../shared/ui/card.css';
 import './desk-bookings.css';
 
 interface SlotGroup {
@@ -72,20 +74,7 @@ function formatSlotTime(startAt?: string, endAt?: string, timeZone = 'Asia/Bangk
   }
 }
 
-function formatSlotDate(startAt?: string, timeZone = 'Asia/Bangkok'): string {
-  if (!startAt) return '';
-  try {
-    return new Intl.DateTimeFormat('th-TH', {
-      timeZone,
-      day: 'numeric',
-      month: 'short',
-    }).format(new Date(startAt));
-  } catch {
-    return '';
-  }
-}
-
-function formatBangkokDate(iso?: string): string {
+function bangkokDayIso(iso?: string): string {
   const d = iso ? new Date(iso) : new Date();
   const valid = Number.isNaN(d.getTime()) ? new Date() : d;
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(valid);
@@ -647,7 +636,7 @@ export function DeskBookingsScreen(): JSX.Element {
     setErrorMessage(null);
     setRetryAction(null);
     const booking = items().find((b) => b.id === bookingId);
-    const date = formatBangkokDate(booking?.startAt);
+    const date = bangkokDayIso(booking?.startAt);
     setRescheduleDate(date);
     setRescheduleSlots([]);
     setRescheduleSlotsError(null);
@@ -709,7 +698,7 @@ export function DeskBookingsScreen(): JSX.Element {
     setRetryAction(null);
     setQuantityInvalid(false);
     resetNewBookingForm();
-    const today = formatBangkokDate();
+    const today = bangkokDayIso();
     setFormDate(today);
     setNewBookingSlots([]);
     setNewBookingSlotsError(null);
@@ -907,17 +896,20 @@ export function DeskBookingsScreen(): JSX.Element {
 
       <Show when={authorized() === true}>
         <div class="xc-desk-bookings" data-screen="desk-bookings">
-          <div class="xc-bookings-toolbar">
+          <div class="xc-bookings-toolbar card">
             <div class="xc-qr-search">
-              <input
-                name="qrToken"
-                data-action="scan-qr"
-                class="xc-qr-input"
-                placeholder={t('scanQr')}
-                value={qrInput()}
-                onInput={(e) => setQrInput(e.currentTarget.value)}
-                onKeyDown={handleQrKeyDown}
-              />
+              <label class="xc-qr-field">
+                <span>{t('qrLabel')}</span>
+                <input
+                  name="qrToken"
+                  data-action="scan-qr"
+                  class="xc-qr-input"
+                  placeholder={t('scanQr')}
+                  value={qrInput()}
+                  onInput={(e) => setQrInput(e.currentTarget.value)}
+                  onKeyDown={handleQrKeyDown}
+                />
+              </label>
               <button
                 type="button"
                 data-action="lookup-qr"
@@ -935,7 +927,7 @@ export function DeskBookingsScreen(): JSX.Element {
                 class="xc-bookings-refresh xc-btn-secondary"
                 onClick={handleRefresh}
               >
-                Refresh
+                {t('refresh')}
               </button>
               <button
                 type="button"
@@ -951,7 +943,7 @@ export function DeskBookingsScreen(): JSX.Element {
           <div class="xc-slots-container">
             <Show
               when={allSlots().length > 0}
-              fallback={<div class="xc-empty-state">{t('empty')}</div>}
+              fallback={<div class="xc-empty-state card">{t('empty')}</div>}
             >
               <For each={allSlots()}>
                 {(slot) => (
@@ -1160,7 +1152,7 @@ export function DeskBookingsScreen(): JSX.Element {
                         {(s) => (
                           <option value={s.id} selected={targetSlotId() === s.id}>
                             {s.start
-                              ? `${formatSlotDate(s.start)} ${formatSlotTime(s.start, s.end)}`
+                              ? `${formatBangkokDate(s.start)} ${formatSlotTime(s.start, s.end)}`
                               : s.id}
                           </option>
                         )}
@@ -1291,7 +1283,7 @@ export function DeskBookingsScreen(): JSX.Element {
                           {(s) => (
                             <option value={s.id} selected={formSlotId() === s.id}>
                               {s.start
-                                ? `${formatSlotDate(s.start)} ${formatSlotTime(s.start, s.end)}`
+                                ? `${formatBangkokDate(s.start)} ${formatSlotTime(s.start, s.end)}`
                                 : s.id}
                             </option>
                           )}

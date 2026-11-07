@@ -1,31 +1,10 @@
 /* issue 1349 V3-documents: v2's documents pages (src/devices.mjs, http/documents.rs before issue 1349), inside the shell */
-.documents-screen {
-  max-width: 700px;
-  font-size: 18px;
-  line-height: 1.7;
-}
-
-.documents-screen .documents-title {
-  margin: 0 0 8px;
-}
-
-.documents-screen .documents-ref {
-  margin: 0 0 12px;
-}
-
-.documents-screen .documents-list li {
-  margin: 20px 0;
-}
-
-.documents-screen a {
-  color: var(--xc-brand);
-}
-
-.documents-screen .documents-refusal {
-  color: var(--xc-danger);
-}
-
-.documents-screen .documents-back {
-  display: inline-block;
-  margin-top: 12px;
-}
+.documents-screen { display: grid; gap: 16px; max-width: 700px; padding: 16px; }
+.documents-screen .documents-title { margin: 0; }
+.documents-screen .documents-ref { margin: 0; }
+.documents-screen .documents-list { margin: 0; list-style: none; }
+.documents-screen .documents-list [data-kind] { margin: 0; padding: 12px 0; border-top: 1px solid var(--xc-line); }
+.documents-screen .documents-list [data-kind]:first-child { padding-top: 0; border-top: 0; }
+.documents-screen a { color: var(--xc-brand); font-weight: 600; text-decoration: none; }
+.documents-screen .documents-refusal { margin: 0; color: var(--xc-danger); }
+.documents-screen .documents-back { justify-self: start; }

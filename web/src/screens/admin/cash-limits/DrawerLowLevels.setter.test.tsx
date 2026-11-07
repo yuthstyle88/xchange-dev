@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // F4 FE (#564 finding F4; server side PR 6042 / #6038, design docs/design/blueprint/user-set-settings.md
 // "Every setting names who saved it, by name, from its own row"): the drawer low-level card names its own setter.
 // Written before the implementation by claude/01TxaRJG (FE sub-controller). Do not edit, delete or weaken these tests;
@@ -16,7 +18,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { makeCashLimitsData, makeDrawerLowLevel, makeMe } from '../../../shared/testing/fixtures';
-import { locale, setLang } from '../../../shared/i18n';
+import { setLang } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { Toast } from '../parts/toast';
 import { CashLimits } from './CashLimits';
@@ -27,7 +29,16 @@ const LEVELS_SETTER = 'เจ้าของ ก';
 const LEVELS_AT = '2026-11-03T03:15:00Z';
 const LIMIT_AT = '2026-11-02T09:00:00Z';
 
-const at = (iso: string) => new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+// F55: pinned Bangkok text per instant (was rebuilt with toLocaleString(locale()), th-TH = Buddhist year + seconds).
+const AT_TEXT: Record<string, string> = {
+  [LEVELS_AT]: '03/11/2026 10:15',
+  '2026-11-03T04:00:00Z': '03/11/2026 11:00',
+};
+const at = (iso: string) => {
+  const shown = AT_TEXT[iso];
+  if (shown === undefined) throw new Error(`no pinned F55 text for ${iso}`);
+  return shown;
+};
 
 function data(over: Partial<Parameters<typeof makeCashLimitsData>[0]> = {}) {
   return makeCashLimitsData({

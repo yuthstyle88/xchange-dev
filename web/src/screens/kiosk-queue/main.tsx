@@ -13,7 +13,7 @@ const branch = pageBranch(sharedSession());
 
 render(
   () => (
-    <AppShell title={t('title')}>
+    <AppShell title={t('title')} staffNav={false}>
       <Show when={branch()} keyed>
         {(b) => <KioskQueueScreen branch={b} />}
       </Show>

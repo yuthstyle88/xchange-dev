@@ -9,7 +9,7 @@ const t = screenT('desk-backdated', { th, en });
 
 render(
   () => (
-    <AppShell title={t('title')}>
+    <AppShell title={t('title')} queueCard="hidden">
       <BackdatedScreen />
     </AppShell>
   ),

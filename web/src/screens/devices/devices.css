@@ -5,7 +5,7 @@
   --line: var(--xc-line);
   background: var(--xc-bg);
   color: var(--xc-ink);
-  font: 15px/1.65 -apple-system, BlinkMacSystemFont, 'Tahoma', sans-serif;
+  font: 15px/1.65 var(--xc-font-sans);
   min-height: 100vh;
 }
 
@@ -112,8 +112,10 @@
 }
 
 .xc-devices .xc-shell-main button:disabled {
-  opacity: .5;
-  cursor: wait;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-line);
+  color: var(--xc-gray-600);
+  cursor: not-allowed;
 }
 
 .xc-devices .xc-shell-main button.primary {
@@ -153,20 +155,23 @@
 }
 
 .xc-devices .xc-shell-main .metric {
-  background: var(--xc-gray-900);
-  color: var(--xc-gray-0);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
   padding: 20px;
-  border-radius: 9px;
 }
 
 .xc-devices .xc-shell-main .metric p {
-  color: var(--xc-gray-300);
+  color: var(--xc-muted);
 }
 
 .xc-devices .xc-shell-main .metric > span:first-child {
   display: block;
-  margin: 8px 0;
-  color: var(--xc-gray-300);
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--xc-muted);
 }
 
 .xc-devices .xc-shell-main .metric b {
@@ -234,7 +239,8 @@
   margin: 20px 0;
 }
 
-.xc-devices .xc-shell-main .request-grid .picker-group {
+.xc-devices .xc-shell-main .request-grid .picker-group,
+.xc-devices .xc-shell-main .request-grid .reason-group {
   margin: 0;
 }
 
@@ -507,6 +513,13 @@
 
 .xc-devices .xc-shell-brand {
   color: var(--xc-ink);
+}
+
+.xc-devices .xc-shell-main .eyebrow:lang(th),
+.xc-devices .xc-shell-main .card .eyebrow:lang(th) { letter-spacing: 0; }
+.xc-devices .xc-shell-main .dev-id { display: inline-block; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+@media (min-width: 641px) {
+  .xc-devices .xc-shell-main .events-table td code { max-width: 360px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 }
 
 

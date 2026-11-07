@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-cash-calculators (#511): the mount in #467's shift detail, the folder's text table, English,
 // the four shared error keys, and the rules on the folder's source (ticket §4 criteria 2–6, §7,
 // §10 rows W1, W7, W8; design §12.20.6, W6, W7, W10). Written before the implementation by the
@@ -416,9 +418,9 @@ describe('V2-cash-calculators: in English, no Thai anywhere in either panel (W10
     await settle();
     expect(server.compute().filter((c) => c.path === VALUATION && c.body.rates != null).length).toBe(1);
     const all = spaced(root);
-    expect(all).toContain('2026-10-27');
+    expect(all).toContain('27/10/2026');
     expect(all).toContain(`${formatMoney('77.77')} THB`);
-    expect(all).toContain(norm(now.toLocaleString('en-GB', { timeZone: 'Asia/Bangkok' })));
+    expect(all).toContain('29/10/2026 00:06');
 
     // the profit: eight figures, the confirmation, submit
     for (const input of numbers.slice(1)) type(input, '1');

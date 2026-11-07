@@ -5,7 +5,7 @@
   flex-direction: column;
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 1rem 1.25rem 2.5rem;
+  padding: 1rem 1rem 2.5rem;
   background-color: var(--xc-bg);
   color: var(--xc-text);
   font-family: inherit;
@@ -30,6 +30,7 @@
 
 .xc-notifications-toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
@@ -41,6 +42,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 44px;
   font-size: 0.875rem;
   color: var(--xc-text);
   cursor: pointer;
@@ -49,8 +51,9 @@
 
 .xc-notifications-filter-input {
   cursor: pointer;
-  width: 1rem;
-  height: 1rem;
+  flex: none;
+  width: 20px;
+  height: 20px;
   accent-color: var(--xc-primary);
 }
 
@@ -72,7 +75,9 @@
 }
 
 .xc-notifications-mark-all-btn:disabled {
-  opacity: 0.5;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-border);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
 }
 
@@ -133,6 +138,9 @@
   text-align: center;
   color: var(--xc-text-muted);
   font-size: 0.9375rem;
+  background: var(--xc-card);
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
 }
 
 .xc-notifications-list {
@@ -249,6 +257,8 @@
 }
 
 .xc-notifications-mark-btn:disabled {
-  opacity: 0.5;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-border);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
 }

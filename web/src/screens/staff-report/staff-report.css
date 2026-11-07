@@ -2,6 +2,7 @@
 .staff-report {
   display: grid;
   gap: 16px;
+  padding: 16px;
 }
 
 .staff-report-tools {
@@ -9,6 +10,10 @@
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
+}
+
+.staff-report-back {
+  text-decoration: none;
 }
 
 .staff-report-loading,
@@ -32,6 +37,10 @@
   letter-spacing: 0.08em;
 }
 
+.staff-report-eyebrow:lang(th) {
+  letter-spacing: 0;
+}
+
 .staff-report-status {
   margin: 4px 0 0;
 }
@@ -39,11 +48,30 @@
 .staff-report-metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
+  gap: 12px;
 }
 
 .staff-report-metrics p {
   margin: 0;
+}
+
+.staff-report-stat {
+  display: grid;
+  gap: 4px;
+}
+
+.staff-report-stat-label {
+  font-size: 13px;
+  color: var(--xc-muted);
+}
+
+.staff-report-stat b {
+  font-size: var(--xc-text-xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.staff-report-table-card {
+  overflow-x: auto;
 }
 
 .staff-report-table {
@@ -54,7 +82,8 @@
 .staff-report-table th,
 .staff-report-table td {
   padding: 6px 8px;
-  border-bottom: 1px solid currentColor;
+  border-bottom: 1px solid var(--xc-line);
+  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
@@ -64,10 +93,19 @@
 }
 
 .staff-report-checks,
-.staff-report-signers,
-.staff-report-footer {
+.staff-report-signers {
   display: grid;
   gap: 4px;
+}
+
+.staff-report-checks p,
+.staff-report-signers p {
+  margin: 0;
+}
+
+.staff-report-checks h3,
+.staff-report-signers h3 {
+  margin: 0 0 8px;
 }
 
 .staff-report-note {
@@ -75,5 +113,8 @@
 }
 
 .staff-report-footer {
-  font-size: 12px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--xc-muted);
 }

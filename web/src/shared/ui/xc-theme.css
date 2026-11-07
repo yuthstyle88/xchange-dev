@@ -79,7 +79,7 @@
   --xc-focus-ring: var(--xc-brand-100);
 
   /* Type. */
-  --xc-font-sans: 'XC Noto Sans Thai', 'XC Noto Sans Arabic', 'XC Noto Sans Devanagari', 'XC Noto Sans Lao', 'XC Noto Sans Myanmar', Arial, Tahoma, sans-serif;
+  --xc-font-sans: 'Noto Sans Thai Variable', 'XC Noto Sans Thai', 'XC Noto Sans Arabic', 'XC Noto Sans Devanagari', 'XC Noto Sans Lao', 'XC Noto Sans Myanmar', Arial, Tahoma, sans-serif;
   --xc-font-mono: Consolas, ui-monospace, monospace;
   --xc-text-2xs: 10px;
   --xc-text-xs: 11px;
@@ -207,6 +207,30 @@
   box-shadow: 0 0 0 3px var(--xc-danger-soft);
 }
 
+.xc-theme:where(:not(.xc-customer *)) :where(input[type="checkbox"], input[type="radio"]) {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--xc-brand);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input[type="file"])::file-selector-button {
+  margin-right: 12px;
+  padding: 4px 12px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  font: 600 14px/1.4 var(--xc-font-sans);
+  cursor: pointer;
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(summary) {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--xc-ink);
+}
+
 .xc-theme:where(:not(.xc-customer *)) .xc-field [role="alert"],
 .xc-theme:where(:not(.xc-customer *)) .xc-field-error {
   display: block;
@@ -250,7 +274,10 @@
 
 .xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn):disabled,
 .xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn)[aria-disabled="true"] {
-  opacity: 0.5;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-line);
+  color: var(--xc-gray-600);
+  box-shadow: none;
   cursor: not-allowed;
 }
 

@@ -12,7 +12,7 @@ export const menu: AdminMenu = {
   group: 'money',
   needs: 'OrgStartingPricesManage',
   dated: false,
-  icon: '🏷',
+  icon: '◈',
   label: () => t('label'),
   heading: {
     eyebrow: () => t('eyebrow'),

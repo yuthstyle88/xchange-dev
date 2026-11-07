@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/api/generated/org_starting_price_save';
 import type { OrgStartingPriceItem } from '../../../shared/api/generated/org_starting_prices';
 import { screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
@@ -55,14 +56,6 @@ export function isBuyGreaterThanSell(buy: string, sell: string): boolean {
   const sellFracPadded = sellFracStr.padEnd(maxFracLen, '0');
 
   return buyFracPadded > sellFracPadded;
-}
-
-function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
-  } catch {
-    return iso;
-  }
 }
 
 export function StartingPrices(props: AdminMenuProps): JSX.Element {
@@ -404,7 +397,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
                           <Show when={latestItem()}>
                             {(item) => (
                               <div class="xc-sp-history-meta">
-                                v{item().version} · {t('headerBy')} {item().enteredBy} · {formatWhen(item().enteredAt)} ({item().reason})
+                                v{item().version} · {t('headerBy')} {item().enteredBy} · {formatBangkokDateTime(item().enteredAt)} ({item().reason})
                               </div>
                             )}
                           </Show>
@@ -421,7 +414,7 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
                                 <For each={olderVersions()}>
                                   {(old) => (
                                     <div class="xc-sp-history-item">
-                                      v{old.version}: {old.buy ?? t('dash')} / {old.sell ?? t('dash')} · {old.enteredBy} · {formatWhen(old.enteredAt)} ({old.reason})
+                                      v{old.version}: {old.buy ?? t('dash')} / {old.sell ?? t('dash')} · {old.enteredBy} · {formatBangkokDateTime(old.enteredAt)} ({old.reason})
                                     </div>
                                   )}
                                 </For>

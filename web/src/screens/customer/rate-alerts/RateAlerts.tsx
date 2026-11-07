@@ -29,6 +29,7 @@ import { MoneyText } from '../../../shared/ui/MoneyText';
 import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import { AlertFacts } from './AlertFacts';
+import { endOfDayInZone } from './expires-at';
 import './rate-alerts.css';
 
 const t = screenT('customer.rate-alerts', table);
@@ -330,6 +331,18 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       return;
     }
 
+    const rawExpiresAt = expiresAt().trim();
+    let resolvedExpiresAt: string | undefined;
+    if (rawExpiresAt) {
+      const zone = branches().find((b) => b.id === trimmedBranch)?.timezone ?? '';
+      const eod = endOfDayInZone(rawExpiresAt, zone);
+      if (!eod) {
+        setCreateFieldErrors({ expiresAt: localFieldError('expiresAt') });
+        return;
+      }
+      resolvedExpiresAt = eod;
+    }
+
     setIsCreating(true);
     setActionError(null);
 
@@ -340,8 +353,8 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
       condition: condition(),
       target: rawTarget,
     };
-    if (expiresAt().trim()) {
-      input.expiresAt = expiresAt().trim();
+    if (resolvedExpiresAt) {
+      input.expiresAt = resolvedExpiresAt;
     }
 
     try {
@@ -541,7 +554,7 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
               <input
                 id="alert-expires"
                 class="xc-form-input"
-                type="text"
+                type="date"
                 value={expiresAt()}
                 onInput={(e) => setExpiresAt(e.currentTarget.value)}
               />

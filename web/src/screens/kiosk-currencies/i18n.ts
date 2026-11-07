@@ -6,7 +6,12 @@ export const th = {
   searchLabel: 'ค้นหาประเทศ ชื่อสกุลเงิน หรือรหัส',
   searchPlaceholder: 'USD / Japan / ญี่ปุ่น / ยูโร',
   found: 'พบ {n} สกุลเงิน',
+  offShow: 'แสดงสกุลที่ปิดอยู่ ({n})',
+  offHide: 'ซ่อนสกุลที่ปิดอยู่',
   enabled: 'เปิดบนหน้าลูกค้า',
+  displayShow: 'แสดงเรท',
+  displayAsk: 'ติดต่อพนักงาน',
+  displayHide: 'ไม่แสดง',
   buy: 'ร้านรับซื้อ (THB)',
   sell: 'ร้านขาย (THB)',
   savedOn: 'บันทึกแล้ว · เปิดบริการ',
@@ -21,7 +26,7 @@ export const th = {
   compareHeading: 'เทียบเรทธนบัตร · กสิกรไทย / หน้าร้าน',
   comparePublished: 'ธนาคารประกาศ: {time} (เวลาไทย) · รอบ {round}',
   compareWarning:
-    'ข้อมูลที่ตรวจจากหน้าเว็บธนาคารครั้งล่าสุด — ยังไม่อัปเดตอัตโนมัติ (ข้อมูลวันที่ 2 ต.ค. 2026) โปรดตรวจต้นทางก่อนใช้เทียบเรท',
+    'ข้อมูลที่ตรวจจากหน้าเว็บธนาคารครั้งล่าสุด — ยังไม่อัปเดตอัตโนมัติ (ข้อมูลวันที่ 02/10/2026) โปรดตรวจต้นทางก่อนใช้เทียบเรท',
   compareLink: 'เปิดเรทล่าสุดจากกสิกรไทย ↗',
   compareNote:
     'แสดงเฉพาะสกุลที่กสิกรมีเรทธนบัตรรับซื้อหรือขายในข้อมูลอ้างอิงชุดนี้ · หน่วย THB ต่อ 1 หน่วยเงินต่างประเทศ · ส่วนต่าง = เรทร้าน − เรทธนาคาร · — หมายถึงไม่มีเรท ไม่ใช่ศูนย์ · ร้านยังเป็นผู้กำหนดราคาเอง',
@@ -59,7 +64,12 @@ export const en: Record<keyof typeof th, string> = {
   searchLabel: 'Search country, currency name or code',
   searchPlaceholder: 'USD / Japan / Euro',
   found: 'Found {n} currencies',
+  offShow: 'Show disabled currencies ({n})',
+  offHide: 'Hide disabled currencies',
   enabled: 'Enabled on customer kiosk',
+  displayShow: 'Show rate',
+  displayAsk: 'Contact staff',
+  displayHide: 'Hide',
   buy: 'Counter buy (THB)',
   sell: 'Counter sell (THB)',
   savedOn: 'Saved · Active',
@@ -74,7 +84,7 @@ export const en: Record<keyof typeof th, string> = {
   compareHeading: 'Compare banknote rates · KBank / Store',
   comparePublished: 'Bank published: {time} (Thai time) · Round {round}',
   compareWarning:
-    'Latest check from bank website — not updated automatically (Data as of 2 Oct 2026). Please check original source before comparing.',
+    'Latest check from bank website — not updated automatically (Data as of 02/10/2026). Please check original source before comparing.',
   compareLink: 'Open latest rates from KBank ↗',
   compareNote:
     'Showing only currencies where KBank has banknote buy or sell rates in this reference set · Units THB per 1 foreign currency unit · Difference = Store rate − Bank rate · — means no rate, not zero · Store determines own prices',

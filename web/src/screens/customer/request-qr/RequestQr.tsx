@@ -1,4 +1,5 @@
 import { createMemo, Show, type JSX } from 'solid-js';
+import logoUrl from '../_shell/xc-logo.png';
 import { screenT } from '../../../shared/i18n';
 import { parseRequestQr } from '../../../shared/queue/request-qr';
 import { QrCode } from '../../../shared/ui/QrCode';
@@ -30,10 +31,18 @@ export function RequestQr(props: RequestQrProps): JSX.Element {
   return (
     <div class="xc-customer xc-theme xc-request-qr">
       <div class="xc-request-qr-card">
+        <img class="xc-request-qr-logo" src={logoUrl} alt="XCHANGE Currency Exchange" width="96" height="67" />
         <h1 class="xc-request-qr-title">{t('title')}</h1>
         <Show
           when={qrData()}
-          fallback={<p class="xc-request-qr-error">{t('invalid')}</p>}
+          fallback={
+            <>
+              <p class="xc-request-qr-error">{t('invalid')}</p>
+              <a class="xc-c-primary" href="/app">
+                {t('backHome')}
+              </a>
+            </>
+          }
         >
           {(data) => (
             <>
