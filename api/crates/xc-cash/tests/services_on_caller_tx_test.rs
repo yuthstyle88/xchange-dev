@@ -383,9 +383,15 @@ async fn approved_transfer(db: &Db, notes: i32) -> Moving {
     flow.submit(&creator, &t.id, at(10))
         .await
         .expect("the creator submits");
+    if notes > 10 {
+        lg4_fund_safe(&db.pool, from.as_str(), "USD", "100.00").await;
+    }
     flow.decide(&approver, &t.id, Outcome::Approved, "ok", at(20))
         .await
         .expect("a branch manager of the source approves within the limit");
+    if notes > 10 {
+        lg4_draw_safe(&db.pool, from.as_str(), "USD", "100.00").await;
+    }
     Moving {
         from,
         to,
@@ -1283,9 +1289,6 @@ async fn receive_in_of_a_single_branch_kind_runs_on_a_once_locked_tx() {
     flow.submit(&finance, &t.id, at(10))
         .await
         .expect("submitted");
-    flow.decide(&approver, &t.id, Outcome::Approved, "ok", at(20))
-        .await
-        .expect("approved");
     publish(
         &db.pool,
         &branch,
@@ -1294,6 +1297,9 @@ async fn receive_in_of_a_single_branch_kind_runs_on_a_once_locked_tx() {
         true,
     )
     .await;
+    flow.decide(&approver, &t.id, Outcome::Approved, "ok", at(20))
+        .await
+        .expect("approved");
     flow.dispatch(&finance, &t.id, at(30))
         .await
         .expect("dispatched");
@@ -1468,6 +1474,38 @@ async fn lg4_fund_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str
         )
         .await
         .expect("fund the safe through the ledger");
+    tx.commit().await.expect("commit");
+}
+
+async fn lg4_draw_safe(pool: &PgPool, branch: &str, currency: &str, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    use xc_cash::domain::posting::{CashPlace, CashPostings, PostingRequest};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: CashPlace::Safe(BranchId::new(branch)),
+                to: CashPlace::Bank,
+                currency: xc_kernel::money::CurrencyCode::parse(currency).expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!(
+                        "lg4-draw:{branch}:{currency}:{}",
+                        LG4_FUND.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                    ),
+                    source_key: "draw".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("draw down the safe through the ledger");
     tx.commit().await.expect("commit");
 }
 

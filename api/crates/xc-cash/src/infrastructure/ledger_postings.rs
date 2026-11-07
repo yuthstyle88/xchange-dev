@@ -604,18 +604,20 @@ fn check_requests(req: &[PostingRequest]) -> AppResult<&SourceRef> {
     Ok(source)
 }
 
+enum Planned<'a> {
+    Empty,
+    Replayed(PostingId),
+    Ready(Box<Plan>, &'a SourceRef),
+}
+
 impl LedgerCashPostings {
-    async fn post(
+    async fn plan<'a>(
         &self,
         tx: &mut Transaction<'_, Postgres>,
-        req: &[PostingRequest],
-    ) -> AppResult<PostingResult> {
+        req: &'a [PostingRequest],
+    ) -> AppResult<Planned<'a>> {
         if req.is_empty() {
-            return Ok(PostingResult {
-                posting_id: PostingId(Uuid::nil()),
-                costs: Vec::new(),
-                reversed: Vec::new(),
-            });
+            return Ok(Planned::Empty);
         }
         let source = check_requests(req)?;
 
@@ -651,7 +653,7 @@ impl LedgerCashPostings {
         .fetch_optional(&mut **tx)
         .await?;
         if let Some(id) = existing {
-            return replayed(tx, PostingId(id), req).await;
+            return Ok(Planned::Replayed(PostingId(id)));
         }
 
         // The THB the posting moves, for an exchange line with no stored row.
@@ -936,7 +938,23 @@ impl LedgerCashPostings {
             return Err(err);
         }
 
-        write(tx, &plan, source).await
+        Ok(Planned::Ready(Box::new(plan), source))
+    }
+
+    async fn post(
+        &self,
+        tx: &mut Transaction<'_, Postgres>,
+        req: &[PostingRequest],
+    ) -> AppResult<PostingResult> {
+        match self.plan(tx, req).await? {
+            Planned::Empty => Ok(PostingResult {
+                posting_id: PostingId(Uuid::nil()),
+                costs: Vec::new(),
+                reversed: Vec::new(),
+            }),
+            Planned::Replayed(id) => replayed(tx, id, req).await,
+            Planned::Ready(plan, source) => write(tx, &plan, source).await,
+        }
     }
 }
 
@@ -1244,6 +1262,17 @@ impl CashPostings for LedgerCashPostings {
         _allow_negative: Option<ApprovalRequestId>,
     ) -> BoxFuture<'a, AppResult<PostingResult>> {
         Box::pin(async move { self.post(tx, req).await })
+    }
+
+    fn check_in<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        req: &'a [PostingRequest],
+    ) -> BoxFuture<'a, AppResult<()>> {
+        Box::pin(async move {
+            self.plan(tx, req).await?;
+            Ok(())
+        })
     }
 
     /// A COST adjustment (design `ledger-inventory.md` §13.6, LA-8): every request's source must be

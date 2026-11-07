@@ -4,14 +4,21 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
-use pos_error::AppResult;
+use pos_error::{AppError, AppResult};
 use sqlx::{PgPool, Postgres, Transaction};
 use xc_approval::application::registry::ApprovalRegistry;
 use xc_approval::domain::policy::{ApprovalPolicy, Refusal};
 use xc_approval::domain::request::{ApprovalRequest, Outcome};
-use xc_approval::domain::subject::ApprovalSubject;
+use xc_approval::domain::subject::{ApprovalSubject, SubjectError};
 use xc_auth::domain::access::{Actor, ApprovalDecider, Permission, RoleGrants};
 use xc_kernel::ids::BranchId;
+
+use crate::domain::posting::{CashPlace, CashPostings};
+use crate::domain::shortfall::{ShortPlace, StockShortfall};
+use crate::domain::transfer::kinds::TransferKinds;
+use crate::domain::transfer::transfer_repository::TransferRepository;
+use crate::infrastructure::ledger_postings::LedgerCashPostings;
+use crate::infrastructure::transfer_repository::PgTransferRepository;
 
 /// The type name.
 pub const CASH_TRANSFER: &str = "CASH_TRANSFER";
@@ -109,6 +116,78 @@ impl ApprovalSubject for TransferApprovalSubject {
             Ok(())
         })
     }
+
+    fn on_decided_or_unavailable<'a>(
+        &'a self,
+        tx: &'a mut Transaction<'_, Postgres>,
+        request: &'a ApprovalRequest,
+        outcome: Outcome,
+    ) -> BoxFuture<'a, Result<(), SubjectError>> {
+        Box::pin(async move {
+            if outcome == Outcome::Approved {
+                let t = PgTransferRepository::new(self._pool.clone())
+                    .find_by_id_in(tx, &request.object_id)
+                    .await
+                    .map_err(SubjectError::Failed)?
+                    .ok_or_else(|| {
+                        SubjectError::Failed(AppError::NotFound {
+                            entity: "CashTransfer",
+                            id: request.object_id.clone(),
+                        })
+                    })?;
+                let ends = TransferKinds::standard().get(t.kind).ok_or_else(|| {
+                    SubjectError::Failed(AppError::Internal(format!(
+                        "unregistered transfer kind {:?}",
+                        t.kind
+                    )))
+                })?;
+                let reqs = ends
+                    .on_dispatch(&t)
+                    .map_err(|e| SubjectError::Failed(AppError::Domain(e.to_string())))?;
+                // Only a drawer or safe source has a balance to cover; an EXTERNAL_IN inflow from the
+                // bank approves as before (its BUY-rate costing is dispatch's concern).
+                let from_drawer_or_safe = reqs
+                    .iter()
+                    .any(|r| matches!(r.from, CashPlace::Drawer(_) | CashPlace::Safe(_)));
+                if from_drawer_or_safe
+                    && let Err(e) = LedgerCashPostings::new().check_in(tx, &reqs).await
+                {
+                    if let AppError::Domain(ref m) = e
+                        && m.starts_with("stockInsufficient")
+                    {
+                        return Err(SubjectError::Refused {
+                            code: "stockInsufficient",
+                            message: shortfall_message(&StockShortfall::from_refusal(m)),
+                        });
+                    }
+                    return Err(SubjectError::Failed(e));
+                }
+            }
+            self.on_decided(tx, &request.object_id, outcome)
+                .await
+                .map_err(SubjectError::Failed)
+        })
+    }
+}
+
+fn shortfall_message(s: &StockShortfall) -> String {
+    let items: Vec<String> = s
+        .lines
+        .iter()
+        .map(|l| {
+            let place = match l.place {
+                ShortPlace::Drawer => "ลิ้นชัก",
+                ShortPlace::Safe => "ตู้เซฟ",
+                ShortPlace::Position => "สต็อก",
+            };
+            format!(
+                "{} {place} ขาด {}",
+                l.currency.as_str(),
+                l.short_by.normalize()
+            )
+        })
+        .collect();
+    format!("ยอดเงินสดไม่พอ ต้องโอนเงินเข้าก่อน: {}", items.join(", "))
 }
 
 #[derive(Clone, Default, Debug)]

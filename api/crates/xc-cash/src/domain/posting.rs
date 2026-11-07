@@ -170,4 +170,18 @@ pub trait CashPostings: Send + Sync {
             ))
         })
     }
+
+    /// Checks `req` against the current balances inside `tx` without writing a posting. Answers the
+    /// same `stockInsufficient` refusal `post_in(tx, req, None)` would answer.
+    fn check_in<'a>(
+        &'a self,
+        _tx: &'a mut Transaction<'_, Postgres>,
+        _req: &'a [PostingRequest],
+    ) -> BoxFuture<'a, AppResult<()>> {
+        Box::pin(async move {
+            Err(pos_error::AppError::Internal(
+                "check_in is not implemented by this CashPostings".into(),
+            ))
+        })
+    }
 }

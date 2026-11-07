@@ -10,6 +10,7 @@ fn check_exhaustive_approval_error(err: &ApprovalError) {
         ApprovalError::StaleVersion(_) => {}
         ApprovalError::IdempotencyConflict(_) => {}
         ApprovalError::PolicyRefused { .. } => {}
+        ApprovalError::Refused { .. } => {}
         ApprovalError::DependencyUnavailable { .. } => {}
         ApprovalError::AlreadyPending(_) => {}
         ApprovalError::NotFound(_) => {}
