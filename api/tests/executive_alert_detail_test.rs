@@ -6,6 +6,7 @@
 //! - `staleData`: `staleMinutes`, the branch's threshold;
 //! - `countDifference`: `differences`, each currency and its signed amount (a decimal string);
 //! - `lowStock`: `stock`, the currency and its available / on-hand / reserved / floor quantities (decimal strings).
+//!
 //! There is no `detail` key on the wire. No database: the DTO is built from the application's `Overview`.
 //!
 //! Written before the fix by claude/bbe9ce8b for the OL sub-controller claude/1cc51615. Do not edit, delete or
