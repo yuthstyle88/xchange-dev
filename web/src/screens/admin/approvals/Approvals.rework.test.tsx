@@ -448,7 +448,7 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInput).not.toBeNull();
     reasonInput.value = 'A valid reason for rejection';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -485,7 +485,7 @@ describe('Approvals rework (#1695): worded errors on failed reads and commands',
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInput).not.toBeNull();
     reasonInput.value = 'A valid reason for rejection';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));

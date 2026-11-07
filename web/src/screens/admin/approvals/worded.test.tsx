@@ -305,7 +305,7 @@ describe('Approvals worded error handling (#1753)', () => {
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInput).not.toBeNull();
     reasonInput.value = 'Reason for rejection';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -327,7 +327,7 @@ describe('Approvals worded error handling (#1753)', () => {
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInputEn = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInputEn = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInputEn).not.toBeNull();
     reasonInputEn.value = 'Reason for rejection';
     reasonInputEn.dispatchEvent(new Event('input', { bubbles: true }));
@@ -358,7 +358,7 @@ describe('Approvals worded error handling (#1753)', () => {
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInput).not.toBeNull();
     reasonInput.value = 'Reason for rejection';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -390,7 +390,7 @@ describe('Approvals worded error handling (#1753)', () => {
       expect(root.querySelector('[data-request="req-1"]')).not.toBeNull();
     });
 
-    const reasonInput = root.querySelector('input[type="text"]') as HTMLInputElement;
+    const reasonInput = root.querySelector('textarea') as HTMLTextAreaElement;
     expect(reasonInput).not.toBeNull();
     reasonInput.value = 'Reason for rejection';
     reasonInput.dispatchEvent(new Event('input', { bubbles: true }));
