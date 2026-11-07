@@ -226,6 +226,18 @@
   color: var(--xc-text-muted);
 }
 
+.xc-home-hours {
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xc-home-hours-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.5rem;
+}
+
 .xc-home-branch-badges {
   display: flex;
   gap: 0.5rem;

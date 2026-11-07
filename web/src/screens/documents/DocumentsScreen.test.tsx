@@ -222,7 +222,9 @@ describe("V3-documents S: the owner's list (§A.1 steps 3–7, 16–23)", () => 
       expect(down, `${link.kind}: a download link`).not.toBeNull();
       expect(down!.getAttribute('download')).toBe(link.download);
       expect(down!.getAttribute('href')).toBe(link.href);
-      expect(text(down)).toBe(`ดาวน์โหลด ${link.download}`);
+      // Restated (OL-6 docs-labels): the owner chose 1B, web half (#564 issuecomment-6705475792, 2026-11-07): the link
+      // reads the kind and the ref, never the server's stored name; `download` and `href` stay as the server sends them.
+      expect(text(down)).toBe(`ดาวน์โหลด ${labels[n]!} XC-20261006-000002`);
     });
   });
 

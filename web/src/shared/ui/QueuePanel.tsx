@@ -19,6 +19,7 @@ import { useQueueStore } from '../queue/queue-store';
 import type { KioskQueueRow } from '../queue/wire';
 import { CancelReasonDialog, type StaffCancelReason } from './CancelReasonDialog';
 import { MoneyText } from './MoneyText';
+import './card.css';
 import './queue-panel.css';
 
 export interface QueuePanelProps {
@@ -369,7 +370,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         when={displayedRows().length > 0}
         fallback={
           <Show when={!loading() && readError() === null}>
-            <p class="queue-empty">{t('queue.list.empty')}</p>
+            <p class="queue-empty card">{t('queue.list.empty')}</p>
           </Show>
         }
       >
@@ -470,23 +471,25 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
         </div>
       </Show>
 
-      <nav class="xc-queue-pager" aria-label={t('queue.pagerLabel')}>
-        <button
-          type="button"
-          disabled={page() <= 1 || loading()}
-          onClick={prevPage}
-        >
-          {t('queue.pager.prev')}
-        </button>
-        <span>{fill(t('queue.pager.page'), { page: page() })}</span>
-        <button
-          type="button"
-          disabled={rows().length < 51 || loading()}
-          onClick={nextPage}
-        >
-          {t('queue.pager.next')}
-        </button>
-      </nav>
+      <Show when={rows().length > 0 || page() > 1}>
+        <nav class="xc-queue-pager" aria-label={t('queue.pagerLabel')}>
+          <button
+            type="button"
+            disabled={page() <= 1 || loading()}
+            onClick={prevPage}
+          >
+            {t('queue.pager.prev')}
+          </button>
+          <span>{fill(t('queue.pager.page'), { page: page() })}</span>
+          <button
+            type="button"
+            disabled={rows().length < 51 || loading()}
+            onClick={nextPage}
+          >
+            {t('queue.pager.next')}
+          </button>
+        </nav>
+      </Show>
       <CancelReasonDialog
         open={cancelTargetId() !== null}
         onConfirm={(choice) => void confirmCancel(choice)}

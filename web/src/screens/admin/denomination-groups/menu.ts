@@ -8,7 +8,7 @@ const t = screenT('admin.denomination-groups', table);
 export const menu: AdminMenu = {
   id: 'denomination-groups',
   label: () => t('label'),
-  icon: '💵',
+  icon: '฿',
   order: 13,
   group: 'money',
   needs: 'RatesDraft',

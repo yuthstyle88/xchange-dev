@@ -2,7 +2,6 @@
 .xc-admin .xc-content .cash-policy-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
 }
 
 .xc-admin .xc-content .cash-policy-actions {
@@ -13,4 +12,8 @@
 
 .xc-admin .xc-content .admin-cash-policy-screen {
   display: block;
+}
+
+.xc-admin .xc-content .admin-cash-policy-screen .cash-policy-table input {
+  font-size: 16px;
 }

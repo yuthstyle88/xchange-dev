@@ -40,6 +40,9 @@
 
 .xc-profile-signin a {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
   padding: 0.5rem 1.25rem;
   font-size: 0.9375rem;
   font-weight: 800;
@@ -147,7 +150,9 @@
 }
 
 .xc-profile-form button[type="submit"]:disabled {
-  opacity: 0.5;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-border);
+  color: var(--xc-gray-600);
   cursor: not-allowed;
 }
 
@@ -179,9 +184,17 @@
   display: flex;
   align-items: center;
   gap: 0.625rem;
+  min-height: 44px;
   cursor: pointer;
   font-size: 0.875rem;
   color: var(--xc-text);
+}
+
+.xc-profile-consent-row input {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
 }
 
 .xc-profile-terms {

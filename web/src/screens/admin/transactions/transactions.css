@@ -27,11 +27,12 @@
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+  margin-left: auto;
 }
 
 .xc-admin .xc-content .transactions-screen .actions-group button {
-  min-height: 40px;
-  padding: 8px 16px;
+  min-height: 44px;
+  padding: 9px 16px;
   font-size: 14px;
   font-weight: 600;
   border-radius: 7px;
@@ -49,7 +50,7 @@
 .xc-admin .xc-content .transactions-screen .table-meta {
   font-size: 13px;
   color: var(--xc-muted);
-  padding: 0 24px 14px;
+  padding: 0 23px 14px;
 }
 
 .xc-admin .xc-content .transactions-screen .error {
@@ -89,5 +90,9 @@
   .xc-admin .xc-content .transactions-screen .actions-group {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .xc-admin .xc-content .transactions-screen .table-meta {
+    padding: 0 17px 14px;
   }
 }

@@ -25,11 +25,13 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+  margin-bottom: 16px;
 }
 
 .users-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -42,6 +44,7 @@
   border: 1px solid var(--xc-line);
   border-radius: 6px;
   background: var(--xc-surface);
+  color: var(--xc-brand);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -93,11 +96,8 @@
   gap: 16px;
 }
 
-.users-card {
-  background: var(--xc-surface);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: var(--xc-shadow-sm);
+.xc-admin .xc-content .users-card {
+  padding: 20px;
 }
 
 .users-empty {
@@ -108,6 +108,7 @@
 
 .users-table-scroll {
   overflow-x: auto;
+  background: linear-gradient(to left, var(--xc-surface) 40%, transparent) right center / 32px 100% no-repeat local, linear-gradient(to left, var(--xc-line), transparent) right center / 14px 100% no-repeat scroll;
 }
 
 .users-table {
@@ -289,11 +290,9 @@
 }
 
 .users-matrix-panel {
-  margin-top: 16px;
-  padding: 16px;
-  border: 1px solid var(--xc-line);
-  border-radius: 8px;
-  background: var(--xc-paper);
+  margin-top: 20px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--xc-line);
 }
 
 .users-matrix-perms {
@@ -308,4 +307,17 @@
   gap: 6px;
   font-size: 14px;
   cursor: pointer;
+}
+
+.xc-admin .xc-content.xc-content .users-tab { border-radius: var(--xc-radius-pill); color: var(--xc-muted); }
+.xc-admin .xc-content.xc-content .users-tab[aria-selected="true"] { background: var(--xc-brand); border-color: var(--xc-brand); color: var(--xc-on-brand); }
+.xc-admin .xc-content.xc-content .users-toolbar input[type="search"] { width: 280px; max-width: 100%; }
+.xc-admin .xc-content .admin-main .users-th { padding: 10px 12px; }
+.xc-admin .xc-content .admin-main .users-td { padding: 12px; }
+.users-table code { font-size: 12px; word-break: break-all; }
+.users-pager { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 12px; font-size: 14px; }
+@media (min-width: 801px) {
+  .users-row-actions { min-width: 268px; }
+  .xc-admin .xc-content.xc-content .users-row-actions button { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+  .xc-admin .xc-content.xc-content .users-role-tag .users-btn-revoke { min-height: 28px; padding: 2px 8px; font-size: 12px; }
 }

@@ -8,7 +8,7 @@ const t = screenT('admin.consent', table);
 export const menu: AdminMenu = {
   id: 'consent',
   label: () => t('label'),
-  icon: '📜',
+  icon: '✎',
   order: 12,
   group: 'tools',
   needs: 'ConsentPolicyManage',

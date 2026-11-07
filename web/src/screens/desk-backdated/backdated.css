@@ -1,0 +1,14 @@
+.backdated-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.desk-form.backdated-form { max-width: none; }
+.backdated-summary { align-self: start; }
+.backdated-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.backdated-grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.backdated-search { flex-wrap: nowrap; margin-top: 0; }
+.backdated-search input { flex: 1 1 0; min-width: 0; }
+@media (max-width: 1100px) {
+  .backdated-grid { grid-template-columns: minmax(0, 1fr); }
+  .backdated-summary { order: -1; }
+}
+@media (max-width: 560px) {
+  .backdated-grid2, .backdated-grid3 { grid-template-columns: minmax(0, 1fr); }
+}

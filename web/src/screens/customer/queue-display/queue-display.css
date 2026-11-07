@@ -1,3 +1,7 @@
+body:has(.queue-display-screen) {
+  margin: 0;
+}
+
 .queue-display-screen {
   min-height: 100vh;
   box-sizing: border-box;
@@ -51,7 +55,7 @@
 .queue-display-heading {
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--xc-muted);
+  color: var(--xc-ink);
   margin: 0;
 }
 
@@ -92,4 +96,16 @@
   font-size: 1.5rem;
   text-align: center;
   padding: 3rem 1.5rem;
+}
+
+@media (max-width: 760px) {
+  .queue-display-screen {
+    padding: 16px;
+  }
+
+  .queue-display-grid {
+    grid-template-columns: 1fr;
+    flex: none;
+    gap: 1rem;
+  }
 }

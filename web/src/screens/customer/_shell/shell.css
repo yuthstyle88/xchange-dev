@@ -306,5 +306,11 @@
     min-width: 44px;
     min-height: 44px;
   }
+
+  .xc-customer-bar:has(.xc-customer-name) {
+    padding-right: 40px;
+    mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 32px), transparent);
+  }
 }
 

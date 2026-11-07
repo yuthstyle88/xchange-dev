@@ -39,6 +39,8 @@ export const th: Record<string, string> = {
   shiftOpenedDaysAgo: 'กะนี้เปิดเมื่อ {date} ({n} วันก่อน)',
   shiftOpenedOneDayAgo: 'กะนี้เปิดเมื่อ {date} (1 วันก่อน)',
   outsideShiftHours: 'นอกเวลากะ',
+  emptyClockIn: 'ลงเวลาเข้างานก่อน จึงจะเปิดกะได้',
+  emptyNothing: 'ไม่มีรายการที่ต้องทำในตอนนี้',
 };
 
 export const en: Record<string, string> = {
@@ -81,4 +83,6 @@ export const en: Record<string, string> = {
   shiftOpenedDaysAgo: 'This shift opened on {date} ({n} days ago)',
   shiftOpenedOneDayAgo: 'This shift opened on {date} (1 day ago)',
   outsideShiftHours: 'Outside shift hours',
+  emptyClockIn: 'Clock in first to open a shift.',
+  emptyNothing: 'Nothing to do right now.',
 };

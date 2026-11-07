@@ -698,7 +698,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               clearFieldError('slotId');
             }}
           >
-            <option value="">{slotsLoading() ? t('loading') : (slots().length === 0 ? t('noSlots') : t('selectSlot'))}</option>
+            <option value="">{slotsLoading() ? t('loading') : slotsError() ? t('noSlots') : t('selectSlot')}</option>
             <For each={branches().find((b) => b.id === branchId()) ? slots() : []}>
               {(slot) => {
                 const br = branches().find((b) => b.id === branchId())!;
@@ -756,6 +756,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               void updatePreview();
             }}
           >
+            <Show when={!branchId()}><option value="">{t('selectBranch')}</option></Show>
             <For each={bookCurrencies()}>
               {(c) => <option value={c}>{c}</option>}
             </For>

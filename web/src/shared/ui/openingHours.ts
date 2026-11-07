@@ -53,33 +53,44 @@ function normalizeLang(lang?: string): 'th' | 'en' | 'zh' {
   return 'th';
 }
 
-/**
- * Pure function formatting opening hours across days in mon..sun order.
- * Missing or empty day entries are shown as closed.
- * A Mon-Tue only branch never reads as open daily.
- */
-export function formatOpeningHours(hours: OpeningHoursData, lang?: string): string | null {
+export function openingHoursRows(
+  hours: OpeningHoursData,
+  lang?: string,
+): { day: string; text: string }[] {
   if (!hours || typeof hours !== 'object') {
-    return null;
+    return [];
   }
 
   const normalized = normalizeLang(lang);
   const dayNames = DAY_LABELS[normalized];
   const closed = CLOSED_LABELS[normalized];
 
-  const parts: string[] = [];
+  const rows: { day: string; text: string }[] = [];
   for (const day of DAYS) {
     const dayLabel = dayNames[day];
     const intervals = hours[day];
     if (Array.isArray(intervals) && intervals.length > 0) {
       const valid = intervals.filter((i) => i.open && i.close);
       if (valid.length > 0) {
-        parts.push(`${dayLabel}: ${valid.map((i) => `${i.open} - ${i.close}`).join(', ')}`);
+        rows.push({ day: dayLabel, text: valid.map((i) => `${i.open} - ${i.close}`).join(', ') });
         continue;
       }
     }
-    parts.push(`${dayLabel}: ${closed}`);
+    rows.push({ day: dayLabel, text: closed });
   }
 
-  return parts.join(', ');
+  return rows;
+}
+
+/**
+ * Pure function formatting opening hours across days in mon..sun order.
+ * Missing or empty day entries are shown as closed.
+ * A Mon-Tue only branch never reads as open daily.
+ */
+export function formatOpeningHours(hours: OpeningHoursData, lang?: string): string | null {
+  const rows = openingHoursRows(hours, lang);
+  if (rows.length === 0) {
+    return null;
+  }
+  return rows.map((r) => `${r.day}: ${r.text}`).join(', ');
 }

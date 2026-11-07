@@ -115,83 +115,85 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                 when={rows().length > 0}
                 fallback={<p>{t('levelsEmpty')}</p>}
               >
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t('levelCurrency')}</th>
-                      <th>{t('levelAmount')}</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <Index each={rows()}>
-                      {(row, index) => (
-                        <tr data-level-row>
-                          <td>
-                            <Show
-                              when={row().isNew}
-                              fallback={
-                                <span class="currency-code" data-field="currency">
-                                  {row().currency}
-                                </span>
-                              }
-                            >
+                <div class="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>{t('levelCurrency')}</th>
+                        <th>{t('levelAmount')}</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <Index each={rows()}>
+                        {(row, index) => (
+                          <tr data-level-row>
+                            <td>
+                              <Show
+                                when={row().isNew}
+                                fallback={
+                                  <span class="currency-code" data-field="currency">
+                                    {row().currency}
+                                  </span>
+                                }
+                              >
+                                <input
+                                  type="text"
+                                  name="currency"
+                                  data-field="currency"
+                                  maxLength={3}
+                                  value={row().currency}
+                                  onInput={(e) => {
+                                    const upper = e.currentTarget.value
+                                      .slice(0, 3)
+                                      .toUpperCase();
+                                    e.currentTarget.value = upper;
+                                    setRows((prev) =>
+                                      prev.map((r, i) =>
+                                        i === index
+                                          ? { ...r, currency: upper }
+                                          : r,
+                                      ),
+                                    );
+                                  }}
+                                />
+                              </Show>
+                            </td>
+                            <td>
                               <input
                                 type="text"
-                                name="currency"
-                                data-field="currency"
-                                maxLength={3}
-                                value={row().currency}
+                                inputMode="decimal"
+                                name="lowLevel"
+                                data-field="lowLevel"
+                                disabled={!canSave()}
+                                value={row().lowLevel}
                                 onInput={(e) => {
-                                  const upper = e.currentTarget.value
-                                    .slice(0, 3)
-                                    .toUpperCase();
-                                  e.currentTarget.value = upper;
+                                  const val = e.currentTarget.value;
                                   setRows((prev) =>
                                     prev.map((r, i) =>
-                                      i === index
-                                        ? { ...r, currency: upper }
-                                        : r,
+                                      i === index ? { ...r, lowLevel: val } : r,
                                     ),
                                   );
                                 }}
                               />
-                            </Show>
-                          </td>
-                          <td>
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              name="lowLevel"
-                              data-field="lowLevel"
-                              disabled={!canSave()}
-                              value={row().lowLevel}
-                              onInput={(e) => {
-                                const val = e.currentTarget.value;
-                                setRows((prev) =>
-                                  prev.map((r, i) =>
-                                    i === index ? { ...r, lowLevel: val } : r,
-                                  ),
-                                );
-                              }}
-                            />
-                          </td>
-                          <td>
-                            <Show when={canSave()}>
-                              <button
-                                type="button"
-                                data-action="remove-level"
-                                onClick={() => removeRow(index)}
-                              >
-                                {t('levelRemove')}
-                              </button>
-                            </Show>
-                          </td>
-                        </tr>
-                      )}
-                    </Index>
-                  </tbody>
-                </table>
+                            </td>
+                            <td>
+                              <Show when={canSave()}>
+                                <button
+                                  type="button"
+                                  data-action="remove-level"
+                                  onClick={() => removeRow(index)}
+                                >
+                                  {t('levelRemove')}
+                                </button>
+                              </Show>
+                            </td>
+                          </tr>
+                        )}
+                      </Index>
+                    </tbody>
+                  </table>
+                </div>
               </Show>
 
               <Show when={canSave()}>

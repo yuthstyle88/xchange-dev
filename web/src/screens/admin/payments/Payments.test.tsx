@@ -555,7 +555,8 @@ describe('V2-payments: the menu record (#470 §7)', () => {
     expect(menu.id).toBe('payments');
     expect(menu.group).toBe('money');
     expect(menu.order).toBe(6);
-    expect(menu.icon).toBe('▣');
+    // Restated by claude/88867fb6 for OL-6 B admin-sidebar-icons: v2's ▣ is cash's too; one icon per menu (menus.icons.test.ts).
+    expect(menu.icon).toBe('▭');
     expect(menu.dated).toBe(false);
     expect(menu.needs).toBe('all');
     expect(menu.label()).toBe(T.label);

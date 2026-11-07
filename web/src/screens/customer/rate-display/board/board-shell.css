@@ -12,7 +12,7 @@
   --xc-rb-down: var(--xc-danger);
 
   position: absolute;
-  top: 50%;
+  top: var(--xc-rb-top, 50%);
   left: 50%;
   width: 1080px;
   height: 1920px;
@@ -22,10 +22,19 @@
   flex-direction: column;
   background: var(--xc-rb-paper);
   color: var(--xc-rb-ink);
+  font-family: var(--xc-font-sans);
   border-radius: 36px;
   overflow: hidden;
   box-shadow: var(--xc-shadow-lg);
   box-sizing: border-box;
+}
+
+.xc-rb, .xc-rb * {
+  box-sizing: border-box;
+}
+
+.xc-rb > :not(.xc-rb-table) {
+  flex: none;
 }
 
 .xc-rb-calm {

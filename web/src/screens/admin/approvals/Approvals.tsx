@@ -445,7 +445,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   disabled={busy()}
                 />
               </label>
-              <div>{reason().length} / 500</div>
+              <div class="approval-reason-count">{reason().length} / 500</div>
 
               <Show when={error()}>
                 <div class="error" role="alert">{error()}</div>
@@ -544,44 +544,52 @@ export function Approvals(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="admin-approvals-screen">
-      <div class="approval-out-of-bound-list" data-status-switch>
-        <For each={STATUS_FILTERS}>
-          {(st) => (
+      <div class="approvals-filters card">
+        <div class="approvals-filter-row">
+          <span class="approvals-filter-label">{t('filterStatus')}</span>
+          <div class="approval-out-of-bound-list" data-status-switch>
+            <For each={STATUS_FILTERS}>
+              {(st) => (
+                <button
+                  type="button"
+                  class={`pill${statusFilter() === st ? ' active' : ' neutral'}`}
+                  aria-pressed={statusFilter() === st}
+                  data-status-filter={st}
+                  onClick={() => setStatusFilter(st)}
+                >
+                  {statusLabel(st)}
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
+        <div class="approvals-filter-row">
+          <span class="approvals-filter-label">{t('filterType')}</span>
+          <div class="approval-out-of-bound-list" data-type-switch>
             <button
               type="button"
-              class={`pill${statusFilter() === st ? ' active' : ' neutral'}`}
-              aria-pressed={statusFilter() === st}
-              data-status-filter={st}
-              onClick={() => setStatusFilter(st)}
+              class={`pill${typeFilter() === '' ? ' active' : ' neutral'}`}
+              aria-pressed={typeFilter() === ''}
+              data-type-filter=""
+              onClick={() => setTypeFilter('')}
             >
-              {statusLabel(st)}
+              {t('all')}
             </button>
-          )}
-        </For>
-      </div>
-      <div class="approval-out-of-bound-list" data-type-switch>
-        <button
-          type="button"
-          class={`pill${typeFilter() === '' ? ' active' : ' neutral'}`}
-          aria-pressed={typeFilter() === ''}
-          data-type-filter=""
-          onClick={() => setTypeFilter('')}
-        >
-          {t('all')}
-        </button>
-        <For each={APPROVAL_TYPES}>
-          {(tp) => (
-            <button
-              type="button"
-              class={`pill${typeFilter() === tp ? ' active' : ' neutral'}`}
-              aria-pressed={typeFilter() === tp}
-              data-type-filter={tp}
-              onClick={() => setTypeFilter(tp)}
-            >
-              {TYPE_LABEL[tp] ? t(TYPE_LABEL[tp]) : tp}
-            </button>
-          )}
-        </For>
+            <For each={APPROVAL_TYPES}>
+              {(tp) => (
+                <button
+                  type="button"
+                  class={`pill${typeFilter() === tp ? ' active' : ' neutral'}`}
+                  aria-pressed={typeFilter() === tp}
+                  data-type-filter={tp}
+                  onClick={() => setTypeFilter(tp)}
+                >
+                  {TYPE_LABEL[tp] ? t(TYPE_LABEL[tp]) : tp}
+                </button>
+              )}
+            </For>
+          </div>
+        </div>
       </div>
       <Show when={error()}>
         <div role="alert" class="error">

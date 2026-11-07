@@ -8,7 +8,7 @@ import { keyedWrite } from '../../../shared/api/keyed-write';
 import { locale, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
-import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
+import { Card, CardBody } from '../../../shared/ui/Card';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import { DrawerLowLevels } from './DrawerLowLevels';
@@ -193,7 +193,6 @@ export function CashLimits(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Card>
-        <CardHead eyebrow={t('eyebrow')} title={t('title')} />
         <CardBody>
           <form onSubmit={save}>
             <div class="field-group">

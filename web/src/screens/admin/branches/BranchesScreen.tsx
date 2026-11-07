@@ -18,6 +18,7 @@ import { BranchCounters } from './BranchCounters';
 import { BranchTablets } from './BranchTablets';
 import { ShiftsEditor } from './ShiftsEditor';
 import * as table from './i18n';
+import '../../../shared/ui/card.css';
 import './branches.css';
 
 const t = screenT('admin.branches', table);
@@ -311,7 +312,7 @@ export function BranchesScreen(props: AdminMenuProps): JSX.Element {
           }
         >
           {(prof) => (
-            <div class="branches-card">
+            <div class="branches-card card">
               <h2 class="branches-heading">{t('profileHeading')}: {prof().name}</h2>
               <form class="branches-form" onSubmit={handleSave}>
                 <div class="branches-field">

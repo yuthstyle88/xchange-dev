@@ -55,11 +55,20 @@ function formatWhen(at: string): string {
   }
 }
 
+const LOGINS_PER_PAGE = 25;
+
 export function LoginHistory(props: UsersTabProps): JSX.Element {
   const api = new ApiClient();
   const [rows, setRows] = createSignal<AdminLoginHistoryRow[]>([]);
+  const [page, setPage] = createSignal(1);
   const [error, setError] = createSignal<string | null>(null);
   const [loaded, setLoaded] = createSignal(false);
+
+  const pages = () => Math.max(1, Math.ceil(rows().length / LOGINS_PER_PAGE));
+  const visible = () => {
+    const start = (page() - 1) * LOGINS_PER_PAGE;
+    return rows().slice(start, start + LOGINS_PER_PAGE);
+  };
 
   let seq = 0;
 
@@ -74,12 +83,14 @@ export function LoginHistory(props: UsersTabProps): JSX.Element {
         if (currentSeq !== seq) return;
         setError(null);
         setRows(data);
+        setPage(1);
         setLoaded(true);
       })
       .catch((err) => {
         if (currentSeq !== seq) return;
         setError(wordedError(err));
         setRows([]);
+        setPage(1);
         setLoaded(true);
       });
   });
@@ -97,29 +108,52 @@ export function LoginHistory(props: UsersTabProps): JSX.Element {
         </div>
       </Show>
       <Show when={!error() && rows().length > 0}>
-        <div class="users-card users-table-scroll">
-          <table class="users-table">
-            <thead>
-              <tr>
-                <th class="users-th">{t('loginsWhen')}</th>
-                <th class="users-th">{t('loginsUser')}</th>
-                <th class="users-th">{t('loginsResult')}</th>
-                <th class="users-th">{t('loginsIp')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rows()}>
-                {(row) => (
-                  <tr>
-                    <td class="users-td">{formatWhen(row.at)}</td>
-                    <td class="users-td">{row.userName ?? '—'}</td>
-                    <td class="users-td">{formatResult(row.result)}</td>
-                    <td class="users-td">{row.ip ?? '—'}</td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+        <div class="users-card card">
+          <div class="users-table-scroll">
+            <table class="users-table">
+              <thead>
+                <tr>
+                  <th class="users-th">{t('loginsWhen')}</th>
+                  <th class="users-th">{t('loginsUser')}</th>
+                  <th class="users-th">{t('loginsResult')}</th>
+                  <th class="users-th">{t('loginsIp')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={visible()}>
+                  {(row) => (
+                    <tr>
+                      <td class="users-td">{formatWhen(row.at)}</td>
+                      <td class="users-td">{row.userName ?? '—'}</td>
+                      <td class="users-td">{formatResult(row.result)}</td>
+                      <td class="users-td">{row.ip ?? '—'}</td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+          <Show when={pages() > 1}>
+            <nav class="users-pager" data-logins-pager="">
+              <button
+                type="button"
+                class="users-btn"
+                disabled={page() <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                {t('loginsPrev')}
+              </button>
+              <span data-logins-page="">{t('loginsPage', { page: page(), pages: pages() })}</span>
+              <button
+                type="button"
+                class="users-btn"
+                disabled={page() >= pages()}
+                onClick={() => setPage((p) => Math.min(pages(), p + 1))}
+              >
+                {t('loginsNext')}
+              </button>
+            </nav>
+          </Show>
         </div>
       </Show>
     </div>

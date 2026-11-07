@@ -88,9 +88,9 @@
   min-height: 38px;
   padding: 6px 10px;
   border: 1px solid var(--xc-line);
-  background: var(--xc-paper);
+  background: var(--xc-surface);
   color: var(--xc-brand);
-  border-radius: 9px;
+  border-radius: var(--xc-radius-md);
   font: 12px var(--xc-font-sans);
   cursor: pointer;
 }
@@ -138,12 +138,12 @@
 /* v2 src/devices-public/account-bar.js @4526 */
 @media (max-width: 700px) {
   .queue-card {
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
     width: auto;
     max-width: none;
-    border-radius: 16px 16px 0 0;
+    border-radius: 16px;
     padding: 10px 14px;
   }
 
@@ -212,9 +212,4 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
   padding: 4px 0;
   color: var(--xc-muted);
   font-size: 13px;
-}
-
-/* #5126: reserve bottom space on the page while the queue card is shown so inputs at the bottom can scroll clear */
-html {
-  padding-bottom: var(--xc-queue-card-space, 0px);
 }

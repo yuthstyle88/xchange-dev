@@ -23,6 +23,7 @@ export const th = {
   statusCancelled: 'ยกเลิกแล้ว',
   statusNoShow: 'ไม่มาตามนัด',
   statusConfirmed: 'ยืนยันแล้ว',
+  backHome: 'กลับหน้าแรก',
 };
 
 export const en = {
@@ -49,6 +50,7 @@ export const en = {
   statusCancelled: 'Cancelled',
   statusNoShow: 'No Show',
   statusConfirmed: 'Confirmed',
+  backHome: 'Back to home',
 };
 
 export const zh = {
@@ -75,4 +77,5 @@ export const zh = {
   statusCancelled: '已取消',
   statusNoShow: '未到场',
   statusConfirmed: '已确认',
+  backHome: '返回首页',
 };

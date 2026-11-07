@@ -5,7 +5,7 @@
   flex-direction: column;
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 1rem 1.25rem 2rem;
+  padding: 1rem 1rem 2rem;
   background-color: var(--xc-bg);
   color: var(--xc-text);
   font-family: inherit;
@@ -195,6 +195,18 @@
 .xc-branch-value {
   color: var(--xc-text);
   word-break: break-word;
+}
+
+.xc-branch-hours-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.xc-branch-hours-row {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.5rem;
 }
 
 .xc-branch-actions {

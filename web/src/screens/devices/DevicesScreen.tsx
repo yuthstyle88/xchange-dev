@@ -714,12 +714,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                     {(j) => (
                       <tr>
                         <td data-label={t('colJobTime')}>
-                          {formatTimestamp(j.created, locale())} <small>{j.id}</small>
+                          {formatTimestamp(j.created, locale())} <small class="dev-id" title={j.id}>{j.id}</small>
                         </td>
                         <td data-label={t('colJobKind')}>
-                          {kindLabel(j.kind)} <small>{j.ref || t('noRef')}</small>
+                          {kindLabel(j.kind)} <small class="dev-id" title={j.ref || undefined}>{j.ref || t('noRef')}</small>
                         </td>
-                        <td data-label={t('colJobActor')}>{j.actor}</td>
+                        <td data-label={t('colJobActor')}><span class="dev-id" title={j.actor}>{j.actor}</span></td>
                         <td data-label={t('colJobStatus')}>{statusLabel(j.status)}</td>
                         <td data-label={t('colJobActions')}>
                           <Show when={j.status === 'QUEUED'}>
@@ -804,13 +804,13 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                     {(ev) => (
                       <tr>
                         <td data-label={t('colTime')}>{formatTimestamp(ev.at, locale())}</td>
-                        <td data-label={t('colActor')}>{ev.actor}</td>
+                        <td data-label={t('colActor')}><span class="dev-id" title={ev.actor}>{ev.actor}</span></td>
                         <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
                         <td data-label={t('colRef')}>
-                          <small>{ev.ref || '—'}</small>
+                          <small class="dev-id" title={ev.ref || undefined}>{ev.ref || '—'}</small>
                         </td>
                         <td data-label={t('colDetail')}>
-                          <code>{ev.detail}</code>
+                          <code title={ev.detail}>{ev.detail}</code>
                         </td>
                       </tr>
                     )}

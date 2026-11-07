@@ -327,16 +327,20 @@ describe('queue-card.css (QF5, QF6)', () => {
     expectDecls(r, '.queue-card.waiting', '', { 'border-color': 'var(--xc-brand)' });
   });
 
-  it('CS3: v2\'s ≤600 and ≤700 card rules (account-bar.js @3685, @4526)', async () => {
+  // Restated for OL-6 wave B queue-card-place by claude/studio-claude-17, on the order of the sub-controller
+  // claude/1cc51615: v2's edge-to-edge ≤700 card reads as clipped at the left on a phone (audit #564
+  // issuecomment-6702970101, shot 058), so left, right and bottom are now a 16px gutter and every corner is round.
+  // The ≤600 row and the other ≤700 values stay.
+  it('CS3: v2\'s ≤600 card rule (account-bar.js @3685) and the ≤700 card with a 16px gutter', async () => {
     const r = await sheet();
     expectDecls(r, '.queue-card', '(max-width:600px)', { right: '12px', bottom: '12px', width: '290px' });
     expectDecls(r, '.queue-card', '(max-width:700px)', {
-      left: '0',
-      right: '0',
-      bottom: '0',
+      left: '16px',
+      right: '16px',
+      bottom: '16px',
       width: 'auto',
       'max-width': 'none',
-      'border-radius': '16px 16px 0 0',
+      'border-radius': '16px',
       padding: '10px 14px',
     });
   });

@@ -10,7 +10,7 @@ export function KioskQueueScreen(props: { branch: string }): JSX.Element {
   return (
     <div class="xc-content queue-page">
       <nav>
-        <a href="/">{t('back')}</a>
+        <a class="kq-back" href="/">{t('back')}</a>
       </nav>
       <h2>{t('heading')}</h2>
       <p>{t('intro')}</p>

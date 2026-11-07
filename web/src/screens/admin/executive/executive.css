@@ -33,10 +33,21 @@
 .executive-branch-filter {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  border: 1px solid var(--xc-line);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
+  gap: 8px;
+}
+
+.xc-admin .xc-content .executive-branch-filter {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.xc-admin .xc-content .executive-branch-filter legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .executive-check {
@@ -45,18 +56,24 @@
   gap: 0.35rem;
 }
 
+.xc-admin .xc-content .executive-check {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--xc-line);
+  border-radius: 7px;
+  background: var(--xc-surface);
+}
+
+.xc-admin .xc-content .executive-check:has(input:checked) {
+  border-color: var(--xc-brand);
+  background: var(--xc-brand-soft);
+}
+
 .executive-field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.9rem;
-}
-
-.executive-field input,
-.executive-field select {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--xc-line);
-  border-radius: 6px;
 }
 
 .executive .error-banner {
@@ -123,12 +140,9 @@
 }
 
 .executive-drill-link {
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--xc-brand);
   cursor: pointer;
-  text-decoration: underline;
+  text-decoration: none;
 }
 
 .executive-dropped {
@@ -141,11 +155,7 @@
   border-collapse: collapse;
 }
 
-.executive-branches th,
-.executive-branches td {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--xc-line);
-  text-align: left;
+.xc-admin .xc-content .executive-branches td {
   vertical-align: top;
 }
 

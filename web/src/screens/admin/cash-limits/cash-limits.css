@@ -15,3 +15,11 @@
   gap: 8px;
   margin-top: 16px;
 }
+
+.xc-admin .xc-content [data-section="drawer-low-levels"] form {
+  margin-top: 16px;
+}
+
+.xc-admin .xc-content .cash-limits table input {
+  font-size: 16px;
+}

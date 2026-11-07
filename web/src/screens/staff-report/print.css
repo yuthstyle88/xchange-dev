@@ -13,6 +13,11 @@
   }
 
   .staff-report {
+    padding: 0;
     color: var(--xc-gray-1000);
+  }
+
+  .staff-report .card {
+    box-shadow: none;
   }
 }

@@ -1,13 +1,16 @@
 .reconciliation {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
 }
 
-.reconciliation-part,
-.reconciliation-certify {
-  border: 1px solid var(--xc-line);
-  border-radius: 8px;
-  padding: 12px 16px;
+.xc-admin .xc-content .reconciliation .card {
+  margin-bottom: 0;
+}
+
+.xc-admin .xc-content .reconciliation .card h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
 }
 
 .reconciliation-part[data-unavailable] {
@@ -24,15 +27,45 @@
   border-collapse: collapse;
 }
 
-.reconciliation-table th,
-.reconciliation-table td {
-  padding: 4px 8px;
+.xc-admin .xc-content .reconciliation-reversed {
+  margin-top: 12px;
+}
+
+.xc-admin .xc-content .reconciliation ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.xc-admin .xc-content .reconciliation li + li {
+  margin-top: 8px;
+}
+
+.xc-admin .xc-content .reconciliation-certify {
+  display: grid;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .reconciliation-certify > button {
+  justify-self: start;
+}
+
+.reconciliation-counter {
+  font-size: 12px;
+  color: var(--xc-muted);
   text-align: right;
 }
 
-.reconciliation-table th:first-child,
-.reconciliation-table td:first-child {
-  text-align: left;
+.xc-admin .xc-content .reconciliation-reversal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.xc-admin .xc-content .reconciliation-reversal > [data-summary],
+.xc-admin .xc-content .reconciliation-reversal > input,
+.xc-admin .xc-content .reconciliation-reversal > .reconciliation-counter {
+  flex-basis: 100%;
 }
 
 .reconciliation-certify [data-stale='true'] {

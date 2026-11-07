@@ -11,7 +11,7 @@
 
 .xc-campaigns-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
 }
 
@@ -54,9 +54,6 @@
   padding: 2.5rem;
   text-align: center;
   color: var(--xc-muted);
-  background-color: var(--xc-gray-50);
-  border-radius: 0.5rem;
-  border: 1px dashed var(--xc-line);
 }
 
 .xc-campaigns-table-container {

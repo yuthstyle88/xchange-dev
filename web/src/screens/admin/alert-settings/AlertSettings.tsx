@@ -17,6 +17,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { refreshTick } from '../parts/refresh';
 import * as table from './i18n';
+import '../../../shared/ui/card.css';
 import './alert-settings.css';
 
 const t = screenT('admin.alert-settings', table);
@@ -212,7 +213,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
 
   return (
     <div class="alert-settings-container">
-      <div class="alert-settings-card">
+      <div class="alert-settings-card card">
         <Show when={error()}>
           <div class="alert-settings-error" role="alert">
             {error()}
@@ -308,6 +309,7 @@ export function AlertSettings(props: AdminMenuProps): JSX.Element {
         <div class="alert-settings-actions">
           <button
             type="button"
+            class="primary"
             disabled={!firstLoaded() || saving()}
             onClick={handleSave}
           >

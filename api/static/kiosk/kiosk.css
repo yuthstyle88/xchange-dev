@@ -313,3 +313,8 @@ body.customer-kiosk .currency-shortcuts button .currency-flag{display:inline-fle
 body.customer-kiosk .currency-shortcuts button bdi{font-size:20px}
 body.customer-kiosk .currency-shortcuts button small{flex-basis:100%;font-size:12px;margin:0}
 @media(max-width:599px){body.customer-kiosk .currency-shortcuts button{gap:6px;padding:8px;justify-content:center}body.customer-kiosk .currency-shortcuts button .currency-flag{flex-basis:30px;width:30px;height:30px;font-size:26px}body.customer-kiosk .currency-shortcuts button bdi{font-size:17px}}
+/* OL-6 K1 (#564 audit, shot 057): kiosk touch-screen fixes. */
+#xc-version{position:static!important;display:block;text-align:center;margin:8px auto 0}
+select{appearance:none;-webkit-appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2354494f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 16px center;background-size:20px;padding-right:48px}
+button:disabled{opacity:1;background:var(--xc-gray-100);color:var(--xc-gray-600);border-color:var(--xc-gray-300)}
+@media (max-width:760px){.kiosk-lang input{grid-column:1/-1}}

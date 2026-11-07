@@ -406,11 +406,9 @@ export function Cash(props: AdminMenuProps): JSX.Element {
               </table>
             </div>
           </Show>
+          <p class="footnote">{t('footnote')}</p>
         </CardBody>
       </Card>
-
-      {/* Footnote */}
-      <p class="footnote">{t('footnote')}</p>
 
       {/* CA-9 #625: counts waiting and transfers on CA-8, each by its permission */}
       <CashFlows branch={props.branch} shown={props.shown} shifts={shifts} openShifts={() => cash()?.openShifts ?? []} />
@@ -461,7 +459,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                         <td class="num">
                           {formatMoney(m.amount)} {m.currency}
                         </td>
-                        <td>{m.reason}</td>
+                        <td class="cell-wrap">{m.reason}</td>
                       </tr>
                     )}
                   </For>

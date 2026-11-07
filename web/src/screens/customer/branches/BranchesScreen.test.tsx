@@ -497,9 +497,10 @@ describe('BranchesScreen (C08 / APP-12)', () => {
 
     setLang('en');
     await settle();
-    expect(card.textContent).toContain(
-      'Mon: Closed, Tue: Closed, Wed: Closed, Thu: Closed, Fri: Closed, Sat: Closed, Sun: Closed',
-    );
+    // Restated for cust-opening-hours (OL-6 B): one row per day, so the days are no longer one comma string.
+    for (const day of ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']) {
+      expect(card.textContent).toContain(`${day}: Closed`);
+    }
   });
 
   it('pages/app-branches.html is the anyone page at /app/branches that loads this screen', () => {

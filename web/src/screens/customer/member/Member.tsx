@@ -60,6 +60,7 @@ export function MemberScreen(): JSX.Element {
     <div class="xc-member-screen">
       <header class="xc-member-header">
         <h1 class="xc-member-title">{t('title')}</h1>
+        <p class="xc-member-subtitle">{t('subtitle')}</p>
       </header>
 
       <Show when={loading()}>

@@ -40,6 +40,8 @@ export const th = {
   'status.approved': 'อนุมัติแล้ว',
   'status.rejected': 'ไม่อนุมัติ',
   expiryMonthsInvalid: 'อายุคะแนนต้องเป็นจำนวนเต็มบวกหรือเว้นว่างไว้',
+  retry: 'ลองอีกครั้ง',
+  noVersions: 'ยังไม่มีเวอร์ชัน',
 };
 
 export const en: Record<keyof typeof th, string> = {
@@ -83,4 +85,6 @@ export const en: Record<keyof typeof th, string> = {
   'status.approved': 'Approved',
   'status.rejected': 'Rejected',
   expiryMonthsInvalid: 'Expiry months must be a positive whole number or left blank',
+  retry: 'Try again',
+  noVersions: 'No versions yet',
 };

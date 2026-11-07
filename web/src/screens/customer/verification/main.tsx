@@ -13,7 +13,7 @@ export function mount(
   setAudience('customer');
   return render(
     () => (
-      <CustomerShell route="/app">
+      <CustomerShell route="/app/verification">
         <VerificationScreen />
       </CustomerShell>
     ),

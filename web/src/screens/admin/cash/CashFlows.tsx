@@ -471,6 +471,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [toBranch, setToBranch] = createSignal('');
   const [fromShift, setFromShift] = createSignal('');
   const [toShift, setToShift] = createSignal('');
+  const [lineCurrency, setLineCurrency] = createSignal('');
   const [lineQty, setLineQty] = createSignal<Record<number, string>>({});
   const [createFieldErrors, setCreateFieldErrors] = createSignal<{
     toBranch?: string;
@@ -481,6 +482,9 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [note, setNote] = createSignal('');
 
   const openShifts = () => props.shifts().filter((s) => s.status === 'OPEN');
+  const lineCurrencies = () => [...new Set(denominations().map((d) => d.currency))];
+  const lineShown = (d: DenominationRow) =>
+    d.currency === lineCurrency() || Boolean(lineQty()[d.id]) || Boolean(createLineErrors()[d.id]);
 
   function create(e: Event) {
     e.preventDefault();
@@ -686,7 +690,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                     <For each={transfers()}>
                       {(row) => (
                         <tr>
-                          <td>
+                          <td class="cell-wrap">
                             {when(row.createdAt)} · {row.createdByName || '—'}
                           </td>
                           <td>{kindText(row.kind)}</td>
@@ -705,7 +709,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                               )}
                             </For>
                           </td>
-                          <td>{row.note ?? ''}</td>
+                          <td class="cell-wrap">{row.note ?? ''}</td>
                           <td>
                             <Show when={row.status === 'DRAFT' && row.approvalStatus !== 'PENDING'}>
                               <button type="button" class="secondary" data-action="submit" data-id={row.id} disabled={busy() || Boolean(meError())} title={meUnavailableTitle()} onClick={() => step(row, 'submit')}>
@@ -822,10 +826,23 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                   </div>
                 </Show>
 
+                <div>
+                  <label for="transfer-currency">{t('headerCurrency')}</label>
+                  <select
+                    id="transfer-currency"
+                    name="lineCurrency"
+                    value={lineCurrency()}
+                    onChange={(e) => setLineCurrency(e.currentTarget.value)}
+                  >
+                    <option value="">{t('chooseCurrency')}</option>
+                    <For each={lineCurrencies()}>{(c) => <option value={c}>{c}</option>}</For>
+                  </select>
+                </div>
+
                 <div class="transfer-lines">
                   <For each={denominations()}>
                     {(d) => (
-                      <div>
+                      <div hidden={!lineShown(d)}>
                         <label for={`transfer-line-${d.id}`}>
                           {d.currency} {d.faceValue}
                         </label>

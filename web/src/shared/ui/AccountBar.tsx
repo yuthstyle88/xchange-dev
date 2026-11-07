@@ -4,7 +4,7 @@ import { t } from '../i18n';
 import { th, type Key } from '../i18n/th';
 import { sharedSession, type SessionStore } from '../session/session';
 import { NoticeBell } from './notice-bell/NoticeBell';
-import { QueueCard } from './QueueCard';
+import { QueueCard, type QueueCardMode } from './QueueCard';
 
 const noticeClient = new ApiClient();
 
@@ -27,6 +27,7 @@ export function AccountBar(props: {
   session?: SessionStore;
   navigate?: (url: string) => void;
   reload?: () => void;
+  queueCard?: QueueCardMode;
 }): JSX.Element {
   const session = () => props.session ?? sharedSession();
   const navigate = (url: string) => {
@@ -190,11 +191,13 @@ export function AccountBar(props: {
               </Show>
             </Show>
           </Show>
-          <button type="button" disabled={pending()} onClick={handleSignOut}>
+          <NoticeBell client={noticeClient} branch={u().branch || null} />
+          <button type="button" class="account-bar-signout" disabled={pending()} onClick={handleSignOut}>
             {t('shell.account.signOut')}
           </button>
-          <NoticeBell client={noticeClient} branch={u().branch || null} />
-          <QueueCard session={session()} />
+          <Show when={props.queueCard !== 'hidden'}>
+            <QueueCard session={session()} startFolded={props.queueCard === 'folded'} />
+          </Show>
         </div>
       )}
     </Show>

@@ -2,6 +2,7 @@
 
 export const th = {
   title: 'สมาชิก',
+  subtitle: 'ระดับสมาชิกและคะแนนสะสมของคุณ',
   loading: 'กำลังโหลด…',
   loadFailed: 'เกิดข้อผิดพลาดในการโหลดข้อมูล',
   retry: 'ลองใหม่',
@@ -21,6 +22,7 @@ export const th = {
 
 export const en = {
   title: 'Membership',
+  subtitle: 'Your membership tier and points',
   loading: 'Loading…',
   loadFailed: 'Failed to load membership data',
   retry: 'Retry',
@@ -40,6 +42,7 @@ export const en = {
 
 export const zh = {
   title: '会员',
+  subtitle: '您的会员等级和积分',
   loading: '正在加载…',
   loadFailed: '加载会员信息失败',
   retry: '重试',

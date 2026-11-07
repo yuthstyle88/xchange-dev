@@ -3,8 +3,6 @@
   flex-direction: column;
   gap: 1.25rem;
   max-width: 56rem;
-  margin: 0 auto;
-  padding: 1rem 0;
 }
 
 .admin-notices-toolbar {
@@ -48,7 +46,6 @@
 }
 
 .admin-notices-mark-all-btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }
 
@@ -187,6 +184,5 @@
 }
 
 .admin-notices-mark-btn:disabled {
-  opacity: 0.5;
   cursor: not-allowed;
 }

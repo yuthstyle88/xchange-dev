@@ -5,7 +5,7 @@
   flex-direction: column;
   min-height: 100vh;
   box-sizing: border-box;
-  padding: 1rem 1.25rem 2rem;
+  padding: 1rem 1rem 2rem;
   background-color: var(--xc-bg);
   color: var(--xc-text);
   font-family: inherit;
@@ -234,7 +234,6 @@
   font-size: 0.875rem;
   color: var(--xc-text-muted);
   padding: 0.25rem 0;
-  font-style: italic;
 }
 
 .xc-book-retry-btn {

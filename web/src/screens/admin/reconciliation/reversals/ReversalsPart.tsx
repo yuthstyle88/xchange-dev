@@ -61,7 +61,7 @@ function ReversalRow(props: {
   }
 
   return (
-    <li data-request={props.row.requestId}>
+    <li class="reconciliation-reversal" data-request={props.row.requestId}>
       <span data-summary title={props.row.requestId}>
         {[
           props.row.subject.receiptNumber,
@@ -83,7 +83,7 @@ function ReversalRow(props: {
         value={reason()}
         onInput={(e) => setReason(e.currentTarget.value)}
       />
-      <div>{reason().length} / 500</div>
+      <div class="reconciliation-counter">{reason().length} / 500</div>
       <button
         type="button"
         data-action="approve"

@@ -65,6 +65,7 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
 
   return (
     <div class="xc-history-screen">
+      <h1 class="xc-history-title">{t('title')}</h1>
       <Show when={loading()}>
         <div class="xc-history-loading" role="status">
           {t('loading')}
@@ -90,7 +91,12 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
       </Show>
 
       <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length === 0}>
-        <div class="xc-history-empty">{t('empty')}</div>
+        <div class="xc-history-empty">
+          <p>{t('empty')}</p>
+          <a class="xc-c-primary" href="/app/book">
+            {t('emptyCta')}
+          </a>
+        </div>
       </Show>
 
       <Show when={!loading() && !errorMsg() && !unauthorized() && transactions().length > 0}>

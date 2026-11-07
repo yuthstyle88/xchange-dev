@@ -52,3 +52,32 @@
   display: inline-flex;
   gap: 0.5rem;
 }
+
+.xc-admin .xc-content .booking-slots-section { padding: 20px; margin-bottom: 20px; }
+.booking-slots-section h3 { margin: 0 0 16px; font-size: 16px; }
+.bs-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.xc-admin .xc-content .closures-form { display: grid; grid-template-columns: minmax(160px, 200px) minmax(0, 1fr) auto; align-items: start; gap: 16px; }
+.xc-admin .xc-content .closures-form > button { margin-top: 28px; }
+.bs-count { margin-top: 4px; font-size: 12px; color: var(--xc-muted); text-align: right; }
+.bs-empty { padding: 16px 0; color: var(--xc-muted); }
+.closure-item { padding: 8px 0; border-bottom: 1px solid var(--xc-line); }
+.closure-item .closure-date { min-width: 110px; font-variant-numeric: tabular-nums; }
+.closure-item .closure-reason { flex: 1; }
+.bs-days { display: flex; flex-direction: column; }
+.bs-day { border-bottom: 1px solid var(--xc-line); }
+.bs-day > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; cursor: pointer; font-weight: 600; }
+.bs-day-date { font-variant-numeric: tabular-nums; }
+.bs-day-count { font-size: 13px; font-weight: 400; color: var(--xc-muted); }
+.bs-day .slots-list { padding-bottom: 12px; }
+.xc-admin .xc-content .slot-item { display: grid; grid-template-columns: 120px 80px 110px auto auto auto; align-items: center; gap: 12px; padding: 6px 0; }
+.slot-item .slot-date { display: none; }
+.slot-item .slot-time, .slot-item .slot-reserved { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.slot-item .slot-status { justify-self: start; padding: 2px 10px; border-radius: var(--xc-radius-pill); font-size: 12px; font-weight: 600; background: var(--xc-ok-soft); color: var(--xc-ok); }
+.slot-item .slot-status[data-status="CLOSED"] { background: var(--xc-gray-100); color: var(--xc-gray-600); }
+.xc-admin .xc-content.xc-content .slot-item button { white-space: nowrap; }
+.xc-admin .xc-content.xc-content .slot-item .slot-capacity-control input[name="slotCapacity"] { width: 88px; }
+@media (max-width: 800px) {
+  .xc-admin .xc-content .closures-form,
+  .xc-admin .xc-content .slot-item { grid-template-columns: 1fr; }
+  .xc-admin .xc-content .closures-form > button { margin-top: 0; }
+}

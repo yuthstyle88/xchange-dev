@@ -3,6 +3,7 @@ import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
+import logoUrl from '../_shell/xc-logo.png';
 import '../../../shared/ui/xc-theme.css';
 import '../_shell/xc-customer-tokens.css';
 import './copy-link.css';
@@ -155,6 +156,7 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
   return (
     <div class="xc-customer xc-theme xc-copy-link">
       <div class="xc-copy-link-card">
+        <img class="xc-copy-link-logo" src={logoUrl} alt="XCHANGE Currency Exchange" width="96" height="67" />
         <h1 class="xc-copy-link-title">{t('title')}</h1>
 
         <Show when={loading()}>
@@ -167,6 +169,12 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
 
         <Show when={!loading() && !expired() && error()}>
           <p class="xc-copy-link-error">{t(error() as 'invalid' | 'loadFailed')}</p>
+        </Show>
+
+        <Show when={!loading() && (expired() || error())}>
+          <a class="xc-c-primary" href="/app">
+            {t('backHome')}
+          </a>
         </Show>
 
         <Show when={!loading() && !expired() && !error() && data()}>

@@ -336,6 +336,7 @@ export function Executive(props: AdminMenuProps): JSX.Element {
           <input
             name="currency"
             maxLength={3}
+            placeholder={t('currencyPlaceholder')}
             value={currencyInput()}
             onInput={(e) => {
               e.currentTarget.value = e.currentTarget.value.toUpperCase();
@@ -399,45 +400,49 @@ export function Executive(props: AdminMenuProps): JSX.Element {
             </For>
           </section>
 
-          <table class="executive-branches">
-            <thead>
-              <tr>
-                <th>{t('colBranch')}</th>
-                <th>{t('colVolume')}</th>
-                <th>{t('colCash')}</th>
-                <th>{t('colShifts')}</th>
-                <th>{t('colSync')}</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              <For each={rows()}>
-                {(r) => (
-                  <tr data-branch={r.branchId}>
-                    <td>{r.name}</td>
-                    <td class="executive-money">{formatMoney(r.volumeThb)}</td>
-                    <td class="executive-money">
-                      <MetricValue metric={r.availableCash} money class="executive-cash" />
-                      <span class="executive-transit">
-                        {t('inTransit')} <MetricValue metric={r.inTransit} money class="executive-cash" />
-                      </span>
-                    </td>
-                    <td class="executive-shifts">
-                      <span>{t('shiftsOpen', { n: r.shifts.open })}</span>
-                      <span>{t('shiftsVerified', { n: r.shifts.closedVerified })}</span>
-                      <span>{t('shiftsUnverified', { n: r.shifts.closedUnverified })}</span>
-                    </td>
-                    <td>
-                      <Time at={r.asOf} />
-                    </td>
-                    <td>
-                      <Drilldown drilldown={r.drilldown} />
-                    </td>
+          <div class="card">
+            <div class="table-scroll">
+              <table class="executive-branches">
+                <thead>
+                  <tr>
+                    <th>{t('colBranch')}</th>
+                    <th>{t('colVolume')}</th>
+                    <th>{t('colCash')}</th>
+                    <th>{t('colShifts')}</th>
+                    <th>{t('colSync')}</th>
+                    <th />
                   </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
+                </thead>
+                <tbody>
+                  <For each={rows()}>
+                    {(r) => (
+                      <tr data-branch={r.branchId}>
+                        <td>{r.name}</td>
+                        <td class="executive-money">{formatMoney(r.volumeThb)}</td>
+                        <td class="executive-money">
+                          <MetricValue metric={r.availableCash} money class="executive-cash" />
+                          <span class="executive-transit">
+                            {t('inTransit')} <MetricValue metric={r.inTransit} money class="executive-cash" />
+                          </span>
+                        </td>
+                        <td class="executive-shifts">
+                          <span>{t('shiftsOpen', { n: r.shifts.open })}</span>
+                          <span>{t('shiftsVerified', { n: r.shifts.closedVerified })}</span>
+                          <span>{t('shiftsUnverified', { n: r.shifts.closedUnverified })}</span>
+                        </td>
+                        <td>
+                          <Time at={r.asOf} />
+                        </td>
+                        <td>
+                          <Drilldown drilldown={r.drilldown} />
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <section class="executive-alerts">
             <h3 class="executive-alerts-title">{t('alerts')}</h3>

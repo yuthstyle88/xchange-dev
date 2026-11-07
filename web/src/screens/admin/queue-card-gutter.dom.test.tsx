@@ -144,7 +144,8 @@ describe('#4802 admin queue card gutter DOM selector match', () => {
 
     const rules = await readAdminRules();
     const desktopSelectors = rules
-      .filter((r) => r.media === '(min-width:1024px)' && r.selector.includes('.admin-main') && r.decls.has('padding-right'))
+      // Restated OL-6 A5 (owner ruling #564 issuecomment-6703173879 item 2): the ≥1024 px room is padding-bottom.
+      .filter((r) => r.media === '(min-width:1024px)' && r.selector.includes('.admin-main') && r.decls.has('padding-bottom'))
       .map((r) => r.selector);
     const mobileSelectors = rules
       .filter((r) => r.media === '(max-width:1023px)' && r.selector.includes('.admin-main') && r.decls.has('padding-bottom'))

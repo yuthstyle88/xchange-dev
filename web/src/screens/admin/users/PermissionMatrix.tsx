@@ -257,7 +257,7 @@ export function PermissionMatrix(props: UsersTabProps): JSX.Element {
   };
 
   return (
-    <div class="users-card">
+    <div class="users-card card">
       <div class="users-toolbar">
         <div>
           <h3 class="users-dialog-title">{t('matrixTitle')}</h3>

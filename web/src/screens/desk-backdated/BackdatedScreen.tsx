@@ -12,6 +12,8 @@ import { sharedApi, sharedSession } from '../../shared/session/session';
 import '../desk/desk.css';
 import { METHODS } from '../desk/steps/payment/channels';
 import { en, th } from './i18n';
+import '../../shared/ui/card.css';
+import './backdated.css';
 
 const t = screenT('desk-backdated', { th, en });
 
@@ -281,429 +283,441 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
 
   return (
     <div class="desk-page">
-      <form class="desk-form" onSubmit={(e) => void onSubmit(e)}>
-        <h2>{t('heading')}</h2>
+      <div class="backdated-grid">
+        <form class="desk-form backdated-form card" onSubmit={(e) => void onSubmit(e)}>
+          <h2>{t('heading')}</h2>
 
-        <div class="desk-field">
-          <span>{t('customerSearch')}</span>
-          <div class="desk-actions">
+          <div class="desk-field">
+            <span>{t('customerSearch')}</span>
+            <div class="desk-actions backdated-search">
+              <input
+                name="customerSearch"
+                autocomplete="off"
+                value={customerSearch()}
+                onInput={(e) => setCustomerSearch(e.currentTarget.value)}
+              />
+              <button type="button" onClick={() => void searchCustomers()}>
+                {t('customerSearchAction')}
+              </button>
+            </div>
+            <Show when={customers().length > 0}>
+              <div class="desk-actions">
+                <For each={customers()}>
+                  {(c) => (
+                    <button
+                      type="button"
+                      data-customer-option={c.id}
+                      onClick={() => {
+                        setCustomerId(c.id);
+                        clearField('customerId');
+                      }}
+                    >
+                      {c.displayName} ({c.id})
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+
+          <label class="desk-field">
+            <span>{t('customerId')}</span>
             <input
-              name="customerSearch"
+              name="customerId"
               autocomplete="off"
-              value={customerSearch()}
-              onInput={(e) => setCustomerSearch(e.currentTarget.value)}
+              value={customerId()}
+              onInput={(e) => {
+                setCustomerId(e.currentTarget.value);
+                clearField('customerId');
+              }}
             />
-            <button type="button" onClick={() => void searchCustomers()}>
-              {t('customerSearchAction')}
+            <Show when={fieldErrorText('customerId')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="customerId">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <label class="desk-field">
+            <span>{t('side')}</span>
+            <select
+              name="side"
+              value={side()}
+              onChange={(e) => {
+                setSide(e.currentTarget.value as 'BUY' | 'SELL');
+                clearField('side');
+              }}
+            >
+              <option value="BUY">{t('sideBuy')}</option>
+              <option value="SELL">{t('sideSell')}</option>
+            </select>
+            <Show when={fieldErrorText('side')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="side">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <div class="backdated-grid3">
+            <label class="desk-field">
+              <span>{t('currency')}</span>
+              <input
+                name="currency"
+                list="backdate-currencies"
+                autocomplete="off"
+                value={currency()}
+                onInput={(e) => {
+                  setCurrency(e.currentTarget.value.toUpperCase());
+                  clearField('currency');
+                }}
+              />
+              <datalist id="backdate-currencies">
+                <For each={currencies()}>{(r) => <option value={r.code} />}</For>
+              </datalist>
+              <Show when={fieldErrorText('currency')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="currency">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+
+            <label class="desk-field">
+              <span>{t('quantity')}</span>
+              <input
+                name="quantity"
+                inputMode="decimal"
+                autocomplete="off"
+                value={quantity()}
+                onInput={(e) => {
+                  setQuantity(e.currentTarget.value);
+                  clearField('quantity');
+                }}
+              />
+              <Show when={fieldErrorText('quantity')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="quantity">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+
+            <label class="desk-field">
+              <span>
+                {unitSize() !== undefined ? `${t('rate')} (${t('unitSize')} ${unitSize()} ${currency()})` : t('rate')}
+              </span>
+              <input
+                name="rate"
+                inputMode="decimal"
+                autocomplete="off"
+                value={rate()}
+                onInput={(e) => {
+                  setRate(e.currentTarget.value);
+                  clearField('rate');
+                }}
+              />
+              <Show when={fieldErrorText('rate')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="rate">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+          </div>
+
+          <div class="backdated-grid2">
+            <label class="desk-field">
+              <span>{t('feeThb')}</span>
+              <input
+                name="feeThb"
+                inputMode="decimal"
+                autocomplete="off"
+                value={feeThb()}
+                onInput={(e) => {
+                  setFeeThb(e.currentTarget.value);
+                  clearField('feeThb');
+                }}
+              />
+              <Show when={fieldErrorText('feeThb')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="feeThb">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+
+            <label class="desk-field">
+              <span>{t('expectedSettleThb')}</span>
+              <input
+                name="expectedSettleThb"
+                inputMode="decimal"
+                autocomplete="off"
+                value={expectedSettleThb()}
+                onInput={(e) => {
+                  setExpectedSettleThb(e.currentTarget.value);
+                  clearField('expectedSettleThb');
+                }}
+              />
+              <Show when={fieldErrorText('expectedSettleThb')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="expectedSettleThb">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+          </div>
+
+          <label class="desk-field">
+            <span>{t('paidAt')}</span>
+            <input
+              name="paidAt"
+              type="datetime-local"
+              value={paidAt()}
+              onInput={(e) => handlePaidAtInput(e.currentTarget.value)}
+            />
+            <Show when={fieldErrorText('payment.paidAt')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="payment.paidAt">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <label class="desk-field">
+            <span>{t('method')}</span>
+            <select
+              name="method"
+              value={method()}
+              onChange={(e) => {
+                setMethod(e.currentTarget.value);
+                clearField('payment.method');
+              }}
+            >
+              <For each={METHODS}>{(m) => <option value={m}>{m}</option>}</For>
+            </select>
+            <Show when={fieldErrorText('payment.method')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="payment.method">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <div class="backdated-grid2">
+            <label class="desk-field">
+              <span>{t('reference')}</span>
+              <input
+                name="reference"
+                autocomplete="off"
+                maxLength={100}
+                value={reference()}
+                onInput={(e) => {
+                  setReference(e.currentTarget.value);
+                  clearField('payment.reference');
+                }}
+              />
+              <Show when={fieldErrorText('payment.reference')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="payment.reference">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+
+            <label class="desk-field">
+              <span>{t('account')}</span>
+              <input
+                name="account"
+                autocomplete="off"
+                maxLength={100}
+                value={account()}
+                onInput={(e) => {
+                  setAccount(e.currentTarget.value);
+                  clearField('payment.account');
+                }}
+              />
+              <Show when={fieldErrorText('payment.account')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="payment.account">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+          </div>
+
+          <label class="desk-field">
+            <span>{t('bankFeeThb')}</span>
+            <input
+              name="bankFeeThb"
+              inputMode="decimal"
+              autocomplete="off"
+              value={bankFeeThb()}
+              onInput={(e) => {
+                setBankFeeThb(e.currentTarget.value);
+                clearField('payment.bankFeeThb');
+              }}
+            />
+            <Show when={fieldErrorText('payment.bankFeeThb')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="payment.bankFeeThb">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <div class="backdated-grid2">
+            <label class="desk-field">
+              <span>{t('slip')}</span>
+              <input
+                type="file"
+                name="slip"
+                accept={ACCEPT}
+                onChange={(e) => {
+                  const f = e.currentTarget.files?.[0];
+                  if (!f) return;
+                  if (!fileValid(f)) {
+                    setFieldErrors((prev) => ({ ...prev, 'payment.slip': t('fileInvalid') }));
+                    e.currentTarget.value = '';
+                    return;
+                  }
+                  clearField('payment.slip');
+                  setSlipFile(f);
+                }}
+              />
+              <Show when={slipFile()}>
+                {(f) => (
+                  <span class="desk-file">
+                    {f().name}{' '}
+                    <button type="button" onClick={() => setSlipFile(undefined)}>
+                      {t('removeFile')}
+                    </button>
+                  </span>
+                )}
+              </Show>
+              <Show when={fieldErrorText('payment.slip')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="payment.slip">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+
+            <label class="desk-field">
+              <span>{t('passport')}</span>
+              <input
+                type="file"
+                name="passport"
+                accept={ACCEPT}
+                onChange={(e) => {
+                  const f = e.currentTarget.files?.[0];
+                  if (!f) return;
+                  if (!fileValid(f)) {
+                    setFieldErrors((prev) => ({ ...prev, passport: t('fileInvalid') }));
+                    e.currentTarget.value = '';
+                    return;
+                  }
+                  clearField('passport');
+                  setPassportFile(f);
+                }}
+              />
+              <Show when={passportFile()}>
+                {(f) => (
+                  <span class="desk-file">
+                    {f().name}{' '}
+                    <button type="button" onClick={() => setPassportFile(undefined)}>
+                      {t('removeFile')}
+                    </button>
+                  </span>
+                )}
+              </Show>
+              <Show when={fieldErrorText('passport')}>
+                {(msg) => (
+                  <span class="desk-error" role="alert" data-field-error="passport">
+                    {msg()}
+                  </span>
+                )}
+              </Show>
+            </label>
+          </div>
+
+          <label class="desk-field">
+            <span>{t('notes')}</span>
+            <textarea
+              name="notes"
+              maxLength={500}
+              value={notes()}
+              onInput={(e) => {
+                setNotes(e.currentTarget.value);
+                clearField('notes');
+              }}
+            />
+            <Show when={fieldErrorText('notes')}>
+              {(msg) => (
+                <span class="desk-error" role="alert" data-field-error="notes">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
+
+          <Show when={error()}>
+            {(msg) => (
+              <p class="desk-error" role="alert">
+                {msg()}
+              </p>
+            )}
+          </Show>
+
+          <Show when={saved()}>
+            {(tx) => (
+              <div class="desk-field" role="status" data-testid="backdate-saved">
+                <p>{t('savedTitle')}</p>
+                <p>
+                  {t('documentRef')} <strong data-testid="document-ref">{tx().documentRef ?? tx().id}</strong>
+                </p>
+                <a href={`/desk/transactions/${tx().id}`} data-testid="receipt-link">
+                  {t('receiptLink')}
+                </a>
+              </div>
+            )}
+          </Show>
+
+          <div class="desk-actions">
+            <button type="submit" disabled={submitting()}>
+              {submitting() ? t('submitting') : t('submit')}
             </button>
           </div>
-          <Show when={customers().length > 0}>
-            <div class="desk-actions">
-              <For each={customers()}>
-                {(c) => (
-                  <button
-                    type="button"
-                    data-customer-option={c.id}
-                    onClick={() => {
-                      setCustomerId(c.id);
-                      clearField('customerId');
-                    }}
-                  >
-                    {c.displayName} ({c.id})
-                  </button>
-                )}
-              </For>
-            </div>
-          </Show>
-        </div>
+        </form>
 
-        <label class="desk-field">
-          <span>{t('customerId')}</span>
-          <input
-            name="customerId"
-            autocomplete="off"
-            value={customerId()}
-            onInput={(e) => {
-              setCustomerId(e.currentTarget.value);
-              clearField('customerId');
-            }}
-          />
-          <Show when={fieldErrorText('customerId')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="customerId">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('side')}</span>
-          <select
-            name="side"
-            value={side()}
-            onChange={(e) => {
-              setSide(e.currentTarget.value as 'BUY' | 'SELL');
-              clearField('side');
-            }}
-          >
-            <option value="BUY">{t('sideBuy')}</option>
-            <option value="SELL">{t('sideSell')}</option>
-          </select>
-          <Show when={fieldErrorText('side')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="side">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('currency')}</span>
-          <input
-            name="currency"
-            list="backdate-currencies"
-            autocomplete="off"
-            value={currency()}
-            onInput={(e) => {
-              setCurrency(e.currentTarget.value.toUpperCase());
-              clearField('currency');
-            }}
-          />
-          <datalist id="backdate-currencies">
-            <For each={currencies()}>{(r) => <option value={r.code} />}</For>
-          </datalist>
-          <Show when={fieldErrorText('currency')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="currency">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('quantity')}</span>
-          <input
-            name="quantity"
-            inputMode="decimal"
-            autocomplete="off"
-            value={quantity()}
-            onInput={(e) => {
-              setQuantity(e.currentTarget.value);
-              clearField('quantity');
-            }}
-          />
-          <Show when={fieldErrorText('quantity')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="quantity">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>
-            {unitSize() !== undefined ? `${t('rate')} (${t('unitSize')} ${unitSize()} ${currency()})` : t('rate')}
-          </span>
-          <input
-            name="rate"
-            inputMode="decimal"
-            autocomplete="off"
-            value={rate()}
-            onInput={(e) => {
-              setRate(e.currentTarget.value);
-              clearField('rate');
-            }}
-          />
-          <Show when={fieldErrorText('rate')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="rate">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <div class="desk-rate-line" data-testid="computed-thb">
-          <span>{t('computedThb')}:</span>
-          <strong>{computedThb() ?? '—'} THB</strong>
-          <Show when={settleThb()}>
-            {(s) => (
-              <span>
-                ({t('settleThb')}: <strong data-testid="computed-settle-thb">{s()} THB</strong>)
-              </span>
-            )}
-          </Show>
-        </div>
-
-        <label class="desk-field">
-          <span>{t('feeThb')}</span>
-          <input
-            name="feeThb"
-            inputMode="decimal"
-            autocomplete="off"
-            value={feeThb()}
-            onInput={(e) => {
-              setFeeThb(e.currentTarget.value);
-              clearField('feeThb');
-            }}
-          />
-          <Show when={fieldErrorText('feeThb')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="feeThb">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('expectedSettleThb')}</span>
-          <input
-            name="expectedSettleThb"
-            inputMode="decimal"
-            autocomplete="off"
-            value={expectedSettleThb()}
-            onInput={(e) => {
-              setExpectedSettleThb(e.currentTarget.value);
-              clearField('expectedSettleThb');
-            }}
-          />
-          <Show when={fieldErrorText('expectedSettleThb')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="expectedSettleThb">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('paidAt')}</span>
-          <input
-            name="paidAt"
-            type="datetime-local"
-            value={paidAt()}
-            onInput={(e) => handlePaidAtInput(e.currentTarget.value)}
-          />
-          <Show when={fieldErrorText('payment.paidAt')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.paidAt">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('method')}</span>
-          <select
-            name="method"
-            value={method()}
-            onChange={(e) => {
-              setMethod(e.currentTarget.value);
-              clearField('payment.method');
-            }}
-          >
-            <For each={METHODS}>{(m) => <option value={m}>{m}</option>}</For>
-          </select>
-          <Show when={fieldErrorText('payment.method')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.method">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('reference')}</span>
-          <input
-            name="reference"
-            autocomplete="off"
-            maxLength={100}
-            value={reference()}
-            onInput={(e) => {
-              setReference(e.currentTarget.value);
-              clearField('payment.reference');
-            }}
-          />
-          <Show when={fieldErrorText('payment.reference')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.reference">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('account')}</span>
-          <input
-            name="account"
-            autocomplete="off"
-            maxLength={100}
-            value={account()}
-            onInput={(e) => {
-              setAccount(e.currentTarget.value);
-              clearField('payment.account');
-            }}
-          />
-          <Show when={fieldErrorText('payment.account')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.account">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('bankFeeThb')}</span>
-          <input
-            name="bankFeeThb"
-            inputMode="decimal"
-            autocomplete="off"
-            value={bankFeeThb()}
-            onInput={(e) => {
-              setBankFeeThb(e.currentTarget.value);
-              clearField('payment.bankFeeThb');
-            }}
-          />
-          <Show when={fieldErrorText('payment.bankFeeThb')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.bankFeeThb">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('slip')}</span>
-          <input
-            type="file"
-            name="slip"
-            accept={ACCEPT}
-            onChange={(e) => {
-              const f = e.currentTarget.files?.[0];
-              if (!f) return;
-              if (!fileValid(f)) {
-                setFieldErrors((prev) => ({ ...prev, 'payment.slip': t('fileInvalid') }));
-                e.currentTarget.value = '';
-                return;
-              }
-              clearField('payment.slip');
-              setSlipFile(f);
-            }}
-          />
-          <Show when={slipFile()}>
-            {(f) => (
-              <span class="desk-file">
-                {f().name}{' '}
-                <button type="button" onClick={() => setSlipFile(undefined)}>
-                  {t('removeFile')}
-                </button>
-              </span>
-            )}
-          </Show>
-          <Show when={fieldErrorText('payment.slip')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="payment.slip">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('passport')}</span>
-          <input
-            type="file"
-            name="passport"
-            accept={ACCEPT}
-            onChange={(e) => {
-              const f = e.currentTarget.files?.[0];
-              if (!f) return;
-              if (!fileValid(f)) {
-                setFieldErrors((prev) => ({ ...prev, passport: t('fileInvalid') }));
-                e.currentTarget.value = '';
-                return;
-              }
-              clearField('passport');
-              setPassportFile(f);
-            }}
-          />
-          <Show when={passportFile()}>
-            {(f) => (
-              <span class="desk-file">
-                {f().name}{' '}
-                <button type="button" onClick={() => setPassportFile(undefined)}>
-                  {t('removeFile')}
-                </button>
-              </span>
-            )}
-          </Show>
-          <Show when={fieldErrorText('passport')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="passport">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('notes')}</span>
-          <textarea
-            name="notes"
-            maxLength={500}
-            value={notes()}
-            onInput={(e) => {
-              setNotes(e.currentTarget.value);
-              clearField('notes');
-            }}
-          />
-          <Show when={fieldErrorText('notes')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="notes">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <Show when={error()}>
-          {(msg) => (
-            <p class="desk-error" role="alert">
-              {msg()}
-            </p>
-          )}
-        </Show>
-
-        <Show when={saved()}>
-          {(tx) => (
-            <div class="desk-field" role="status" data-testid="backdate-saved">
-              <p>{t('savedTitle')}</p>
-              <p>
-                {t('documentRef')} <strong data-testid="document-ref">{tx().documentRef ?? tx().id}</strong>
-              </p>
-              <a href={`/desk/transactions/${tx().id}`} data-testid="receipt-link">
-                {t('receiptLink')}
-              </a>
-            </div>
-          )}
-        </Show>
-
-        <div class="desk-actions">
-          <button type="submit" disabled={submitting()}>
-            {submitting() ? t('submitting') : t('submit')}
-          </button>
-        </div>
-      </form>
+        <aside class="backdated-summary card">
+          <div class="desk-rate-line" data-testid="computed-thb">
+            <span>{t('computedThb')}:</span>
+            <strong>{computedThb() ?? '—'} THB</strong>
+            <Show when={settleThb()}>
+              {(s) => (
+                <span>
+                  ({t('settleThb')}: <strong data-testid="computed-settle-thb">{s()} THB</strong>)
+                </span>
+              )}
+            </Show>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

@@ -46,6 +46,7 @@ export const th = {
   // filters (§4.1)
   filterBranches: 'สาขา',
   filterCurrency: 'สกุลเงิน',
+  currencyPlaceholder: 'ทุกสกุล เช่น USD',
   invalidCurrency: 'รหัสสกุลเงินต้องเป็นตัวอักษร 3 หลัก (เช่น USD)',
   filterChannel: 'ช่องทาง',
   channelAll: 'ทุกช่องทาง',
@@ -95,6 +96,7 @@ export const en: Record<keyof typeof th, string> = {
   dropped: 'Filters not passed on yet',
   filterBranches: 'Branches',
   filterCurrency: 'Currency',
+  currencyPlaceholder: 'All, e.g. USD',
   invalidCurrency: 'Currency code must be 3 letters (e.g. USD)',
   filterChannel: 'Channel',
   channelAll: 'All channels',

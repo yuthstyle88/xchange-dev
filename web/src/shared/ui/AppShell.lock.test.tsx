@@ -18,6 +18,10 @@
 // `document.body.prepend(bar)`). Every check is kept; the sign-out is looked up in the bar instead
 // of the header, and the bar is also checked to be outside the fieldset and before the header.
 //
+// Restated for OL-6 L4 (#6537), issuecomment-6688832431, docs/design/xchange-one-look-layout.md §2 Q1: the mock-up's one
+// white header supersedes the 2026-10-10 order above. The bar sits inside the `<header>`; the sign-out is still looked up
+// in it; the header, the bar and the sign-out stay outside the fieldset. Every other check is kept.
+//
 // Texts: two shared keys under `shell.*` (W10) in web/src/shared/i18n/th.ts and en.ts. The Thai is
 // v2's, verbatim (account-bar.js:44). The English is the implementer's ([proposed] in the design).
 //
@@ -277,12 +281,10 @@ for (const ownsMain of [false, true]) {
       });
 
       const bar = host.querySelector('.account-bar')!;
-      expect(bar.closest('header'), 'the bar sits before the header, not in it').toBeNull();
+      // Restated for OL-6 L4 (#6537), §2 Q1: the bar is inside the header, not before it.
+      expect(bar.closest('header'), 'the bar sits inside the header').not.toBeNull();
       expect(bar.closest('fieldset'), 'the bar is outside the lock').toBeNull();
-      expect(
-        bar.compareDocumentPosition(host.querySelector('header')!) & Node.DOCUMENT_POSITION_FOLLOWING,
-        'the bar comes before the header',
-      ).toBeTruthy();
+      expect(host.querySelector('header')!.closest('fieldset'), 'the header is outside the lock').toBeNull();
       const signOut = Array.from(bar.querySelectorAll<HTMLButtonElement>('button')).find(
         (b) => b.textContent === 'ออกจากระบบ',
       );
@@ -290,6 +292,8 @@ for (const ownsMain of [false, true]) {
         (b) => b.textContent === 'EN',
       );
       expect(signOut, 'the sign-out button').toBeDefined();
+      // Restated for OL-6 L4 (#6537), §2 Q1: the sign-out itself is outside the lock.
+      expect(signOut!.closest('fieldset'), 'the sign-out is outside the lock').toBeNull();
       expect(langSwitch, 'the language switch').toBeDefined();
       expect(signOut!.matches(':disabled')).toBe(false);
       expect(langSwitch!.matches(':disabled')).toBe(false);

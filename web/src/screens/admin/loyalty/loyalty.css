@@ -1,0 +1,33 @@
+.xc-admin .xc-content .loyalty-screen .xc-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.xc-admin .xc-content .loyalty-screen .xc-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.xc-admin .xc-content .loyalty-screen [data-form="point-draft"] > button {
+  margin-top: 16px;
+}
+
+.xc-admin .xc-content .loyalty-screen h4 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.xc-admin .xc-content .loyalty-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
+  border-radius: 8px;
+  color: var(--xc-danger);
+}

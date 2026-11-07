@@ -23,7 +23,7 @@ export function PartBox<T>(props: {
 }): JSX.Element {
   return (
     <section
-      class="reconciliation-part"
+      class="card reconciliation-part"
       data-part={props.name}
       data-unavailable={props.part.available ? undefined : ''}
     >
@@ -44,4 +44,10 @@ export function PartBox<T>(props: {
 
 export function Empty(): JSX.Element {
   return <p class="reconciliation-none">{t('none')}</p>;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function Who(props: { id: string }): JSX.Element {
+  return <span title={props.id}>{UUID_RE.test(props.id) ? props.id.slice(0, 8) : props.id}</span>;
 }

@@ -10,7 +10,7 @@ const t = screenT('admin.payments', { th, en });
 export const menu: AdminMenu = {
   id: 'payments',
   label: () => t('label'),
-  icon: '▣',
+  icon: '▭',
   order: 6,
   group: 'money',
   dated: false,

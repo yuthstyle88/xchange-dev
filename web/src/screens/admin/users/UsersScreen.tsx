@@ -25,6 +25,8 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { TempPasswordNotice } from '../../../shared/ui/TempPasswordNotice';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import { shortId } from './short-id';
+import '../../../shared/ui/card.css';
 import './users.css';
 
 const t = screenT('admin.users', table);
@@ -723,7 +725,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                 type="button"
                 role="tab"
                 aria-selected={activeTab() === tab.id}
-                class={activeTab() === tab.id ? 'users-btn users-btn-secondary' : 'users-btn'}
+                class="users-btn users-tab"
                 data-users-tab={tab.id}
                 onClick={() => setActiveTab(tab.id)}
               >
@@ -801,7 +803,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
           )}
         </Show>
 
-        <div class="users-card">
+        <div class="users-card card">
           <Show
             when={users().length > 0}
             fallback={
@@ -835,7 +837,7 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                           <td class="users-td">{user.employeeCode ?? '—'}</td>
                           <td class="users-td">
                             <div><strong>{user.name}</strong></div>
-                            <small class="users-intro">{user.userId}</small>
+                            <small class="users-intro" title={user.userId}>{shortId(user.userId)}</small>
                           </td>
                           <td class="users-td">
                             <div class="users-roles-list">

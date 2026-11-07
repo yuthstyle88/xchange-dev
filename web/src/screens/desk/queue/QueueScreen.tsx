@@ -8,10 +8,12 @@ import type { StaffMeView } from '../../../shared/api/generated/staff_me';
 import { queueBranch, useQueueStore } from '../../../shared/queue/queue-store';
 import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import '../../../shared/ui/card.css';
 import { Board } from './board/Board';
 import { CounterBar } from './counter/CounterBar';
 import { queueCommands } from './queue-commands';
 import { en, th } from './i18n';
+import './queue.css';
 
 const t = screenT('desk.queue', { th, en });
 
@@ -45,7 +47,7 @@ export function QueueScreen(): JSX.Element {
     >
       <Show when={me()} fallback={<p>{t('loadingMe')}</p>}>
         {(m) => (
-          <div>
+          <div class="desk-queue">
             <CounterBar store={store()} me={m()} commands={commands} />
             <Board store={store()} me={m()} commands={commands} />
           </div>

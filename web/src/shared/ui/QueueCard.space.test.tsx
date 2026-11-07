@@ -202,8 +202,14 @@ describe('QueueCard bottom space reservation (#5126)', () => {
     expect(document.documentElement.style.getPropertyValue('--xc-queue-card-space')).toBe('186px');
   });
 
-  it('queue-card.css adds html padding-bottom with var(--xc-queue-card-space, 0px)', async () => {
-    const cssContent = await readSiblingCss('queue-card.css');
-    expect(cssContent).toMatch(/html\s*\{[^}]*padding-bottom:\s*var\(--xc-queue-card-space,\s*0px\);/);
+  // Restated for OL-6 A1 (audit #564 issuecomment-6702970101, R2): the reserve moves from `html`, which has no page
+  // background (a white band showed below every admin page), onto `.xc-shell`, which paints var(--xc-bg).
+  it('the bottom reserve var(--xc-queue-card-space, 0px) is padding on .xc-shell (shell.css), not on html', async () => {
+    const queueCss = (await readSiblingCss('queue-card.css')).replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(queueCss).not.toMatch(/(^|[}\s])html\s*\{/);
+    const shellCss = (await readSiblingCss('shell.css')).replace(/\/\*[\s\S]*?\*\//g, '');
+    const shell = /(^|\})\s*\.xc-shell\s*\{([^}]*)\}/.exec(shellCss)?.[2] ?? '';
+    expect(shell).toMatch(/padding-bottom:\s*var\(--xc-queue-card-space,\s*0px\)\s*;/);
+    expect(shell).toMatch(/background:\s*var\(--xc-bg\)/);
   });
 });

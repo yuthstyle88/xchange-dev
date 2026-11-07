@@ -24,6 +24,7 @@ import { QrCode } from '../../../shared/ui/QrCode';
 import { BenefitLines } from '../benefits/BenefitLines';
 import { newKey } from '../save';
 import { en, th } from './i18n';
+import '../../../shared/ui/card.css';
 import './desk-bookings.css';
 
 interface SlotGroup {
@@ -907,17 +908,20 @@ export function DeskBookingsScreen(): JSX.Element {
 
       <Show when={authorized() === true}>
         <div class="xc-desk-bookings" data-screen="desk-bookings">
-          <div class="xc-bookings-toolbar">
+          <div class="xc-bookings-toolbar card">
             <div class="xc-qr-search">
-              <input
-                name="qrToken"
-                data-action="scan-qr"
-                class="xc-qr-input"
-                placeholder={t('scanQr')}
-                value={qrInput()}
-                onInput={(e) => setQrInput(e.currentTarget.value)}
-                onKeyDown={handleQrKeyDown}
-              />
+              <label class="xc-qr-field">
+                <span>{t('qrLabel')}</span>
+                <input
+                  name="qrToken"
+                  data-action="scan-qr"
+                  class="xc-qr-input"
+                  placeholder={t('scanQr')}
+                  value={qrInput()}
+                  onInput={(e) => setQrInput(e.currentTarget.value)}
+                  onKeyDown={handleQrKeyDown}
+                />
+              </label>
               <button
                 type="button"
                 data-action="lookup-qr"
@@ -935,7 +939,7 @@ export function DeskBookingsScreen(): JSX.Element {
                 class="xc-bookings-refresh xc-btn-secondary"
                 onClick={handleRefresh}
               >
-                Refresh
+                {t('refresh')}
               </button>
               <button
                 type="button"
@@ -951,7 +955,7 @@ export function DeskBookingsScreen(): JSX.Element {
           <div class="xc-slots-container">
             <Show
               when={allSlots().length > 0}
-              fallback={<div class="xc-empty-state">{t('empty')}</div>}
+              fallback={<div class="xc-empty-state card">{t('empty')}</div>}
             >
               <For each={allSlots()}>
                 {(slot) => (

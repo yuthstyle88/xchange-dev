@@ -173,6 +173,9 @@ export const th = {
   loginsResultNotActive: 'บัญชีไม่ได้เปิดใช้งาน',
   loginsResultTempExpired: 'รหัสผ่านชั่วคราวหมดอายุ',
   loginsResultRateLimited: 'ถูกจำกัดจำนวนครั้ง',
+  loginsPrev: 'ก่อนหน้า',
+  loginsNext: 'ถัดไป',
+  loginsPage: 'หน้า {page} / {pages}',
 
   // A6 users period grant, ended roles, employee code column, paging
   colEmployeeCode: 'รหัสพนักงาน',
@@ -368,6 +371,9 @@ export const en = {
   loginsResultNotActive: 'Account not active',
   loginsResultTempExpired: 'Temporary password expired',
   loginsResultRateLimited: 'Rate limited',
+  loginsPrev: 'Previous',
+  loginsNext: 'Next',
+  loginsPage: 'Page {page} / {pages}',
 
   // A6 users period grant, ended roles, employee code column, paging
   colEmployeeCode: 'Employee Code',

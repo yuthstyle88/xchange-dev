@@ -1,10 +1,13 @@
-import { createSignal, onCleanup, onMount, Show, type JSX } from 'solid-js';
+import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
 import { t } from '../i18n';
 import type { Key } from '../i18n/th';
 import { sharedSession } from '../session/session';
 import { AccountBar, roleLabel } from './AccountBar';
+import type { QueueCardMode } from './QueueCard';
+import { visibleStaffNav } from './staff-nav';
 import { VersionFooter } from './VersionFooter';
+import '@fontsource-variable/noto-sans-thai/wght.css';
 import './xc-theme.css';
 import './shell.css';
 
@@ -18,8 +21,11 @@ export function AppShell(props: {
   look?: AppShellLook;
   banner?: JSX.Element;
   staffSession?: boolean;
+  staffNav?: boolean;
+  queueCard?: QueueCardMode;
 }): JSX.Element {
   const session = props.staffSession !== false ? sharedSession() : undefined;
+  const nav = props.nav;
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [pending, setPending] = createSignal(false);
   const [signOutError, setSignOutError] = createSignal('');
@@ -37,6 +43,8 @@ export function AppShell(props: {
   });
 
   const user = () => session?.me();
+  const staffItems = () => visibleStaffNav(user()?.permissions ?? []);
+  const path = () => (typeof window !== 'undefined' ? window.location.pathname : '');
   const userText = () => {
     const u = user();
     if (!u) return '';
@@ -46,13 +54,6 @@ export function AppShell(props: {
       .join(', ');
     if (u.name == null) return roles;
     return roles ? `${u.name} · ${roles}` : u.name;
-  };
-  const branchName = () => {
-    const u = user() as ({ branch?: string; branchName?: string; branches?: unknown[] } | undefined);
-    if (!u) return undefined;
-    if (u.branchName !== undefined) return u.branchName.trim() ? u.branchName : undefined;
-    if (u.branches === undefined && u.branch) return u.branch;
-    return undefined;
   };
 
   const handleSignOut = async () => {
@@ -74,11 +75,11 @@ export function AppShell(props: {
   return (
     <div class={props.look ? `xc-shell xc-theme xc-${props.look}` : 'xc-shell xc-theme'}>
       {props.banner ? <div class="xc-shell-banner">{props.banner}</div> : null}
-      {session ? <AccountBar session={session} /> : null}
       <header
         class="xc-shell-header"
         data-menu-open={menuOpen() ? 'true' : 'false'}
       >
+        {session ? <span class="xc-shell-brand">XCHANGE × T.K.</span> : null}
         {session ? (
           <button
             ref={(el) => (menuBtnRef = el)}
@@ -100,19 +101,39 @@ export function AppShell(props: {
           <Show when={user()}>
             <div class="xc-shell-panel-account">
               <span class="xc-shell-panel-user">{userText()}</span>
-              <Show when={branchName()}>
-                <span class="xc-shell-panel-branch">{t('shell.account.branch', { branch: branchName()! })}</span>
-              </Show>
             </div>
           </Show>
-          {session && props.nav ? (
+          {session && !nav && props.staffNav !== false ? (
+            <Show when={staffItems().length > 0}>
+              <div
+                class="xc-shell-nav"
+                onClick={(e) => {
+                  if ((e.target as Element | null)?.closest?.('a')) setMenuOpen(false);
+                }}
+              >
+                <nav>
+                  <For each={staffItems()}>
+                    {(item) => (
+                      <a href={item.href} aria-current={path() === item.href ? 'page' : undefined}>
+                        <span class="xc-shell-nav-icon" aria-hidden="true">
+                          {item.icon}
+                        </span>
+                        {t(item.key as Key)}
+                      </a>
+                    )}
+                  </For>
+                </nav>
+              </div>
+            </Show>
+          ) : null}
+          {session && nav ? (
             <div
               class="xc-shell-nav"
               onClick={(e) => {
                 if ((e.target as Element | null)?.closest?.('a')) setMenuOpen(false);
               }}
             >
-              {props.nav}
+              {nav}
             </div>
           ) : null}
           <Show when={user()}>
@@ -127,9 +148,10 @@ export function AppShell(props: {
           </Show>
         </div>
         {/* No staff session (the customer shell) has no menu button, so its nav stays in the header. */}
-        {!session && props.nav ? <div class="xc-shell-nav">{props.nav}</div> : null}
-        <h1 class="xc-shell-title">{props.title}</h1>
+        {!session && nav ? <div class="xc-shell-nav">{nav}</div> : null}
+        {!session ? <h1 class="xc-shell-title">{props.title}</h1> : null}
         <LangSwitch />
+        {session ? <AccountBar session={session} queueCard={props.queueCard} /> : null}
       </header>
       <Show when={session && session.ended()}>
         <p role="alert" class="xc-shell-alert">{t(`shell.session.${session!.ended()!}` as Key)}</p>
@@ -140,9 +162,15 @@ export function AppShell(props: {
         style="border: 0; padding: 0; margin: 0; min-width: 0"
       >
         {props.ownsMain ? (
-          <div class="xc-content">{props.children}</div>
+          <div class="xc-content">
+            {session ? <h1 class="xc-shell-title">{props.title}</h1> : null}
+            {props.children}
+          </div>
         ) : (
-          <main class="xc-shell-main">{props.children}</main>
+          <main class="xc-shell-main">
+            {session ? <h1 class="xc-shell-title">{props.title}</h1> : null}
+            {props.children}
+          </main>
         )}
       </fieldset>
       <div class="xc-shell-footer">

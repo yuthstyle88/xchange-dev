@@ -99,7 +99,7 @@ export function LoginScreen(props: {
   };
 
   return (
-    <AuthLayout title={t('title')}>
+    <AuthLayout title={t('title')} subtitle={mustChange() ? undefined : t('subtitle')}>
       {mustChange() ? (
         <ChangePassword
           auth={props.auth}

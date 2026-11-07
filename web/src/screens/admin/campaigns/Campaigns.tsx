@@ -253,6 +253,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
   const [campaignsList, setCampaignsList] = createSignal<CampaignListItem[]>([]);
   const [loadingList, setLoadingList] = createSignal(true);
   const [listError, setListError] = createSignal<string | null>(null);
+  const isEmpty = () => !loadingList() && !listError() && campaignsList().length === 0;
 
   // Create Campaign state
   const [isCreating, setIsCreating] = createSignal(false);
@@ -814,16 +815,17 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
         <Show when={isCreating()} fallback={
           <>
             {/* M01 List View */}
-            <div class="xc-campaigns-header">
-              <h3>{t('title')}</h3>
-              <button
-                type="button"
-                class="xc-btn-primary"
-                onClick={startCreate}
-              >
-                {t('create')}
-              </button>
-            </div>
+            <Show when={!isEmpty()}>
+              <div class="xc-campaigns-header">
+                <button
+                  type="button"
+                  class="xc-btn-primary"
+                  onClick={startCreate}
+                >
+                  {t('create')}
+                </button>
+              </div>
+            </Show>
 
             <Show when={listError()}>
               {(errMessage) => (
@@ -844,8 +846,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
               <div class="xc-campaigns-loading">{t('loading')}</div>
             </Show>
 
-            <Show when={!loadingList() && !listError() && campaignsList().length === 0}>
-              <div class="xc-campaigns-empty">
+            <Show when={isEmpty()}>
+              <div class="card xc-campaigns-empty">
                 <span>{t('empty')}</span>
                 <button
                   type="button"

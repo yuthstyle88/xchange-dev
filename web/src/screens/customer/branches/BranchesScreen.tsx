@@ -13,7 +13,7 @@ import { readHostOrg } from '../../../shared/api/public-host';
 import type { PublicBranchDto, PublicBranchesData } from '../../../shared/api/public/public_branches';
 import { lang, screenT } from '../../../shared/i18n';
 import { PublicPoller } from '../../../shared/live/public-poller';
-import { formatOpeningHours } from '../../../shared/ui/openingHours';
+import { openingHoursRows } from '../../../shared/ui/openingHours';
 import { BranchLive } from './BranchLive';
 import { TakeNumber } from './TakeNumber';
 import { th, en, zh } from './i18n';
@@ -223,9 +223,20 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
                         </div>
                         <div class="xc-branch-row xc-branch-hours">
                           <span class="xc-branch-label">{t('hours')}</span>
-                          <span class="xc-branch-value">
-                            {formatOpeningHours(branch.openingHours, lang()) || t('noHours')}
-                          </span>
+                          <Show
+                            when={openingHoursRows(branch.openingHours, lang()).length > 0}
+                            fallback={<span class="xc-branch-value">{t('noHours')}</span>}
+                          >
+                            <ul class="xc-branch-value xc-branch-hours-list">
+                              <For each={openingHoursRows(branch.openingHours, lang())}>
+                                {(row) => (
+                                  <li class="xc-branch-hours-row">
+                                    <span>{row.day}:</span> <span>{row.text}</span>
+                                  </li>
+                                )}
+                              </For>
+                            </ul>
+                          </Show>
                         </div>
                         <div class="xc-branch-row xc-branch-timezone">
                           <span class="xc-branch-label">{t('timezone')}</span>

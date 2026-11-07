@@ -3,8 +3,12 @@
   flex-direction: column;
   gap: 1.5rem;
   max-width: 48rem;
-  margin: 0 auto;
-  padding: 1rem 0;
+}
+
+.rate-alert-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .rate-alert-loading {
@@ -57,12 +61,9 @@
   line-height: 1.4;
 }
 
-.rate-alert-card {
-  background-color: var(--xc-surface);
-  border: 1px solid var(--xc-line);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  box-shadow: var(--xc-shadow-sm);
+.xc-admin .xc-content .rate-alert-card {
+  padding: 20px;
+  margin-bottom: 0;
 }
 
 .rate-alert-card-title {
@@ -170,12 +171,12 @@
 
 .rate-alert-suggest-btn {
   padding: 0.5rem 1rem;
-  background-color: transparent;
+  background-color: var(--xc-surface);
   border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-ink);
+  color: var(--xc-brand);
   cursor: pointer;
 }
 
