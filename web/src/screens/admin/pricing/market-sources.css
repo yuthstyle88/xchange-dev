@@ -8,11 +8,7 @@
   padding: 0 16px 2px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-
-.xc-admin .xc-content.xc-content .xc-market-sources::-webkit-scrollbar {
-  display: none;
+  scrollbar-width: thin;
 }
 
 .xc-admin .xc-content.xc-content .xc-market-source-chip {
