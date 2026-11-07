@@ -300,25 +300,29 @@ export function VerificationScreen(): JSX.Element {
               class={`xc-verification-step ${activeStep() === 1 ? 'xc-verification-step--active' : ''}`}
               data-step="1"
             >
-              <span>1. {t('stepSelect')}</span>
+              <span class="xc-verification-step-num" aria-hidden="true">1</span>
+              <span class="xc-verification-step-label">{t('stepSelect')}</span>
             </li>
             <li
               class={`xc-verification-step ${activeStep() === 2 ? 'xc-verification-step--active' : ''}`}
               data-step="2"
             >
-              <span>2. {t('stepSubmit')}</span>
+              <span class="xc-verification-step-num" aria-hidden="true">2</span>
+              <span class="xc-verification-step-label">{t('stepSubmit')}</span>
             </li>
             <li
               class={`xc-verification-step ${activeStep() === 3 ? 'xc-verification-step--active' : ''}`}
               data-step="3"
             >
-              <span>3. {t('stepReview')}</span>
+              <span class="xc-verification-step-num" aria-hidden="true">3</span>
+              <span class="xc-verification-step-label">{t('stepReview')}</span>
             </li>
             <li
               class={`xc-verification-step ${activeStep() === 4 ? 'xc-verification-step--active' : ''}`}
               data-step="4"
             >
-              <span>4. {t('stepResult')}</span>
+              <span class="xc-verification-step-num" aria-hidden="true">4</span>
+              <span class="xc-verification-step-label">{t('stepResult')}</span>
             </li>
           </ol>
 
