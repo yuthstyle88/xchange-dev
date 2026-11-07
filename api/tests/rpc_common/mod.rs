@@ -1894,6 +1894,9 @@ impl<'f> Replay<'f> {
                 );
                 let mut expected = without_dropped_keys(step.json());
                 edit(&mut expected);
+                // F6 (#6095): as in `hold_json_to`, a request with a queue ticket is labelled by its number
+                super::snapshot_common::with_ticket_numbers(&self.desk.db.pool, &mut expected)
+                    .await;
                 let actual = answer.json();
                 self.ids.learn(&expected, &actual);
                 assert_same(&self.ids.to_actual(&expected), &actual, &label);
@@ -2125,6 +2128,9 @@ impl<'f> Replay<'f> {
         let mut expected = self
             .as_published(step, &actual, &without_dropped_keys(recorded))
             .await;
+        // F6 (#6095, ruling issuecomment-6627017842): a kiosk request with a queue ticket is labelled by the
+        // ticket's number where v2 recorded `K-<first eight>` (snapshot_common::with_ticket_numbers).
+        super::snapshot_common::with_ticket_numbers(&self.desk.db.pool, &mut expected).await;
         // CI-4 (#651): a recorded answer whose `customers` v3 answers company-wide (COMPANY_CUSTOMERS)
         if let Some(list) = super::compat_common::company_customers(self.fixture, step.n) {
             expected = super::compat_common::with_customers_of(

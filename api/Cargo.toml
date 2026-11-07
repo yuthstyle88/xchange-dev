@@ -1,6 +1,16 @@
 [workspace]
 members = ["crates/*"]
 
+[workspace.package]
+rust-version = "1.89"
+
+[workspace.lints.clippy]
+collapsible_if = "allow"
+result_large_err = "allow"
+manual_is_multiple_of = "allow"
+chunks_exact_to_as_chunks = "allow"
+type_complexity = "allow"
+
 [workspace.dependencies]
 pos-error = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
 pos-infra = { git = "https://github.com/108-Plaza/108-platform-services", rev = "8b53cee9a8cb8cb335b01b4afbc1f34b1c31dac1" }
@@ -35,11 +45,14 @@ autotests = false
 name = "xchange"
 version = "1.0.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version.workspace = true
 authors = ["108Heros Engineering"]
 description = "XCHANGE server"
 license = "Proprietary"
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 pos-error = { workspace = true }

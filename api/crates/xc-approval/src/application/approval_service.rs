@@ -27,6 +27,7 @@ async fn fetch_version_hash(
             SubjectError::DependencyUnavailable { code, message } => {
                 ApprovalError::DependencyUnavailable { code, message }
             }
+            SubjectError::Refused { code, message } => ApprovalError::Refused { code, message },
             SubjectError::Failed(err) => {
                 ApprovalError::Internal(format!("failed to fetch version hash: {err}"))
             }
@@ -46,6 +47,7 @@ async fn notify_decided(
             SubjectError::DependencyUnavailable { code, message } => {
                 ApprovalError::DependencyUnavailable { code, message }
             }
+            SubjectError::Refused { code, message } => ApprovalError::Refused { code, message },
             SubjectError::Failed(err) => {
                 ApprovalError::Internal(format!("on_decided failed: {err}"))
             }
@@ -63,6 +65,8 @@ pub enum ApprovalError {
     IdempotencyConflict(String),
     #[error("policy refused: {code}: {message}")]
     PolicyRefused { code: &'static str, message: String },
+    #[error("{code}: {message}")]
+    Refused { code: &'static str, message: String },
     #[error("dependency unavailable: {code}: {message}")]
     DependencyUnavailable { code: &'static str, message: String },
     #[error("another request is already pending for this object: {0}")]
@@ -85,6 +89,7 @@ impl ApprovalError {
             Self::StaleVersion(_) => "staleVersion",
             Self::IdempotencyConflict(_) => "idempotencyConflict",
             Self::PolicyRefused { code, .. } => code,
+            Self::Refused { code, .. } => code,
             Self::DependencyUnavailable { code, .. } => code,
             Self::AlreadyPending(_) => "alreadyPending",
             Self::NotFound(_) => "notFound",

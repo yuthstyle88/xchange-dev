@@ -301,6 +301,35 @@ async fn fund(pool: &PgPool, place: CashPlace, amount: &str) {
     tx.commit().await.expect("commit");
 }
 
+/// Draws USD `amount` out of `place` through the ledger.
+async fn draw(pool: &PgPool, place: CashPlace, amount: &str) {
+    use xc_cash::domain::ledger::posting::{SourceRef, SourceType};
+    let mut tx = pool.begin().await.expect("begin");
+    xc_cash::infrastructure::ledger_postings::LedgerCashPostings::new()
+        .post_in(
+            &mut tx,
+            &[PostingRequest {
+                from: place,
+                to: CashPlace::Bank,
+                currency: xc_kernel::money::CurrencyCode::parse("USD").expect("a currency"),
+                quantity: xc_kernel::money::ForeignAmount::from_decimal(
+                    amount.parse().expect("an amount"),
+                ),
+                source: SourceRef {
+                    source_type: SourceType::Opening,
+                    source_id: format!("gapsa3-draw:{}", FUND.fetch_add(1, Ordering::Relaxed)),
+                    source_key: "draw".to_string(),
+                },
+                line: None,
+                reverses: None,
+            }],
+            None,
+        )
+        .await
+        .expect("draw through the ledger");
+    tx.commit().await.expect("commit");
+}
+
 // ------------------------------------------------------------ callers
 
 struct Who {
@@ -489,13 +518,20 @@ async fn approved(room: &Room, c: &Cast, notes: u32, ends: Value) -> String {
 
 /// A BRANCH move B01 → B09 of `notes` × USD 50, APPROVED (B01's safe holds USD 500.00).
 async fn branch_move(room: &Room, c: &Cast, notes: u32) -> String {
-    approved(
+    if notes > 10 {
+        fund(&room.pool, CashPlace::Safe(BranchId::new(B01)), "100.00").await;
+    }
+    let id = approved(
         room,
         c,
         notes,
         json!({ "kind": "BRANCH", "toBranchId": B09 }),
     )
-    .await
+    .await;
+    if notes > 10 {
+        draw(&room.pool, CashPlace::Safe(BranchId::new(B01)), "100.00").await;
+    }
+    id
 }
 
 /// `bm01` dispatches transfer `path_id` (the id as the path spells it) with `key`.
@@ -566,7 +602,7 @@ async fn gapsa3_a_dispatch_beyond_the_drawer_is_refused_and_after_a_top_up_the_s
 {
     let room = Room::start().await;
     let c = cast(&room).await;
-    fund(&room.pool, CashPlace::Drawer(SHIFT.to_owned()), "100.00").await;
+    fund(&room.pool, CashPlace::Drawer(SHIFT.to_owned()), "200.00").await;
     let id = approved(
         &room,
         &c,
@@ -574,6 +610,7 @@ async fn gapsa3_a_dispatch_beyond_the_drawer_is_refused_and_after_a_top_up_the_s
         json!({ "kind": "DRAWER_TO_SAFE", "fromShiftId": SHIFT }),
     )
     .await;
+    draw(&room.pool, CashPlace::Drawer(SHIFT.to_owned()), "100.00").await;
     let key = unique("key");
 
     let first = dispatch(&room, &c, &id, &key).await;

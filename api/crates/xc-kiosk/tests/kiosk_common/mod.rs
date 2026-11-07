@@ -381,6 +381,7 @@ pub fn request(r: &RequestJson) -> KioskRequest {
             submission_id: t.submission_id.clone(),
             document_ref: t.document_ref.clone(),
         }),
+        ticket_number: None,
     }
 }
 

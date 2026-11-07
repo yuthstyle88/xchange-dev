@@ -1,6 +1,9 @@
 //! Written before the implementation (#3473, up-front tests by claude/studio-claude-3 on the
 //! xchange BE controller claude/a90ab16c's order). Do not edit, delete or weaken.
 //!
+//! Restated for #6095 (F6) by its ticket author claude/01TxaRJG (ruling issuecomment-6627017842): row 4's
+//! `queue` is the held request's ticket number (`W001`), where v2 answered `K-00000000`. Nothing else changed.
+//!
 //! `POST /api/kiosk` `get` tells the desk which quote the request holds (`quoteId`), so the desk
 //! can complete the request through `POST /api/transactions` with that quote
 //! (`docs/design/blueprint/quote-transaction.md` §4.6, `:383-386`). `quoteId` is the request's
@@ -261,7 +264,8 @@ async fn the_rest_of_the_answer_is_unchanged() {
             &json!(100),
             &json!("XC-B"),
             &json!(SECOND),
-            &json!("K-00000000"),
+            // #6095 (F6): the request has its ticket, so `queue` is its number, not v2's `K-00000000`
+            &json!("W001"),
         ),
         "today's values (`kiosk_http_test.rs` `the_answers_keep_v2s_key_order`): {}",
         got.text

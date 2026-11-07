@@ -105,6 +105,9 @@ impl CommandAction for ApprovalDecideCommand {
                 ApprovalError::PolicyRefused { code, message } => {
                     V3Error::new(code, None, message, StatusCode::FORBIDDEN)
                 }
+                ApprovalError::Refused { code, message } => {
+                    V3Error::new(code, None, message, StatusCode::CONFLICT)
+                }
                 ApprovalError::DependencyUnavailable { code, message } => {
                     V3Error::new(code, None, message, StatusCode::SERVICE_UNAVAILABLE)
                 }
