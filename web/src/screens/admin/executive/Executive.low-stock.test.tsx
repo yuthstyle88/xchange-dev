@@ -109,6 +109,7 @@ afterEach(async () => {
   await settle();
 });
 
+// OL-7 row 64 (restated by claude/bbe9ce8b): alerts carry figures (staleMinutes, differences, stock), no `detail`.
 describe('A01 executive low-stock alert label (#3319)', () => {
   it('row 1: a lowStock alert in Thai reads สต็อกต่ำ, never lowStock', async () => {
     alertsFixture = [
@@ -116,7 +117,7 @@ describe('A01 executive low-stock alert label (#3319)', () => {
         kind: 'lowStock',
         branchId: 'B1',
         since: '2026-10-06T02:00:00Z',
-        detail: 'USD',
+        stock: { currency: 'USD', available: '40.0000', onHand: '40.0000', reserved: '0', floor: '50.0000' },
         drilldown: makeDrilldownDto({ view: 'admin_cash', filter: { branch: 'B1', currency: 'USD' }, dropped: [] }),
       }),
     ];
@@ -134,7 +135,7 @@ describe('A01 executive low-stock alert label (#3319)', () => {
         kind: 'lowStock',
         branchId: 'B1',
         since: '2026-10-06T02:00:00Z',
-        detail: 'USD',
+        stock: { currency: 'USD', available: '40.0000', onHand: '40.0000', reserved: '0', floor: '50.0000' },
         drilldown: null,
       }),
     ];
@@ -146,9 +147,9 @@ describe('A01 executive low-stock alert label (#3319)', () => {
 
   it('row 3: ratePending, staleData and countDifference labels remain unchanged', async () => {
     alertsFixture = [
-      makeAlertDto({ kind: 'ratePending', branchId: 'B1', since: null, detail: 'RQ-1', drilldown: null }),
-      makeAlertDto({ kind: 'staleData', branchId: 'B1', since: null, detail: 'TX-1', drilldown: null }),
-      makeAlertDto({ kind: 'countDifference', branchId: 'B1', since: null, detail: 'EXC-1', drilldown: null }),
+      makeAlertDto({ kind: 'ratePending', branchId: 'B1', since: null, drilldown: null }),
+      makeAlertDto({ kind: 'staleData', branchId: 'B1', since: null, staleMinutes: 30, drilldown: null }),
+      makeAlertDto({ kind: 'countDifference', branchId: 'B1', since: null, differences: [], drilldown: null }),
     ];
     const el = mount();
     await settle();
@@ -163,7 +164,6 @@ describe('A01 executive low-stock alert label (#3319)', () => {
         kind: 'futureKind' as never,
         branchId: 'B1',
         since: null,
-        detail: 'X-1',
         drilldown: null,
       }),
     ];
@@ -178,7 +178,7 @@ describe('A01 executive low-stock alert label (#3319)', () => {
         kind: 'lowStock',
         branchId: 'B1',
         since: '2026-10-06T02:00:00Z',
-        detail: 'USD',
+        stock: { currency: 'USD', available: '40.0000', onHand: '40.0000', reserved: '0', floor: '50.0000' },
         drilldown: makeDrilldownDto({ view: 'admin_cash', filter: { branch: 'B1', currency: 'USD' }, dropped: [] }),
       }),
     ];

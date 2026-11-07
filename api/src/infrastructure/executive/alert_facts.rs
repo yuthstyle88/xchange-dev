@@ -251,14 +251,25 @@ impl AlertFacts for PgAlertFacts {
 
 #[cfg(test)]
 mod tests {
+    // OL-7 row 64 (restated by claude/bbe9ce8b): an exception's alert carries each currency and its signed
+    // difference, never the exception's id; a pending count-difference request's payload the same way.
     use super::*;
     use rust_decimal::Decimal;
+    use serde_json::json;
     use xc_kernel::money::QuantityDelta;
     use xc_shift::domain::custody::value_objects::custody_time::CustodyTime;
     use xc_shift::domain::shift::value_objects::stock_delta::StockDelta;
 
     fn qd(minor: i128) -> QuantityDelta {
         QuantityDelta::from_decimal(Decimal::from_i128_with_scale(minor, 2)).unwrap()
+    }
+
+    fn dec(s: &str) -> Decimal {
+        s.parse().expect("a decimal")
+    }
+
+    fn thb(s: &str) -> (String, Decimal) {
+        ("THB".to_owned(), dec(s))
     }
 
     fn sample_exception(delta: StockDelta) -> CashException {
@@ -279,25 +290,25 @@ mod tests {
     #[test]
     fn row_1_minor_1250() {
         let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(1250))]));
-        assert_eq!(exception_detail(&ex), "ex-1: THB 12.50");
+        assert_eq!(exception_differences(&ex), vec![thb("12.50")]);
     }
 
     #[test]
     fn row_2_minor_neg_300() {
         let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(-300))]));
-        assert_eq!(exception_detail(&ex), "ex-1: THB -3.00");
+        assert_eq!(exception_differences(&ex), vec![thb("-3.00")]);
     }
 
     #[test]
     fn row_3_minor_5() {
         let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(5))]));
-        assert_eq!(exception_detail(&ex), "ex-1: THB 0.05");
+        assert_eq!(exception_differences(&ex), vec![thb("0.05")]);
     }
 
     #[test]
     fn row_4_minor_neg_5() {
         let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(-5))]));
-        assert_eq!(exception_detail(&ex), "ex-1: THB -0.05");
+        assert_eq!(exception_differences(&ex), vec![thb("-0.05")]);
     }
 
     #[test]
@@ -311,8 +322,8 @@ mod tests {
             .unwrap(),
         )]));
         assert_eq!(
-            exception_detail(&ex),
-            "ex-1: THB 792281625142643375935439503.35"
+            exception_differences(&ex),
+            vec![thb("792281625142643375935439503.35")]
         );
     }
 
@@ -327,15 +338,15 @@ mod tests {
             .unwrap(),
         )]));
         assert_eq!(
-            exception_detail(&ex),
-            "ex-1: THB -792281625142643375935439503.35"
+            exception_differences(&ex),
+            vec![thb("-792281625142643375935439503.35")]
         );
     }
 
     #[test]
     fn row_7_minor_0() {
         let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(0))]));
-        assert_eq!(exception_detail(&ex), "ex-1");
+        assert_eq!(exception_differences(&ex), Vec::<(String, Decimal)>::new());
     }
 
     #[test]
@@ -360,8 +371,40 @@ mod tests {
             ),
         ]));
         assert_eq!(
-            exception_detail(&ex),
-            "ex-1: THB 792281625142643375935439503.35: USD -792281625142643375935439503.35"
+            exception_differences(&ex),
+            vec![
+                thb("792281625142643375935439503.35"),
+                ("USD".to_owned(), dec("-792281625142643375935439503.35")),
+            ]
         );
+    }
+
+    #[test]
+    fn an_exception_never_carries_its_id() {
+        let ex = sample_exception(StockDelta::of(&[(CurrencyCode::THB, qd(1250))]));
+        let out = format!("{:?}", exception_differences(&ex));
+        assert!(!out.contains("ex-1"), "{out}");
+    }
+
+    #[test]
+    fn a_request_payload_with_currency_and_difference_is_one_pair() {
+        let p = json!({ "currency": "USD", "difference": "-3.00" });
+        assert_eq!(
+            request_differences(&p),
+            vec![("USD".to_owned(), dec("-3.00"))]
+        );
+    }
+
+    #[test]
+    fn a_request_payload_missing_either_field_is_no_pair() {
+        assert!(request_differences(&json!({ "currency": "USD" })).is_empty());
+        assert!(request_differences(&json!({ "difference": "1.00" })).is_empty());
+        assert!(request_differences(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn a_request_payload_whose_difference_is_not_a_number_is_no_pair() {
+        let p = json!({ "currency": "USD", "difference": "abc" });
+        assert!(request_differences(&p).is_empty());
     }
 }

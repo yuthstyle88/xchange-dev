@@ -6,6 +6,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Duration, Utc};
+use rust_decimal::Decimal;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use sqlx::{AssertSqlSafe, PgPool};
@@ -13,7 +14,7 @@ use uuid::Uuid;
 use xc_cash::domain::reservation::port::{ReserveLine, StockReservations};
 use xc_cash::infrastructure::stock_reservations::PgStockReservations;
 use xc_kernel::ids::BranchId;
-use xchange::application::executive::ports::{Alert, AlertFacts, AlertKind};
+use xchange::application::executive::ports::{Alert, AlertDetail, AlertFacts, AlertKind};
 use xchange::infrastructure::executive::alert_facts::PgAlertFacts;
 use xchange::infrastructure::executive::ledger_cash_facts::LedgerCashFacts;
 
@@ -220,6 +221,24 @@ impl Db {
             .collect()
     }
 
+    // OL-7 row 64 (restated by claude/bbe9ce8b): the alert carries its figures, not a sentence.
+    fn stock(
+        currency: &str,
+        available: &str,
+        on_hand: &str,
+        reserved: &str,
+        floor: &str,
+    ) -> AlertDetail {
+        let d = |s: &str| Decimal::from_str(s).expect("a decimal");
+        AlertDetail::Stock {
+            currency: currency.to_owned(),
+            available: d(available),
+            on_hand: d(on_hand),
+            reserved: d(reserved),
+            floor: d(floor),
+        }
+    }
+
     async fn close(self) {
         self.pool.close().await;
         let _ = sqlx::query(AssertSqlSafe(format!(
@@ -244,7 +263,7 @@ async fn row_1_s17_floor_50_on_hand_80_active_hold_40_alerts() {
     assert_eq!(alerts[0].branch, db.branch);
     assert_eq!(
         alerts[0].detail,
-        "USD: available 40.0000 (on hand 80.0000, reserved 40.0000), floor 50.0000"
+        Db::stock("USD", "40.0000", "80.0000", "40.0000", "50.0000")
     );
     db.close().await;
 }
@@ -282,17 +301,9 @@ async fn row_4_floor_50_on_hand_40_no_hold_alerts() {
     let alerts = db.low_stock_alerts().await;
     assert_eq!(alerts.len(), 1, "expected 1 lowStock alert: {alerts:?}");
     assert_eq!(alerts[0].branch, db.branch);
-    assert!(
-        alerts[0]
-            .detail
-            .starts_with("USD: available 40.0000 (on hand 40.0000, reserved 0"),
-        "unexpected detail: {}",
-        alerts[0].detail
-    );
-    assert!(
-        alerts[0].detail.ends_with("), floor 50.0000"),
-        "unexpected detail: {}",
-        alerts[0].detail
+    assert_eq!(
+        alerts[0].detail,
+        Db::stock("USD", "40.0000", "40.0000", "0", "50.0000")
     );
     db.close().await;
 }
