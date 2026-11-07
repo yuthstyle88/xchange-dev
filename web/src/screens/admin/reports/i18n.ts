@@ -47,7 +47,6 @@ export const th = {
 
   // Employees summary
   employeeSummaryHeading: 'สรุปยอดแยกพนักงาน',
-  downloadCsv: 'ดาวน์โหลด CSV',
   employeeSummaryNote: 'อิงสาขาและช่วงวันที่ด้านบน · รับเข้า/จ่ายออกจากมุมร้าน หน่วย THB · รวมเฉพาะรายการสำเร็จ · ค่าบริการรวมในยอดรับ–จ่ายแล้ว ค่าธรรมเนียมธนาคารแสดงแยก · ยอดสุทธิไม่ใช่กำไร',
   employeeLabel: 'พนักงาน',
   allStaff: 'ทุกคน',
@@ -146,7 +145,6 @@ export const en = {
 
   // Employees summary
   employeeSummaryHeading: 'Employee Breakdown',
-  downloadCsv: 'Download CSV',
   employeeSummaryNote: 'Based on branch and dates above · Shop perspective in THB · Completed transactions only · Fees included in in/out, bank fees separate · Net is not profit',
   employeeLabel: 'Employee',
   allStaff: 'Everyone',

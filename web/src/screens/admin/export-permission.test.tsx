@@ -9,8 +9,8 @@
 //
 // The screens are mounted as the admin shell mounts a menu (`<menu>.Component` with AdminMenuProps), each test with a
 // fresh module graph so the shared session reads this test's `me` (#1030's shape: `permissions` among its keys).
-// The buttons are found by their Thai labels: 'ส่งออกรายการ CSV' (overview, transactions, reports) and
-// 'ดาวน์โหลด CSV' (the reports employee tab).
+// The buttons are found by their Thai label 'ส่งออกรายการ CSV', which the reports employee tab shares since OL-7 (one
+// label for every CSV export, row 61); that one is told apart by its id `#employee-csv`.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createSignal, type JSX } from "solid-js";
 import { render } from "solid-js/web";
@@ -18,7 +18,6 @@ import type { AdminMenu } from "./menus";
 import { warmModules } from "../../shared/testing/warm-modules";
 
 const EXPORT = "ส่งออกรายการ CSV";
-const EMPLOYEE_CSV = "ดาวน์โหลด CSV";
 const BRANCH = "MAIN";
 
 type Reply = { status: number; body: unknown };
@@ -212,6 +211,16 @@ function buttons(el: ParentNode, label: string): HTMLButtonElement[] {
   );
 }
 
+/** The live CSV buttons: EXPORT, not the employee tab's `#employee-csv`. */
+function liveCsv(el: ParentNode): HTMLButtonElement[] {
+  return buttons(el, EXPORT).filter((b) => b.id !== "employee-csv");
+}
+
+/** The employee tab's CSV button: `#employee-csv`, labelled EXPORT like the others. */
+function employeeCsv(el: ParentNode): HTMLButtonElement[] {
+  return buttons(el, EXPORT).filter((b) => b.id === "employee-csv");
+}
+
 function exportReads(): URL[] {
   return reads.filter(
     (u) =>
@@ -279,10 +288,8 @@ describe("EX-9 the export buttons follow me.permissions", () => {
     dispose?.();
     root?.remove();
     const reports = await mount("reports");
-    expect(buttons(reports, EXPORT), "reports live CSV").toHaveLength(0);
-    expect(buttons(reports, EMPLOYEE_CSV), "reports employee CSV").toHaveLength(
-      0,
-    );
+    expect(liveCsv(reports), "reports live CSV").toHaveLength(0);
+    expect(employeeCsv(reports), "reports employee CSV").toHaveLength(0);
     expect(exportReads(), "nothing is exported").toEqual([]);
   });
 
@@ -297,25 +304,23 @@ describe("EX-9 the export buttons follow me.permissions", () => {
     dispose?.();
     root?.remove();
     const reports = await mount("reports");
-    expect(buttons(reports, EXPORT), "reports live CSV").toHaveLength(1);
-    expect(buttons(reports, EMPLOYEE_CSV), "reports employee CSV").toHaveLength(
-      1,
-    );
+    expect(liveCsv(reports), "reports live CSV").toHaveLength(1);
+    expect(employeeCsv(reports), "reports employee CSV").toHaveLength(1);
   });
 
   it("clicking each of the four walks admin_transactions with purpose=export and downloads a file", async () => {
     permissions = [...BASE_PERMISSIONS, "ReportsExport"];
-    const cases: [Screen, string][] = [
-      ["overview", EXPORT],
-      ["transactions", EXPORT],
-      ["reports", EXPORT],
-      ["reports", EMPLOYEE_CSV],
+    const cases: [Screen, string, (el: ParentNode) => HTMLButtonElement[]][] = [
+      ["overview", "live", liveCsv],
+      ["transactions", "live", liveCsv],
+      ["reports", "live", liveCsv],
+      ["reports", "employee", employeeCsv],
     ];
-    for (const [screen, label] of cases) {
+    for (const [screen, label, find] of cases) {
       const el = await mount(screen);
       const before = exportReads().length;
       const blobsBefore = blobs.length;
-      buttons(el, label)[0]!.click();
+      find(el)[0]!.click();
       await settle();
       const walk = exportReads().slice(before);
       expect(walk.length, `${screen} ${label}: an export walk`).toBeGreaterThan(
@@ -357,7 +362,7 @@ describe("EX-9 the export buttons follow me.permissions", () => {
         "outOfScope",
         "สาขานี้อยู่นอกขอบเขตของบัญชีนี้",
       );
-      buttons(el, EXPORT)[0]!.click();
+      liveCsv(el)[0]!.click();
       await settle();
       expect(
         el.textContent ?? "",

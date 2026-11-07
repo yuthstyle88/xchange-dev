@@ -27,7 +27,8 @@ const EXPORTER_ME: unknown = (() => {
 const REPORTS = 'admin_reports';
 const TRANSACTIONS = 'admin_transactions';
 const TABS = ['ช่องทางชำระเงิน', 'สกุลเงินและส่วนต่าง', 'แยกพนักงาน'];
-const EMPLOYEE_CSV = 'ดาวน์โหลด CSV';
+// OL-7 row 61: the employee tab's CSV button reads like every other CSV export; it is `#employee-csv`.
+const EMPLOYEE_CSV = 'ส่งออกรายการ CSV';
 
 // F20b (docs/design/backdated-keying.md §15.4): the employee CSV gains a last column `ย้อนหลัง` (`ใช่` or empty). Restated by the
 // ticket author claude/3b81c9d5; new rows are in Reports.backdated.test.tsx.
