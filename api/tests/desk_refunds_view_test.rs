@@ -20,8 +20,9 @@
 //! (`quantity::text`), so `numeric(20,4)` quantities keep their four places.
 //!
 //! Rows are seeded with SQL in RV-1's and TX-2's schema, as `v3_reversal_view_test.rs` does. The window is the
-//! branch's timezone (Asia/Bangkok): a reversal whose `business_date` is Bangkok's today is inside it, one of
-//! Bangkok's yesterday is past it. Callers come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
+//! branch's business day with the 06:00 cutover (`20261226220000_shift_templates.sql`): a reversal whose
+//! `business_date` is Bangkok's current business day is inside it, one of yesterday's business day is past it.
+//! Callers come from the `x-test-as` header (`owner`, `staff:<ROLE>:<branch>`).
 //! The content tests read as MAIN's FRONT (TELLER: holds `ReversalRequest`).
 //!
 //! Needs `TEST_DATABASE_URL`; nothing here skips.
@@ -58,10 +59,10 @@ const REQUESTED_AT: &str = "2026-10-06T06:00:00Z";
 const DECIDED_AT: &str = "2026-10-06T06:30:00Z";
 const POSTED_AT: &str = "2026-10-06T07:00:00Z";
 
-/// Bangkok's today, as SQL: inside the window.
-const TODAY: &str = "(now() AT TIME ZONE 'Asia/Bangkok')::date";
-/// Bangkok's yesterday, as SQL: past the window.
-const YESTERDAY: &str = "((now() AT TIME ZONE 'Asia/Bangkok')::date - 1)";
+/// Bangkok's current business day with the 06:00 cutover (`20261226220000_shift_templates.sql`), as SQL: inside the window.
+const TODAY: &str = "((now() AT TIME ZONE 'Asia/Bangkok') - interval '6 hours')::date";
+/// Bangkok's previous business day with the 06:00 cutover (`20261226220000_shift_templates.sql`), as SQL: past the window.
+const YESTERDAY: &str = "(((now() AT TIME ZONE 'Asia/Bangkok') - interval '6 hours')::date - 1)";
 
 /// Values seeded where the answer must never show them (RF-7).
 const SECRETS: [&str; 5] = [
