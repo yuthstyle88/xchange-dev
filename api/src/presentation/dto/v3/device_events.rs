@@ -15,5 +15,6 @@ pub struct DeviceEventRow {
     pub reference: String,
     pub at: String,
     pub actor: String,
+    pub actor_name: Option<String>,
     pub detail: String,
 }

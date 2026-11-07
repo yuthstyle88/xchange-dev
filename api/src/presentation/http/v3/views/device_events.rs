@@ -98,15 +98,22 @@ impl PagedView for DeviceEventsPagedView {
                 .map_err(AppError::Database)?
             };
 
+            let actors: Vec<String> = rows.iter().map(|r| r.actor.clone()).collect();
+            let names = xc_auth::application::user::directory::user_names(&pool, &actors).await?;
+
             Ok(rows
                 .into_iter()
-                .map(|r| DeviceEventRow {
-                    seq: r.seq.to_string(),
-                    kind: r.kind,
-                    reference: r.reference,
-                    at: r.at.to_rfc3339_opts(SecondsFormat::Millis, true),
-                    actor: r.actor,
-                    detail: r.detail,
+                .map(|r| {
+                    let actor_name = names.get(&r.actor).cloned();
+                    DeviceEventRow {
+                        seq: r.seq.to_string(),
+                        kind: r.kind,
+                        reference: r.reference,
+                        at: r.at.to_rfc3339_opts(SecondsFormat::Millis, true),
+                        actor: r.actor,
+                        actor_name,
+                        detail: r.detail,
+                    }
                 })
                 .collect())
         }

@@ -12,6 +12,7 @@ export function makeDeviceEventRow(o: Partial<DeviceEventRow> = {}): DeviceEvent
     ref: 'ref',
     at: '2026-01-01T00:00:00Z',
     actor: 'actor',
+    actorName: null,
     detail: 'detail',
     ...o,
   };
