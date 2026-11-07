@@ -5,8 +5,7 @@
 //!   `outbox_events` carries no branch (ruling on #1071 gap 5);
 //! - `countDifference`: a PENDING `COUNT_DIFFERENCE` approval request, or an open cash exception read through the
 //!   custody reader `exception_from_row`. A row that reader cannot decode (the new cash flow's shape, until
-//!   CA-10 #626) still counts as one open exception, and its detail is the row's id only: nothing here parses
-//!   `data` (ruling on #1071 gap 4).
+//!   CA-10 #626) still counts as one open exception, and carries no figures: nothing here parses `data` (OL-7 row 64).
 
 use chrono::{DateTime, TimeZone, Utc};
 use pos_error::{AppError, AppResult};
@@ -24,7 +23,9 @@ use std::sync::Arc;
 use xc_kernel::money::CurrencyCode;
 
 use crate::application::executive::drilldown::Drilldown;
-use crate::application::executive::ports::{Alert, AlertFacts, AlertKind, BoxFuture, CashFacts};
+use crate::application::executive::ports::{
+    Alert, AlertDetail, AlertFacts, AlertKind, BoxFuture, CashFacts,
+};
 
 pub struct PgAlertFacts {
     pool: PgPool,
@@ -41,8 +42,8 @@ impl PgAlertFacts {
     }
 
     async fn rate_pending(&self, scope: &[String]) -> AppResult<Vec<Alert>> {
-        let rows: Vec<(String, String, DateTime<Utc>)> = sqlx::query_as(
-            "SELECT id::text, branch_id, requested_at FROM approval_requests \
+        let rows: Vec<(String, DateTime<Utc>)> = sqlx::query_as(
+            "SELECT branch_id, requested_at FROM approval_requests \
               WHERE type = 'RATE_PUBLICATION' AND status = 'PENDING' AND branch_id = ANY($1) \
               ORDER BY branch_id, requested_at",
         )
@@ -52,7 +53,7 @@ impl PgAlertFacts {
         .map_err(AppError::Database)?;
         Ok(rows
             .into_iter()
-            .map(|(id, branch, at)| Alert {
+            .map(|(branch, at)| Alert {
                 kind: AlertKind::RatePending,
                 drilldown: Some(Drilldown::to(
                     "approval_requests",
@@ -64,7 +65,7 @@ impl PgAlertFacts {
                 )),
                 branch: BranchId::new(branch),
                 since: Some(at),
-                detail: format!("RATE_PUBLICATION {id}"),
+                detail: AlertDetail::None,
             })
             .collect())
     }
@@ -94,15 +95,15 @@ impl PgAlertFacts {
                 )),
                 branch: BranchId::new(branch),
                 since: Some(oldest),
-                detail: format!("unfinished transaction older than {minutes} minutes"),
+                detail: AlertDetail::StaleMinutes(minutes),
             })
             .collect())
     }
 
     async fn count_difference(&self, scope: &[String]) -> AppResult<Vec<Alert>> {
         let mut alerts = Vec::new();
-        let requests: Vec<(String, String, DateTime<Utc>, Value)> = sqlx::query_as(
-            "SELECT id::text, branch_id, requested_at, proposed_payload FROM approval_requests \
+        let requests: Vec<(String, DateTime<Utc>, Value)> = sqlx::query_as(
+            "SELECT branch_id, requested_at, proposed_payload FROM approval_requests \
               WHERE type = 'COUNT_DIFFERENCE' AND status = 'PENDING' AND branch_id = ANY($1) \
               ORDER BY branch_id, requested_at",
         )
@@ -110,13 +111,12 @@ impl PgAlertFacts {
         .fetch_all(&self.pool)
         .await
         .map_err(AppError::Database)?;
-        for (id, branch, at, payload) in requests {
-            let named = |k: &str| payload.get(k).and_then(Value::as_str).map(str::to_owned);
-            let detail = match (named("currency"), named("difference")) {
-                (Some(c), Some(d)) => format!("COUNT_DIFFERENCE {id}: {c} {d}"),
-                _ => format!("COUNT_DIFFERENCE {id}"),
-            };
-            alerts.push(count_alert(branch, Some(at), detail));
+        for (branch, at, payload) in requests {
+            alerts.push(count_alert(
+                branch,
+                Some(at),
+                AlertDetail::Differences(request_differences(&payload)),
+            ));
         }
 
         let rows = sqlx::query(
@@ -132,12 +132,15 @@ impl PgAlertFacts {
             match exception_from_row(row) {
                 Ok(e) if e.status == ExceptionStatus::Open => {
                     let since = Utc.timestamp_millis_opt(e.at.epoch_millis()).single();
-                    alerts.push(count_alert(branch, since, exception_detail(&e)));
+                    alerts.push(count_alert(
+                        branch,
+                        since,
+                        AlertDetail::Differences(exception_differences(&e)),
+                    ));
                 }
                 Ok(_) => {}
                 Err(_) => {
-                    let id: String = sqlx::Row::get(row, 0);
-                    alerts.push(count_alert(branch, None, id));
+                    alerts.push(count_alert(branch, None, AlertDetail::None));
                 }
             }
         }
@@ -201,9 +204,13 @@ impl PgAlertFacts {
                     )),
                     branch,
                     since: Some(updated_at),
-                    detail: format!(
-                        "{code}: available {available} (on hand {on_hand}, reserved {reserved}), floor {floor}"
-                    ),
+                    detail: AlertDetail::Stock {
+                        currency: code,
+                        available,
+                        on_hand,
+                        reserved,
+                        floor,
+                    },
                 });
             }
         }
@@ -212,7 +219,7 @@ impl PgAlertFacts {
 }
 
 /// Neither `cash_counts` (CA-8 #624) nor `finance_reconciliation` (FN-1 #1068) is on `main`: no drill-down.
-fn count_alert(branch: String, since: Option<DateTime<Utc>>, detail: String) -> Alert {
+fn count_alert(branch: String, since: Option<DateTime<Utc>>, detail: AlertDetail) -> Alert {
     Alert {
         kind: AlertKind::CountDifference,
         branch: BranchId::new(branch),
@@ -222,18 +229,32 @@ fn count_alert(branch: String, since: Option<DateTime<Utc>>, detail: String) -> 
     }
 }
 
-/// The exception's id and the currencies and differences it holds.
-fn exception_detail(e: &CashException) -> String {
-    let mut parts = vec![e.id.clone()];
-    for delta in [&e.target_difference, &e.cash_variance, &e.safe_variance]
+/// The non-zero currencies and signed differences an exception holds, in source order.
+fn exception_differences(e: &CashException) -> Vec<(String, Decimal)> {
+    [&e.target_difference, &e.cash_variance, &e.safe_variance]
         .into_iter()
         .flatten()
-    {
-        for (currency, d) in delta.non_zero() {
-            parts.push(format!("{currency} {d}"));
-        }
+        .flat_map(|delta| {
+            delta
+                .non_zero()
+                .into_iter()
+                .map(|(currency, d)| (currency.to_string(), d.value()))
+        })
+        .collect()
+}
+
+/// The currency and signed difference a pending `COUNT_DIFFERENCE` request's payload carries, if valid.
+fn request_differences(payload: &Value) -> Vec<(String, Decimal)> {
+    match (
+        payload.get("currency").and_then(Value::as_str),
+        payload
+            .get("difference")
+            .and_then(Value::as_str)
+            .and_then(|s| s.parse::<Decimal>().ok()),
+    ) {
+        (Some(c), Some(d)) => vec![(c.to_owned(), d)],
+        _ => Vec::new(),
     }
-    parts.join(": ")
 }
 
 impl AlertFacts for PgAlertFacts {
