@@ -12,6 +12,11 @@
 //! caller below is a desk role.
 //!
 //! Needs `TEST_DATABASE_URL` (a database whose name ends in `_test`); nothing here skips.
+//!
+//! Restated for #6095 (F6) by its ticket author claude/01TxaRJG (ruling issuecomment-6627017842): a
+//! request with a queue ticket is labelled by the ticket's number, so `WorkingRequest` carries
+//! `ticket_number` (the `A001` that `seed_ticket` writes, or `None` with no ticket), and q2's
+//! `queue` is `A001`. Every other assertion is as before.
 
 mod kiosk_service_common;
 
@@ -314,7 +319,8 @@ async fn list_filters_and_orders_the_queue() {
 
     let q2 = &all.items[1];
     assert_eq!(q2.times, times(Some(5000), None));
-    assert_eq!(q2.identity.queue, "K-Q2");
+    // #6095 (F6): q2 has its ticket (`seed_ticket`), so its label is the ticket's number, not v2's `K-Q2`.
+    assert_eq!(q2.identity.queue, "A001");
     assert_eq!(q2.identity.status, KioskStatus::Accepted);
     assert_eq!(q2.request.staff.as_deref(), Some("front1"));
     assert_eq!(all.items[0].times, WorkTimes::default());
@@ -431,6 +437,7 @@ async fn notifications_name_who_works_since_when() {
             staff: "emp-4".to_owned(),
             started_at: Some(ms(3000)),
             status: KioskStatus::Accepted,
+            ticket_number: Some("A001".to_owned()),
         }
     );
     db.finish().await;
@@ -456,12 +463,14 @@ async fn an_unknown_start_is_listed_last() {
                 staff: "emp-2".to_owned(),
                 started_at: Some(ms(9000)),
                 status: KioskStatus::IdChecked,
+                ticket_number: Some("A001".to_owned()),
             },
             WorkingRequest {
                 id: "a-old".to_owned(),
                 staff: "emp-9".to_owned(),
                 started_at: None,
                 status: KioskStatus::Accepted,
+                ticket_number: None,
             },
         ]
     );

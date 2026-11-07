@@ -27,6 +27,11 @@
 //! replay applies v2's rate save behind the routes (`kiosk_http_common`, `configure_behind`), and
 //! three steps of `currencies.json` are held to v3's answer (`decided_by_603`). The test of a
 //! failing audit line publishes the won first and no longer expects a rate to have been saved.
+//!
+//! Restated for #6095 (F6) by its ticket author claude/01TxaRJG (ruling issuecomment-6627017842): once a
+//! request has its queue ticket its `queue` is the ticket's number. In `the_answers_keep_v2s_key_order` the
+//! quote keeps `K-00000000`, the confirmed request reads `W001` (confirm, list, customerReceipt) and the second
+//! request `W002` (get); the replays hold recorded answers to that through `snapshot_common::with_ticket_numbers`.
 
 mod common;
 mod compat_common;
@@ -725,7 +730,7 @@ async fn the_answers_keep_v2s_key_order() {
     assert_eq!(
         format!("{v2_part}}}"),
         format!(
-            "{{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
+            "{{\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"W001\",\
              \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
              \"status\":\"WAITING\",\"ticketNumber\":\"{ticket}\"}}"
         )
@@ -752,7 +757,7 @@ async fn the_answers_keep_v2s_key_order() {
              \"hasMore\":false,\"requests\":[{{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\
              \"currency\":\"USD\",\"rate\":32.1,\"foreign\":250,\"thb\":8025,\
              \"inputAmount\":250,\"branchName\":\"XC-B\",\"id\":\"{id}\",\"branch\":\"MAIN\",\
-             \"status\":\"WAITING\",\"created\":{created},\"staff\":\"\",\"queue\":\"K-00000000\",\
+             \"status\":\"WAITING\",\"created\":{created},\"staff\":\"\",\"queue\":\"W001\",\
              \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
              \"startedAt\":null,\"completedAt\":null,\"durationSeconds\":null,\
              \"canAccept\":true,\"canContinue\":false}}]}}"
@@ -763,11 +768,11 @@ async fn the_answers_keep_v2s_key_order() {
         .await;
     assert_eq!(
         receipt.text,
-        "{\"image\":null,\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"K-00000000\",\
+        "{\"image\":null,\"id\":\"00000000-0000-4000-8000-0000000c0001\",\"queue\":\"W001\",\
          \"orderNo\":\"ORD-00000000-0000-4000-8000-0000000C0001\",\"transactionNo\":null,\
          \"status\":\"WAITING\"}"
     );
-    // an id with letters: the queue number is its first eight characters in capitals
+    // #6095 (F6): a request with a ticket is labelled by its number: this second request is W002
     let lettered = counter
         .waiting_request("c0ffee12-0000-4000-8000-0000000c0002")
         .await;
@@ -793,7 +798,7 @@ async fn the_answers_keep_v2s_key_order() {
         format!("{v2_part}}}"),
         "{\"paymentMethod\":\"Cash\",\"type\":\"BUY\",\"currency\":\"USD\",\"rate\":32.1,\
          \"foreign\":100,\"thb\":3210,\"inputAmount\":100,\"branchName\":\"XC-B\",\
-         \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"K-C0FFEE12\"}"
+         \"id\":\"c0ffee12-0000-4000-8000-0000000c0002\",\"queue\":\"W002\"}"
     );
     let rates = counter.ask(None, "rates", json!({})).await;
     // RF-5 (#877): v3 appends `freshness` after v2's last key (snapshot_common::V3_ADDED_KEYS);

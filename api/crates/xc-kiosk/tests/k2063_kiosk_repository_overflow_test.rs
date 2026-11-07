@@ -47,6 +47,7 @@ fn dummy_request(id: &str, foreign: Money, thb: Money, input_amount: Money) -> K
             payment_method: PaymentMethod::Cash,
         },
         transaction: None,
+        ticket_number: None,
     }
 }
 

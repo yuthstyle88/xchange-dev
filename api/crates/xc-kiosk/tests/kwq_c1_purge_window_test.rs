@@ -32,6 +32,7 @@ fn request(status: KioskStatus) -> KioskRequest {
             payment_method: PaymentMethod::Cash,
         },
         transaction: None,
+        ticket_number: None,
     }
 }
 

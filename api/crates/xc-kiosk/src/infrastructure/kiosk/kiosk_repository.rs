@@ -29,7 +29,8 @@ macro_rules! select_requests {
         concat!(
             "SELECT id, status, created_at, staff, side, currency::text AS currency, rate, \
              unit_size, published_rate_line_id::text AS published_rate_line_id, \
-             foreign_amount, thb, input_amount, payment_method, submission_id, document_ref \
+             foreign_amount, thb, input_amount, payment_method, submission_id, document_ref, \
+             (SELECT display_number FROM queue_tickets t WHERE t.branch_id = kiosk_requests.branch_id AND t.kiosk_request_id = kiosk_requests.id) AS ticket_number \
              FROM kiosk_requests WHERE branch_id = $1 AND ",
             $tail
         )
@@ -49,7 +50,7 @@ macro_rules! queue_queries {
             "SELECT r.id, r.status, r.created_at, r.staff, r.side, r.currency::text AS currency, r.rate, \
              r.unit_size, r.published_rate_line_id::text AS published_rate_line_id, \
              r.foreign_amount, r.thb, r.input_amount, r.payment_method, r.submission_id, r.document_ref, \
-             t.served_at AS started_at, t.completed_at \
+             t.display_number AS ticket_number, t.served_at AS started_at, t.completed_at \
              FROM kiosk_requests r \
              LEFT JOIN queue_tickets t ON t.branch_id = r.branch_id AND t.kiosk_request_id = r.id \
              WHERE r.branch_id = $1 AND ",
@@ -143,6 +144,7 @@ struct RequestRow {
     payment_method: String,
     submission_id: Option<String>,
     document_ref: Option<String>,
+    ticket_number: Option<String>,
 }
 
 fn unreadable(what: &str, value: &dyn std::fmt::Display) -> AppError {
@@ -242,6 +244,7 @@ impl RequestRow {
             },
             transaction,
             id: self.id,
+            ticket_number: self.ticket_number,
         })
     }
 }
@@ -267,6 +270,7 @@ struct QueueRow {
     payment_method: String,
     submission_id: Option<String>,
     document_ref: Option<String>,
+    ticket_number: Option<String>,
     started_at: Option<DateTime<Utc>>,
     completed_at: Option<DateTime<Utc>>,
 }
@@ -293,6 +297,7 @@ impl QueueRow {
             payment_method: self.payment_method,
             submission_id: self.submission_id,
             document_ref: self.document_ref,
+            ticket_number: self.ticket_number,
         };
         Ok((row.into_request()?, times))
     }
@@ -558,10 +563,13 @@ impl KioskRepository for PgKioskRepository {
             staff: Option<String>,
             started_at: Option<DateTime<Utc>>,
             status: String,
+            ticket_number: Option<String>,
         }
 
         let rows = sqlx::query_as::<_, WorkingRow>(
-            "SELECT r.id, r.staff, t.served_at AS started_at, r.status FROM kiosk_requests r \
+            "SELECT r.id, r.staff, t.served_at AS started_at, r.status, \
+                    t.display_number AS ticket_number \
+             FROM kiosk_requests r \
              LEFT JOIN queue_tickets t ON t.branch_id = r.branch_id AND t.kiosk_request_id = r.id \
              WHERE r.branch_id = $1 AND r.status IN ('ACCEPTED', 'ID_CHECKED') \
              ORDER BY t.served_at ASC NULLS LAST, r.id ASC LIMIT $2",
@@ -578,6 +586,7 @@ impl KioskRepository for PgKioskRepository {
                 staff: row.staff.unwrap_or_default(),
                 started_at: row.started_at.map(time_from),
                 status: status_from(&row.status)?,
+                ticket_number: row.ticket_number,
             });
         }
         Ok((working, count))
