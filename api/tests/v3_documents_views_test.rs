@@ -11,7 +11,8 @@
 //!   (D-A3/D-A4). Steps 2 and 27 (`POST`) ask the page path itself: the screen table's 404.
 //! - The answer is `{version, changed: true, data: {ref, links: [{kind, href, download}]}}`. `kind` is
 //!   `passport | paymentProof | receipt` in v2's order. The owner's view (`documents`) links `/files/<key>` and names the
-//!   download `<ref>_<PASSPORT|PAYMENT|RECEIPT_FULL>.<ext>`. The staff view links `/api/staff/file/<key>` and has
+//!   download `<ref>-<passport|slip|receipt>.<ext>` (restated for OL-6 wave B docs-reader-fix by claude/studio-claude-17:
+//!   the owner's ruling 1B on #564, issuecomment-6705475792, replaces v2's `<ref>_<PASSPORT|PAYMENT|RECEIPT_FULL>`). The staff view links `/api/staff/file/<key>` and has
 //!   `download: null` (or absent). The links stay as they are today: there is no short-lived link (ruling on #1349;
 //!   #557 V15), and the receipt is today's `receipt_key`.
 //! - Not found is **404 `documentsNotFound`, field `ref`, sentence `ไม่พบเอกสารรายการ`**, never an empty list. It comes
@@ -147,16 +148,17 @@ fn expected_link(saved: &Saved, kind: &str, audience: Audience, mime_end: &str) 
         "receipt" => saved.receipt.clone(),
         other => panic!("kind {other}"),
     };
+    // Restated (owner 1B, #564 issuecomment-6705475792): `<ref>-<passport|slip|receipt>.<ext>`.
     let tag = match kind {
-        "passport" => "PASSPORT",
-        "paymentProof" => "PAYMENT",
-        _ => "RECEIPT_FULL",
+        "passport" => "passport",
+        "paymentProof" => "slip",
+        _ => "receipt",
     };
     match audience {
         Audience::Owner => json!({
             "kind": kind,
             "href": format!("/files/{key}"),
-            "download": format!("{}_{tag}.{mime_end}", saved.document_ref),
+            "download": format!("{}-{tag}.{mime_end}", saved.document_ref),
         }),
         Audience::Staff => json!({
             "kind": kind,
@@ -570,11 +572,11 @@ async fn a_file_whose_bytes_are_gone_keeps_its_type() {
     let before = json_of(&before, &path);
     assert_eq!(
         download_of(&before, "passport"),
-        format!("{}_PASSPORT.png", transfer.document_ref)
+        format!("{}-passport.png", transfer.document_ref)
     );
     assert_eq!(
         download_of(&before, "paymentProof"),
-        format!("{}_PAYMENT.pdf", transfer.document_ref)
+        format!("{}-slip.pdf", transfer.document_ref)
     );
 
     for key in [&transfer.passport, transfer.slip.as_ref().expect("a slip")] {
@@ -585,12 +587,12 @@ async fn a_file_whose_bytes_are_gone_keeps_its_type() {
     let after = json_of(&after, &path);
     assert_eq!(
         download_of(&after, "passport"),
-        format!("{}_PASSPORT.png", transfer.document_ref),
+        format!("{}-passport.png", transfer.document_ref),
         "the type is the record's, not the disk's"
     );
     assert_eq!(
         download_of(&after, "paymentProof"),
-        format!("{}_PAYMENT.pdf", transfer.document_ref)
+        format!("{}-slip.pdf", transfer.document_ref)
     );
     drop(app);
     world.shop.finish().await;
