@@ -11,7 +11,7 @@
   color: var(--xc-ink);
   font-size: 18px;
   line-height: 1.5;
-  font-family: Arial, Tahoma, 'XC Noto Sans Arabic', 'XC Noto Sans Devanagari', 'XC Noto Sans Lao', 'XC Noto Sans Myanmar', sans-serif;
+  font-family: var(--xc-font-sans);
   min-height: 100vh;
 }
 
@@ -227,6 +227,21 @@
 .xc-kiosk .xc-shell-main .kbank-box td {
   padding: 8px;
   white-space: nowrap;
+}
+
+@media (max-width: 650px) {
+  .xc-kiosk .xc-shell-main .kbank-box table {
+    font-size: 13px;
+  }
+
+  .xc-kiosk .xc-shell-main .kbank-box th,
+  .xc-kiosk .xc-shell-main .kbank-box td {
+    padding: 4px;
+  }
+
+  .xc-kiosk .xc-shell-main .kbank-box td:last-child {
+    white-space: normal;
+  }
 }
 
 /* v2 h2 at kiosk.css:1 plus browser h2 margins */
