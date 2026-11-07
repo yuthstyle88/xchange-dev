@@ -148,8 +148,9 @@ jobs:
           date -u
 
       - name: Test
-        # owner 2026-10-17: tests run only on the merge into main (or batch/merge-* PRs); an ordinary PR still typechecks and builds
-        if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'batch/merge-')
+        # owner 2026-10-17: tests run only on the merge into main (or batch/merge-* PRs); an ordinary PR still typechecks and builds.
+        # owner 2026-11-07 (#564): a feat/* branch going to main runs them too, with this same command (PR 6759 merged with no test run).
+        if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'batch/merge-') || (startsWith(github.head_ref, 'feat/') && github.base_ref == 'main')
         timeout-minutes: 8
         run: |
           run_with_stall_capture() {
