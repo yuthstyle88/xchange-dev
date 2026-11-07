@@ -16,6 +16,7 @@ import type { TransferBranchRow, TransferBranches } from '../../../shared/api/ge
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
+import { formatMoney } from '../../../shared/ui/MoneyText';
 import { checkInteger } from '../../../shared/ui/bounded';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
@@ -46,6 +47,102 @@ const SHIFT_TIME_FMT = new Intl.DateTimeFormat('en-GB', {
 function formatShiftTime(iso: string): string {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? iso : SHIFT_TIME_FMT.format(d);
+}
+
+interface ParsedDec {
+  val: bigint;
+  scale: number;
+}
+
+function parseFaceValue(raw: string): ParsedDec | null {
+  const s = raw.trim();
+  if (!/^\d+(\.\d+)?$/.test(s)) return null;
+  const dot = s.indexOf('.');
+  if (dot === -1) {
+    return { val: BigInt(s), scale: 0 };
+  }
+  const intPart = s.slice(0, dot);
+  const fracPart = s.slice(dot + 1).replace(/0+$/, '');
+  if (fracPart.length === 0) {
+    return { val: BigInt(intPart), scale: 0 };
+  }
+  return { val: BigInt(intPart + fracPart), scale: fracPart.length };
+}
+
+function parseQuantity(raw: string | undefined): bigint {
+  if (!raw) return 0n;
+  const s = raw.trim();
+  if (!/^\d+$/.test(s)) return 0n;
+  try {
+    return BigInt(s);
+  } catch {
+    return 0n;
+  }
+}
+
+function computeRunningTotal(
+  items: Array<{ currency: string; faceValue: string; qty: string | undefined }>,
+  currencyOrder: string[],
+): string {
+  const byCurrency = new Map<string, Array<{ faceValue: string; qty: string | undefined }>>();
+  for (const item of items) {
+    const list = byCurrency.get(item.currency) ?? [];
+    list.push(item);
+    byCurrency.set(item.currency, list);
+  }
+
+  const orderedCurrencies = [...currencyOrder];
+  for (const curr of byCurrency.keys()) {
+    if (!orderedCurrencies.includes(curr)) {
+      orderedCurrencies.push(curr);
+    }
+  }
+
+  const parts: string[] = [];
+  for (const curr of orderedCurrencies) {
+    const list = byCurrency.get(curr);
+    if (!list) continue;
+
+    let hasQty = false;
+    let maxScale = 0;
+    const parsedList: Array<{ qty: bigint; dec: ParsedDec }> = [];
+    for (const item of list) {
+      const q = parseQuantity(item.qty);
+      if (q > 0n) {
+        hasQty = true;
+        const dec = parseFaceValue(item.faceValue);
+        if (dec) {
+          if (dec.scale > maxScale) maxScale = dec.scale;
+          parsedList.push({ qty: q, dec });
+        }
+      }
+    }
+
+    if (!hasQty || parsedList.length === 0) continue;
+
+    let totalScaled = 0n;
+    for (const p of parsedList) {
+      const scaleDiff = maxScale - p.dec.scale;
+      const scaledVal = p.dec.val * 10n ** BigInt(scaleDiff);
+      totalScaled += p.qty * scaledVal;
+    }
+
+    if (totalScaled === 0n) continue;
+
+    let decStr: string;
+    if (maxScale === 0) {
+      decStr = totalScaled.toString();
+    } else {
+      const divisor = 10n ** BigInt(maxScale);
+      const intPart = (totalScaled / divisor).toString();
+      const fracPart = (totalScaled % divisor).toString().padStart(maxScale, '0').replace(/0+$/, '');
+      decStr = fracPart.length > 0 ? `${intPart}.${fracPart}` : intPart;
+    }
+
+    parts.push(`${curr} ${formatMoney(decStr)}`);
+  }
+
+  return parts.join(' · ');
 }
 
 export function TransfersCard(props: TransfersCardProps): JSX.Element {
@@ -92,6 +189,67 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [toBranchError, setToBranchError] = createSignal<string | null>(null);
   const [toShiftError, setToShiftError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
+  const [selectedCurrency, setSelectedCurrency] = createSignal('');
+
+  const currencies = () => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const d of denominations()) {
+      if (!seen.has(d.currency)) {
+        seen.add(d.currency);
+        list.push(d.currency);
+      }
+    }
+    if (list.includes('THB')) {
+      return ['THB', ...list.filter((c) => c !== 'THB')];
+    }
+    return list;
+  };
+
+  const activeCurrency = () => {
+    const list = currencies();
+    if (list.length === 0) return '';
+    const cur = selectedCurrency();
+    return list.includes(cur) ? cur : list[0]!;
+  };
+
+  const sendTotal = () => {
+    const items = denominations().map((d) => ({
+      currency: d.currency,
+      faceValue: d.faceValue,
+      qty: quantities()[d.id],
+    }));
+    return computeRunningTotal(items, currencies());
+  };
+
+  const receiveCurrencies = () => {
+    const row = activeReceive();
+    if (!row) return [];
+    const list: string[] = [];
+    for (const line of row.lines) {
+      if (!list.includes(line.currency)) {
+        list.push(line.currency);
+      }
+    }
+    if (list.includes('THB')) {
+      return ['THB', ...list.filter((c) => c !== 'THB')];
+    }
+    return list;
+  };
+
+  const receiveTotal = () => {
+    const row = activeReceive();
+    if (!row) return '';
+    const items = row.lines.map((line) => {
+      const d = denominations().find((r) => r.id === line.denominationId);
+      return {
+        currency: line.currency,
+        faceValue: d ? d.faceValue : '0',
+        qty: receiveQuantities()[line.denominationId],
+      };
+    });
+    return computeRunningTotal(items, receiveCurrencies());
+  };
 
   // Active command references for create/submit retry
   let currentCreateCmd: ReturnType<typeof command<TransferCreateInput, CashRecordOutput>> | null = null;
@@ -209,6 +367,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     setCreateLineErrors({});
     setToBranchError(null);
     setToShiftError(null);
+    setSelectedCurrency('');
     setNotice(null);
     setError(null);
   };
@@ -324,6 +483,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setToBranchId('');
       setToShiftId('');
       setKind('BRANCH');
+      setSelectedCurrency('');
       setError(null);
       setNotice(t('saved'));
       await props.ctx.refresh();
@@ -630,11 +790,32 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             />
           </div>
 
+          <Show when={currencies().length > 0}>
+            <div class="xc-transfers-form-field">
+              <label>{t('currency')}</label>
+              <select
+                name="transferCurrency"
+                data-testid="transfer-currency"
+                value={activeCurrency()}
+                onChange={(e) => setSelectedCurrency(e.currentTarget.value)}
+              >
+                <For each={currencies()}>
+                  {(c) => <option value={c}>{c}</option>}
+                </For>
+              </select>
+            </div>
+          </Show>
+
           <div class="xc-transfers-denoms">
             <label>{t('lines')}</label>
             <For each={denominations()}>
               {(d) => (
-                <div data-denomination-row class="xc-transfer-denom-row">
+                <div
+                  data-denomination-row
+                  class="xc-transfer-denom-row"
+                  hidden={d.currency !== activeCurrency()}
+                  style={{ display: d.currency === activeCurrency() ? '' : 'none' }}
+                >
                   <span>
                     {d.currency} {d.faceValue}
                   </span>
@@ -654,6 +835,10 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 </div>
               )}
             </For>
+          </div>
+
+          <div data-testid="transfer-total" class="xc-transfers-total">
+            {sendTotal()}
           </div>
 
           <div class="xc-transfers-actions">
@@ -680,6 +865,7 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 setToBranchId('');
                 setToShiftId('');
                 setKind('BRANCH');
+                setSelectedCurrency('');
                 setError(null);
               }}
             >
@@ -724,6 +910,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                   </div>
                 )}
               </For>
+            </div>
+            <div data-testid="transfer-total" class="xc-transfers-total">
+              {receiveTotal()}
             </div>
             <div class="xc-transfers-actions">
               <button

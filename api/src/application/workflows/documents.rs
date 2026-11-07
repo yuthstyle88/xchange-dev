@@ -46,14 +46,22 @@ impl DocumentLink {
         }
     }
 
-    /// v2's download name: `<ref>_<PASSPORT|PAYMENT|RECEIPT_FULL>.<ext>`, the ending from the recorded type.
+    /// Download name (owner 1B, #564): `<ref>-<passport|slip|receipt>.<ext>`, the ending from the recorded type.
     pub fn file_name(&self, document_ref: &str) -> String {
+        let safe_ref: String = document_ref
+            .chars()
+            .map(|c| match c {
+                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                c if c.is_control() => '_',
+                c => c,
+            })
+            .collect();
         let tag = match self.kind() {
-            DocumentKind::Passport => "PASSPORT",
-            DocumentKind::PaymentProof => "PAYMENT",
-            DocumentKind::Receipt => "RECEIPT_FULL",
+            DocumentKind::Passport => "passport",
+            DocumentKind::PaymentProof => "slip",
+            DocumentKind::Receipt => "receipt",
         };
-        format!("{document_ref}_{tag}.{}", ending(&self.mime))
+        format!("{safe_ref}-{tag}.{}", ending(&self.mime))
     }
 }
 
@@ -114,13 +122,15 @@ impl DocumentsLookup {
         let Some(exchange) = found.filter(|t| t.mode == Mode::Live) else {
             return Err(AppError::Domain(NO_DOCUMENTS.to_owned()));
         };
-        let mut keys = vec![(PASSPORT, exchange.passport_key.clone())];
-        if let Some(slip) = exchange.slip_key.clone().filter(|k| !k.is_empty()) {
-            keys.push((PAYMENT_PROOF, slip));
-        }
-        keys.push((RECEIPT, exchange.receipt_key.clone()));
-        let mut links = Vec::with_capacity(keys.len());
-        for (label, key) in keys {
+        let mut links = Vec::with_capacity(3);
+        for (label, key) in [
+            (PASSPORT, Some(exchange.passport_key)),
+            (PAYMENT_PROOF, exchange.slip_key),
+            (RECEIPT, Some(exchange.receipt_key)),
+        ] {
+            let Some(key) = key.filter(|k| !k.is_empty()) else {
+                continue;
+            };
             let mime = self
                 .files
                 .mime_in_branch(&key, branch)

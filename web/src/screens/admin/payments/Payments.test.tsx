@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-payments (#470): the admin page's payments menu — the per-branch payment-method settings,
 // their save and their history (ticket §7, §8, §9, §10 rows Y1–Y5; design §12.3, §12.5, §12.6 in
 // PR 474). Written before the implementation by the lane controller (claude/7ca80c). Do not edit,
@@ -484,9 +486,17 @@ function historyRows(): string[][] {
   );
 }
 
-/** The date as v2 shows it (`admin-payments.js:10`) in `locale`. */
-function dateText(iso: string, locale: 'th-TH' | 'en-GB'): string {
-  return norm(new Date(iso).toLocaleString(locale, { timeZone: 'Asia/Bangkok' }));
+/** F55: the pinned Bangkok text of each instant, the same in both languages (was toLocaleString(th-TH | en-GB)). */
+const DATE_TEXT: Record<string, string> = {
+  '2026-10-07T20:30:00.000Z': '08/10/2026 03:30',
+  '2026-10-08T05:15:00.000Z': '08/10/2026 12:15',
+  '2026-10-06T02:00:00.000Z': '06/10/2026 09:00',
+  '2026-10-05T02:00:00.000Z': '05/10/2026 09:00',
+};
+function dateText(iso: string, _locale: 'th-TH' | 'en-GB'): string {
+  const shown = DATE_TEXT[iso];
+  if (shown === undefined) throw new Error(`no pinned F55 text for ${iso}`);
+  return shown;
 }
 
 function readsSince(mark: number, view: string): Read[] {
@@ -1080,13 +1090,13 @@ describe("V2-payments Y4: v2's history of the settings", () => {
 
 // ── Y5: dates per language (W10 point 5) ─────────────────────────────────────
 
-describe('V2-payments Y5: dates follow the language, in Asia/Bangkok', () => {
-  it('shows the meta line and the history dates in en-GB once the language is English', async () => {
+describe('V2-payments Y5 (restated F55): dates are one format in both languages, in Asia/Bangkok', () => {
+  it('shows the meta line and the history dates as dd/mm/yyyy HH:mm once the language is English', async () => {
     setLang('en');
     await mount();
     const w = words();
     expect(w).toContain(dateText(EDITED_AT, 'en-GB'));
-    expect(w).not.toContain(dateText(EDITED_AT, 'th-TH'));
+    expect(w, 'no Buddhist year').not.toContain('2569');
     expect(historyRows()[1]![0]).toBe(dateText('2026-10-06T02:00:00.000Z', 'en-GB'));
   });
 

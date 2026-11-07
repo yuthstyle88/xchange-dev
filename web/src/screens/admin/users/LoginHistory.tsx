@@ -1,5 +1,6 @@
 import { createSignal, createEffect, Show, For, type JSX } from 'solid-js';
-import { screenT, locale, t as sharedT } from '../../../shared/i18n';
+import { screenT, t as sharedT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { ApiClient } from '../../../shared/api/client';
 import type { UsersTabProps } from './UsersScreen';
@@ -47,13 +48,6 @@ function formatResult(result: string): string {
   }
 }
 
-function formatWhen(at: string): string {
-  try {
-    return new Date(at).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-  } catch {
-    return at;
-  }
-}
 
 const LOGINS_PER_PAGE = 25;
 
@@ -123,7 +117,7 @@ export function LoginHistory(props: UsersTabProps): JSX.Element {
                 <For each={visible()}>
                   {(row) => (
                     <tr>
-                      <td class="users-td">{formatWhen(row.at)}</td>
+                      <td class="users-td">{formatBangkokDateTime(row.at)}</td>
                       <td class="users-td">{row.userName ?? '—'}</td>
                       <td class="users-td">{formatResult(row.result)}</td>
                       <td class="users-td">{row.ip ?? '—'}</td>

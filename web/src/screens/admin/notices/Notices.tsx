@@ -1,16 +1,13 @@
 import { For, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
-import { locale, screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+import { screenT } from '../../../shared/i18n';
 import { createNotifications } from '../../../shared/notifications';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import './notices.css';
 
 const t = screenT('admin.notices', table);
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
 
 export function Notices(_props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -90,7 +87,7 @@ export function Notices(_props: AdminMenuProps): JSX.Element {
                   >
                     {item.read ? t('readBadge') : t('unreadBadge')}
                   </span>
-                  <span class="admin-notices-time">{formatTime(item.createdAt)}</span>
+                  <span class="admin-notices-time">{formatBangkokDateTime(item.createdAt)}</span>
                 </div>
                 <div class="admin-notices-body">{item.body}</div>
                 <Show when={!item.read}>

@@ -12,6 +12,7 @@ import { sharedApi, sharedSession } from '../../shared/session/session';
 import '../desk/desk.css';
 import { METHODS } from '../desk/steps/payment/channels';
 import { en, th } from './i18n';
+import { SafeBalance } from './SafeBalance';
 import '../../shared/ui/card.css';
 import './backdated.css';
 
@@ -164,6 +165,13 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   const [saved, setSaved] = createSignal<TransactionDto | undefined>();
   const [error, setError] = createSignal<string | undefined>();
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
+  // F51 (§16.1): save button is disabled from a save until any field changes.
+  const [dirty, setDirty] = createSignal(true);
+  // F56 (§16.3): bumped after each save so SafeBalance reads the SAFE again.
+  const [saves, setSaves] = createSignal(0);
+
+  let slipInputRef: HTMLInputElement | undefined;
+  let passportInputRef: HTMLInputElement | undefined;
 
   const backdateWrite = keyedWrite<TransactionBackdateInput, TransactionDto>(
     api,
@@ -206,6 +214,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   function handlePaidAtInput(val: string): void {
     setPaidAt(val);
     clearField('payment.paidAt');
+    setDirty(true);
   }
 
   async function searchCustomers(): Promise<void> {
@@ -226,7 +235,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
 
   async function onSubmit(ev: Event): Promise<void> {
     ev.preventDefault();
-    if (submitting()) return;
+    if (submitting() || !dirty()) return;
     setSubmitting(true);
     setError(undefined);
     setFieldErrors({});
@@ -264,9 +273,27 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
         notes: notes(),
       };
 
-      backdateWrite.reset();
       const dto = await backdateWrite.send(body);
       setSaved(dto);
+      setSaves((n) => n + 1);
+
+      setCustomerSearch('');
+      setCustomers([]);
+      setCustomerId('');
+      setQuantity('');
+      setRate('');
+      setExpectedSettleThb('');
+      setPaidAt('');
+      setReference('');
+      setAccount('');
+      setNotes('');
+      setFeeThb('0');
+      setBankFeeThb('0');
+      setSlipFile(undefined);
+      setPassportFile(undefined);
+      if (slipInputRef) slipInputRef.value = '';
+      if (passportInputRef) passportInputRef.value = '';
+      setDirty(false);
     } catch (err) {
       if (err instanceof ApiError && err.field) {
         const msg = err.message || wordedError(err);
@@ -284,7 +311,12 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   return (
     <div class="desk-page">
       <div class="backdated-grid">
-        <form class="desk-form backdated-form card" onSubmit={(e) => void onSubmit(e)}>
+        <form
+          class="desk-form backdated-form card"
+          onInput={() => setDirty(true)}
+          onChange={() => setDirty(true)}
+          onSubmit={(e) => void onSubmit(e)}
+        >
           <h2>{t('heading')}</h2>
 
           <div class="desk-field">
@@ -294,7 +326,10 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                 name="customerSearch"
                 autocomplete="off"
                 value={customerSearch()}
-                onInput={(e) => setCustomerSearch(e.currentTarget.value)}
+                onInput={(e) => {
+                  setCustomerSearch(e.currentTarget.value);
+                  setDirty(true);
+                }}
               />
               <button type="button" onClick={() => void searchCustomers()}>
                 {t('customerSearchAction')}
@@ -310,6 +345,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                       onClick={() => {
                         setCustomerId(c.id);
                         clearField('customerId');
+                        setDirty(true);
                       }}
                     >
                       {c.displayName} ({c.id})
@@ -583,6 +619,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
             <label class="desk-field">
               <span>{t('slip')}</span>
               <input
+                ref={slipInputRef}
                 type="file"
                 name="slip"
                 accept={ACCEPT}
@@ -596,13 +633,21 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                   }
                   clearField('payment.slip');
                   setSlipFile(f);
+                  setDirty(true);
                 }}
               />
               <Show when={slipFile()}>
                 {(f) => (
                   <span class="desk-file">
                     {f().name}{' '}
-                    <button type="button" onClick={() => setSlipFile(undefined)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSlipFile(undefined);
+                        if (slipInputRef) slipInputRef.value = '';
+                        setDirty(true);
+                      }}
+                    >
                       {t('removeFile')}
                     </button>
                   </span>
@@ -620,6 +665,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
             <label class="desk-field">
               <span>{t('passport')}</span>
               <input
+                ref={passportInputRef}
                 type="file"
                 name="passport"
                 accept={ACCEPT}
@@ -633,13 +679,21 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
                   }
                   clearField('passport');
                   setPassportFile(f);
+                  setDirty(true);
                 }}
               />
               <Show when={passportFile()}>
                 {(f) => (
                   <span class="desk-file">
                     {f().name}{' '}
-                    <button type="button" onClick={() => setPassportFile(undefined)}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPassportFile(undefined);
+                        if (passportInputRef) passportInputRef.value = '';
+                        setDirty(true);
+                      }}
+                    >
                       {t('removeFile')}
                     </button>
                   </span>
@@ -698,13 +752,14 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
           </Show>
 
           <div class="desk-actions">
-            <button type="submit" disabled={submitting()}>
+            <button type="submit" disabled={submitting() || !dirty()}>
               {submitting() ? t('submitting') : t('submit')}
             </button>
           </div>
         </form>
 
         <aside class="backdated-summary card">
+          <SafeBalance api={api} branch={me()?.branch ?? ''} refresh={saves} />
           <div class="desk-rate-line" data-testid="computed-thb">
             <span>{t('computedThb')}:</span>
             <strong>{computedThb() ?? '—'} THB</strong>

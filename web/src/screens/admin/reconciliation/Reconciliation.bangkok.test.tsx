@@ -1,10 +1,12 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #2498: Admin Reconciliation — fallback day when `period().to` is empty must use Asia/Bangkok's today
 // (not the browser's local timezone), and `certifiedAt` / `reversalsPending.createdAt` must be formatted
-// in Asia/Bangkok via `new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' })`.
+// in Asia/Bangkok (F55: as dd/mm/yyyy HH:mm via the shared formatter; was toLocaleString(locale())).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { locale, setLang } from '../../../shared/i18n';
+import { setLang } from '../../../shared/i18n';
 import { Reconciliation } from './Reconciliation';
 
 const VIEW = '/api/v3/views/finance_reconciliation';
@@ -172,13 +174,13 @@ describe('Reconciliation Asia/Bangkok today and timestamps (#2498)', () => {
 
     const certRow = el.querySelector<HTMLElement>('[data-certification="C-1"]');
     expect(certRow).not.toBeNull();
-    const expectedTh = new Date(ISO_TS).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+    const expectedTh = '16/10/2026 01:30';
     expect(certRow!.textContent).toContain(expectedTh);
     expect(certRow!.textContent).not.toContain(ISO_TS);
 
     setLang('en');
     await settle();
-    const expectedEn = new Date(ISO_TS).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+    const expectedEn = '16/10/2026 01:30';
     expect(certRow!.textContent).toContain(expectedEn);
     expect(certRow!.textContent).toMatch(/16/);
     expect(certRow!.textContent).toMatch(/1:30/);
@@ -191,7 +193,7 @@ describe('Reconciliation Asia/Bangkok today and timestamps (#2498)', () => {
 
     const pendingPart = el.querySelector<HTMLElement>('[data-part="reversalsPending"]');
     expect(pendingPart).not.toBeNull();
-    const expectedTh = new Date(ISO_TS).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+    const expectedTh = '16/10/2026 01:30';
     // FE-T3b restates this line: the row prints the receipt from `subject`, and the request id moves to a title (design W13).
     expect(pendingPart!.textContent).toContain('RC-42');
     expect(pendingPart!.textContent).not.toContain('RV-99');

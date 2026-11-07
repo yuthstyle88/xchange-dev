@@ -17,6 +17,7 @@ import type { AdminMenuProps } from '../menus';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { pendingWrite } from '../parts/pending-write';
 import { refreshTick } from '../parts/refresh';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { Card, CardHead, CardBody, CardGrid } from '../../../shared/ui/Card';
 import { StatCard } from '../../../shared/ui/StatCard';
 import { toast } from '../parts/toast';
@@ -27,12 +28,6 @@ import './cash.css';
 
 const t = screenT('admin.cash', table);
 
-function when(iso: string): string {
-  return new Date(iso)
-    .toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' })
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 export function Cash(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
@@ -284,7 +279,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                 </strong>
                 <p>
                   {t('openShiftBannerSub', {
-                    when: when(s.openedAt),
+                    when: formatBangkokDateTime(s.openedAt),
                     staff: s.tellerName,
                   })}
                 </p>
@@ -449,7 +444,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                   <For each={movements()}>
                     {(m) => (
                       <tr>
-                        <td>{when(m.created)}</td>
+                        <td>{formatBangkokDateTime(m.created)}</td>
                         <td>{m.shiftId}</td>
                         <td>
                           <span class={m.direction === 'OUT' ? 'pill buy' : 'pill'}>
@@ -510,7 +505,7 @@ export function Cash(props: AdminMenuProps): JSX.Element {
                             {s.id}
                           </button>
                         </td>
-                        <td>{when(s.openedAt)}</td>
+                        <td>{formatBangkokDateTime(s.openedAt)}</td>
                         <td>
                           {s.staff}
                           <Show when={shiftLabel(s.shiftName, s.businessDate)}>

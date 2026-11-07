@@ -1,6 +1,7 @@
 import { For, Show, createSignal, onMount, type JSX } from 'solid-js';
 import { ApiClient, ApiError } from '../../../shared/api/client';
 import type { MyTransactionItem, MyTransactionsData } from '../../../shared/api/generated/my_transactions';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { lang, screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -105,7 +106,7 @@ export function HistoryScreen(props: HistoryScreenProps): JSX.Element {
             {(tx) => (
               <div class="xc-history-item">
                 <div class="xc-history-item-header">
-                  <span class="xc-history-date">{tx.date}</span>
+                  <span class="xc-history-date">{formatBangkokDate(tx.date)}</span>
                   <span class="xc-history-branch">{tx.branchName || tx.branch}</span>
                   <span
                     class={`xc-history-status ${tx.status === 'REVERSED' ? 'xc-history-status-reversed' : ''}`}

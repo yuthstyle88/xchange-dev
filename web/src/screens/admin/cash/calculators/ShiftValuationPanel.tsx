@@ -5,7 +5,8 @@ import type {
   ShiftValuationCurrency,
   ShiftValuationRequest,
 } from '../../../../shared/api/generated/shift_valuation';
-import { locale, screenT } from '../../../../shared/i18n';
+import { screenT } from '../../../../shared/i18n';
+import { formatBangkokDate, formatBangkokDateTime } from '../../../../shared/format/bangkok-time';
 import { wordedError } from '../../../../shared/i18n/worded-error';
 import { MoneyText, formatMoney } from '../../../../shared/ui/MoneyText';
 import * as table from './i18n';
@@ -165,10 +166,10 @@ export function ShiftValuationPanel(props: { api: ApiClient; branch: string; shi
               {(result) => (
                 <>
                   <p>
-                    {t('resultLine', { date: s().date ?? '', kind: t(s().kind ?? 'kindTransfer') })}
+                    {t('resultLine', { date: formatBangkokDate(s().date ?? ''), kind: t(s().kind ?? 'kindTransfer') })}
                     <br />
                     {t('computedAt', {
-                      when: (s().at ?? new Date()).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' }),
+                      when: formatBangkokDateTime((s().at ?? new Date()).toISOString()),
                     })}
                   </p>
                   <table>

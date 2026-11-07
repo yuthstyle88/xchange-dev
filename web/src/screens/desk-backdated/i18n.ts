@@ -11,8 +11,8 @@ export const th = {
   quantity: 'จำนวนเงินตราต่างประเทศ',
   rate: 'อัตราแลกเปลี่ยน',
   unitSize: 'ต่อหน่วย',
-  computedThb: 'ยอดคำนวณ (THB)',
-  settleThb: 'ยอดสุทธิ (THB)',
+  computedThb: 'ยอดคำนวณ',
+  settleThb: 'ยอดสุทธิ',
   feeThb: 'ค่าธรรมเนียม (THB)',
   expectedSettleThb: 'THB ที่จ่ายจริง (ถ้ามี)',
   paidAt: 'วันและเวลาที่ชำระจริง',
@@ -30,6 +30,9 @@ export const th = {
   documentRef: 'เลขที่เอกสาร:',
   receiptLink: 'ดูใบเสร็จ / รายละเอียดรายการ',
   fileInvalid: 'ไฟล์ต้องเป็น JPG, PNG, WebP หรือ PDF และไม่เกิน 15 MB',
+  safeTitle: 'ยอดคงเหลือใน SAFE',
+  safeEmpty: 'ไม่มีเงินคงเหลือใน SAFE',
+  safeTransfer: 'เติมเงิน SAFE',
 };
 
 export const en: typeof th = {
@@ -45,8 +48,8 @@ export const en: typeof th = {
   quantity: 'Foreign quantity',
   rate: 'Rate',
   unitSize: 'Per unit',
-  computedThb: 'Computed THB',
-  settleThb: 'Net settle (THB)',
+  computedThb: 'Computed',
+  settleThb: 'Net settle',
   feeThb: 'Fee (THB)',
   expectedSettleThb: 'THB actually paid (optional)',
   paidAt: 'Paid date & time',
@@ -64,4 +67,7 @@ export const en: typeof th = {
   documentRef: 'Document ref:',
   receiptLink: 'View receipt / transaction detail',
   fileInvalid: 'File must be JPG, PNG, WebP or PDF up to 15 MB',
+  safeTitle: 'SAFE balance',
+  safeEmpty: 'No funds in SAFE',
+  safeTransfer: 'Top up SAFE',
 };

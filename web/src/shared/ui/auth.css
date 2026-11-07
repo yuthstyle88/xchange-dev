@@ -178,8 +178,17 @@ body:has(.xc-auth) {
 }
 
 .xc-auth #message {
+  margin: 16px 0 0;
+  padding: 10px 14px;
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
+  border-radius: var(--xc-radius-md);
   color: var(--xc-danger);
-  margin: 1em 0;
+  font-size: 14px;
+}
+
+.xc-auth #message:empty {
+  display: none;
 }
 
 .xc-auth .xc-auth-success {

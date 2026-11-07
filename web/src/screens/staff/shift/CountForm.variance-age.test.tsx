@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // FE-T4 #5850 (docs/design/fe-triage-1101.md §3 W9, W10): the teller's waiting line shows the count difference per
 // currency, and the close form says how old the shift is when it opened on an earlier Bangkok date.
 // Written before the implementation by the ticket author claude/01TxaRJG.
@@ -222,7 +223,7 @@ describe('FE-T4 #5850 W9 CountWaitingLine difference', () => {
       host,
     );
     expect(diffs()).toEqual([['THB', 'ผลต่าง THB -1,000']]);
-    expect(line()?.textContent).toBe(`${th.closeWaiting} (11/10 11:30) · ผลต่าง THB -1,000`);
+    expect(line()?.textContent).toBe(`${th.closeWaiting} (11/10/2026 11:30) · ผลต่าง THB -1,000`);
   });
 
   it('V2 zero and null differences show nothing; the line reads as before', () => {
@@ -240,7 +241,7 @@ describe('FE-T4 #5850 W9 CountWaitingLine difference', () => {
       host,
     );
     expect(diffs()).toEqual([]);
-    expect(line()?.textContent).toBe(`${th.closeWaiting} (11/10 11:30)`);
+    expect(line()?.textContent).toBe(`${th.closeWaiting} (11/10/2026 11:30)`);
   });
 
   it('V3 a positive difference is signed "+", currencies keep the totals order, en says "Difference"', () => {
@@ -266,7 +267,7 @@ describe('FE-T4 #5850 W9 CountWaitingLine difference', () => {
       ['JPY', 'Difference JPY -1,000'],
     ]);
     expect(host.querySelector('[data-testid="shift-open-waiting"]')?.textContent).toBe(
-      `${en.openWaiting} (11/10 11:30) · Difference THB +1,500.5 · Difference JPY -1,000`,
+      `${en.openWaiting} (11/10/2026 11:30) · Difference THB +1,500.5 · Difference JPY -1,000`,
     );
   });
 });

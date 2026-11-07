@@ -9,6 +9,7 @@ import type {
   CashTransferPolicyData,
   TransferPolicySaveInput,
 } from '../../../shared/api/generated/cash_transfer_policy';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import { sharedSession } from '../../../shared/session/session';
@@ -30,10 +31,6 @@ const OWN_FIELD_TEXT: Record<string, Parameters<typeof t>[0]> = {
   currency: 'error.currency',
   limits: 'error.limits',
 };
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
-}
 
 function shortVersion(version: string): string {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(version)
@@ -217,7 +214,7 @@ export function CashPolicy(props: AdminMenuProps): JSX.Element {
           <Show when={policy()} fallback={<strong>{t('noLimit')}</strong>}>
             {(p) => (
               <strong title={p().version}>
-                {t('current', { version: shortVersion(p().version), setBy: p().setByName || '—', when: when(p().createdAt) })}
+                {t('current', { version: shortVersion(p().version), setBy: p().setByName || '—', when: formatBangkokDateTime(p().createdAt) })}
               </strong>
             )}
           </Show>

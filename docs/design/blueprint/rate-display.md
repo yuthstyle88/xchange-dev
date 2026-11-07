@@ -324,7 +324,7 @@ classDiagram
   class RateDisplay { <<RateDisplay.tsx  rewritten in the skeleton>> host lookup (D2); PublicPoller rates 10 s + branches 600 s; renders BoardShell }
   class BoardShell { <<board/BoardShell.tsx>> canvas 1080x1920; --scale on resize; calm from ?attract=0; body classes stale/offline; composes the parts }
   class BoardHeader { <<board/BoardHeader.tsx>> brand; BoardClock }
-  class BoardClock { <<board/BoardClock.tsx>> HH:MM Asia/Bangkok with blinking colon; Thai long date; ticks 1 s, rebuilds on minute change }
+  class BoardClock { <<board/BoardClock.tsx>> HH:MM Asia/Bangkok with blinking colon; Thai weekday + dd/mm/yyyy CE (F55, owner 2026-11-07: วันพฤหัสบดี 05/11/2026); ticks 1 s, rebuilds on minute change }
   class RouteStrip { <<board/RouteStrip.tsx>> FROM THB; TO count; BRANCH code + name; STATUS text + substatus (from BoardStatus) }
   class BandHeadings { <<board/BandHeadings.tsx>> heading row from BoardModel.headings }
   class BoardTable { <<board/BoardTable.tsx>> rows; --n and --fs sizing; spotlight walk + 70 s wave (attract) }

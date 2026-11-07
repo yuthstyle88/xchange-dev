@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -391,7 +393,7 @@ describe('LoginHistory', () => {
     await flush();
 
     const whenCell = c.querySelector('tbody tr td:nth-child(1)');
-    expect(whenCell?.textContent).toContain('09:30');
+    expect(whenCell?.textContent?.trim()).toBe('06/10/2026 09:30');
   });
 
   it('no rows: shows loginsEmpty and no table', async () => {
@@ -464,7 +466,7 @@ describe('LoginHistory', () => {
       await flush();
 
       const whenCell = c.querySelector('tbody tr td:nth-child(1)');
-      expect(whenCell?.textContent).toContain('09:30');
+      expect(whenCell?.textContent?.trim()).toBe('06/10/2026 09:30');
     } finally {
       env.TZ = oldTZ;
     }

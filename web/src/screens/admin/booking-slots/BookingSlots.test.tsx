@@ -368,7 +368,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       expect(container.textContent).toContain('Christmas Day');
 
       // Slot entry
-      expect(container.textContent).toContain('OPEN');
+      expect(container.querySelector('.slot-status[data-status="OPEN"]'), 'the OPEN slot is listed').not.toBeNull();
 
       // Policy fields
       const cutoffInput = container.querySelector<HTMLInputElement>(
@@ -543,7 +543,8 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       slotCapInput!.value = '10';
       slotCapInput!.dispatchEvent(new Event('input', { bubbles: true }));
 
-      const updateBtn = [...container.querySelectorAll('button')].find((b) =>
+      // OL-7 row 92: scoped to the slot's row, since the rule's save button now reads "บันทึกกฎการจอง" too.
+      const updateBtn = [...container.querySelectorAll<HTMLButtonElement>('.slot-item[data-slot-id="slot-uuid-1"] button')].find((b) =>
         /update|บันทึก|ความจุ/i.test(b.textContent ?? ''),
       );
       updateBtn?.click();
@@ -558,10 +559,21 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
     });
 
     it('slotClose and slotOpen send POST to /api/booking-slots/{id}/close and /open with Idempotency-Key', async () => {
+      // OL-7 row 92: a row offers only the action its status allows, so close is tried on an OPEN slot and open on a
+      // CLOSED one (changed by claude/94389a6b with the up-front tests of test/ol7-admin-booking-slots).
+      viewData = makeAdminBookingSlotsData({
+        rule: SAMPLE_SLOT_RULE,
+        closures: [SAMPLE_CLOSURE],
+        slots: [
+          SAMPLE_SLOT,
+          makeAdminSlotDto({ ...SAMPLE_SLOT, id: 'slot-uuid-2', startAt: '2026-10-15T09:30:00Z', endAt: '2026-10-15T10:00:00Z', status: 'CLOSED' }),
+        ],
+        policy: SAMPLE_POLICY,
+      });
       mountComponent();
       await settle();
 
-      const closeBtn = [...container.querySelectorAll('button')].find((b) =>
+      const closeBtn = [...container.querySelectorAll<HTMLButtonElement>('.slot-item[data-slot-id="slot-uuid-1"] button')].find((b) =>
         /close|ปิดรับจอง/i.test(b.textContent ?? ''),
       );
       expect(closeBtn, 'slot close button exists').toBeDefined();
@@ -575,7 +587,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       expect(closeCalls[0]!.headers['idempotency-key'], 'slotClose carries Idempotency-Key').toBeTruthy();
       expect((closeCalls[0]!.body as any)?.branch, '#1913: every booking command names its branch').toBe(B01);
 
-      const openBtn = [...container.querySelectorAll('button')].find((b) =>
+      const openBtn = [...container.querySelectorAll<HTMLButtonElement>('.slot-item[data-slot-id="slot-uuid-2"] button')].find((b) =>
         /open|เปิดรับจอง/i.test(b.textContent ?? ''),
       );
       expect(openBtn, 'slot open button exists').toBeDefined();
@@ -583,7 +595,7 @@ describe('BK-9: Admin Booking Slots Screen (A04 #1410 §2, §7, §8, §9)', () =
       await settle();
 
       const openCalls = sentRequests.filter(
-        (r) => r.method === 'POST' && r.path === '/api/booking-slots/slot-uuid-1/open',
+        (r) => r.method === 'POST' && r.path === '/api/booking-slots/slot-uuid-2/open',
       );
       expect(openCalls.length, 'slotOpen sent to /api/booking-slots/{id}/open').toBe(1);
       expect(openCalls[0]!.headers['idempotency-key'], 'slotOpen carries Idempotency-Key').toBeTruthy();

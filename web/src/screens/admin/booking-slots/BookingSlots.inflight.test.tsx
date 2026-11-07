@@ -39,6 +39,17 @@ const BRANCH_A_DATA = makeAdminBookingSlotsData({
       reserved: 2,
       status: 'OPEN',
     }),
+    // OL-7 row 92: a row offers only the action its status allows; this CLOSED slot carries the "open" write button.
+    makeAdminSlotDto({
+      id: 'slot-a-2',
+      branchId: B01,
+      serviceDate: '2026-10-15',
+      startAt: '2026-10-15T09:30:00Z',
+      endAt: '2026-10-15T10:00:00Z',
+      capacity: 8,
+      reserved: 0,
+      status: 'CLOSED',
+    }),
   ],
   policy: makeAdminBookingPolicyDto({ cancelCutoffMinutes: 45, noShowGraceMinutes: 20, confirmExpiryMinutes: 30 }),
 });

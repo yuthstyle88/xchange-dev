@@ -1,5 +1,6 @@
-// P01 v2 clock (rate-display.md §9.2): HH:MM in Asia/Bangkok with a blinking colon, and the Thai long date.
+// P01 v2 clock (rate-display.md §9.2): HH:MM in Asia/Bangkok with a blinking colon, and Thai weekday + dd/mm/yyyy CE (F55).
 import { createSignal, onCleanup, type JSX } from 'solid-js';
+import { formatBangkokDate } from '../../../../shared/format/bangkok-time';
 
 export interface BoardClockProps {
   /** Injected for tests; defaults to `() => new Date()`. */
@@ -14,13 +15,11 @@ function getParts(d: Date) {
     hour12: false,
   });
   const [h, m] = hm.split(':');
-  const date = d.toLocaleDateString('th-TH', {
+  const weekday = d.toLocaleDateString('th-TH', {
     timeZone: 'Asia/Bangkok',
     weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
   });
+  const date = `${weekday} ${formatBangkokDate(d.toISOString())}`;
   return { h, m, hm, date };
 }
 

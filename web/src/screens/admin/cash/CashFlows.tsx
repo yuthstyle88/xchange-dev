@@ -21,6 +21,7 @@ import type { CashTransferRow } from '../../../shared/api/generated/cash_transfe
 import type { Me, OpenShiftDto } from '../../../shared/api/generated/common';
 import type { DenominationRow, Denominations } from '../../../shared/api/generated/denominations';
 import type { TransferBranchRow, TransferBranches } from '../../../shared/api/generated/transfer_branches';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
@@ -67,9 +68,6 @@ const rowStatusText = (row: CashTransferRow) => {
   return statusText(row.status);
 };
 
-function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
-}
 
 export interface CashFlowsProps {
   branch: () => string;
@@ -627,7 +625,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                                   {row.countedByName ?? '—'}
                                 </td>
                               </Show>
-                              <td>{i() === 0 ? when(row.countedAt) : ''}</td>
+                              <td>{i() === 0 ? formatBangkokDateTime(row.countedAt) : ''}</td>
                               <td>
                                 <strong>{total.currency}</strong>
                               </td>
@@ -691,7 +689,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                       {(row) => (
                         <tr>
                           <td class="cell-wrap">
-                            {when(row.createdAt)} · {row.createdByName || '—'}
+                            {formatBangkokDateTime(row.createdAt)} · {row.createdByName || '—'}
                           </td>
                           <td>{kindText(row.kind)}</td>
                           <td>

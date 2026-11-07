@@ -84,12 +84,42 @@ pub struct CountDifferenceSubject {
     pub lines: Vec<CountSubjectLine>,
 }
 
+/// F48 (`docs/design/backdated-keying.md` §16.2): one currency's total on a cash transfer, the sum of
+/// `qty_sent × face_value` over its lines, written to the currency's minor unit (THB `150000.00`, JPY `5000`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "approval_requests.ts")]
+pub struct CashTransferSubjectLine {
+    pub currency: String,
+    pub amount: String,
+}
+
+/// F48 + F54 (§16.2): what a `CASH_TRANSFER` approval is about, so the approver sees the figure, the note and the
+/// branch's name (`branches.name`), not only the transfer id and the branch id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "approval_requests.ts")]
+pub struct CashTransferSubject {
+    pub transfer_id: String,
+    /// `cash_transfers.kind`: BRANCH, DRAWER_TO_SAFE, SAFE_TO_DRAWER, EXTERNAL_IN or EXTERNAL_OUT.
+    pub kind: String,
+    pub from_branch_id: String,
+    pub from_branch_name: Option<String>,
+    /// Only a BRANCH transfer has a receiving branch.
+    pub to_branch_name: Option<String>,
+    /// `cash_transfers.note`, trimmed; `None` when absent or blank.
+    pub note: Option<String>,
+    /// One line per currency, ordered by currency code.
+    pub lines: Vec<CashTransferSubjectLine>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[ts(export_to = "approval_requests.ts")]
 pub enum ApprovalSubject {
     Reversal(ReversalSubject),
     CountDifference(CountDifferenceSubject),
+    CashTransfer(CashTransferSubject),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -319,6 +349,96 @@ pub async fn load_count_difference_subjects(
                 shift_opened_at: shift_opened_at.map(|dt| dt.to_rfc3339()),
                 net_difference_thb,
                 lines: lines_by_count.remove(&id).unwrap_or_default(),
+            },
+        );
+    }
+
+    Ok(out)
+}
+
+/// F48a (§16.2): the subject of every `CASH_TRANSFER` request in `transfer_ids` whose transfer leaves `branch`
+/// (`cash_transfers.from_branch_id`). A transfer of another branch, or one that no longer exists, is absent from the map.
+pub async fn load_cash_transfer_subjects(
+    pool: &PgPool,
+    branch: &BranchId,
+    transfer_ids: &[Uuid],
+) -> AppResult<HashMap<Uuid, CashTransferSubject>> {
+    if transfer_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let rows = sqlx::query(
+        "SELECT t.id, t.kind, t.from_branch_id, \
+                fb.name AS from_branch_name, \
+                tb.name AS to_branch_name, \
+                NULLIF(btrim(t.note), '') AS note \
+           FROM cash_transfers t \
+           LEFT JOIN branches fb ON fb.organization_id = t.organization_id AND fb.id = t.from_branch_id \
+           LEFT JOIN branches tb ON tb.organization_id = t.organization_id AND tb.id = t.to_branch_id \
+          WHERE t.id = ANY($1) \
+            AND t.from_branch_id = $2",
+    )
+    .bind(transfer_ids)
+    .bind(branch.as_str())
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    if rows.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let found_ids: Vec<Uuid> = rows.iter().map(|r| r.get("id")).collect();
+
+    let line_rows = sqlx::query(
+        "SELECT l.transfer_id, l.currency, \
+                SUM(l.qty_sent * d.face_value) AS amount, \
+                COALESCE(c.minor_unit, 2) AS minor_unit \
+           FROM cash_transfer_lines l \
+           JOIN denominations d ON d.id = l.denomination_id \
+           LEFT JOIN currencies c ON c.code = l.currency \
+          WHERE l.transfer_id = ANY($1) \
+          GROUP BY l.transfer_id, l.currency, c.minor_unit \
+          ORDER BY l.transfer_id, l.currency ASC",
+    )
+    .bind(&found_ids)
+    .fetch_all(pool)
+    .await
+    .map_err(AppError::Database)?;
+
+    let mut lines_by_transfer: HashMap<Uuid, Vec<CashTransferSubjectLine>> = HashMap::new();
+    for lr in line_rows {
+        let transfer_id: Uuid = lr.get("transfer_id");
+        let currency: String = lr.get("currency");
+        let amount: Decimal = lr.get("amount");
+        let minor_unit: i32 = lr.get("minor_unit");
+        let mut total = amount.normalize();
+        let scale = minor_unit.max(0) as u32;
+        if total.scale() < scale {
+            total.rescale(scale);
+        }
+        lines_by_transfer
+            .entry(transfer_id)
+            .or_default()
+            .push(CashTransferSubjectLine {
+                currency: currency.trim().to_string(),
+                amount: total.to_string(),
+            });
+    }
+
+    let mut out = HashMap::with_capacity(rows.len());
+    for r in rows {
+        let id: Uuid = r.get("id");
+        out.insert(
+            id,
+            CashTransferSubject {
+                transfer_id: id.to_string(),
+                kind: r.get("kind"),
+                from_branch_id: r.get("from_branch_id"),
+                from_branch_name: r.get("from_branch_name"),
+                to_branch_name: r.get("to_branch_name"),
+                note: r.get("note"),
+                lines: lines_by_transfer.remove(&id).unwrap_or_default(),
             },
         );
     }

@@ -15,6 +15,7 @@ import type { ApiClient } from '../../shared/api/client';
 import type { AdminBranchesData, AdminBranchItem } from '../../shared/api/generated/admin_branches';
 import type { Me } from '../../shared/api/generated/common';
 import { sharedSession } from '../../shared/session/session';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { AppShell } from '../../shared/ui/AppShell';
@@ -41,16 +42,6 @@ function getBangkokToday(): string {
     day: '2-digit',
   });
   return formatter.format(now);
-}
-
-function formatTime(d: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-    timeZone: 'Asia/Bangkok',
-  }).format(d);
 }
 
 export function AdminShell(props: AdminShellProps): JSX.Element {
@@ -654,7 +645,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
             >
               <span>
                 {t('liveOnline')} · {t('lastSync')}
-                {formatTime(lastSync())}
+                {formatBangkokDateTime(lastSync().toISOString())}
               </span>
             </Show>
           </div>

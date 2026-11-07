@@ -15,6 +15,7 @@ import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ConfirmDialog } from '../parts/ConfirmDialog';
+import { formatBangkokDate } from '../../../shared/format/bangkok-time';
 import { formatAmount } from '../../../shared/ui/currency-count/face-value';
 import { ClockButton } from './ClockButton';
 import { th, en } from './i18n';
@@ -60,19 +61,6 @@ function sortedAmounts(amounts: Record<string, string>): [string, string][] {
   return Object.entries(amounts).sort(([a], [b]) =>
     a === THB ? -1 : b === THB ? 1 : a.localeCompare(b),
   );
-}
-
-function formatBusinessDate(dateStr: string): string {
-  const dateOnly = dateStr.split('T')[0];
-  const parts = dateOnly.split('-');
-  if (parts.length === 3) {
-    const day = parseInt(parts[2], 10);
-    const month = parseInt(parts[1], 10);
-    if (!Number.isNaN(day) && !Number.isNaN(month)) {
-      return `${day}/${month}`;
-    }
-  }
-  return dateStr;
 }
 
 function formatShiftName(name: string, t: (key: any, params?: any) => string): string {
@@ -260,7 +248,7 @@ export function FloorCard(props: FloorCardProps): JSX.Element {
           const shiftText = () => {
             const s = shift();
             const namePart = s.shiftName ? formatShiftName(s.shiftName, t) : '';
-            const datePart = s.businessDate ? formatBusinessDate(s.businessDate) : '';
+            const datePart = s.businessDate ? formatBangkokDate(s.businessDate) : '';
             if (namePart && datePart) return `${namePart} · ${datePart}`;
             return namePart || datePart;
           };

@@ -25,7 +25,7 @@ import { refreshTick } from '../parts/refresh';
 import { Card, CardBody, CardGrid } from '../../../shared/ui/Card';
 import { Field, CheckField } from '../../../shared/ui/Field';
 import { en, th } from './i18n';
-import { formatDate } from './text';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import './payments.css';
 
 const t = screenT('admin.payments', { th, en });
@@ -95,7 +95,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
       return t('neverEdited');
     }
     return t('editedMeta', {
-      date: formatDate(d.updatedAt),
+      date: formatBangkokDateTime(d.updatedAt),
       by: d.updatedBy ?? '',
     });
   });
@@ -648,7 +648,7 @@ export function Payments(props: AdminMenuProps): JSX.Element {
                     <For each={data()!.history}>
                       {(h: PaymentHistoryItem) => (
                         <tr>
-                          <td>{formatDate(h.createdAt)}</td>
+                          <td>{formatBangkokDateTime(h.createdAt)}</td>
                           <td>{h.actor}</td>
                           <td>{computeChangedChannels(h.beforeMethods, h.afterMethods)}</td>
                           <td>{String(h.version)}</td>

@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // V1-kiosk-currencies (#399): the screen's own text table (design W6, W10). Written before the
 // implementation by the lane controller. Do not edit, delete or weaken; add tests in a file of
 // your own.
@@ -39,7 +40,7 @@ const V2_THAI: Record<string, string> = {
   compareHeading: 'เทียบเรทธนบัตร · กสิกรไทย / หน้าร้าน',
   comparePublished: 'ธนาคารประกาศ: {time} (เวลาไทย) · รอบ {round}',
   compareWarning:
-    'ข้อมูลที่ตรวจจากหน้าเว็บธนาคารครั้งล่าสุด — ยังไม่อัปเดตอัตโนมัติ (ข้อมูลวันที่ 2 ต.ค. 2026) โปรดตรวจต้นทางก่อนใช้เทียบเรท',
+    'ข้อมูลที่ตรวจจากหน้าเว็บธนาคารครั้งล่าสุด — ยังไม่อัปเดตอัตโนมัติ (ข้อมูลวันที่ 02/10/2026) โปรดตรวจต้นทางก่อนใช้เทียบเรท',
   compareLink: 'เปิดเรทล่าสุดจากกสิกรไทย ↗',
   compareNote:
     'แสดงเฉพาะสกุลที่กสิกรมีเรทธนบัตรรับซื้อหรือขายในข้อมูลอ้างอิงชุดนี้ · หน่วย THB ต่อ 1 หน่วยเงินต่างประเทศ · ส่วนต่าง = เรทร้าน − เรทธนาคาร · — หมายถึงไม่มีเรท ไม่ใช่ศูนย์ · ร้านยังเป็นผู้กำหนดราคาเอง',

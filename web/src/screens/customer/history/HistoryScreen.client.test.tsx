@@ -1,3 +1,6 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
+// The row's date is the server's value date, a day (`value_date.to_string()`, api/src/presentation/http/v3/views/my_transactions.rs:118),
+// so the fixture carries that shape (YYYY-MM-DD) and the row shows formatBangkokDate -> dd/mm/yyyy, never the raw ISO day.
 // RR-2 (#2033): C04 history reads my_transactions through ApiClient.view, words failures
 // through wordedError, and routes a 401 to sign-in (design xchange-v3-web.md §12.25).
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -25,7 +28,7 @@ beforeAll(
 
 const SAMPLE_ROW = makeMyTransactionItem({
   id: 'tx-rr2-1',
-  date: '2026-03-31 14:30',
+  date: '2026-03-31',
   branch: 'SIAM',
   branchName: 'Siam Paragon',
   type: 'BUY',
@@ -188,7 +191,8 @@ describe('HistoryScreen ApiClient.view & wordedError contract (RR-2 #2033)', () 
     expect(host.querySelector('.xc-history-empty')).toBeNull();
     const item = host.querySelector('.xc-history-item');
     expect(item).not.toBeNull();
-    expect(item!.textContent).toContain('2026-03-31 14:30');
+    expect(item!.textContent).toContain('31/03/2026');
+    expect(item!.textContent).not.toContain('2026-03-31');
     expect(item!.textContent).toContain('Siam Paragon');
     expect(item!.textContent).toContain(historyTh.status_completed);
     expect(item!.textContent).toContain('100.00');

@@ -2,7 +2,12 @@
 import type { ReversalSummaryDto } from "./reversal";
 import type { BackdateMarkDto } from "./transactions";
 
-export type TransactionDetailDto = { id: string, status: string, documentRef: string | null, branchId: string, customerId: string | null, quoteId: string | null, quoteExpiresAt: string | null, lines: Array<TxLineDto>, payment: TxPaymentDto | null, receipts: Array<TxReceiptDto>, approvalRequest: TxApprovalDto | null, completedAt: string | null, cancelledAt: string | null, cancelReason: string | null, reversal: ReversalSummaryDto | null, benefits: Array<TxBenefitDto>, booking: TxBookingRefDto | null, backdate?: BackdateMarkDto | null, };
+export type TransactionDetailDto = { id: string, status: string, documentRef: string | null, branchId: string, customerId: string | null, quoteId: string | null, quoteExpiresAt: string | null, lines: Array<TxLineDto>, payment: TxPaymentDto | null, receipts: Array<TxReceiptDto>, approvalRequest: TxApprovalDto | null, completedAt: string | null, cancelledAt: string | null, cancelReason: string | null, reversal: ReversalSummaryDto | null, benefits: Array<TxBenefitDto>, booking: TxBookingRefDto | null, backdate?: BackdateMarkDto | null, 
+/**
+ * F50 (`docs/design/backdated-keying.md` §16.5): `transactions.notes`, trimmed; absent when blank. A backdated
+ * row keeps the shop's own number and teller here.
+ */
+notes?: string | null, };
 
 export type TransactionFilter = { id: string | null, };
 

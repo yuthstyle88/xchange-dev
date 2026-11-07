@@ -1,7 +1,8 @@
 import { createEffect, createSignal, For, type JSX } from 'solid-js';
 import type { ApiClient } from '../../../../shared/api/client';
 import type { ProfitSummary, ProfitSummaryRequest } from '../../../../shared/api/generated/profit_summary';
-import { locale, screenT } from '../../../../shared/i18n';
+import { screenT } from '../../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../../shared/format/bangkok-time';
 import { wordedError } from '../../../../shared/i18n/worded-error';
 import { CardGrid } from '../../../../shared/ui/Card';
 import { StatCard } from '../../../../shared/ui/StatCard';
@@ -54,7 +55,7 @@ export function ProfitSummaryPanel(props: { api: ApiClient; branch: string; shif
       const a = await props.api.act<Record<string, string>, ProfitSummary>('compute', 'profit_summary', body);
       if (id !== seq) return;
       setResult(a);
-      setAlert(t('profitComputed', { when: new Date().toLocaleString(locale(), { timeZone: 'Asia/Bangkok' }) }));
+      setAlert(t('profitComputed', { when: formatBangkokDateTime(new Date().toISOString()) }));
     } catch (err) {
       if (id !== seq) return;
       setResult(null);
