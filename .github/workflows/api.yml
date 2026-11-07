@@ -610,7 +610,7 @@ jobs:
           npm --prefix api/web/forms run check
 
       - name: Form validation JS tests
-        if: matrix.partition == 1 && (github.event_name != 'pull_request' || (startsWith(github.head_ref, 'feat/') && github.base_ref == 'main'))   # owner 2026-10-17 (main only) + 2026-11-07 (#564: also feat/* → main)
+        if: matrix.partition == 1 && github.event_name != 'pull_request'   # owner 2026-10-17: tests run only on the merge into main
         run: node --test api/tests/js/*.test.mjs
 
       - name: "Release check refuses no screens"
