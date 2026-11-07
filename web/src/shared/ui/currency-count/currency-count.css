@@ -13,20 +13,20 @@
 .xc-currency-count-search-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-text, #374151);
+  color: var(--xc-ink);
 }
 
 .xc-currency-count-search-input {
   padding: 0.375rem 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid var(--xc-border, #d1d5db);
+  border: 1px solid var(--xc-line);
   border-radius: 0.25rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
 }
 
 .xc-currency-count-notfound {
   font-size: 0.8125rem;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
   margin: 0;
 }
 
@@ -39,9 +39,9 @@
 .xc-currency-count-option {
   padding: 0.25rem 0.625rem;
   font-size: 0.8125rem;
-  color: var(--xc-text, #111827);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #d1d5db);
+  color: var(--xc-ink);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.25rem;
   cursor: pointer;
 }
@@ -54,9 +54,9 @@
 
 .xc-currency-count-group {
   padding: 0.625rem;
-  border: 1px solid var(--xc-border, #e5e7eb);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
 }
 
 .xc-currency-count-group-head {
@@ -70,20 +70,20 @@
 .xc-currency-count-group-title {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-currency-count-expected {
   font-size: 0.8125rem;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
 }
 
 .xc-currency-count-remove {
   padding: 0.125rem 0.5rem;
   font-size: 0.75rem;
-  color: var(--xc-danger, #ef4444);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-danger-border, #fecaca);
+  color: var(--xc-danger);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.25rem;
   cursor: pointer;
 }

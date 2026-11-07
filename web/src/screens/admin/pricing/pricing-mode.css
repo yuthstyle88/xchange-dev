@@ -1,4 +1,4 @@
-/* pricing-mode.css — styles for PricingMode.tsx (V.9 PV-f4, #5199). */
+/* pricing-mode.css — styles for PricingMode.tsx (V.9 PV-f4, 5199). */
 
 .pricing-mode {
   display: flex;
@@ -29,9 +29,9 @@
 
 .pricing-mode-alert {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #f87171;
+  border: 1px solid var(--xc-danger);
   border-radius: 0.25rem;
-  color: #991b1b;
+  color: var(--xc-danger);
   font-size: 0.875rem;
 }
 
@@ -98,12 +98,12 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-mode-follow-reason {
-  background: #fff9ec;
-  color: #795919;
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
 }
 
 .xc-admin .xc-content.xc-content .pricing-mode-alert {
-  border-color: #edd4df;
+  border-color: var(--xc-brand-200);
   border-radius: 10px;
   background: var(--soft);
   color: var(--brand);
@@ -111,9 +111,9 @@
 
 .xc-admin .xc-content.xc-content .pricing-mode .pricing-mode-switch {
   min-height: 44px;
-  border: 1px solid #edd4df;
+  border: 1px solid var(--xc-brand-200);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--brand);
   font-weight: 700;
 }
@@ -133,7 +133,7 @@
 .xc-admin .xc-content.xc-content .pricing-mode-tier {
   padding: 6px 10px;
   border-radius: 10px;
-  background: #fcfafb;
+  background: var(--xc-paper);
 }
 
 .xc-admin .xc-content.xc-content .pricing-mode-tier-rates {

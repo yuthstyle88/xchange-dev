@@ -4,17 +4,17 @@
   max-width: 1200px;
   margin: 0 auto;
   font-family: inherit;
-  color: #1a1a1a;
+  color: var(--xc-ink);
 }
 
 .xc-refusal {
   padding: 2rem;
   margin: 2rem auto;
   max-width: 600px;
-  background-color: #fff1f0;
-  border: 1px solid #ffa39e;
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
   border-radius: 8px;
-  color: #cf1322;
+  color: var(--xc-danger);
   text-align: center;
   font-weight: 500;
 }
@@ -22,10 +22,10 @@
 .xc-error-banner {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
-  background-color: #fff2f0;
-  border: 1px solid #ffccc7;
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
   border-radius: 6px;
-  color: #cf1322;
+  color: var(--xc-danger);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -40,8 +40,8 @@
   gap: 1rem;
   margin-bottom: 1.5rem;
   padding: 1rem;
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background-color: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
 }
 
@@ -53,7 +53,7 @@
 
 .xc-qr-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   font-size: 0.9rem;
   min-width: 240px;
@@ -79,8 +79,8 @@
 
 .xc-btn-primary {
   padding: 0.5rem 1rem;
-  background-color: #1890ff;
-  color: white;
+  background-color: var(--xc-brand);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 4px;
   font-weight: 500;
@@ -88,21 +88,21 @@
 }
 
 .xc-btn-primary:hover {
-  background-color: #40a9ff;
+  background-color: var(--xc-brand-strong);
 }
 
 .xc-btn-secondary {
   padding: 0.5rem 1rem;
-  background-color: white;
-  color: #495057;
-  border: 1px solid #ced4da;
+  background-color: var(--xc-surface);
+  color: var(--xc-gray-700);
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   font-weight: 500;
   cursor: pointer;
 }
 
 .xc-btn-secondary:hover {
-  background-color: #f8f9fa;
+  background-color: var(--xc-gray-50);
 }
 
 .xc-slots-container {
@@ -112,16 +112,16 @@
 }
 
 .xc-slot-group {
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
-  background: white;
+  background: var(--xc-surface);
   overflow: hidden;
 }
 
 .xc-slot-header {
   padding: 0.75rem 1rem;
-  background-color: #f1f3f5;
-  border-bottom: 1px solid #dee2e6;
+  background-color: var(--xc-gray-100);
+  border-bottom: 1px solid var(--xc-line);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -135,7 +135,7 @@
 
 .xc-booking-item {
   padding: 1rem;
-  border-bottom: 1px solid #f1f3f5;
+  border-bottom: 1px solid var(--xc-gray-100);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -156,7 +156,7 @@
 
 .xc-booking-no {
   font-weight: 600;
-  color: #1890ff;
+  color: var(--xc-brand);
 }
 
 .xc-customer-name {
@@ -164,23 +164,23 @@
 }
 
 .xc-phone-last4 {
-  color: #6c757d;
+  color: var(--xc-muted);
   font-size: 0.9rem;
 }
 
 .xc-readiness {
   font-size: 0.85rem;
   padding: 0.2rem 0.5rem;
-  background-color: #e9ecef;
+  background-color: var(--xc-gray-150);
   border-radius: 4px;
-  color: #495057;
+  color: var(--xc-gray-700);
 }
 
 .xc-ticket-number {
   font-weight: 700;
-  color: #52c41a;
-  background-color: #f6ffed;
-  border: 1px solid #b7eb8f;
+  color: var(--xc-ok);
+  background-color: var(--xc-ok-soft);
+  border: 1px solid var(--xc-green-200);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
 }
@@ -190,57 +190,57 @@
   padding: 0.25rem 0.6rem;
   border-radius: 4px;
   font-weight: 500;
-  background-color: #e6f7ff;
-  color: #1890ff;
-  border: 1px solid #91d5ff;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand);
+  border: 1px solid var(--xc-brand-200);
 }
 
 .xc-status-CONFIRMED {
-  background-color: #e6f7ff;
-  color: #096dd9;
-  border-color: #91d5ff;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand);
+  border-color: var(--xc-brand-200);
 }
 
 .xc-status-CHECKED_IN {
-  background-color: #f6ffed;
-  color: #389e0d;
-  border-color: #b7eb8f;
+  background-color: var(--xc-ok-soft);
+  color: var(--xc-ok);
+  border-color: var(--xc-green-200);
 }
 
 .xc-status-CANCELLED {
-  background-color: #fff1f0;
-  color: #cf1322;
-  border-color: #ffa39e;
+  background-color: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border-color: var(--xc-danger);
 }
 
 .xc-status-COMPLETED {
-  background-color: #f6ffed;
-  color: #389e0d;
-  border-color: #b7eb8f;
+  background-color: var(--xc-ok-soft);
+  color: var(--xc-ok);
+  border-color: var(--xc-green-200);
 }
 
 .xc-status-PENDING_CUSTOMER_CONFIRMATION {
-  background-color: #fffbe6;
-  color: #d46b08;
-  border-color: #ffe58f;
+  background-color: var(--xc-warn-soft);
+  color: var(--xc-warn);
+  border-color: var(--xc-amber-200);
 }
 
 .xc-status-IN_SERVICE {
-  background-color: #f0f5ff;
-  color: #1d39c4;
-  border-color: #adc6ff;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand-strong);
+  border-color: var(--xc-brand-200);
 }
 
 .xc-status-NO_SHOW {
-  background-color: #fff1f0;
-  color: #cf1322;
-  border-color: #ffa39e;
+  background-color: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border-color: var(--xc-danger);
 }
 
 .xc-status-EXPIRED {
-  background-color: #f5f5f5;
-  color: #8c8c8c;
-  border-color: #d9d9d9;
+  background-color: var(--xc-gray-75);
+  color: var(--xc-muted);
+  border-color: var(--xc-gray-200);
 }
 
 .xc-booking-actions {
@@ -271,7 +271,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.45);
+  background-color: var(--xc-scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -279,12 +279,12 @@
 }
 
 .xc-modal {
-  background: white;
+  background: var(--xc-surface);
   border-radius: 8px;
   padding: 1.5rem;
   width: 90%;
   max-width: 500px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--xc-shadow-md);
 }
 
 .xc-modal-title {
@@ -304,14 +304,14 @@
 .xc-form-group label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #495057;
+  color: var(--xc-ink);
 }
 
 .xc-form-group input,
 .xc-form-group select,
 .xc-form-group textarea {
   padding: 0.5rem 0.75rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   font-size: 0.9rem;
 }
@@ -348,6 +348,6 @@
 .xc-empty-state {
   padding: 3rem;
   text-align: center;
-  color: #6c757d;
+  color: var(--xc-muted);
   font-size: 1rem;
 }

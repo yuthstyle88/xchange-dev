@@ -1,4 +1,4 @@
-/* LK-SA (#713) / CD-1 / #796: Admin overview screen look ported from v2 admin-html.ts and admin-workspace.css */
+/* LK-SA (713) / CD-1 / 796: Admin overview screen look ported from v2 admin-html.ts and admin-workspace.css */
 
 /* v2 src/online/lib/admin-html.ts #overview-view */
 .xc-admin .xc-content .overview-screen {
@@ -7,9 +7,9 @@
 
 /* v2 src/online/lib/admin-html.ts .notice & .error */
 .xc-admin .xc-content .error-banner {
-  color: #a5003c;
-  background: #f1f2f5;
-  border: 1px solid #dee0e6;
+  color: var(--xc-danger);
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-line);
   padding: 13px 17px;
   border-radius: 8px;
   font-size: 14px;
@@ -33,9 +33,9 @@
 /* v2 src/devices-public/admin-workspace.css:21 #export, .toolbar #export */
 .xc-admin .xc-content.xc-content .btn-export,
 .xc-admin .xc-content .btn-export {
-  background: white;
-  border: 1px solid #d6d8df;
-  color: var(--brand, #a5003c);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  color: var(--xc-brand);
   font-size: 12px;
   font-weight: 600;
   padding: 9px 16px;
@@ -46,10 +46,18 @@
 
 .xc-admin .xc-content.xc-content .btn-export:hover,
 .xc-admin .xc-content .btn-export:hover {
-  background: var(--soft, #f7f4f7);
+  background: var(--xc-brand-soft);
 }
 
 /* v2 src/online/lib/admin-html.ts #activity */
 .xc-admin .xc-content .activity-panel {
   min-width: 0;
+}
+
+.xc-admin .xc-content .overview-screen .text-link,
+.overview-screen .text-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-block: 8px;
 }

@@ -307,6 +307,8 @@ describe('queue-card.css (QF5, QF6)', () => {
     expect(src).toMatch(/import\s+['"]\.\/queue-card\.css['"]/);
   });
 
+  // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.1 and §3): the v2 colour literals #fff, #e8dfe4,
+  // #30202b22 and #ab0044 become the xc-theme.css tokens (surface, line, the floating shadow, brand).
   it('CS2: the base card is v2 .xc-queue: fixed bottom-right, 320px, radius 20px (account-bar.js @2212)', async () => {
     const r = await sheet();
     expectDecls(r, '.queue-card', '', {
@@ -317,12 +319,12 @@ describe('queue-card.css (QF5, QF6)', () => {
       width: '320px',
       'max-width': 'calc(100vw - 32px)',
       padding: '18px',
-      background: '#fff',
-      border: '1px solid #e8dfe4',
+      background: 'var(--xc-surface)',
+      border: '1px solid var(--xc-line)',
       'border-radius': '20px',
-      'box-shadow': '0 10px 38px #30202b22',
+      'box-shadow': 'var(--xc-shadow-md)',
     });
-    expectDecls(r, '.queue-card.waiting', '', { 'border-color': '#ab0044' });
+    expectDecls(r, '.queue-card.waiting', '', { 'border-color': 'var(--xc-brand)' });
   });
 
   it('CS3: v2\'s ≤600 and ≤700 card rules (account-bar.js @3685, @4526)', async () => {
@@ -339,12 +341,14 @@ describe('queue-card.css (QF5, QF6)', () => {
     });
   });
 
+  // Restated for OL-1R-a (docs/design/xchange-one-look.md §2.1, §3): v2's literal shadow 0 5px 24px #28142114 becomes
+  // the xc-theme.css token --xc-shadow-md (0 8px 24px #2a1e2614), so queue-card.css can drop its legacy-colours marker.
   it('CS4: the admin overrides, scoped body:has(.xc-admin) (admin-workspace.css:29)', async () => {
     const r = await sheet();
     expectDecls(r, 'body:has(.xc-admin) .queue-card', '', {
       width: '295px',
       'border-radius': '10px',
-      'box-shadow': '0 5px 24px #28142114',
+      'box-shadow': 'var(--xc-shadow-md)',
       'z-index': '25',
       padding: '14px',
     });

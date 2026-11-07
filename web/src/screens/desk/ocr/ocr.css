@@ -3,9 +3,9 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  border: 1px solid #d8dee4;
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
-  background: #f8fafc;
+  background: var(--xc-surface);
 }
 
 .desk-ocr-controls {
@@ -23,6 +23,6 @@
 
 .desk-ocr-status {
   margin: 0;
-  color: #334155;
+  color: var(--xc-ink);
   font-size: 0.925rem;
 }

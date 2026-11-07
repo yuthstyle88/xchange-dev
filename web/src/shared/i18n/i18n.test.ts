@@ -485,50 +485,65 @@ describe('screenT: the typed t a screen makes over its own table', () => {
   });
 });
 
+// Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 "Language switch" and §3): the staff switch was one
+// button whose text flipped EN/TH; it is now a segmented `ไทย | EN` group, two buttons with aria-pressed, the same
+// setLang, the same stored choice and the same `shell.langSwitch` aria-label key.
 describe('LangSwitch', () => {
   function mount() {
     const host = document.createElement('div');
     document.body.appendChild(host);
     dispose = render(() => createComponent(LangSwitch, {}), host);
-    const buttons = host.querySelectorAll('button');
-    expect(buttons).toHaveLength(1);
-    return { host, button: buttons[0]! };
+    const group = host.querySelector('[role="group"]');
+    expect(group, 'the switch is one role="group"').not.toBeNull();
+    const buttons = group!.querySelectorAll('button');
+    expect(buttons).toHaveLength(2);
+    const th = Array.from(buttons).find((b) => b.textContent?.trim() === 'ไทย');
+    const enButton = Array.from(buttons).find((b) => b.textContent?.trim() === 'EN');
+    expect(th, 'a ไทย button').toBeDefined();
+    expect(enButton, 'an EN button').toBeDefined();
+    return { host, th: th!, en: enButton! };
   }
 
-  it('is one plain button that toggles th and en, with <html lang> and storage following', () => {
-    const { button } = mount();
-    expect(button.getAttribute('type')).toBe('button');
+  it('is a ไทย | EN pair of plain buttons that set th and en, with <html lang> and storage following', () => {
+    const { th: thButton, en: enButton } = mount();
+    expect(thButton.getAttribute('type')).toBe('button');
+    expect(enButton.getAttribute('type')).toBe('button');
     expect(lang()).toBe('th');
 
-    button.click();
+    enButton.click();
     expect(lang()).toBe('en');
     expect(document.documentElement.lang).toBe('en');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('en');
 
-    button.click();
+    thButton.click();
     expect(lang()).toBe('th');
     expect(document.documentElement.lang).toBe('th');
     expect(window.localStorage.getItem(STORAGE_KEY)).toBe('th');
   });
 
-  it('shows the language it switches to, and its aria-label comes from the table of the current language', () => {
-    const { button } = mount();
-    expect(button.textContent?.trim()).toBe('EN');
-    const thLabel = button.getAttribute('aria-label');
-    expect(thLabel).toBe(t('shell.langSwitch', { language: 'English' }));
+  it('marks the current language pressed, and each aria-label comes from shell.langSwitch in the current language', () => {
+    const { th: thButton, en: enButton } = mount();
+    expect(thButton.getAttribute('aria-pressed')).toBe('true');
+    expect(enButton.getAttribute('aria-pressed')).toBe('false');
+    expect(thButton.getAttribute('aria-label')).toBe(t('shell.langSwitch', { language: 'ไทย' }));
+    expect(enButton.getAttribute('aria-label')).toBe(t('shell.langSwitch', { language: 'English' }));
+    const thLabel = enButton.getAttribute('aria-label');
 
-    button.click();
-    expect(button.textContent?.trim()).toBe('TH');
-    const enLabel = button.getAttribute('aria-label');
-    expect(enLabel).toBe(t('shell.langSwitch', { language: 'ไทย' }));
-    expect(enLabel).not.toBe(thLabel);
+    enButton.click();
+    expect(thButton.getAttribute('aria-pressed')).toBe('false');
+    expect(enButton.getAttribute('aria-pressed')).toBe('true');
+    expect(enButton.getAttribute('aria-label')).toBe(t('shell.langSwitch', { language: 'English' }));
+    expect(enButton.getAttribute('aria-label')).not.toBe(thLabel);
   });
 
   it('follows a switch made elsewhere', () => {
-    const { button } = mount();
+    const { th: thButton, en: enButton } = mount();
     setLang('en');
-    expect(button.textContent?.trim()).toBe('TH');
+    expect(enButton.getAttribute('aria-pressed')).toBe('true');
+    expect(thButton.getAttribute('aria-pressed')).toBe('false');
     setLang('th');
-    expect(button.textContent?.trim()).toBe('EN');
+    expect(thButton.getAttribute('aria-pressed')).toBe('true');
+    expect(enButton.getAttribute('aria-pressed')).toBe('false');
   });
 });
+

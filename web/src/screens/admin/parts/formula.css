@@ -21,13 +21,13 @@
   font-size: 0.9rem;
   min-height: 3.5rem;
   padding: 0.5rem;
-  border: 1px solid var(--line, #cbd5e1);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   resize: vertical;
 }
 
 .formula-help {
-  color: var(--muted, #64748b);
+  color: var(--xc-muted);
   font-size: 0.85rem;
 }
 
@@ -71,18 +71,18 @@
 .formula-refusal-table th,
 .formula-refusal-table td {
   padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid var(--line, #e2e8f0);
+  border-bottom: 1px solid var(--xc-line);
   text-align: left;
 }
 
 .formula-row--fail {
-  background-color: var(--color-danger-bg, #fef2f2);
-  color: var(--color-danger-text, #991b1b);
+  background-color: var(--xc-danger-soft);
+  color: var(--xc-danger);
 }
 
 .formula-unit-note,
 .formula-pending {
-  color: var(--muted, #64748b);
+  color: var(--xc-muted);
   font-size: 0.85rem;
 }
 
@@ -98,10 +98,10 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  background-color: var(--color-danger-bg, #fef2f2);
-  border: 1px solid var(--color-danger-border, #fca5a5);
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
   border-radius: 0.5rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
 }
 
 .formula-override {
@@ -110,7 +110,7 @@
   gap: 0.75rem;
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--line, #e2e8f0);
+  border-top: 1px solid var(--xc-line);
 }
 
 .formula-override-choice {

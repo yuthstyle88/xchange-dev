@@ -552,7 +552,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
                 </div>
 
                 <div class="xc-home-estimate-meta">
-                  <span>{t('appliedRate')}: <strong>{result().rate}</strong></span>
+                  <span>{t('appliedRate')}: <strong>{formatRate(result().rate, '1', calcCurrency())}</strong></span>
                   <span> · {t('unit')}: <strong>{result().unitSize} {calcCurrency()}</strong></span>
                 </div>
 

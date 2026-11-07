@@ -1,15 +1,16 @@
+/* OL-1 (#6360): rate freshness indicator */
 .xc-rate-freshness {
   margin: 0.5rem 0;
   font-size: 0.875rem;
-  color: #6b7280;
+  color: var(--xc-muted);
   line-height: 1.5;
 }
 
 .xc-rate-stale {
   display: inline-block;
-  color: #9a3412;
-  background: #ffedd5;
-  border-radius: 999px;
+  color: var(--xc-warn);
+  background: var(--xc-warning-soft);
+  border-radius: var(--xc-radius-pill);
   padding: 0.125rem 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;

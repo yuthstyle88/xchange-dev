@@ -1,11 +1,11 @@
-/* approve-results.css — styles for ApproveResults.tsx (V.9 PV-c, #5197). */
+/* approve-results.css — styles for ApproveResults.tsx (V.9 PV-c, 5197). */
 
 .approve-results {
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--line, #e5e6ea);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -38,5 +38,5 @@
   margin: 0 16px;
   border-color: var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
 }

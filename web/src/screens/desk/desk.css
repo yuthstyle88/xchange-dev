@@ -14,7 +14,7 @@
   gap: 12px;
   padding: 8px 12px;
   border-radius: 4px;
-  background: #f5f5f5;
+  background: var(--xc-surface);
 }
 
 .desk-nav {
@@ -36,15 +36,15 @@ ol.steps {
 ol.steps li {
   padding: 8px 16px;
   border-radius: 4px;
-  background: #f0f0f0;
-  color: #666;
+  background: var(--xc-surface);
+  color: var(--xc-muted);
   font-weight: 500;
   user-select: none;
 }
 
 ol.steps li[aria-current="step"] {
-  background: #1976d2;
-  color: #fff;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
   font-weight: 600;
 }
 
@@ -68,7 +68,7 @@ ol.steps li[aria-current="step"] {
 .desk-empty {
   padding: 32px;
   text-align: center;
-  color: #888;
+  color: var(--xc-muted);
 }
 
 .desk-step-content {
@@ -84,7 +84,7 @@ ol.steps li[aria-current="step"] {
   max-width: 560px;
 }
 
-/* steps (DK-C/D/E #539): the form every step draws */
+/* steps (DK-C/D/E issue 539): the form every step draws */
 .desk-form {
   display: flex;
   flex-direction: column;
@@ -108,7 +108,7 @@ ol.steps li[aria-current="step"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #444;
+  color: var(--xc-ink);
 }
 
 .desk-rate-line {
@@ -119,23 +119,24 @@ ol.steps li[aria-current="step"] {
 }
 
 .desk-error {
-  color: #b00020;
+  color: var(--xc-danger);
   margin: 0;
 }
 
 .desk-notice {
-  color: #6b5b00;
+  color: var(--xc-amber-800);
   margin: 0;
 }
 
-/* FE-4 #5384: marks a benefit that is only an estimate (`benefitBasis: INDICATIVE`). */
+/* FE-4 issue 5384: marks a benefit that is only an estimate (`benefitBasis: INDICATIVE`). */
 .desk-badge {
-  color: #6b5b00;
+  color: var(--xc-warn);
+  background: var(--xc-warn-soft);
   font-size: 0.85em;
 }
 
 .desk-warning {
-  color: #b00020;
+  color: var(--xc-danger);
   margin: 0;
 }
 
@@ -157,4 +158,13 @@ ol.steps li[aria-current="step"] {
 .desk-summary dd {
   margin: 0;
   text-align: right;
+}
+
+@media (max-width: 800px) {
+  .desk-body {
+    flex-direction: column;
+  }
+  .desk-aside {
+    width: auto;
+  }
 }

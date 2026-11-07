@@ -5,6 +5,7 @@ import { screenT } from '../../../shared/i18n';
 import { chime, soundOn, toggleSound } from '../../../shared/queue/queue-sound';
 import { FullscreenButton } from '../../customer/rate-display/FullscreenButton';
 import { branchFromSearch } from '../../customer/rate-display/location';
+import '../../../shared/ui/xc-theme.css';
 import { en, th, zh } from './i18n';
 
 const tr = screenT('customer.queue-display', { th, en, zh });
@@ -88,7 +89,7 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
   });
 
   return (
-    <main class="queue-display-screen" data-branch={branch() ?? ''}>
+    <main class="queue-display-screen xc-theme" data-branch={branch() ?? ''}>
       <div class="queue-display-toolbar">
         <Show when={!soundOn()}>
           <button

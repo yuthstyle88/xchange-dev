@@ -24,8 +24,8 @@
 
 .xc-admin .xc-content .consent-text-item {
   padding: 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
   display: flex;
   flex-direction: column;
@@ -38,7 +38,7 @@
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--ink-secondary, #64748b);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .purpose {
@@ -46,16 +46,16 @@
 }
 
 .xc-admin .xc-content .lang {
-  color: var(--ink-secondary, #64748b);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .version {
-  color: var(--ink-secondary, #64748b);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .consent-text-body {
   font-size: 14px;
-  color: var(--ink, #1e293b);
+  color: var(--xc-ink);
   white-space: pre-wrap;
 }
 
@@ -64,8 +64,8 @@
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
 }
 
@@ -80,8 +80,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
 }
 

@@ -1,4 +1,4 @@
-/* G-ME (docs/design/web-silent-failures.md §5): the shared "permissions could not be loaded" line.
+/* G-ME (docs/design/web-silent-failures.md §5) & OL-1 (#6360): the shared "permissions could not be loaded" line.
    Same palette as .xc-shell-alert (shell.css), so it reads as the shell's own warning on every look. */
 
 .xc-perm-unavailable {
@@ -8,20 +8,20 @@
   gap: 8px 12px;
   margin: 0 0 12px;
   padding: 10px 14px;
-  background: #fce4eb;
-  border: 1px solid #e7b7c8;
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 6px;
-  color: #851139;
+  color: var(--xc-danger);
   box-sizing: border-box;
 }
 
 .xc-perm-unavailable-retry {
   font: inherit;
   padding: 4px 12px;
-  border: 1px solid #851139;
+  border: 1px solid var(--xc-danger);
   border-radius: 6px;
-  background: white;
-  color: #851139;
+  background: var(--xc-surface);
+  color: var(--xc-danger);
   cursor: pointer;
 }
 

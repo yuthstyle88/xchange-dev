@@ -1,4 +1,4 @@
-/* LK-QC (#786, web design §12.18.12): shared floating queue card look ported from v2 */
+/* LK-QC (#786, web design §12.18.12) & OL-1 (#6360): shared floating queue card look */
 
 /* v2 src/devices-public/account-bar.js @2212 */
 .queue-card {
@@ -9,12 +9,19 @@
   width: 320px;
   max-width: calc(100vw - 32px);
   padding: 18px;
-  background: #fff;
-  border: 1px solid #e8dfe4;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 20px;
-  box-shadow: 0 10px 38px #30202b22;
-  color: #27212a;
-  font: 14px/1.5 Arial, Tahoma, sans-serif;
+  box-shadow: var(--xc-shadow-md);
+  color: var(--xc-ink);
+  font: 14px/1.5 var(--xc-font-sans);
+}
+
+/* V3-2 (#6510): raise card look above theme root */
+.queue-card.xc-theme {
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  font: 14px/1.5 var(--xc-font-sans);
 }
 
 .queue-card-top {
@@ -29,8 +36,8 @@
   min-width: 48px;
   height: 48px;
   border-radius: 14px;
-  background: #f3f1f4;
-  color: #766a74;
+  background: var(--xc-gray-75);
+  color: var(--xc-muted);
   font-size: 24px;
   font-weight: bold;
 }
@@ -39,20 +46,22 @@
 .queue-card strong {
   display: block;
   font-size: 15px;
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
 .queue-card-status {
-  color: #706671;
+  color: var(--xc-muted);
   font-size: 13px;
 }
 
 .queue-card.waiting {
-  border-color: #ab0044;
+  border-color: var(--xc-brand);
 }
 
 .queue-card.waiting .queue-card-badge {
-  background: #ab0044;
-  color: white;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
 }
 
 .queue-card-action {
@@ -61,8 +70,8 @@
   padding: 11px 14px;
   margin-top: 14px;
   border-radius: 11px;
-  background: #ab0044;
-  color: white !important;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand) !important;
   text-decoration: none;
   font-weight: bold;
 }
@@ -71,7 +80,6 @@
   display: flex;
   gap: 8px;
   margin-top: 10px;
-  /* v3: flex-wrap allows child span hint to wrap to its own row (in v2, small was a sibling) */
   flex-wrap: wrap;
 }
 
@@ -79,20 +87,19 @@
   flex: 1;
   min-height: 38px;
   padding: 6px 10px;
-  border: 1px solid #e6dfe4;
-  background: #faf8fa;
-  color: #6b3550;
+  border: 1px solid var(--xc-line);
+  background: var(--xc-paper);
+  color: var(--xc-brand);
   border-radius: 9px;
-  font: 12px Arial, Tahoma, sans-serif;
+  font: 12px var(--xc-font-sans);
   cursor: pointer;
 }
 
 .queue-card .queue-sound-controls span,
 .queue-card small {
   display: block;
-  /* v3: flex-basis: 100% forces the hint span onto its own row within .queue-sound-controls */
   flex-basis: 100%;
-  color: #827781;
+  color: var(--xc-muted);
   margin-top: 8px;
   font-size: 11px;
 }
@@ -107,7 +114,7 @@
 .queue-card .queue-card-toggle {
   border: 0;
   background: none;
-  color: #786d76;
+  color: var(--xc-muted);
   margin-left: auto;
   cursor: pointer;
   font-size: 18px;
@@ -115,7 +122,7 @@
 }
 
 .queue-card :focus-visible {
-  outline: 3px solid #ab0044;
+  outline: 3px solid var(--xc-brand);
   outline-offset: 3px;
 }
 
@@ -156,7 +163,7 @@
 body:has(.xc-admin) .queue-card {
   width: 295px;
   border-radius: 10px;
-  box-shadow: 0 5px 24px #28142114;
+  box-shadow: var(--xc-shadow-md);
   z-index: 25;
   padding: 14px;
 }
@@ -196,14 +203,14 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
 /* QF8: workers list in expanded card, ported from old admin bar .queue-workers-list / .queue-worker-line (queue.css) */
 .queue-card-workers {
   font-size: 13px;
-  border-top: 1px solid #f0e7eb;
+  border-top: 1px solid var(--xc-line);
   margin-top: 12px;
   padding-top: 8px;
 }
 
 .queue-card-worker {
   padding: 4px 0;
-  color: #716572;
+  color: var(--xc-muted);
   font-size: 13px;
 }
 
@@ -211,4 +218,3 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
 html {
   padding-bottom: var(--xc-queue-card-space, 0px);
 }
-

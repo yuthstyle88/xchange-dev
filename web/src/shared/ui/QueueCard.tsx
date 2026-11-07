@@ -212,7 +212,7 @@ function OperatorCard(props: { session: SessionStore }): JSX.Element {
         <aside
           ref={observeCard}
           aria-label={t('queue.card.aria')}
-          class="queue-card"
+          class="queue-card xc-theme"
           classList={{ waiting: isWaiting(), minimized: isFolded() }}
         >
           <div class="queue-card-top">

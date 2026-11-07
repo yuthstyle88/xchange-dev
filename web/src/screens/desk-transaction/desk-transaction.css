@@ -1,4 +1,4 @@
-/* TD-3 #1291: B04 `/desk/transactions/{id}`. Every class the screen uses has a rule here (LK-6). */
+/* TD-3 issue 1291: B04 `/desk/transactions/{id}`. Every class the screen uses has a rule here (LK-6). */
 .xc-dtx {
   max-width: 1100px;
   margin: 0 auto;
@@ -21,7 +21,7 @@
 }
 
 .xc-dtx-section {
-  border: 1px solid var(--xc-border, #e5e7eb);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
   padding: 1rem;
 }
@@ -40,7 +40,7 @@
 
 .xc-dtx-field dt {
   font-size: 0.8125rem;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
 }
 
 .xc-dtx-field dd {
@@ -58,7 +58,7 @@
 .xc-dtx-table td {
   text-align: left;
   padding: 0.375rem 0.5rem;
-  border-bottom: 1px solid var(--xc-border, #e5e7eb);
+  border-bottom: 1px solid var(--xc-line);
 }
 
 .xc-dtx-note {
@@ -68,14 +68,14 @@
 
 .xc-dtx-muted {
   margin: 0;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
 }
 
 .xc-dtx-message {
   margin: 0;
   padding: 0.5rem 0.75rem;
   border-radius: 0.375rem;
-  background: var(--xc-surface-muted, #f3f4f6);
+  background: var(--xc-surface);
 }
 
 .xc-dtx-actions {

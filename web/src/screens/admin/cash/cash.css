@@ -1,4 +1,4 @@
-/* LK-SA (#713) / CD-1 / #840: Admin cash screen look ported from v2 admin-html.ts and admin-workspace.css */
+/* LK-SA (713) / CD-1 / 840: Admin cash screen look ported from v2 admin-html.ts and admin-workspace.css */
 
 /* v2 src/online/lib/admin-html.ts #cash-view */
 .xc-admin .xc-content .admin-cash-screen {
@@ -93,9 +93,9 @@
   align-items: center;
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #d6d8df;
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
-  background: white;
+  background: var(--xc-surface);
   cursor: pointer;
 }
 
@@ -116,8 +116,8 @@
 
 /* v2 src/online/lib/admin-html.ts .icon-button */
 .xc-admin .xc-content .remove-currency-btn {
-  background: #f3f4f6;
-  border: 1px solid #d6d8df;
+  background: var(--xc-gray-75);
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   color: var(--muted);
   font-size: 14px;
@@ -225,7 +225,7 @@
 
 /* v2 src/online/lib/admin-html.ts section.card */
 .xc-admin .xc-content .calc-panel {
-  background: white;
+  background: var(--xc-surface);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 20px;
@@ -242,7 +242,7 @@
   display: block;
 }
 
-/* CA-9 #625: counts waiting and transfers (CA-8); the sections reuse .card, .table-scroll, .num, .pill and .empty */
+/* CA-9 625: counts waiting and transfers (CA-8); the sections reuse .card, .table-scroll, .num, .pill and .empty */
 .xc-admin .xc-content .cash-flows {
   display: block;
 }

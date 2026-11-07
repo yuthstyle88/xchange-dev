@@ -1,4 +1,4 @@
-/* display-settings.css — DisplaySettings.tsx (PV-j, #5201): tier boxes, the featured list as removable chips,
+/* display-settings.css — DisplaySettings.tsx (PV-j, 5201): tier boxes, the featured list as removable chips,
    styled checkboxes (look 2026-11-05). The markup is unchanged, so the rules reach its plain elements. */
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings {
@@ -23,8 +23,8 @@
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings > header span {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
   font-size: 12px;
   font-weight: 600;
 }
@@ -61,11 +61,11 @@
   padding: 0 14px 0 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
 }
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings fieldset label:has(input:checked) {
-  border-color: #edd4df;
+  border-color: var(--xc-brand-200);
   background: var(--soft);
 }
 
@@ -92,7 +92,7 @@
   padding-left: 12px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: #fcfafb;
+  background: var(--xc-paper);
   font-size: 13px;
   font-weight: 700;
 }
@@ -126,13 +126,13 @@
   border: 1px solid var(--brand);
   border-radius: 12px;
   background: var(--brand);
-  color: #fff;
+  color: var(--xc-on-brand);
 }
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings button[name='clear-display'] {
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--ink);
 }
 

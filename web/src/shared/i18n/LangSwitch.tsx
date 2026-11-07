@@ -7,15 +7,20 @@ export function LangSwitch(): JSX.Element {
     <Show
       when={audience() === 'customer'}
       fallback={
-        <button
-          type="button"
-          onClick={() => setLang(lang() === 'th' ? 'en' : 'th')}
-          aria-label={t('shell.langSwitch', {
-            language: lang() === 'th' ? 'English' : 'ไทย',
-          })}
-        >
-          {lang() === 'th' ? 'EN' : 'TH'}
-        </button>
+        <div role="group" class="xc-lang-switch">
+          <For each={SPOKEN.staff}>
+            {(l: Lang) => (
+              <button
+                type="button"
+                onClick={() => setLang(l)}
+                aria-pressed={lang() === l ? 'true' : 'false'}
+                aria-label={t('shell.langSwitch', { language: NATIVE_NAME[l] })}
+              >
+                {l === 'th' ? 'ไทย' : 'EN'}
+              </button>
+            )}
+          </For>
+        </div>
       }
     >
       <For each={SPOKEN.customer}>

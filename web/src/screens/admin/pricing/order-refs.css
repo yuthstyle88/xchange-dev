@@ -1,4 +1,4 @@
-/* order-refs.css — styles for OrderRefs.tsx (FE pricing-board, #564, #3765). */
+/* order-refs.css — styles for OrderRefs.tsx (FE pricing-board, 564, 3765). */
 
 .order-refs {
   display: flex;
@@ -32,7 +32,7 @@
 }
 
 .order-ref-time {
-  color: #64748b;
+  color: var(--xc-muted);
 }
 
 .order-ref-currency {

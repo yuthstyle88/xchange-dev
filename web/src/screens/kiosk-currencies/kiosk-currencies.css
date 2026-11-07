@@ -1,14 +1,14 @@
-/* Kiosk currencies stylesheet: ported from v2 kiosk.css (#633, second revision) */
+/* Kiosk currencies stylesheet: ported from v2 kiosk.css (issue 633, second revision) */
 
 .xc-kiosk {
-  --xc: #a5003c;
-  --brand: #a5003c;
-  --ink: #19191d;
-  --muted: #67646c;
-  --line: #e7e2e6;
-  --soft: #fff2f6;
-  background: radial-gradient(ellipse at 95% 5%, #f7e6ee 0, transparent 45%), #f7f7f9;
-  color: #212126;
+  --xc: var(--xc-brand);
+  --brand: var(--xc-brand);
+  --ink: var(--xc-ink);
+  --muted: var(--xc-muted);
+  --line: var(--xc-line);
+  --soft: var(--xc-brand-soft);
+  background: radial-gradient(ellipse at 95% 5%, var(--xc-brand-100) 0, transparent 45%), var(--xc-bg);
+  color: var(--xc-ink);
   font-size: 18px;
   line-height: 1.5;
   font-family: Arial, Tahoma, 'XC Noto Sans Arabic', 'XC Noto Sans Devanagari', 'XC Noto Sans Lao', 'XC Noto Sans Myanmar', sans-serif;
@@ -41,7 +41,7 @@
 
 .xc-kiosk .xc-shell-main .quote {
   padding: 18px 22px;
-  background: #fbfafb;
+  background: var(--xc-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   margin: 20px 0;
@@ -103,7 +103,7 @@
   border-radius: 10px;
   min-height: 68px;
   padding: 16px;
-  background: #fbfafb;
+  background: var(--xc-surface);
   color: inherit;
   box-sizing: border-box;
 }
@@ -123,7 +123,7 @@
   border-radius: 14px;
   min-height: 68px;
   padding: 16px;
-  background: white;
+  background: var(--xc-surface);
   color: inherit;
 }
 
@@ -139,13 +139,13 @@
 .xc-kiosk .xc-shell-main .primary {
   background: var(--xc);
   border-color: var(--xc);
-  color: white;
+  color: var(--xc-on-brand);
   margin-top: 16px;
 }
 
 .xc-kiosk .xc-shell-main .primary:hover:not(:disabled) {
-  background: #80002e;
-  border-color: #80002e;
+  background: var(--xc-brand-strong);
+  border-color: var(--xc-brand-strong);
 }
 
 .xc-kiosk .xc-shell-main button:focus-visible,
@@ -160,10 +160,10 @@
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--xc-line);
   margin-top: 18px;
   padding: 14px;
-  background: #eef8f0;
+  background: var(--xc-ok-soft);
   border-radius: 12px;
   overflow: auto;
 }
@@ -218,7 +218,7 @@
 }
 
 .xc-kiosk .xc-shell-main #bank-reference .warning {
-  background: #fff4db;
+  background: var(--xc-warn-soft);
   padding: 14px;
   border-radius: 10px;
 }
@@ -227,7 +227,7 @@
 .xc-kiosk .xc-shell-main #bank-reference .bank-compare {
   overflow: auto;
   max-height: 480px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--xc-line);
   border-radius: 12px;
 }
 
@@ -240,14 +240,14 @@
 
 .xc-kiosk .xc-shell-main #bank-reference th {
   padding: 12px;
-  background: #eef8f0;
+  background: var(--xc-ok-soft);
   position: sticky;
   top: 0;
 }
 
 .xc-kiosk .xc-shell-main #bank-reference td {
   padding: 10px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--xc-line);
 }
 
 @media (max-width: 760px) {
@@ -292,7 +292,7 @@
 .xc-kiosk .kiosk-screen-settings {
   margin: 24px 0;
   padding: 18px 22px;
-  background: #fbfafb;
+  background: var(--xc-surface);
   border: 1px solid var(--line);
   border-radius: 14px;
 }

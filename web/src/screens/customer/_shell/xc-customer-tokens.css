@@ -1,130 +1,56 @@
-/* The customer phone app's look, copied from the customer kiosk the owner approved ("ทำแบบ kiosk เลย", 2026-11-05).
-   Source of every value: api/static/kiosk/xc-tokens.css (the colour, radius and shadow scale) and the kiosk's
-   computed phone layout at 390 px (api/static/kiosk/kiosk.css + kiosk-xchange.css).
-   The tokens hang off `.xc-customer` (the customer shell's root, and the root of the shell-less /c and /q pages),
-   never off :root (screen-look gate rule 3), so no staff screen picks them up.
-   Every customer stylesheet reads colours from these variables; none hard-codes its own. */
+/* xc-look: legacy-colours */
+/* xc-customer-tokens.css — customer aliases of xc-theme (OL-5d, #6456).
+   Read by customer screens; one value source in shared/ui/xc-theme.css. */
 
-.xc-customer {
-  /* Brand (wine red) — xc-tokens.css. */
-  --xc-brand-950: #650024;
-  --xc-brand-900: #85002f;
-  --xc-brand-800: #8b1239;
-  --xc-brand-700: #a5003c;
-  --xc-brand-500: #c45a82;
-  --xc-brand-300: #e2a9c0;
-  --xc-brand-200: #ecd0db;
-  --xc-brand-100: #f6e6ec;
-  --xc-brand-50: #fdf1f5;
-
-  /* Warm neutrals — xc-tokens.css. */
-  --xc-gray-950: #17161a;
-  --xc-gray-900: #251e22;
-  --xc-gray-800: #3a3439;
-  --xc-gray-700: #54494f;
-  --xc-gray-600: #6c6268;
-  --xc-gray-500: #8f8790;
-  --xc-gray-400: #b3b0b6;
-  --xc-gray-300: #cdc8ce;
-  --xc-gray-200: #dcd8dd;
-  --xc-gray-150: #e7e2e6;
-  --xc-gray-100: #eeecef;
-  --xc-gray-75: #f4f4f6;
-  --xc-gray-50: #f7f5f6;
-  --xc-gray-25: #faf8f7;
-  --xc-gray-0: #ffffff;
-
-  /* Status hues — xc-tokens.css. */
-  --xc-green-800: #205e49;
-  --xc-green-700: #1d7450;
-  --xc-green-200: #c3dccf;
-  --xc-green-50: #eff8f2;
-  --xc-amber-800: #805516;
-  --xc-amber-700: #986814;
-  --xc-amber-300: #e9c48f;
-  --xc-amber-50: #fff6e0;
-  --xc-red-700: #a4371f;
-  --xc-red-200: #f0c4b8;
-  --xc-red-50: #fff0eb;
-  --xc-teal-900: #18333e;
-  --xc-teal-200: #c6d6dd;
-  --xc-teal-50: #eef4f6;
-  --xc-scrim: #21151eb3;
-
-  /* Kiosk surfaces measured at 390 px: page canvas, header paper, white cards. */
-  --xc-canvas: var(--xc-gray-50);
-  --xc-header: #fffdf8;
-  --xc-card: var(--xc-gray-0);
-  --xc-field: var(--xc-gray-50);
-  --xc-key: var(--xc-gray-100);
-
-  /* Semantic roles. These are the names the customer stylesheets already read. */
-  --xc-brand: var(--xc-brand-700);
-  --xc-brand-strong: var(--xc-brand-900);
-  --xc-brand-soft: var(--xc-brand-50);
-  --xc-brand-line: var(--xc-brand-200);
-  --xc-on-brand: var(--xc-gray-0);
-  --xc-primary: var(--xc-brand-700);
-  --xc-primary-hover: var(--xc-brand-900);
-  --xc-text: var(--xc-gray-900);
-  --xc-ink: var(--xc-gray-900);
-  --xc-text-muted: #7a7178;
-  --xc-muted: var(--xc-gray-600);
-  --xc-border: var(--xc-gray-150);
-  --xc-border-light: var(--xc-gray-100);
-  --xc-line: var(--xc-gray-150);
+.xc-customer.xc-theme,
+.xc-customer .xc-theme {
+  /* Customer values that differ from xc-theme defaults. */
   --xc-bg: var(--xc-gray-50);
-  --xc-surface: var(--xc-gray-0);
-  --xc-surface-hover: var(--xc-brand-50);
-  --xc-surface-subtle: var(--xc-gray-25);
-  --xc-unread-bg: var(--xc-brand-50);
-  --xc-badge-bg: var(--xc-brand-700);
-
-  --xc-success: var(--xc-green-700);
-  --xc-success-text: var(--xc-green-800);
-  --xc-success-bg: var(--xc-green-50);
-  --xc-success-border: var(--xc-green-200);
-  --xc-warning: var(--xc-amber-700);
-  --xc-warning-text: var(--xc-amber-800);
-  --xc-warning-bg: var(--xc-amber-50);
-  --xc-warning-border: var(--xc-amber-300);
-  --xc-danger: var(--xc-red-700);
-  --xc-danger-text: var(--xc-red-700);
-  --xc-danger-bg: var(--xc-red-50);
-  --xc-danger-border: var(--xc-red-200);
-  --xc-error-text: var(--xc-red-700);
-  --xc-error-bg: var(--xc-red-50);
-  --xc-error-border: var(--xc-red-200);
-  --xc-info: var(--xc-teal-900);
-  --xc-info-bg: var(--xc-teal-50);
-  --xc-info-border: var(--xc-teal-200);
-  --xc-focus: var(--xc-brand-700);
-
-  /* Type — the kiosk's own stack (xc-tokens.css --xc-font-sans). */
-  --xc-font-sans: 'XC Noto Sans Thai', Arial, Tahoma, sans-serif;
-  --xc-font-mono: Consolas, ui-monospace, monospace;
-
-  /* Radius — kiosk: fields 10px, choice cards and primary buttons 12px, the big step card 22px. */
-  --xc-radius-sm: 6px;
+  --xc-canvas: var(--xc-gray-50);
   --xc-radius-md: 10px;
   --xc-radius-lg: 12px;
+  --xc-font-sans: 'XC Noto Sans Thai', Arial, Tahoma, sans-serif;
+
+  /* Customer-only aliases of xc-theme tokens. */
+  --xc-header: #fffdf8;
+  --xc-card: var(--xc-surface);
+  --xc-field: var(--xc-gray-50);
+  --xc-key: var(--xc-gray-100);
+  --xc-brand-line: var(--xc-brand-200);
+  --xc-primary: var(--xc-brand);
+  --xc-primary-hover: var(--xc-brand-strong);
+  --xc-text: var(--xc-ink);
+  --xc-text-muted: #7a7178;
+  --xc-border: var(--xc-line);
+  --xc-border-light: var(--xc-gray-100);
+  --xc-surface-hover: var(--xc-brand-soft);
+  --xc-surface-subtle: var(--xc-paper);
+  --xc-unread-bg: var(--xc-brand-soft);
+  --xc-badge-bg: var(--xc-brand);
+  --xc-success-text: var(--xc-green-800);
+  --xc-success-bg: var(--xc-success-soft);
+  --xc-success-border: var(--xc-green-200);
+  --xc-warning-text: var(--xc-amber-800);
+  --xc-warning-bg: var(--xc-warning-soft);
+  --xc-warning-border: var(--xc-amber-300);
+  --xc-danger-text: var(--xc-danger);
+  --xc-danger-bg: var(--xc-danger-soft);
+  --xc-danger-border: var(--xc-brand-200);
+  --xc-error-text: var(--xc-danger);
+  --xc-error-bg: var(--xc-danger-soft);
+  --xc-error-border: var(--xc-brand-200);
+  --xc-info-bg: var(--xc-teal-50);
+  --xc-info-border: var(--xc-gray-200);
   --xc-radius-card: 22px;
-  --xc-radius-pill: 999px;
-
-  /* Elevation — kiosk: the step card's wine-tinted shadow. */
-  --xc-shadow-sm: 0 1px 4px #33202b12;
   --xc-shadow-card: 0 12px 32px #54001e1f;
-  --xc-shadow-brand: 0 6px 18px #a5003c1f;
-
-  font-family: var(--xc-font-sans);
-  color: var(--xc-text);
-  background: var(--xc-canvas);
+  --xc-red-200: var(--xc-brand-200);
+  --xc-teal-200: #c6d6dd;
+  --xc-teal-50: #eef4f6;
 }
 
 /* The page under a customer screen is the kiosk's warm canvas edge to edge. */
 body:has(.xc-customer) {
   margin: 0;
-  background: var(--xc-gray-50, #f7f5f6);
 }
 
 /* Base pieces every customer screen shares: the kiosk's fields, buttons, headings and cards.
@@ -276,3 +202,9 @@ body:has(.xc-customer) {
   color: var(--xc-text);
   font-weight: 600;
 }
+
+/* OL-1R-v5 (#6528): rate freshness colour for customer pages only (7f820b16 value). */
+.xc-customer .xc-rate-freshness {
+  color: #6b7280;
+}
+

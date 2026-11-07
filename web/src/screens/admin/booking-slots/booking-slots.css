@@ -1,10 +1,10 @@
-/* BK-9 (#1410): booking-slots admin screen styles */
+/* BK-9 (1410): booking-slots admin screen styles */
 .booking-slots-screen {
   padding: 1rem;
 }
 
 .error {
-  color: var(--color-danger, #dc2626);
+  color: var(--xc-danger);
 }
 
 .field-error {

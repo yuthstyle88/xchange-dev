@@ -1,5 +1,5 @@
 /* market-sources.css — MarketSources.tsx: one chip per market source (name, time, stale / error, refresh), in the
-   admin palette (FE pricing-board, #564, #3760; look 2026-11-05). */
+   admin palette (FE pricing-board, 564, 3760; look 2026-11-05). */
 
 .xc-admin .xc-content.xc-content .xc-market-sources {
   display: flex;
@@ -27,7 +27,7 @@
   padding: 6px 6px 6px 12px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fcfafb;
+  background: var(--xc-paper);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -46,8 +46,8 @@
 .xc-admin .xc-content.xc-content .xc-source-stale {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #fff9ec;
-  color: #795919;
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
   font-size: 11px;
   font-weight: 700;
 }
@@ -65,9 +65,9 @@
   margin-left: auto;
   min-height: 36px;
   padding: 4px 12px;
-  border: 1px solid #edd4df;
+  border: 1px solid var(--xc-brand-200);
   border-radius: 9px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--brand);
   font-size: 13px;
   font-weight: 700;

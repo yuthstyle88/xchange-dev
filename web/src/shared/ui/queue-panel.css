@@ -1,14 +1,14 @@
-/* Ported from xchange-v2-source@4d0bdbb:src/devices-public/queue-panel.css (LK-3, #632) */
+/* Ported from xchange-v2-source@4d0bdbb:src/devices-public/queue-panel.css (LK-3, #632 & OL-1 #6360) */
 
 .queue-hub,
 .admin-queue-bar {
   margin: 18px 28px 0;
   padding: 18px 22px;
-  border: 1px solid #e7d7df;
+  border: 1px solid var(--xc-line);
   border-radius: 18px;
-  background: #fff;
-  box-shadow: 0 5px 20px #39152b08;
-  color: #2b2430;
+  background: var(--xc-surface);
+  box-shadow: var(--xc-shadow-sm);
+  color: var(--xc-ink);
 }
 
 .queue-hub-head,
@@ -28,7 +28,7 @@
 .queue-hub p,
 .queue-bar-status {
   margin: 6px 0;
-  color: #716572;
+  color: var(--xc-muted);
 }
 
 .queue-hub .queue-primary,
@@ -41,8 +41,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #a5003c !important;
-  color: #fff !important;
+  background: var(--xc-brand) !important;
+  color: var(--xc-on-brand) !important;
   padding: 12px 18px;
   border: 0;
   border-radius: 10px;
@@ -54,7 +54,7 @@
 .queue-live,
 .queue-workers-list {
   font-size: 13px;
-  border-top: 1px solid #f0e7eb;
+  border-top: 1px solid var(--xc-line);
   margin-top: 12px;
   padding-top: 8px;
 }
@@ -77,7 +77,7 @@
 .queue-sound span,
 .queue-sound-controls span {
   font-size: 11px;
-  color: #776d75;
+  color: var(--xc-muted);
 }
 
 .queue-dialog {
@@ -87,13 +87,13 @@
   border: 0;
   border-radius: 22px;
   padding: 24px;
-  color: #302630;
-  background: #faf8fa;
-  box-shadow: 0 25px 90px #21051140;
+  color: var(--xc-ink);
+  background: var(--xc-paper);
+  box-shadow: var(--xc-shadow-lg);
 }
 
 .queue-dialog::backdrop {
-  background: #24172399;
+  background: var(--xc-scrim);
   backdrop-filter: blur(3px);
 }
 
@@ -105,7 +105,7 @@
   gap: 20px;
   position: sticky;
   top: -24px;
-  background: #faf8fa;
+  background: var(--xc-paper);
   z-index: 1;
   padding: 12px 0;
 }
@@ -122,12 +122,12 @@
 .queue-hub button:not(.queue-primary),
 .admin-queue-bar button:not(.queue-primary):not(.queue-bar-open-button) {
   cursor: pointer;
-  border: 1px solid #e0d5db;
+  border: 1px solid var(--xc-line);
   border-radius: 10px;
-  background: white;
+  background: var(--xc-surface);
   padding: 10px 16px;
   font: inherit;
-  color: #6b2945;
+  color: var(--xc-brand);
 }
 
 .xc-queue-tabs,
@@ -140,15 +140,15 @@
 
 .xc-queue-tabs button[aria-pressed=true],
 .queue-tabs button[aria-pressed=true] {
-  background: #a5003c;
-  color: #fff;
-  border-color: #a5003c;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  border-color: var(--xc-brand);
 }
 
 .queue-message,
 .xc-queue-panel [role=status] {
   font-size: 13px;
-  color: #776778;
+  color: var(--xc-muted);
 }
 
 .xc-queue-list,
@@ -160,8 +160,8 @@
 .xc-queue-card,
 .queue-order {
   padding: 20px;
-  background: #fff;
-  border: 1px solid #e8dee4;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 16px;
 }
 
@@ -183,14 +183,14 @@
   font-size: 12px;
   padding: 5px 10px;
   border-radius: 30px;
-  background: #f8edf1;
-  color: #a5003c;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
 }
 
 .queue-refs {
   overflow-wrap: anywhere;
   font-size: 12px;
-  color: #80727d;
+  color: var(--xc-muted);
 }
 
 .queue-times {
@@ -202,7 +202,7 @@
 
 .queue-times dt {
   font-size: 12px;
-  color: #847482;
+  color: var(--xc-muted);
 }
 
 .queue-times dd {
@@ -221,8 +221,8 @@
 .queue-assigned {
   padding: 8px 12px;
   border-radius: 8px;
-  background: #fff5df;
-  color: #805918;
+  background: var(--xc-warning-soft);
+  color: var(--xc-warning);
   font-size: 14px;
 }
 
@@ -238,7 +238,7 @@
 .queue-empty {
   padding: 32px;
   text-align: center;
-  color: #847482;
+  color: var(--xc-muted);
 }
 
 .queue-toast,
@@ -248,10 +248,10 @@
   top: 24px;
   z-index: 1050;
   padding: 18px;
-  background: #fff;
-  border: 2px solid #a5003c;
+  background: var(--xc-surface);
+  border: 2px solid var(--xc-brand);
   border-radius: 16px;
-  box-shadow: 0 10px 40px #2b092d25;
+  box-shadow: var(--xc-shadow-md);
   max-width: 340px;
 }
 
@@ -269,14 +269,14 @@
   max-width: 1000px;
   margin: 32px auto;
   padding: 20px;
-  font: 16px/1.6 Tahoma, Arial, sans-serif;
-  color: #302630;
+  font: 16px/1.6 var(--xc-font-sans);
+  color: var(--xc-ink);
 }
 
 .queue-dialog :focus-visible,
 .queue-hub :focus-visible,
 .admin-queue-bar :focus-visible {
-  outline: 3px solid #a5003c;
+  outline: 3px solid var(--xc-brand);
   outline-offset: 3px;
 }
 

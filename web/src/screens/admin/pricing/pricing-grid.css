@@ -11,7 +11,7 @@
   padding: 28px 16px;
   border: 1px dashed var(--line);
   border-radius: 16px;
-  background: #fff;
+  background: var(--xc-surface);
   text-align: center;
   color: var(--muted);
   font-size: 14px;
@@ -41,7 +41,7 @@
   padding: 12px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--ink);
   font-size: 15px;
   font-weight: 700;
@@ -49,7 +49,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-grid .pricing-grid-toggle:hover {
-  border-color: #edd4df;
+  border-color: var(--xc-brand-200);
 }
 
 .xc-admin .xc-content.xc-content .pricing-grid-caret {

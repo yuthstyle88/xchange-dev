@@ -257,7 +257,14 @@ describe('V1-receipt-sample: the screen', () => {
     setLang('en');
     const host = mount();
     expect(banner(host).textContent).toBe(screenLookup.en[key!]);
-    expect(THAI.test(host.textContent ?? ''), `no Thai on the English screen: ${host.textContent}`).toBe(false);
+    // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 and §3): the language switch group names each
+    // language in its own script (ไทย | EN) by design, so it is left out of the no-Thai check.
+    const screen = host.cloneNode(true) as HTMLElement;
+    for (const g of Array.from(screen.querySelectorAll('[role="group"]'))) {
+      const names = Array.from(g.querySelectorAll('button')).map((b) => b.textContent?.trim());
+      if (names.includes('ไทย') && names.includes('EN')) g.remove();
+    }
+    expect(THAI.test(screen.textContent ?? ''), `no Thai on the English screen: ${screen.textContent}`).toBe(false);
   });
 
   it('a language switch while the sample is on screen changes the banner in place', () => {

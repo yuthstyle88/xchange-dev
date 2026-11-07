@@ -2,6 +2,7 @@ export const th = {
   'field.password.show': 'แสดงรหัสผ่าน',
   'field.password.hide': 'ซ่อนรหัสผ่าน',
   'shell.langSwitch': 'เปลี่ยนภาษาเป็น {language}',
+  'shell.menu': 'เมนู',
   'shell.account.branch': 'สาขา {branch}',
   'shell.account.signOut': 'ออกจากระบบ',
   'shell.account.switchBranch': 'สลับสาขา',

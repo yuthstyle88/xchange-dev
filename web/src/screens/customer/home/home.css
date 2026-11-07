@@ -432,3 +432,16 @@
 .xc-home-service-name {
   line-height: 1.25;
 }
+
+@media (max-width: 480px) {
+  .xc-home-form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .xc-home-form-row > * {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+}
+

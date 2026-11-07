@@ -1,110 +1,83 @@
-/* shell.css — LK-1 (#627, #630): Signed-in v3 pages shell look */
+/* shell.css — LK-1 (#627, #630) & OL-1 (#6360): Signed-in v3 pages shell look */
 
-/* Reset default body margin only on pages rendering AppShell */
 body:has(.xc-shell) {
   margin: 0;
 }
 
-/* Base container fallback */
 .xc-shell {
   min-height: 100vh;
   box-sizing: border-box;
+  background: var(--xc-bg);
+  color: var(--xc-ink);
+  font: 15px/1.6 var(--xc-font-sans);
 }
 
-/* Banner slot (above header) */
 .xc-shell-banner {
   box-sizing: border-box;
 }
 
-/* Header layout ported from v2 devices.css */
+/* Header layout (design §2.3 & mock-up) */
 .xc-shell-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 5%;
-  background: white;
-  border-bottom: 1px solid var(--line, #e5e1e7);
-  color: var(--ink, #25232b);
-  font: 15px/1.65 -apple-system, BlinkMacSystemFont, 'Tahoma', sans-serif;
+  gap: 12px;
+  padding: 14px 24px;
+  background: var(--xc-surface);
+  border-bottom: 1px solid var(--xc-line);
+  color: var(--xc-ink);
+  font: 15px/1.6 var(--xc-font-sans);
   box-sizing: border-box;
 }
 
 /* Brand line */
 .xc-shell-brand {
   font-weight: 850;
-  color: var(--ink, #25232b);
+  color: var(--xc-ink);
   font-size: 23px;
   letter-spacing: -1px;
   text-decoration: none;
 }
 
 .xc-shell-brand span {
-  color: var(--brand, #a90045);
+  color: var(--xc-brand);
 }
 
 .xc-shell-brand small {
   display: block;
   font-size: 10px;
   letter-spacing: 2px;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
 }
 
-/* Nav links */
-.xc-shell-nav,
-.xc-shell-nav nav {
-  display: flex;
-  gap: 20px;
-}
-
-.xc-shell-nav a {
-  color: var(--brand, #a90045);
-}
-
-.xc-shell-nav a:focus-visible {
-  outline: 3px solid #de7daa;
-  outline-offset: 2px;
-}
-
-/* Nav button & language switch ported from v2 devices.css (LK-1 follow-up, #706) */
-.xc-shell-nav button,
-.xc-shell-header > button {
-  font: inherit;
-  border: 1px solid #d3cad5;
-  background: white;
-  color: var(--brand, #a90045);
-  padding: 10px 14px;
-  border-radius: 7px;
-  font-weight: 650;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-
-.xc-shell-nav button:disabled,
-.xc-shell-header > button:disabled {
-  opacity: .5;
-  cursor: wait;
-}
-
-.xc-shell-nav button:focus-visible,
-.xc-shell-header > button:focus-visible {
-  outline: 3px solid #de7daa;
-  outline-offset: 2px;
-}
-
-/* Title */
+/* Title & brand mark inline in the header */
 .xc-shell-title {
-  font-size: 30px;
+  order: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
   line-height: 1.3;
-  margin: 0 0 12px;
+  margin: 0;
+  color: var(--xc-ink);
   box-sizing: border-box;
 }
 
-.xc-shell-header .xc-shell-title {
-  margin: 0;
+.xc-shell-header .xc-shell-title::before {
+  content: 'XC';
+  width: 32px;
+  height: 32px;
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  display: inline-grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex: none;
 }
 
-/* v2 devices.html:3 — the header holds only the brand and the nav; the page title is the body heading */
-/* v2 kiosk-currencies.html:1 — no header; the page heading is the body h1 */
 .xc-devices .xc-shell-title,
 .xc-kiosk .xc-shell-title {
   position: absolute;
@@ -118,40 +91,136 @@ body:has(.xc-shell) {
   border: 0;
 }
 
+/* Panel & inline nav above 760px */
+.xc-shell-panel {
+  order: 2;
+  display: flex;
+  align-items: center;
+}
+
+.xc-shell-panel:empty,
+.xc-shell-panel-account,
+.xc-shell-panel-footer {
+  display: none;
+}
+
+.xc-shell-nav,
+.xc-shell-nav nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.xc-shell-nav a {
+  padding: 8px 12px;
+  border-radius: var(--xc-radius-md);
+  color: var(--xc-muted);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.xc-shell-nav a[aria-current="page"],
+.xc-shell-nav a.on {
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
+}
+
+.xc-shell-nav a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+.xc-shell-nav button,
+.xc-shell-header > button:not(.xc-shell-menu-btn) {
+  font: inherit;
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  padding: 8px 14px;
+  border-radius: var(--xc-radius-md);
+  font-weight: 600;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.xc-shell-nav button:disabled,
+.xc-shell-header > button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-shell-nav button:focus-visible,
+.xc-shell-header > button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+.xc-shell-header > .xc-lang-switch {
+  order: 3;
+  margin-left: auto;
+}
+
+/* Mobile menu button (hidden above 760px) */
+.xc-shell-menu-btn {
+  order: 4;
+  display: none;
+  width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.xc-shell-menu-btn[aria-expanded="true"] {
+  background: var(--xc-brand-soft);
+  border-color: var(--xc-brand-200);
+  color: var(--xc-brand);
+}
+
 /* Main container */
 .xc-shell-main {
   max-width: 1440px;
   margin: auto;
-  padding: 32px 4%;
+  padding: 24px 16px 48px;
   box-sizing: border-box;
 }
 
 /* Session alert / message */
 .xc-shell-alert {
   padding: 12px 16px;
-  background: #fce4eb;
-  border: 1px solid #e7b7c8;
-  border-radius: 6px;
-  color: #851139;
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
+  border-radius: var(--xc-radius-sm);
+  color: var(--xc-danger);
   box-sizing: border-box;
 }
 
 /* Version footer */
 .xc-shell-footer {
   text-align: center;
-  padding: 30px;
-  color: var(--muted, #706a77);
+  padding: 24px 16px;
+  color: var(--xc-muted);
   font-size: 12px;
   box-sizing: border-box;
 }
 
-/* Account bar ported from v2 account-bar.js */
+/* Account bar */
 .account-bar {
-  background: #29232d !important;
-  border-bottom: 3px solid #ab0044;
-  font: 14px/1.5 Arial, Tahoma, sans-serif;
-  padding: 12px 20px;
-  color: #fff;
+  background: var(--xc-gray-900) !important;
+  border-bottom: 3px solid var(--xc-brand);
+  font: 14px/1.5 var(--xc-font-sans);
+  padding: 10px 24px;
+  color: var(--xc-on-brand);
   position: relative;
   z-index: 10;
   display: flex;
@@ -160,11 +229,8 @@ body:has(.xc-shell) {
   align-items: center;
 }
 
-/* v2 account-bar.js:12 put the bar first in <body> (`document.body.prepend(bar)`): a strip across
-   the full width above the header. AppShell renders it as the shell's first child for the same
-   reason, so it spans whatever width the shell gives it, whatever padding a screen's header uses. */
 .account-bar a {
-  color: #fff;
+  color: var(--xc-on-brand);
   white-space: nowrap;
   text-decoration: none !important;
 }
@@ -173,71 +239,147 @@ body:has(.xc-shell) {
   text-decoration: underline !important;
 }
 
-/* Account bar button from v2 account-bar.js.
-   v2 injects two style blocks: block 1 specifies padding: 8px 16px, but block 2
-   (injected later) specifies padding: 9px 16px. Because block 2 is injected last,
-   padding: 9px 16px wins at equal specificity in the cascade. */
 .account-bar button {
   all: unset;
   box-sizing: border-box;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 9px 16px;
-  border-radius: 10px;
-  border: 1px solid #eadbe1;
-  background: #fff;
-  color: #a5003c;
-  font: 600 14px/1.2 Arial, Tahoma, sans-serif;
+  min-height: 36px;
+  padding: 6px 14px;
+  border-radius: var(--xc-radius-md);
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  font: 600 14px/1.2 var(--xc-font-sans);
   white-space: nowrap;
 }
 
 .account-bar button:focus-visible {
-  outline: 3px solid #ffd88c;
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
 }
 
-@media (max-width: 700px) {
-  .account-bar {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    gap: 12px;
-    padding: 8px 12px;
-    font-size: 13px;
-    scrollbar-width: none;
-  }
-  .account-bar > * {
-    flex: none;
-  }
+/* Mobile menu & layout at 760px or less (design §2.3 & ticket §1 item 5) */
+@media (max-width: 760px) {
   .account-bar button {
-    min-height: 36px;
-    padding: 6px 12px;
-    font-size: 13px;
+    display: block;
+    white-space: nowrap;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
-}
 
-@media (max-width: 640px) {
-  .xc-shell-header {
-    align-items: flex-start;
-    gap: 15px;
+  .account-bar > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+
+  .xc-shell-header {
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .xc-shell-title {
+    order: 1;
+    flex: 1;
+    min-width: 0;
+    font-size: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .xc-shell-header > .xc-lang-switch {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .xc-shell-menu-btn {
+    order: 3;
+    display: inline-flex;
+  }
+
+  .xc-shell-panel {
+    order: 4;
+    flex: 0 0 calc(100% + 32px);
+    width: calc(100% + 32px);
+    box-sizing: border-box;
+    display: none;
+    flex-direction: column;
+    align-items: stretch;
+    margin: 8px -16px -12px;
+    background: var(--xc-surface);
+    border-top: 1px solid var(--xc-line);
+    box-shadow: var(--xc-shadow-md);
+  }
+
+  .xc-shell-panel[data-open="true"] {
+    display: flex;
+  }
+
+  .xc-shell-panel-account {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--xc-gray-100);
+    font-size: 14px;
+    color: var(--xc-ink);
+  }
+
+  .xc-shell-panel-user {
+    font-weight: 600;
+  }
+
+  .xc-shell-panel-branch {
+    display: inline-flex;
+    padding: 3px 10px;
+    border-radius: var(--xc-radius-pill);
+    background: var(--xc-brand-soft);
+    color: var(--xc-brand);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
   .xc-shell-nav,
   .xc-shell-nav nav {
-    flex-direction: column;
-    gap: 4px;
-    font-size: 12px;
+    display: grid;
+    gap: 2px;
+    padding: 8px;
+    width: 100%;
+    box-sizing: border-box;
   }
-  .xc-shell-main {
-    padding: 24px 16px;
-  }
-  .xc-shell-title {
-    font-size: 25px;
-  }
-}
 
-@media (pointer: coarse) {
-  .account-bar button {
+  .xc-shell-nav a {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 12px;
+    border-radius: var(--xc-radius-lg);
+    color: var(--xc-ink);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .xc-shell-panel-footer {
+    display: block;
+    padding: 8px 16px 16px;
+  }
+
+  .xc-shell-panel-signout {
+    width: 100%;
     min-height: 44px;
+  }
+
+  .xc-shell-main {
+    padding: 16px 12px 40px;
   }
 }

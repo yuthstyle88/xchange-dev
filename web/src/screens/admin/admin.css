@@ -1,15 +1,15 @@
-/* LK-5 (#634): v3 admin look ported from v2 admin-html.ts and admin-workspace.css */
+/* LK-5 (634) & OL-4a (6437): v3 admin look ported from v2 admin-html.ts and admin-workspace.css */
 
 /* ── Source 1: v2 admin-html.ts inline <style> (palette & scoped base rules) ── */
 
 .xc-admin {
-  --brand: #a5003c;
-  --ink: #17181b;
-  --muted: #676a73;
-  --line: #e5e6ea;
-  --bg: #f5f6f8;
-  --soft: #fbf0f4;
-  --green: #187151;
+  --brand: var(--xc-brand);
+  --ink: var(--xc-ink);
+  --muted: var(--xc-muted);
+  --line: var(--xc-line);
+  --bg: var(--xc-bg);
+  --soft: var(--xc-brand-soft);
+  --green: var(--xc-ok);
   margin: 0;
   font: 16px/1.6 Tahoma, Arial, sans-serif;
   color: var(--ink);
@@ -62,15 +62,15 @@
 
 .xc-admin .xc-content.xc-content input:not([type="checkbox"]), .xc-admin .xc-content.xc-content select {
   width:100%;
-  background:#fff;
-  border:1px solid #cdd0d7;
+  background:var(--xc-surface);
+  border:1px solid var(--xc-line);
   color:var(--ink);
   padding:10px 12px;
   min-height:44px;
 }
 
 .xc-admin .xc-content.xc-content button:focus-visible, .xc-admin .xc-content.xc-content a:focus-visible, .xc-admin .xc-content.xc-content input:focus-visible, .xc-admin .xc-content.xc-content select:focus-visible {
-  outline:3px solid #ca5b85;
+  outline:3px solid var(--xc-focus);
   outline-offset:3px;
 }
 
@@ -108,7 +108,7 @@
   position:fixed;
   inset:0 auto 0 0;
   width:248px;
-  background:#fff;
+  background:var(--xc-surface);
   border-right:1px solid var(--line);
   display:flex;
   flex-direction:column;
@@ -147,7 +147,7 @@
   align-items:center;
   border-radius:7px;
   font-size:14px;
-  color:#575960;
+  color:var(--xc-gray-700);
 }
 
 .xc-admin .xc-content.xc-content nav a span[aria-hidden="true"] {
@@ -164,7 +164,7 @@
 }
 
 .xc-admin .xc-content.xc-content nav a:hover {
-  background:#f5f5f7;
+  background:var(--xc-gray-75);
 }
 
 .xc-admin .xc-content.xc-content .sidebar-bottom, .xc-admin .xc-content .admin-sidebar-bottom {
@@ -191,7 +191,7 @@
 
 .xc-admin .xc-shell-header {
   height:83px;
-  background:#fff;
+  background:var(--xc-surface);
   border-bottom:1px solid var(--line);
   padding:0 38px;
   display:flex;
@@ -224,16 +224,16 @@
   border-radius:50%;
   display:grid;
   place-items:center;
-  background:#17181b;
-  color:white;
+  background:var(--xc-ink);
+  color:var(--xc-on-brand);
   font-size:12px;
 }
 
 .xc-admin .xc-content.xc-content .demo-badge {
   font-size:12px;
-  border:1px solid #d5bd8b;
-  background:#fff9ec;
-  color:#795919;
+  border:1px solid var(--xc-amber-300);
+  background:var(--xc-warn-soft);
+  color:var(--xc-warn);
   padding:4px 10px;
   border-radius:5px;
 }
@@ -265,18 +265,18 @@
 
 .xc-admin .xc-content.xc-content .primary {
   background:var(--brand);
-  color:white;
+  color:var(--xc-on-brand);
   border-color:var(--brand);
 }
 
 .xc-admin .xc-content.xc-content .primary:hover {
-  background:#870032;
+  background:var(--xc-brand-strong);
 }
 
 .xc-admin .xc-content.xc-content .secondary {
-  background:white;
-  border-color:#d6d8df;
-  color:#363840;
+  background:var(--xc-surface);
+  border-color:var(--xc-line);
+  color:var(--xc-ink);
 }
 
 .xc-admin .xc-content.xc-content .text-button {
@@ -294,22 +294,22 @@
   align-items:center;
   gap:13px;
   padding:13px 17px;
-  background:#f1f2f5;
-  border:1px solid #dee0e6;
+  background:var(--xc-bg);
+  border:1px solid var(--xc-line);
   border-radius:8px;
   font-size:12px;
-  color:#5d616b;
+  color:var(--xc-muted);
   margin-bottom:24px;
 }
 
 .xc-admin .xc-content.xc-content .notice strong {
   display:block;
   font-size:14px;
-  color:#40444d;
+  color:var(--xc-ink);
 }
 
 .xc-admin .xc-content.xc-content .notice-icon {
-  border:1px solid #8c919b;
+  border:1px solid var(--xc-gray-500);
   border-radius:50%;
   width:19px;
   height:19px;
@@ -340,7 +340,7 @@
 
 .xc-admin .xc-content.xc-content .date-dash {
   padding-bottom:10px;
-  color:#a6a9b1;
+  color:var(--xc-gray-400);
 }
 
 
@@ -375,7 +375,7 @@
 .xc-admin .xc-content.xc-content .activity-track {
   height:9px;
   border-radius:3px;
-  background:#f0f1f4;
+  background:var(--xc-gray-100);
   overflow:hidden;
 }
 
@@ -386,7 +386,7 @@
 }
 
 .xc-admin .xc-content.xc-content .activity-fill.sell {
-  background:#24262d;
+  background:var(--xc-ink);
 }
 
 .xc-admin .xc-content.xc-content .activity-key {
@@ -409,13 +409,13 @@
   justify-content:space-between;
   font-size:13px;
   padding:6px 0;
-  color:#d6d7de;
+  color:var(--xc-gray-200);
 }
 
 .xc-admin .xc-content.xc-content .dark-note {
   font-size:12px;
-  color:#b3b5bf;
-  border-top:1px solid #393a42;
+  color:var(--xc-gray-400);
+  border-top:1px solid var(--xc-gray-800);
   margin-top:14px;
   padding-top:13px;
 }
@@ -435,7 +435,7 @@
   text-align:left;
   font-weight:400;
   color:var(--muted);
-  background:#fafafb;
+  background:var(--xc-paper);
   font-size:12px;
   padding:12px 24px;
   border-block:1px solid var(--line);
@@ -443,7 +443,7 @@
 
 .xc-admin .xc-content.xc-content td {
   padding:16px 24px;
-  border-bottom:1px solid #eeeff2;
+  border-bottom:1px solid var(--xc-gray-100);
 }
 
 .xc-admin .xc-content.xc-content tr:last-child td {
@@ -451,7 +451,7 @@
 }
 
 .xc-admin .xc-content.xc-content tbody tr:hover {
-  background:#fcfafb;
+  background:var(--xc-paper);
 }
 
 .xc-admin .xc-content.xc-content .num {
@@ -481,23 +481,23 @@
   padding:3px 9px;
   border-radius:5px;
   font-size:12px;
-  background:#eaf6ef;
-  color:#246446;
+  background:var(--xc-ok-soft);
+  color:var(--xc-ok);
 }
 
 .xc-admin .xc-content.xc-content .pill.cancel {
-  background:#f1f1f4;
-  color:#72747d;
+  background:var(--xc-gray-100);
+  color:var(--xc-muted);
 }
 
 .xc-admin .xc-content.xc-content .pill.buy {
-  background:#fbecf2;
+  background:var(--xc-brand-soft);
   color:var(--brand);
 }
 
 .xc-admin .xc-content.xc-content .pill.sell, .xc-admin .xc-content.xc-content .pill.neutral {
-  background:#eff0f4;
-  color:#4b4f5b;
+  background:var(--xc-gray-100);
+  color:var(--xc-gray-700);
 }
 
 .xc-admin .xc-content.xc-content .filters {
@@ -541,7 +541,7 @@
   height:35px;
   display:inline-grid;
   place-items:center;
-  border:1px solid #e2e3e9;
+  border:1px solid var(--xc-line);
   border-radius:50%;
   font:18px Georgia;
   margin-right:12px;
@@ -580,7 +580,7 @@
   display:flex;
   align-items:center;
   justify-content:space-between;
-  color:#838690;
+  color:var(--xc-muted);
   font-size:12px;
   padding-top:7px;
 }
@@ -593,14 +593,14 @@
   border:0;
   padding:26px;
   border-radius:12px;
-  box-shadow:0 24px 100px #0003;
+  box-shadow:var(--xc-shadow-lg);
   width:min(590px,calc(100% - 32px));
   max-height:90vh;
   overflow:auto;
 }
 
 .xc-admin .xc-content.xc-content dialog::backdrop {
-  background:#11152280;
+  background:var(--xc-scrim);
   backdrop-filter:blur(3px);
 }
 
@@ -612,7 +612,7 @@
 }
 
 .xc-admin .xc-content.xc-content .icon-button {
-  background:#f3f4f6;
+  background:var(--xc-gray-75);
   font-size:25px;
   padding:0;
   width:40px;
@@ -651,7 +651,7 @@
 }
 
 .xc-admin .xc-content.xc-content .error {
-  color:#a5003c;
+  color:var(--xc-danger);
   font-size:14px;
 }
 
@@ -683,9 +683,9 @@
 }
 
 .xc-admin .xc-content.xc-content .danger {
-  background:white;
-  border-color:#a5003c;
-  color:#a5003c;
+  background:var(--xc-surface);
+  border-color:var(--xc-danger);
+  color:var(--xc-danger);
 }
 
 .xc-admin .xc-content.xc-content .dialog-note {
@@ -701,13 +701,13 @@
 
 .xc-admin .add-note {
   font-size: 13px;
-  color: var(--muted, #676a73);
+  color: var(--xc-muted);
   margin: 0;
 }
 
 .xc-admin .add-error {
   font-size: 13px;
-  color: var(--color-danger, #dc2626);
+  color: var(--xc-danger);
   margin: 0;
 }
 
@@ -716,7 +716,7 @@
   flex-direction: column;
   gap: 12px;
   font-size: 14px;
-  color: var(--ink, #17181b);
+  color: var(--xc-ink);
 }
 
 .xc-admin .xc-content.xc-content #toast {
@@ -725,11 +725,11 @@
   right:25px;
   z-index:50;
   max-width:calc(100vw - 40px);
-  background:#17181b;
-  color:white;
+  background:var(--xc-ink);
+  color:var(--xc-on-brand);
   padding:15px 22px;
   border-radius:8px;
-  box-shadow:0 8px 40px #0002;
+  box-shadow:var(--xc-shadow-md);
   font-size:14px;
 }
 
@@ -737,7 +737,7 @@
   position:fixed;
   top:-70px;
   z-index:99;
-  background:white;
+  background:var(--xc-surface);
   padding:10px;
 }
 
@@ -959,7 +959,7 @@
 .xc-admin .xc-content.xc-content .stock-banner {
   padding:18px 22px;
   margin-bottom:20px;
-  background:#fff;
+  background:var(--xc-surface);
   border:1px solid var(--line);
   border-left:4px solid var(--brand);
   border-radius:8px;
@@ -983,11 +983,11 @@
 }
 
 .xc-admin .xc-content.xc-content .positive {
-  color:#187151;
+  color:var(--xc-ok);
 }
 
 .xc-admin .xc-content.xc-content .negative {
-  color:#a5003c;
+  color:var(--xc-brand);
 }
 
 .xc-admin .xc-content.xc-content .wide-dialog {
@@ -1017,7 +1017,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pending-write {
-  background:#fff4dd;
+  background:var(--xc-warn-soft);
   padding:14px;
   margin-bottom:18px;
   border-radius:8px;
@@ -1139,7 +1139,7 @@
 
 .xc-admin .xc-content .admin-shell-container,
 .xc-admin .xc-content .xc-workspace {
-  background: var(--bg, #f5f6f8);
+  background: var(--xc-bg);
   font-size: 15px;
   padding-bottom: 0;
   display: flex;
@@ -1152,8 +1152,8 @@
   padding: 22px 16px 16px;
   overflow-y: auto;
   z-index: 20;
-  border-right: 1px solid var(--line, #e8e2e5);
-  background: var(--bg, #f7f5f6);
+  border-right: 1px solid var(--xc-line);
+  background: var(--xc-bg);
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -1209,7 +1209,7 @@
 }
 
 .xc-admin .xc-content .workspace-menu-search input {
-  background: #f7f5f6;
+  background: var(--xc-gray-50);
   border-color: transparent;
   font-size: 13px;
   padding: 9px 12px;
@@ -1232,7 +1232,7 @@
 .xc-admin .xc-content .workspace-nav-group > p {
   font-size: 11px;
   font-weight: bold;
-  color: #857780;
+  color: var(--xc-muted);
   margin: 0 12px 6px;
   letter-spacing: 0.2px;
 }
@@ -1249,13 +1249,13 @@
   gap: 12px;
   border-radius: 6px;
   margin-bottom: 2px;
-  color: #54474f;
+  color: var(--xc-gray-700);
   text-decoration: none;
 }
 
 .xc-admin .xc-content .nav-group a:hover,
 .xc-admin .xc-content .nav-guide a:hover {
-  background-color: #eaecef;
+  background-color: var(--xc-gray-100);
 }
 
 .xc-admin .xc-content .admin-nav a span[aria-hidden="true"],
@@ -1270,22 +1270,22 @@
 .xc-admin .xc-content .admin-nav a[aria-current="page"],
 .xc-admin .xc-content .admin-nav a.active,
 .xc-admin .xc-content .xc-workspace nav a.active {
-  color: var(--brand, #a5003c);
-  background: var(--soft, #f9edf2);
-  box-shadow: inset 3px 0 var(--brand, #a5003c);
+  color: var(--xc-brand);
+  background: var(--xc-brand-soft);
+  box-shadow: inset 3px 0 var(--xc-brand);
 }
 
 .xc-admin .xc-content .no-menu-notice,
 .xc-admin .xc-content .workspace-no-menu {
   font-size: 13px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   padding: 12px;
 }
 
 .xc-admin .xc-content .admin-sidebar .sidebar-bottom,
 .xc-admin .xc-content .xc-workspace .sidebar-bottom {
   margin-top: 12px;
-  border-top: 1px solid var(--line, #e8e2e5);
+  border-top: 1px solid var(--xc-line);
   padding: 14px 8px 0;
   display: grid;
   gap: 6px;
@@ -1327,7 +1327,7 @@
 .xc-admin .xc-content .xc-workspace .heading .eyebrow {
   font-size: 12px;
   text-transform: uppercase;
-  color: #586069;
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .menu-heading .title,
@@ -1343,7 +1343,7 @@
   font-size: 13px;
   max-width: 720px;
   margin: 0;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .xc-workspace .heading .primary,
@@ -1357,7 +1357,7 @@
 .xc-admin .xc-content .xc-workspace main > .notice {
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--line, #e8e2e5);
+  border-bottom: 1px solid var(--xc-line);
   border-radius: 0;
   padding: 0 0 16px;
   margin-bottom: 24px;
@@ -1370,32 +1370,32 @@
   font-size: 12px;
   font-weight: 600;
   margin-right: 12px;
-  color: #34604c;
+  color: var(--xc-ok);
 }
 
 .xc-admin .xc-content .notice-bar .notice-icon,
 .xc-admin .xc-content .xc-workspace main > .notice .notice-icon {
-  border-color: #638875;
-  color: #34604c;
+  border-color: var(--xc-green-500);
+  color: var(--xc-ok);
 }
 
 .xc-admin .xc-content .notice-bar.workspace-offline,
 .xc-admin .xc-content .xc-workspace main > .notice.workspace-offline {
   padding: 14px;
-  background: #fff3e8;
-  border: 1px solid #e9bb94;
+  background: var(--xc-warn-soft);
+  border: 1px solid var(--xc-amber-300);
   border-radius: 6px;
 }
 
 .xc-admin .xc-content .notice-bar.workspace-offline strong,
 .xc-admin .xc-content .xc-workspace main > .notice.workspace-offline strong {
-  color: #82451c;
+  color: var(--xc-warn);
 }
 
 .xc-admin .xc-content .period-toolbar,
 .xc-admin .xc-content .xc-workspace .toolbar {
-  background: white;
-  border: 1px solid var(--line, #e8e2e5);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
   padding: 14px 18px;
   margin-bottom: 22px;
@@ -1429,7 +1429,7 @@
 
 .xc-admin .xc-content .period-toolbar #export,
 .xc-admin .xc-content .xc-workspace .toolbar #export {
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
 }
 
 .xc-admin .xc-content #workspace-status,
@@ -1438,8 +1438,8 @@
   grid-template-columns: minmax(150px, 1fr) auto minmax(150px, 1fr) auto;
   gap: 20px;
   align-items: center;
-  background: #f0ebe7;
-  border: 1px solid #e7dcd3;
+  background: var(--xc-gray-100);
+  border: 1px solid var(--xc-line);
   padding: 22px 24px;
   margin-bottom: 24px;
   border-radius: 8px;
@@ -1459,7 +1459,7 @@
 .xc-admin .xc-content #workspace-status span,
 .xc-admin .xc-content .status-strip span {
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content #workspace-status .eyebrow,
@@ -1472,7 +1472,7 @@
 .xc-admin .xc-content .status-strip > a {
   font-size: 13px;
   font-weight: bold;
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
 }
 
 .xc-admin .xc-content #workspace-status button,
@@ -1498,7 +1498,7 @@
 .xc-admin .xc-content .xc-workspace th,
 .xc-admin .xc-content .admin-main th {
   font-weight: 600;
-  color: #756671;
+  color: var(--xc-muted);
   font-size: 12px;
   padding: 12px 20px;
 }
@@ -1515,7 +1515,7 @@
 
 .xc-admin .xc-content .xc-workspace tbody tr:hover,
 .xc-admin .xc-content .admin-main tbody tr:hover {
-  background: #fcf5f8;
+  background: var(--xc-brand-soft);
 }
 
 .xc-admin .xc-content .workspace-tabs,
@@ -1523,8 +1523,8 @@
   display: flex;
   gap: 4px;
   padding: 4px;
-  border: 1px solid var(--line, #e8e2e5);
-  background: #eee9ed;
+  border: 1px solid var(--xc-line);
+  background: var(--xc-gray-100);
   border-radius: 8px;
   margin-bottom: 22px;
   max-width: 100%;
@@ -1534,7 +1534,7 @@
 .xc-admin .xc-content .workspace-tabs button,
 .xc-admin .xc-content .admin-tabs button {
   background: transparent;
-  color: #6b5966;
+  color: var(--xc-muted);
   border: 0;
   white-space: nowrap;
   font-size: 14px;
@@ -1545,15 +1545,15 @@
 
 .xc-admin .xc-content .workspace-tabs button[aria-selected="true"],
 .xc-admin .xc-content .admin-tabs button[aria-selected="true"] {
-  background: white;
-  color: var(--brand, #a5003c);
-  box-shadow: 0 1px 4px #33202b12;
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  box-shadow: var(--xc-shadow-sm);
 }
 
 .xc-admin .xc-content .workspace-history,
 .xc-admin .xc-content .rate-history {
-  border: 1px solid var(--line, #e8e2e5);
-  background: white;
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
   border-radius: 8px;
   margin: 20px 0;
   padding: 0 20px;
@@ -1564,7 +1564,7 @@
   min-height: 58px;
   padding: 17px 0;
   cursor: pointer;
-  color: #5d4655;
+  color: var(--xc-gray-700);
   font-size: 14px;
   font-weight: 600;
 }
@@ -1572,7 +1572,7 @@
 .xc-admin .xc-content .workspace-history[open] > summary,
 .xc-admin .xc-content .rate-history[open] > summary {
   margin-bottom: 12px;
-  border-bottom: 1px solid var(--line, #e8e2e5);
+  border-bottom: 1px solid var(--xc-line);
 }
 
 .xc-admin .xc-content .workspace-history > .card,
@@ -1591,8 +1591,8 @@
   justify-content: space-between;
   gap: 20px;
   align-items: center;
-  background: var(--soft, #f9edf2);
-  border: 1px solid #edd4df;
+  background: var(--xc-brand-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 8px;
   padding: 16px 20px;
   margin-bottom: 22px;
@@ -1601,7 +1601,7 @@
 
 .xc-admin .xc-content .workspace-rate-tools a,
 .xc-admin .xc-content .rate-tools a {
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
   font-weight: bold;
   white-space: nowrap;
 }
@@ -1637,7 +1637,7 @@
 .xc-admin .xc-content .xc-queue {
   width: 295px;
   border-radius: 10px;
-  box-shadow: 0 5px 24px #28142114;
+  box-shadow: var(--xc-shadow-md);
   z-index: 25;
   padding: 14px;
 }
@@ -1683,7 +1683,7 @@
   gap: 8px;
   padding: 0 22px 18px;
   font-size: 13px;
-  color: #5e4f59;
+  color: var(--xc-gray-700);
 }
 
 .xc-admin .xc-content .workspace-stock-filter input,
@@ -1692,14 +1692,14 @@
   height: 18px;
   min-height: 18px;
   margin: 0;
-  accent-color: var(--brand, #a5003c);
+  accent-color: var(--xc-brand);
 }
 
 .xc-admin .xc-content .workspace-stock-filter span,
 .xc-admin .xc-content .stock-filter span {
   flex-basis: 100%;
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .payment-intro,
@@ -1721,7 +1721,7 @@
 .xc-admin .xc-content .payment-intro p:not(.eyebrow),
 .xc-admin .xc-content .xc-payment-intro {
   font-size: 13px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .payment-meta,
@@ -1732,7 +1732,7 @@
   gap: 18px;
   align-items: center;
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   margin-bottom: 20px;
 }
 
@@ -1745,8 +1745,8 @@
 
 .xc-admin .xc-content .payment-card,
 .xc-admin .xc-content .xc-payment-card {
-  background: white;
-  border: 1px solid var(--line, #e8e2e5);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
   padding: 24px;
 }
@@ -1769,7 +1769,7 @@
 .xc-admin .xc-content .xc-payment-card-head p,
 .xc-admin .xc-content .xc-payment-line {
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content .payment-icon,
@@ -1778,8 +1778,8 @@
   place-items: center;
   width: 46px;
   height: 46px;
-  background: var(--soft, #f9edf2);
-  color: var(--brand, #a5003c);
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
   font-size: 23px;
   border-radius: 8px;
 }
@@ -1790,7 +1790,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
 }
 
 .xc-admin .xc-content .payment-card input[type="checkbox"],
@@ -1798,7 +1798,7 @@
   width: 19px;
   height: 19px;
   min-height: 19px;
-  accent-color: var(--brand, #a5003c);
+  accent-color: var(--xc-brand);
   margin: 0;
 }
 
@@ -1811,7 +1811,7 @@
 .xc-admin .xc-content .payment-card textarea,
 .xc-admin .xc-content .xc-payment-card textarea {
   font: inherit;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
   width: 100%;
   padding: 10px;
@@ -1826,7 +1826,7 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 16px 0;
-  border-block: 1px solid var(--line, #e8e2e5);
+  border-block: 1px solid var(--xc-line);
 }
 
 .xc-admin .xc-content .payment-directions label,
@@ -1838,7 +1838,7 @@
 .xc-admin .xc-content .xc-payment-directions small,
 .xc-admin .xc-content .xc-payment-directions .xc-note {
   display: block;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   font-size: 11px;
   margin: 6px 0 0 25px;
 }
@@ -1852,7 +1852,7 @@
 .xc-admin .xc-content .payment-evidence,
 .xc-admin .xc-content .xc-payment-evidence {
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   margin-top: 16px;
 }
 
@@ -1876,8 +1876,8 @@
   gap: 12px;
   flex-wrap: wrap;
   padding: 20px;
-  background: #fff;
-  border: 1px solid var(--line, #e8e2e5);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
   margin-top: 22px;
 }
@@ -1895,7 +1895,7 @@
 .xc-admin .xc-content .payment-savebar p,
 .xc-admin .xc-content .xc-payment-savebar p {
   font-size: 12px;
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   margin-top: 5px;
 }
 
@@ -1925,7 +1925,7 @@
 .xc-admin .xc-content .desk-link {
   background: transparent;
   border: 0;
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
   font-size: 13px;
   cursor: pointer;
   padding: 0;
@@ -1933,7 +1933,7 @@
 
 /* V3-only rules preserved */
 .xc-admin .xc-content .date-error {
-  color: #d73a49;
+  color: var(--xc-danger);
   font-size: 13px;
   margin: 4px 0 0 0;
   width: 100%;
@@ -1946,12 +1946,12 @@
 .xc-admin .xc-content .admin-footer {
   margin-top: auto;
   padding-top: 24px;
-  border-top: 1px solid var(--line, #e8e2e5);
+  border-top: 1px solid var(--xc-line);
   font-size: 13px;
 }
 
 .xc-admin .xc-content .admin-footer a {
-  color: var(--muted, #6c6269);
+  color: var(--xc-muted);
   text-decoration: none;
 }
 
@@ -1999,8 +1999,8 @@
     transform: translateX(-100%);
     transition: transform 0.15s;
     z-index: 60;
-    border-right: 1px solid var(--line, #e8e2e5);
-    background: var(--bg, #f7f5f6);
+    border-right: 1px solid var(--xc-line);
+    background: var(--xc-bg);
   }
   .xc-admin .xc-content .xc-workspace.workspace-menu-open .sidebar,
   .xc-admin .xc-content .admin-sidebar.open {
@@ -2025,7 +2025,7 @@
     position: fixed;
     inset: 0;
     z-index: 55;
-    background: #21151eb3;
+    background: var(--xc-scrim);
     border: 0;
     border-radius: 0;
   }
@@ -2168,7 +2168,7 @@
   .xc-admin .xc-content #workspace-status > div:nth-of-type(2),
   .xc-admin .xc-content .status-strip > div:nth-of-type(2) {
     padding-top: 14px;
-    border-top: 1px solid #ddd0c8;
+    border-top: 1px solid var(--xc-line);
   }
   .xc-admin .xc-content .workspace-tabs button,
   .xc-admin .xc-content .admin-tabs button {
@@ -2248,13 +2248,13 @@
   }
 }
 
-/* Nav button override — LK closing (#706) */
+/* Nav button override — LK closing (706) */
 .xc-admin .xc-shell-nav button {
   display: none;
   font: inherit;
-  background: white;
-  border: 1px solid #d6d8df;
-  color: #363840;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  color: var(--xc-ink);
   min-height: 44px;
   padding: 9px 16px;
   border-radius: 7px;
@@ -2285,7 +2285,7 @@
   }
 }
 
-/* #4302 ruling A: while the floating queue card shows (queue-card.css), the admin content makes room for it. */
+/* 4302 ruling A: while the floating queue card shows (queue-card.css), the admin content makes room for it. */
 @media (min-width: 1024px) {
   .xc-admin:has(.queue-card) .xc-content .admin-main,
   body:has(.queue-card) .xc-admin .xc-content .admin-main { padding-right: 335px; }

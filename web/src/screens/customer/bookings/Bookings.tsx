@@ -448,6 +448,9 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
           >
             {t('retry')}
           </button>
+          <a href="/app/book" class="xc-btn xc-btn-secondary">
+            {t('bookNow')}
+          </a>
         </div>
       </Show>
 

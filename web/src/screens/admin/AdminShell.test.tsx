@@ -1115,12 +1115,18 @@ describe("V2-shell: setLang('en') (#460 §9, W10)", () => {
     }
     setLang('en');
     await settle();
-    const english = text();
+    // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 and §3): the language switch is a segmented
+    // ไทย | EN group, so its ไทย button (the language's own name) is the one Thai text left in English.
+    const langGroup = Array.from(container.querySelectorAll('[role="group"]')).find((g) =>
+      Array.from(g.querySelectorAll('button')).some((b) => (b.textContent ?? '').trim() === 'ไทย'),
+    );
+    expect(langGroup, 'the ไทย | EN language switch').toBeDefined();
+    const english = text().replace((langGroup!.textContent ?? '').replace(/\s+/g, ' '), ' ');
     expect(english.match(THAI), `Thai left: ${english.match(new RegExp(`.{0,30}${THAI.source}.{0,30}`))?.[0]}`).toBeNull();
     expect(english).toContain('EN overview');
     expect(english).toContain('EN title overview');
     for (const el of Array.from(container.querySelectorAll('[placeholder], [aria-label], [title]'))) {
-      if (el.tagName === 'BUTTON' && (el.textContent ?? '').trim() === 'TH') continue; // LangSwitch names Thai
+      if (el.tagName === 'BUTTON' && (el.textContent ?? '').trim() === 'ไทย') continue; // LangSwitch names Thai
       for (const attr of ['placeholder', 'aria-label', 'title']) {
         const v = el.getAttribute(attr);
         if (v) expect(v.match(THAI), `${el.tagName} ${attr}="${v}"`).toBeNull();

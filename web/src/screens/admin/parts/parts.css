@@ -22,7 +22,7 @@
 }
 
 .xc-admin .xc-content .dialog-content header button {
-  background: #f3f4f6;
+  background: var(--xc-gray-75);
   font-size: 25px;
   padding: 0;
   width: 40px;
@@ -44,7 +44,7 @@
 
 .xc-admin .xc-content .new-transaction-button {
   background: var(--brand);
-  color: white;
+  color: var(--xc-on-brand);
   border: 1px solid var(--brand);
   border-radius: 7px;
   padding: 9px 16px;
@@ -54,11 +54,11 @@
 }
 
 .xc-admin .xc-content .new-transaction-button:hover {
-  background: #870032;
+  background: var(--xc-brand-strong);
 }
 
 .xc-admin .xc-content .read-error {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 12px;
 }
 
@@ -84,11 +84,11 @@
   margin: 8px 0;
 }
 
-/* v2 slips.js:18 style='margin-top:20px;padding-top:16px;border-top:1px solid #ddd' */
+/* v2 slips.js:18 style='margin-top:20px;padding-top:16px;border-top:1px solid line' */
 .xc-admin .xc-content .slip-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--xc-line);
 }
 
 .xc-admin .xc-content .slip-section h3 {
@@ -96,11 +96,11 @@
   margin: 1em 0;
 }
 
-/* v2 inline style border-top: 1px solid #ddd */
+/* v2 inline style border-top: 1px solid line */
 .xc-admin .xc-content .receipt-section {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #ddd;
+  border-top: 1px solid var(--xc-line);
 }
 
 .xc-admin .xc-content .receipt-section h3 {
@@ -111,8 +111,8 @@
 .xc-admin .xc-content .receipt-section iframe {
   width: 100%;
   height: 620px;
-  border: 1px solid #ddd;
-  background: white;
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
   border-radius: 0;
   margin-top: 0;
 }
@@ -166,7 +166,7 @@
 }
 
 .xc-admin .xc-content .error-message {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 13px;
   margin: 0;
 }
@@ -177,11 +177,11 @@
   right: 25px;
   z-index: 50;
   max-width: calc(100vw - 40px);
-  background: #17181b;
-  color: white;
+  background: var(--xc-ink);
+  color: var(--xc-on-brand);
   padding: 15px 22px;
   border-radius: 8px;
-  box-shadow: 0 8px 40px #0002;
+  box-shadow: var(--xc-shadow-md);
   font-size: 14px;
 }
 
