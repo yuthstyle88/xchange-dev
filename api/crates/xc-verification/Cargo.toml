@@ -4,11 +4,14 @@ autotests = false
 name = "xc-verification"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version.workspace = true
 authors = ["108Heros Engineering"]
 description = "Verification bounded context for xchange: cases a reviewer decides, documents in DocumentStore (design verification.md)"
 license = "Proprietary"
 publish = false
+
+[lints]
+workspace = true
 
 [dependencies]
 pos-error = { workspace = true }
