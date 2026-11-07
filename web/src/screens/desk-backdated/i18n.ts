@@ -30,6 +30,9 @@ export const th = {
   documentRef: 'เลขที่เอกสาร:',
   receiptLink: 'ดูใบเสร็จ / รายละเอียดรายการ',
   fileInvalid: 'ไฟล์ต้องเป็น JPG, PNG, WebP หรือ PDF และไม่เกิน 15 MB',
+  safeTitle: 'ยอดคงเหลือใน SAFE',
+  safeEmpty: 'ไม่มีเงินคงเหลือใน SAFE',
+  safeTransfer: 'เติมเงิน SAFE',
 };
 
 export const en: typeof th = {
@@ -64,4 +67,7 @@ export const en: typeof th = {
   documentRef: 'Document ref:',
   receiptLink: 'View receipt / transaction detail',
   fileInvalid: 'File must be JPG, PNG, WebP or PDF up to 15 MB',
+  safeTitle: 'SAFE balance',
+  safeEmpty: 'No funds in SAFE',
+  safeTransfer: 'Top up SAFE',
 };

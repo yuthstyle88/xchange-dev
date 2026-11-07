@@ -26,7 +26,7 @@ const SELECT: &str = "SELECT COALESCE(t.document_ref, '') AS document_ref, t.bra
     p.account, t.staff_id, t.booking_no, t.notes, t.value_date, t.paid_at, t.recorded_at, t.recorded_by, t.payload_hash, \
     COALESCE((SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'PASSPORT'), '') AS passport_key, \
     p.slip_file_key AS slip_key, \
-    COALESCE((SELECT file_key FROM transaction_files f WHERE f.transaction_id = t.id AND f.kind = 'RECEIPT'), '') AS receipt_key \
+    COALESCE((SELECT r.document_ref FROM receipts r WHERE r.transaction_id = t.id AND r.revision = 1), '') AS receipt_key \
     FROM transactions t \
     JOIN transaction_lines l ON l.transaction_id = t.id \
     JOIN transaction_payments p ON p.transaction_id = t.id";

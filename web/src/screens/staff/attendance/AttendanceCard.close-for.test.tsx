@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // SC-FE1 #5311: a person holding AttendanceCloseFor closes a forgotten earlier-day clock-in
 // on /staff (form + "ค้างจากวันก่อน" label).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -173,7 +174,7 @@ describe('SC-FE1 #5311 AttendanceCard close-for and earlier-day label', () => {
     expect(host.textContent).not.toContain('ปิดเวลาออก');
   });
 
-  it('2. me with AttendanceCloseFor, view has 2 rows: shows 2 rows, each with "ปิดเวลาออก" and dd/MM HH:mm', async () => {
+  it('2. me with AttendanceCloseFor, view has 2 rows: shows 2 rows, each with "ปิดเวลาออก" and dd/mm/yyyy HH:mm', async () => {
     const ctx = makeCtx(['AttendanceClock', 'AttendanceCloseFor']);
     dispose = render(() => <AttendanceCard ctx={ctx} />, host);
     await settle();
@@ -182,10 +183,10 @@ describe('SC-FE1 #5311 AttendanceCard close-for and earlier-day label', () => {
     const items = host.querySelectorAll('[data-open-attendance-id]');
     expect(items).toHaveLength(2);
     expect(items[0]?.textContent).toContain('Somchai');
-    expect(items[0]?.textContent).toContain('26/10 09:00');
+    expect(items[0]?.textContent).toContain('26/10/2026 09:00');
     expect(items[0]?.querySelector('button')?.textContent).toBe('ปิดเวลาออก');
     expect(items[1]?.textContent).toContain('Malee');
-    expect(items[1]?.textContent).toContain('25/10 10:30');
+    expect(items[1]?.textContent).toContain('25/10/2026 10:30');
     expect(items[1]?.querySelector('button')?.textContent).toBe('ปิดเวลาออก');
   });
 

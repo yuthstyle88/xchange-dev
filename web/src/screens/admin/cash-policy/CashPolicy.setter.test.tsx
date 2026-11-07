@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // F6 FE (#564 finding F6; server side PR 6042 / #6038, design docs/design/blueprint/user-set-settings.md
 // "Every setting names who saved it, by name, from its own row"): #cash-policy names who set the limit by name.
 // Written before the implementation by claude/01TxaRJG (FE sub-controller). Do not edit, delete or weaken these tests;
@@ -20,8 +22,12 @@ import { menu } from './menu';
 const SETTER_ID = 'u-exec-7f3a';
 const CREATED = '2026-11-03T02:00:00Z';
 
-// The page's own time format (CashPolicy.tsx:34-36), unchanged by this ticket.
-const when = (iso: string) => new Date(iso).toLocaleString('th-TH').replace(/\s+/g, ' ').trim();
+// F55: the banner's time is pinned (was th-TH in the device's zone, a Buddhist year and seconds).
+// CREATED 02:00Z is 09:00 in Bangkok.
+const when = (iso: string) => {
+  if (iso !== CREATED) throw new Error(`no pinned F55 text for ${iso}`);
+  return '03/11/2026 09:00';
+};
 
 function policy(setByName: string | null) {
   return makeCashTransferPolicyData({

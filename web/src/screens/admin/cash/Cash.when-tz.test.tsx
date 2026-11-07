@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -23,11 +25,15 @@ const nodeEnv = (globalThis as { process?: { env: Record<string, string | undefi
   ?.env;
 const origTz = nodeEnv?.TZ;
 
+// F55: the expected text is pinned, not rebuilt with toLocaleString (th-TH printed 16/10/2569 01:30:00).
+const BANGKOK_TEXT: Record<string, string> = {
+  [ISO_MOVEMENT]: '16/10/2026 01:30',
+  [ISO_SHIFT_OPENED]: '16/10/2026 00:15',
+  [ISO_HISTORY_SHIFT]: '16/10/2026 02:45',
+};
+
 function formatInBangkok(iso: string): string {
-  return origToLocaleString
-    .call(new Date(iso), 'th-TH', { timeZone: 'Asia/Bangkok' })
-    .replace(/\s+/g, ' ')
-    .trim();
+  return BANGKOK_TEXT[iso]!;
 }
 
 function setDeviceTimeZone(tz: string): void {
@@ -219,15 +225,14 @@ afterEach(async () => {
 });
 
 describe('Admin Cash: format shift-opened and cash-movement times in Asia/Bangkok (#2506)', () => {
-  it('row 1: Movement at 2026-10-15T18:30:00Z, device TZ UTC -> Shown as 16 Oct 01:30 (Bangkok, th-TH)', async () => {
+  it('row 1: Movement at 2026-10-15T18:30:00Z, device TZ UTC -> Shown as 16/10/2026 01:30 (Bangkok, CE)', async () => {
     setDeviceTimeZone('UTC');
 
     const m = mount({ branch: 'MAIN' });
     await settle();
 
     const expectedMove = formatInBangkok(ISO_MOVEMENT);
-    expect(expectedMove).toContain('16/10/2569');
-    expect(expectedMove).toMatch(/0?1:30:00/);
+    expect(expectedMove).toBe('16/10/2026 01:30');
 
     const moveCell = m.el.querySelector('.movements-table tbody tr td');
     expect(text(moveCell)).toBe(expectedMove);

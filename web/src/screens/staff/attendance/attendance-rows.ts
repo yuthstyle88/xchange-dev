@@ -1,4 +1,5 @@
 import type { StaffAttendanceRow } from '../../../shared/api/generated/staff_attendance';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 
 export interface AttendanceLine {
   id: string;
@@ -41,8 +42,7 @@ export function attendanceLines(rows: readonly StaffAttendanceRow[], now: Date):
       const time = TIME_FMT.format(inDate);
       earlierDay = Boolean(nowDay) && inDay < nowDay;
       if (earlierDay) {
-        const [, mm, dd] = inDay.split('-');
-        inText = `${dd}/${mm} ${time}`;
+        inText = formatBangkokDateTime(row.in);
       } else {
         inText = time;
       }

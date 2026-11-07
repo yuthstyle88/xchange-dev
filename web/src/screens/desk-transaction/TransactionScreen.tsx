@@ -23,6 +23,7 @@ import { ReasonDialog } from '../staff/parts/ReasonDialog';
 import { AuditSection } from './AuditSection';
 import { HeaderSection } from './HeaderSection';
 import { LinesSection } from './LinesSection';
+import { NotesSection } from './NotesSection';
 import { PaymentSection } from './PaymentSection';
 import { ReceiptsSection } from './ReceiptsSection';
 import { ReversalSection } from './ReversalSection';
@@ -256,6 +257,7 @@ export function TransactionScreen(props: TransactionScreenProps): JSX.Element {
               <PermissionsUnavailable error={meError()} onRetry={() => void retryMe()} busy={meBusy()} />
               <HeaderSection tx={current()} />
               <LinesSection lines={current().lines} />
+              <NotesSection notes={current().notes} />
               <Show when={current().payment}>{(p) => <PaymentSection payment={p()} />}</Show>
               <Show when={current().receipts.length > 0}>
                 <ReceiptsSection

@@ -14,7 +14,8 @@ import { screenT } from '../../../shared/i18n';
 import { sharedSession } from '../../../shared/session/session';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
 import { toast } from '../parts/toast';
-import { limitsError, when } from './CashLimits';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
+import { limitsError } from './CashLimits';
 import * as table from './i18n';
 
 const t = screenT('admin.cash-limits', table);
@@ -105,7 +106,7 @@ export function DrawerLowLevels(props: DrawerLowLevelsProps): JSX.Element {
                 <p data-testid="levels-set-by">
                   {t('levelsSetBy', {
                     by: props.data()?.drawerLowLevelsUpdatedByName || '—',
-                    at: when(at()),
+                    at: formatBangkokDateTime(at()),
                   })}
                 </p>
               )}

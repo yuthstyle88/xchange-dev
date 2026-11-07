@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #2513: Admin cash Profit summary — the "computed at" alert is formatted in Asia/Bangkok
 // regardless of the device timezone.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -147,17 +149,17 @@ describe('#2513: ProfitSummaryPanel formats the computed-at alert in Asia/Bangko
     setLang('th');
     const elTh = await mountAndSubmit();
     const thAlert = alertText(elTh);
-    expect(thAlert).toBe('คำนวณเมื่อ 16/10/2569 01:30:00 · ไม่ได้บันทึกหรือถอนเงิน');
-    expect(thAlert).toContain('01:30:00');
+    expect(thAlert).toBe('คำนวณเมื่อ 16/10/2026 01:30 · ไม่ได้บันทึกหรือถอนเงิน');
+    expect(thAlert).toContain('16/10/2026 01:30');
     expect(thAlert).not.toContain('18:30');
     expect(thAlert).not.toContain('15/10');
 
     setLang('en');
     const elEn = await mountAndSubmit();
     const enAlert = alertText(elEn);
-    expect(enAlert).toBe('Calculated at 16/10/2026, 01:30:00 · nothing recorded or withdrawn');
+    expect(enAlert).toBe('Calculated at 16/10/2026 01:30 · nothing recorded or withdrawn');
     expect(enAlert).toContain('16/10/2026');
-    expect(enAlert).toContain('01:30:00');
+    expect(enAlert).toContain('16/10/2026 01:30');
     expect(enAlert).not.toContain('18:30');
     expect(enAlert).not.toContain('15/10');
   });
@@ -175,7 +177,7 @@ describe('#2513: ProfitSummaryPanel formats the computed-at alert in Asia/Bangko
     const bkkEl = await mountAndSubmit();
     const bkkText = alertText(bkkEl);
 
-    expect(bkkText).toBe('คำนวณเมื่อ 16/10/2569 01:30:00 · ไม่ได้บันทึกหรือถอนเงิน');
+    expect(bkkText).toBe('คำนวณเมื่อ 16/10/2026 01:30 · ไม่ได้บันทึกหรือถอนเงิน');
     expect(utcText).toBe(bkkText);
   });
 
@@ -197,6 +199,6 @@ describe('#2513: ProfitSummaryPanel formats the computed-at alert in Asia/Bangko
     expect(allText).toContain(`${table.th.cardRealized}${formatMoney(ANSWER.realized)} THB`);
     expect(allText).toContain(`${table.th.cardUnrealized}${formatMoney(ANSWER.unrealized)} THB`);
     expect(allText).toContain(`${table.th.cardWithdrawable}${formatMoney(ANSWER.withdrawable)} THB`);
-    expect(alertText(el)).toBe('คำนวณเมื่อ 16/10/2569 01:30:00 · ไม่ได้บันทึกหรือถอนเงิน');
+    expect(alertText(el)).toBe('คำนวณเมื่อ 16/10/2026 01:30 · ไม่ได้บันทึกหรือถอนเงิน');
   });
 });

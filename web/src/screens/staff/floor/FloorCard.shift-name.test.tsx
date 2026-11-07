@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // CS-18 #6208 (docs/design/configurable-shifts.md §2.9): staff floor shows my shift name, business date and on-break.
 // Behaviour rows F3–F5.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,7 +63,7 @@ afterEach(() => {
 
 describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', () => {
   describe('F3: shiftName and businessDate show on the my shift line', () => {
-    it('th: shows "กะ C · 4/11" when shiftName is "C" and businessDate is "2026-11-04"', async () => {
+    it('th: shows "กะ C · 04/11/2026" when shiftName is "C" and businessDate is "2026-11-04"', async () => {
       setLang('th');
       const shift = makeStaffFloorMyShift({
         shiftName: 'C',
@@ -73,10 +74,10 @@ describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', (
 
       const line = host.querySelector('[data-testid="floor-my-shift"]');
       expect(line, 'floor my-shift line exists').not.toBeNull();
-      expect(line?.textContent).toContain('กะ C · 4/11');
+      expect(line?.textContent).toContain('กะ C · 04/11/2026');
     });
 
-    it('en: shows "Shift C · 4/11" when shiftName is "C" and businessDate is "2026-11-04"', async () => {
+    it('en: shows "Shift C · 04/11/2026" when shiftName is "C" and businessDate is "2026-11-04"', async () => {
       setLang('en');
       const shift = makeStaffFloorMyShift({
         shiftName: 'C',
@@ -87,7 +88,7 @@ describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', (
 
       const line = host.querySelector('[data-testid="floor-my-shift"]');
       expect(line, 'floor my-shift line exists').not.toBeNull();
-      expect(line?.textContent).toContain('Shift C · 4/11');
+      expect(line?.textContent).toContain('Shift C · 04/11/2026');
     });
 
     it('missing businessDate shows only shiftName', async () => {
@@ -112,7 +113,7 @@ describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', (
       await flush();
 
       const info = host.querySelector('[data-testid="floor-shift-info"]');
-      expect(info?.textContent?.trim()).toBe('4/11');
+      expect(info?.textContent?.trim()).toBe('04/11/2026');
     });
   });
 
@@ -153,7 +154,7 @@ describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', (
       await flush();
 
       expect(host.querySelector('[data-testid="floor-break-badge"]')).toBeNull();
-      expect(host.querySelector('[data-testid="floor-shift-info"]')?.textContent?.trim()).toBe('กะ C · 4/11');
+      expect(host.querySelector('[data-testid="floor-shift-info"]')?.textContent?.trim()).toBe('กะ C · 04/11/2026');
     });
 
     it('shift info and onBreak badge appear together', async () => {
@@ -167,7 +168,7 @@ describe('CS-18 #6208: floor card my shift line and on-break badge (F3–F5)', (
       await flush();
 
       const line = host.querySelector('[data-testid="floor-my-shift"]');
-      expect(line?.textContent).toContain('กะ C · 4/11');
+      expect(line?.textContent).toContain('กะ C · 04/11/2026');
       expect(line?.textContent).toContain('พักเบรก');
       expect(host.querySelector('[data-testid="floor-break-badge"]')).not.toBeNull();
     });

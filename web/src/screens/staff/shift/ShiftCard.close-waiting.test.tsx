@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5313: Close count waiting for certification notice and close count button visibility
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -183,13 +184,13 @@ describe('#5313 ShiftCard close waiting notice and button visibility', () => {
 
     const statusNotice = host.querySelector('[role="status"]');
     expect(statusNotice, 'notice is role="status"').not.toBeNull();
-    expect(statusNotice?.textContent).toContain('11/10 11:30');
+    expect(statusNotice?.textContent).toContain('11/10/2026 11:30');
     expect(statusNotice?.textContent).toContain(th.closeWaiting ?? 'ยอดนับปิดกะรอผู้มีสิทธิ์ตรวจรับรอง');
 
     // Test in English
     setLang('en');
     await settle();
-    expect(statusNotice?.textContent).toContain('11/10 11:30');
+    expect(statusNotice?.textContent).toContain('11/10/2026 11:30');
     expect(statusNotice?.textContent).toContain(en.closeWaiting ?? 'Close count waiting for certification');
   });
 
@@ -264,7 +265,7 @@ describe('#5313 ShiftCard close waiting notice and button visibility', () => {
     // After save, notice appears without reload
     const statusNotice = host.querySelector('[role="status"]');
     expect(statusNotice, 'waiting notice appears without reload').not.toBeNull();
-    expect(statusNotice?.textContent).toContain('11/10 10:30'); // 03:30 UTC = 10:30 Bangkok
+    expect(statusNotice?.textContent).toContain('11/10/2026 10:30'); // 03:30 UTC = 10:30 Bangkok
 
     const closeBtnAfter = host.querySelector('[data-testid="shift-close-count"]');
     expect(closeBtnAfter, 'นับปิดกะ is hidden after save').toBeNull();

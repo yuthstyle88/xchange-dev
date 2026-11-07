@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #6065: Admin cash flows — a transfer row names its creator by `createdByName`
 // (user-set-settings.md:48: a missing or blank name is null, shown as "—"; never the raw id).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,7 +19,7 @@ import { CashFlows } from './CashFlows';
 
 const VIEWS = '/api/v3/views/';
 const ISO = '2026-10-15T18:30:00Z';
-const SHOWN_AT = '16/10/2569 01:30:00';
+const SHOWN_AT = '16/10/2026 01:30';
 const NAMED_ID = 'e7a9e6f0-1111-4aaa-8bbb-000000000001';
 const UNNAMED_ID = 'e7a9e6f0-2222-4aaa-8bbb-000000000002';
 

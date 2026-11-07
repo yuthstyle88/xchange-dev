@@ -2,16 +2,12 @@
 // can live in its own file (FE-admin skeleton, #564).
 import { Show, type JSX } from 'solid-js';
 import type { Part } from '../../../shared/api/generated/finance_reconciliation';
-import { locale, screenT } from '../../../shared/i18n';
+import { screenT } from '../../../shared/i18n';
 import * as table from './i18n';
 
 const t = screenT('admin.reconciliation', table);
 
-export function stamp(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), {
-    timeZone: 'Asia/Bangkok',
-  });
-}
+export { formatBangkokDateTime as stamp } from '../../../shared/format/bangkok-time';
 
 export type PartName = 'transactions' | 'counts' | 'transfers' | 'exceptions' | 'integrity' | 'reversalsPending';
 

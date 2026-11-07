@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter. A shift's business date is a day, so the label reads `B · 04/11/2026`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
 import { makeAdminShiftRow } from '../../../shared/testing/fixtures';
@@ -42,11 +44,11 @@ describe('ShiftDetail shift name and business date (CS-16)', () => {
     const meta = document.querySelector('.shift-detail-meta');
     expect(meta).not.toBeNull();
     expect(meta?.textContent).toContain('EMP-007');
-    expect(meta?.textContent).toContain('B · 4/11');
+    expect(meta?.textContent).toContain('B · 04/11/2026');
 
     const label = document.querySelector('.shift-label');
     expect(label).not.toBeNull();
-    expect(label?.textContent?.trim()).toBe('B · 4/11');
+    expect(label?.textContent?.trim()).toBe('B · 04/11/2026');
   });
 
   it('U6b: a row with shiftName null shows no label in shift detail', () => {

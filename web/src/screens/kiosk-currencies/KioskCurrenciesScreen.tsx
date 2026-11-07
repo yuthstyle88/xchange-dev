@@ -13,7 +13,8 @@ import type {
   KioskCurrencies,
   KioskCurrency,
 } from '../../shared/api/generated/kiosk_currencies';
-import { lang, locale, screenT } from '../../shared/i18n';
+import { lang, screenT } from '../../shared/i18n';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { formatRate } from '../../shared/ui/rate';
 import { RateFreshness } from '../../shared/ui/RateFreshness';
@@ -46,9 +47,6 @@ interface CardProps {
   onToggle: (code: string, display: CurrencyDisplay) => Promise<void>;
 }
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
-}
 
 function CurrencyCard(props: CardProps): JSX.Element {
   let showRef: HTMLInputElement | undefined;
@@ -176,7 +174,7 @@ function CurrencyCard(props: CardProps): JSX.Element {
                           <td>{r.bankSell ?? '—'}</td>
                           <td>
                             {props.t('kbStamp', {
-                              time: formatTime(ref().publishedAt),
+                              time: formatBangkokDateTime(ref().publishedAt),
                               round: ref().round,
                             })}
                           </td>
@@ -504,7 +502,7 @@ export function KioskCurrenciesScreen(props: {
               <h3>{t('compareHeading')}</h3>
               <p>
                 {t('comparePublished', {
-                  time: formatTime(ref().publishedAt),
+                  time: formatBangkokDateTime(ref().publishedAt),
                   round: ref().round,
                 })}
               </p>

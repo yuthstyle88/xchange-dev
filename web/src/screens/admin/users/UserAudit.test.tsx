@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
@@ -218,8 +220,9 @@ describe('UserAudit component (§8 and §9 specifications)', () => {
     await settle();
 
     const firstRow = c.querySelectorAll('tbody tr')[0];
-    // 2026-10-06T02:30:00Z in Asia/Bangkok (+07:00) is 09:30
-    expect(firstRow?.textContent).toContain('09:30');
+    // 2026-10-06T02:30:00Z in Asia/Bangkok (+07:00) is 09:30; F55: dd/mm/yyyy HH:mm, no seconds
+    expect(firstRow?.textContent).toContain('06/10/2026 09:30');
+    expect(firstRow?.textContent).not.toContain('09:30:00');
   });
 
   it('row 9 (§8): no rows shows auditEmpty and no table', async () => {

@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
+// SYNCED is a time of day on its own (the board clock gives the day): HH:mm, 24-hour, Bangkok, seconds dropped.
 // RB-9 behaviour table unit tests (P01 v2 rate board; rate-display.md §9.2, §9.6; xchange#3570).
 import { afterEach, describe, expect, it } from 'vitest';
 import { render } from 'solid-js/web';
@@ -42,7 +44,7 @@ describe('Ticker & BoardStub (RB-9)', () => {
     expect(host.textContent).not.toContain('种货币');
   });
 
-  it('lastOkAt at 12:55:54Z: SYNCED 19:55:54', () => {
+  it('lastOkAt at 12:55:54Z: SYNCED 19:55', () => {
     const timestamp = new Date('2026-10-19T12:55:54Z').getTime();
     mount(() => (
       <BoardStub
@@ -53,7 +55,8 @@ describe('Ticker & BoardStub (RB-9)', () => {
       />
     ));
     expect(host.textContent).toContain('SYNCED');
-    expect(host.textContent).toContain('19:55:54');
+    expect(host.textContent).toContain('19:55');
+    expect(host.textContent).not.toContain('19:55:54');
   });
 
   it('snapshotId 1ecabdf3dffd4a…: SNAPSHOT 1ecabdf3dffd', () => {

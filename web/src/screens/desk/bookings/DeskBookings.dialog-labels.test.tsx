@@ -1,3 +1,4 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm (CE, Bangkok) from the shared formatter.
 // #5425: Desk new-booking dialog Thai field labels and slot date prefix (§7, §8, §9)
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
@@ -163,7 +164,7 @@ describe('DeskBookingsScreen — New-booking dialog labels and slot date (#5425)
     }
   });
 
-  it('slot startAt 2026-10-30T03:00:00...: option text starts with the Thai slot date (§8 row 2)', async () => {
+  it('slot startAt 2026-10-30T03:00:00...: option text starts with the dd/mm/yyyy slot date (§8 row 2)', async () => {
     stubBookingsFetch();
     dispose = render(() => <DeskBookingsScreen />, host);
     await flush();
@@ -177,8 +178,8 @@ describe('DeskBookingsScreen — New-booking dialog labels and slot date (#5425)
     );
     expect(slotOption).not.toBeNull();
     const text = slotOption?.textContent?.trim() ?? '';
-    expect(text.startsWith('30 ต.ค.')).toBe(true);
-    expect(text).toBe('30 ต.ค. 10:00 - 10:30');
+    expect(text.startsWith('30/10/2026 ')).toBe(true);
+    expect(text).toBe('30/10/2026 10:00 - 10:30');
   });
 
   it('slot with no startAt keeps fallback s.slotId (§9 edge case)', async () => {

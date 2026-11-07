@@ -16,7 +16,8 @@ import type {
   MyAssistantConversationData,
   MyAssistantConversationFilter,
 } from '../../../shared/api/generated/my_assistant_conversation';
-import { lang, locale, screenT } from '../../../shared/i18n';
+import { lang, screenT } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { MoneyText } from '../../../shared/ui/MoneyText';
@@ -69,20 +70,6 @@ export function renderTextWithMoney(text: string): JSX.Element[] {
   }
 
   return elements.length > 0 ? elements : [<span>{text}</span>];
-}
-
-function formatTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleTimeString(locale(), {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Bangkok',
-    });
-  } catch {
-    return iso;
-  }
 }
 
 function parseSearch(searchStr: string): { branch?: string; conversationId?: string } {
@@ -320,7 +307,7 @@ export function AssistantScreen(props: AssistantScreenProps): JSX.Element {
                   <div class="message-bubble">
                     {renderTextWithMoney(msg.redactedText)}
                   </div>
-                  <time class="message-time">{formatTime(msg.createdAt)}</time>
+                  <time class="message-time">{formatBangkokDateTime(msg.createdAt)}</time>
                 </div>
               )}
             </For>

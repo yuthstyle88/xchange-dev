@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // CA-10q-FE #3023: the admin cash screen reads `openShifts` (every OPEN shift of the branch, one per teller,
 // in the server's order by openedAt) instead of the single `shift` of v1. Rows of #3023 §8, rulings (a)–(c) of
 // the FE controller: hasOpenShift = openShifts.length > 0 (a missing key reads as []), one banner line per open
@@ -50,9 +52,17 @@ const bannerSub = (iso: string, staff: string): string =>
 const refWithRates = (spread: string, percent: string): string =>
   `ส่วนต่างเทียบเรทอ้างอิงในกะ: ${formatMoney(spread)} THB (${percent}%)`;
 
-/** The screen's own formatting of an instant (Cash.tsx `when`). */
+/** F55: the pinned Bangkok text of each instant (dd/mm/yyyy HH:mm, CE). */
+const WHEN: Record<string, string> = {
+  '2026-10-06T02:30:00.000Z': '06/10/2026 09:30',
+  '2026-10-06T01:00:00.000Z': '06/10/2026 08:00',
+  '2026-10-06T04:15:00.000Z': '06/10/2026 11:15',
+};
+
 function when(iso: string): string {
-  return new Date(iso).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }).replace(/\s+/g, ' ').trim();
+  const shown = WHEN[iso];
+  if (shown === undefined) throw new Error(`no pinned F55 text for ${iso}`);
+  return shown;
 }
 
 const SHIFT_A = makeOpenShiftDto({ shiftId: 'S-0001', tellerId: 'u-7', tellerName: 'EMP-007', openedAt: '2026-10-06T02:30:00.000Z' });

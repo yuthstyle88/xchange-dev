@@ -9,7 +9,35 @@ export type ApprovalRequestsData = { requests: Array<ApprovalRequestItemDto>, };
 
 export type ApprovalRequestsFilter = { status: string | null, type: string | null, };
 
-export type ApprovalSubject = { "kind": "reversal" } & ReversalSubject | { "kind": "countDifference" } & CountDifferenceSubject;
+export type ApprovalSubject = { "kind": "reversal" } & ReversalSubject | { "kind": "countDifference" } & CountDifferenceSubject | { "kind": "cashTransfer" } & CashTransferSubject;
+
+/**
+ * F48 + F54 (§16.2): what a `CASH_TRANSFER` approval is about, so the approver sees the figure, the note and the
+ * branch's name (`branches.name`), not only the transfer id and the branch id.
+ */
+export type CashTransferSubject = { transferId: string, 
+/**
+ * `cash_transfers.kind`: BRANCH, DRAWER_TO_SAFE, SAFE_TO_DRAWER, EXTERNAL_IN or EXTERNAL_OUT.
+ */
+kind: string, fromBranchId: string, fromBranchName: string | null, 
+/**
+ * Only a BRANCH transfer has a receiving branch.
+ */
+toBranchName: string | null, 
+/**
+ * `cash_transfers.note`, trimmed; `None` when absent or blank.
+ */
+note: string | null, 
+/**
+ * One line per currency, ordered by currency code.
+ */
+lines: Array<CashTransferSubjectLine>, };
+
+/**
+ * F48 (`docs/design/backdated-keying.md` §16.2): one currency's total on a cash transfer, the sum of
+ * `qty_sent × face_value` over its lines, written to the currency's minor unit (THB `150000.00`, JPY `5000`).
+ */
+export type CashTransferSubjectLine = { currency: string, amount: string, };
 
 export type CountDifferenceSubject = { countId: string, countKind: string, countedBy: string, countedByName: string | null, shiftId: string | null, shiftOpenedAt: string | null, netDifferenceThb: string, lines: Array<CountSubjectLine>, };
 

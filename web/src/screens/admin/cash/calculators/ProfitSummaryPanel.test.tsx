@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // V2-cash-calculators (#511): the profit panel of the shift detail (ticket §8–§10 rows W1, W5–W8,
 // §9 edge cases; design §12.20.1 P1–P6, §12.20.5, §12.20.6). Written before the implementation by
 // the lane controller (claude/7ca80c). Do not edit, delete or weaken; add tests in a file of your
@@ -372,14 +374,14 @@ describe('V2-cash-calculators: the profit submit, its result and the reset (W5; 
     expect(calls[0]!.body).toEqual({ branch: BRANCH, ...TYPED, realized: '1', netAssets: '-5', cashMinimum: '0.5' });
   });
 
-  it("shows the three answered figures as `<money> THB` and the line คำนวณเมื่อ <now, th-TH> · ไม่ได้บันทึกหรือถอนเงิน", async () => {
+  it("shows the three answered figures as `<money> THB` and the line คำนวณเมื่อ <now, dd/mm/yyyy HH:mm Bangkok> · ไม่ได้บันทึกหรือถอนเงิน", async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     const now = new Date('2026-10-28T05:06:07.000Z');
     vi.setSystemTime(now);
     const el = await mount();
     await submit(el);
     cardsShow(el, [`${formatMoney('1234567.89')} THB`, `${formatMoney('-200.01')} THB`, `${formatMoney('42.00')} THB`]);
-    expect(text(alertLine(el))).toBe(`คำนวณเมื่อ ${norm(now.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' }))} · ไม่ได้บันทึกหรือถอนเงิน`);
+    expect(text(alertLine(el))).toBe('คำนวณเมื่อ 28/10/2026 12:06 · ไม่ได้บันทึกหรือถอนเงิน');
   });
 
   it('any input puts the cards back to รอข้อมูล and says ข้อมูลเปลี่ยน กรุณาคำนวณใหม่ (P3; §9 row 4)', async () => {

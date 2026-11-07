@@ -1,3 +1,5 @@
+// F55 (docs/design/backdated-keying.md §16.7), restated by the ticket author claude/3b81c9d5: dates are dd/mm/yyyy HH:mm
+// (CE, Bangkok) from the shared formatter.
 // #2508: the "entered at" time on Admin → Starting prices is shown in Bangkok time
 // whatever the device's timezone is. Each test sets the device zone through
 // process.env.TZ (Node re-reads it on change) and restores it afterwards.
@@ -11,8 +13,8 @@ import type { AdminMenuProps } from '../menus';
 import { StartingPrices } from './StartingPrices';
 
 const ENTERED_AT = '2026-10-15T18:30:00Z';
-// 2026-10-16 01:30 in Bangkok, th-TH (Buddhist year 2569).
-const BANGKOK_TEXT = '16/10/2569 01:30:00';
+// 2026-10-16 01:30 in Bangkok; F55: CE year, no seconds (was th-TH 16/10/2569 01:30:00).
+const BANGKOK_TEXT = '16/10/2026 01:30';
 
 // The web tsconfig has no Node types; reach process.env through globalThis.
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
@@ -77,7 +79,7 @@ describe('#2508: StartingPrices formats the entered-at time in Asia/Bangkok', ()
     };
   }
 
-  it('device TZ UTC: 2026-10-15T18:30:00Z is shown as 16 Oct 01:30 (Bangkok, th-TH)', async () => {
+  it('device TZ UTC: 2026-10-15T18:30:00Z is shown as 16/10/2026 01:30 (Bangkok, CE)', async () => {
     env.TZ = 'UTC';
     // Guard: the device zone really is UTC in this test.
     expect(new Date(ENTERED_AT).getHours()).toBe(18);
@@ -85,7 +87,8 @@ describe('#2508: StartingPrices formats the entered-at time in Asia/Bangkok', ()
     const { current, history } = await renderedTimes();
     expect(current).toContain(BANGKOK_TEXT);
     expect(history).toContain(BANGKOK_TEXT);
-    expect(current).not.toContain('15/10/2569');
+    expect(current).not.toContain('15/10/2026');
+    expect(current).not.toContain('01:30:00');
   });
 
   it('device TZ Asia/Bangkok: the same text is shown as on a UTC device', async () => {
