@@ -1517,7 +1517,10 @@ async fn an_event_row_is_what_the_devices_snapshot_shows_of_it() {
     .await
     .expect("read the lines");
     for ((row, event), seq) in rows.iter().zip(events).zip(&seqs) {
-        assert_eq!(keys(row), set_of(&EVENT_KEYS), "an event row: {row}");
+        // Restated for OL-7 #6855 (row 98): the view now also answers the additive `actorName`.
+        let mut expected = set_of(&EVENT_KEYS);
+        expected.insert("actorName".to_string());
+        assert_eq!(keys(row), expected, "an event row: {row}");
         assert_eq!(row["seq"], json!(seq), "seq is the keyset id, as text");
         for key in ["kind", "ref", "at", "actor"] {
             assert_eq!(row[key], event[key], "{key} of {row}");
