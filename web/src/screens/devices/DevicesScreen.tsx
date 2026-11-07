@@ -743,7 +743,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                           <Show when={j.kind === 'PRINT_RECEIPT'}>
                             {' '}
                             <a
-                              href={`/devices/receipt?branch=${effectiveBranch()}&ref=${j.ref}`}
+                              href={`/devices/receipt-preview?branch=${effectiveBranch()}&ref=${j.ref}`}
                               target="_blank"
                               rel="noopener noreferrer"
                             >

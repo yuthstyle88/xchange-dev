@@ -757,7 +757,9 @@ describe('DevicesScreen tables (#404 D12-D15, D21)', () => {
     const links = (id: string) => [...jobRow(id).cells[4]!.querySelectorAll('a')];
     const sample = links('J3');
     expect(sample.map(textOf)).toEqual([th.receipt]);
-    expect(sample[0]!.getAttribute('href')).toBe('/devices/receipt?branch=B1&ref=TX-2');
+    // Restated for OL-6 B devices-receipt-page (claude/94389a6b): the link opens the staff preview page, which frames
+    // the unchanged /devices/receipt slip (devices-receipt-preview/DevicesReceiptPreview.test.tsx RP-2).
+    expect(sample[0]!.getAttribute('href')).toBe('/devices/receipt-preview?branch=B1&ref=TX-2');
     expect(sample[0]!.getAttribute('target')).toBe('_blank');
     expect(sample[0]!.getAttribute('rel') ?? '').toContain('noopener');
     expect(links('J2')).toEqual([]);

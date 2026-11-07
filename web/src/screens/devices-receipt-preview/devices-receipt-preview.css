@@ -1,0 +1,33 @@
+.xc-receipt-preview {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+}
+
+.xc-receipt-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.xc-receipt-preview-back {
+  color: var(--xc-brand);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.xc-receipt-preview-card {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 360px;
+}
+
+.xc-receipt-preview-card iframe {
+  display: block;
+  width: 100%;
+  height: 560px;
+  border: 0;
+}
