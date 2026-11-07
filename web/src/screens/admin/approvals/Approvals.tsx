@@ -437,8 +437,8 @@ function RequestCard(props: RequestCardProps): JSX.Element {
             <div class="approval-decision-form">
               <label>
                 {t('decisionReason')}
-                <input
-                  type="text"
+                <textarea
+                  rows={3}
                   value={reason()}
                   maxLength={500}
                   onInput={(e) => setReason(e.currentTarget.value)}
