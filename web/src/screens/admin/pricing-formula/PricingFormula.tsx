@@ -25,6 +25,10 @@ import './pricing-formula.css';
 const t = screenT('admin.pricing-formula', table);
 const tf = formulaTable.formulaT;
 
+export function branchLabel(id: string): string {
+  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
+}
+
 export function PricingFormula(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
   const reasonId = createUniqueId();
@@ -159,133 +163,140 @@ export function PricingFormula(props: AdminMenuProps): JSX.Element {
       >
         {(d) => (
           <>
-            <header class="pricing-formula-header" data-testid="formula-current">
-              <Show when={d().organisation} fallback={<p>{t('noOrganisation')}</p>}>
-                {(org) => (
-                  <p>
-                    {t('currentVersion', {
-                      version: org().version,
-                      approvedBy: org().approvedBy,
-                      validFrom: new Date(org().validFrom).toLocaleString('th-TH', {
-                        timeZone: 'Asia/Bangkok',
-                      }),
-                    })}
-                  </p>
-                )}
-              </Show>
-            </header>
+            <section class="card pricing-formula-editor">
+              <header class="pricing-formula-header" data-testid="formula-current">
+                <Show when={d().organisation} fallback={<p>{t('noOrganisation')}</p>}>
+                  {(org) => (
+                    <p>
+                      {t('currentVersion', {
+                        version: org().version,
+                        approvedBy: org().approvedBy,
+                        validFrom: new Date(org().validFrom).toLocaleString('th-TH', {
+                          timeZone: 'Asia/Bangkok',
+                        }),
+                      })}
+                    </p>
+                  )}
+                </Show>
+              </header>
 
-            <FormulaEditor
-              buy={buy}
-              sell={sell}
-              onBuy={setBuy}
-              onSell={setSell}
-              inputs={() => d().inputs.map((i) => i.name)}
-              defaults={() => d().default}
-              parseError={() => preview.result()?.parseError ?? null}
-              disabled={saving}
-            />
-            <Show when={buyError()}>
-              {(msg) => (
-                <p class="form-error" data-field-error="buyFormula">
-                  {msg()}
-                </p>
-              )}
-            </Show>
-            <Show when={sellError()}>
-              {(msg) => (
-                <p class="form-error" data-field-error="sellFormula">
-                  {msg()}
-                </p>
-              )}
-            </Show>
-
-            <FormulaPreviewTable
-              result={preview.result}
-              pending={preview.pending}
-              error={preview.error}
-            />
-
-            <section>
-              <h3>{t('branchesTitle')}</h3>
-              <table class="pricing-formula-branches">
-                <thead>
-                  <tr>
-                    <th>{t('colBranch')}</th>
-                    <th>{t('colSource')}</th>
-                    <th>{t('colOwnText')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <For each={d().branches}>
-                    {(b) => (
-                      <tr data-branch={b.branch}>
-                        <td>{b.branch}</td>
-                        <td>{tf(`source.${b.source}` as formulaTable.Key)}</td>
-                        <td>
-                          <Show when={b.own} fallback={tf('dash')}>
-                            {(own) => (
-                              <>
-                                <code>{own().buyFormula}</code> / <code>{own().sellFormula}</code>
-                              </>
-                            )}
-                          </Show>
-                        </td>
-                      </tr>
-                    )}
-                  </For>
-                </tbody>
-              </table>
-            </section>
-
-            <div class="pricing-formula-reason">
-              <label for={reasonId}>{t('reasonLabel')}</label>
-              <textarea
-                id={reasonId}
-                data-field="reason"
-                value={reason()}
-                disabled={saving()}
-                onInput={(e) => setReason(e.currentTarget.value)}
+              <FormulaEditor
+                buy={buy}
+                sell={sell}
+                onBuy={setBuy}
+                onSell={setSell}
+                inputs={() => d().inputs.map((i) => i.name)}
+                defaults={() => d().default}
+                parseError={() => preview.result()?.parseError ?? null}
+                disabled={saving}
               />
-              <Show when={reasonError()}>
+              <Show when={buyError()}>
                 {(msg) => (
-                  <p class="form-error" data-field-error="reason">
+                  <p class="form-error" data-field-error="buyFormula">
                     {msg()}
                   </p>
                 )}
               </Show>
-            </div>
+              <Show when={sellError()}>
+                {(msg) => (
+                  <p class="form-error" data-field-error="sellFormula">
+                    {msg()}
+                  </p>
+                )}
+              </Show>
 
-            <FormulaRefusal lines={refusalLines} />
-            <Show when={saveError()}>
-              {(msg) => (
-                <p class="form-error" data-field-error="save">
-                  {msg()}
-                </p>
-              )}
-            </Show>
+              <FormulaPreviewTable
+                result={preview.result}
+                pending={preview.pending}
+                error={preview.error}
+              />
+            </section>
 
-            <Show when={notChecked().length > 0}>
-              <div data-testid="formula-not-checked">
-                <p>{tf('notCheckedTitle')}</p>
-                <ul>
-                  <For each={notChecked()}>
-                    {(item) => <li>{`${item.branch} ${item.currency}`}</li>}
-                  </For>
-                </ul>
+            <section class="card">
+              <h3>{t('branchesTitle')}</h3>
+              <div class="table-scroll">
+                <table class="pricing-formula-branches">
+                  <thead>
+                    <tr>
+                      <th>{t('colBranch')}</th>
+                      <th>{t('colSource')}</th>
+                      <th>{t('colOwnText')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={d().branches}>
+                      {(b) => (
+                        <tr data-branch={b.branch}>
+                          <td title={b.branch}>{branchLabel(b.branch)}</td>
+                          <td>{tf(`source.${b.source}` as formulaTable.Key)}</td>
+                          <td>
+                            <Show when={b.own} fallback={tf('dash')}>
+                              {(own) => (
+                                <>
+                                  <code>{own().buyFormula}</code> / <code>{own().sellFormula}</code>
+                                </>
+                              )}
+                            </Show>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
               </div>
-            </Show>
+            </section>
 
-            <div class="pricing-formula-actions">
-              <button
-                type="button"
-                data-action="formula-save"
-                disabled={saving()}
-                onClick={() => void onSave()}
-              >
-                {saving() ? t('saving') : t('save')}
-              </button>
-            </div>
+            <section class="card pricing-formula-save">
+              <div class="pricing-formula-reason">
+                <label for={reasonId}>{t('reasonLabel')}</label>
+                <textarea
+                  id={reasonId}
+                  data-field="reason"
+                  value={reason()}
+                  disabled={saving()}
+                  onInput={(e) => setReason(e.currentTarget.value)}
+                />
+                <Show when={reasonError()}>
+                  {(msg) => (
+                    <p class="form-error" data-field-error="reason">
+                      {msg()}
+                    </p>
+                  )}
+                </Show>
+              </div>
+
+              <FormulaRefusal lines={refusalLines} />
+              <Show when={saveError()}>
+                {(msg) => (
+                  <p class="form-error" data-field-error="save">
+                    {msg()}
+                  </p>
+                )}
+              </Show>
+
+              <Show when={notChecked().length > 0}>
+                <div data-testid="formula-not-checked">
+                  <p>{tf('notCheckedTitle')}</p>
+                  <ul>
+                    <For each={notChecked()}>
+                      {(item) => <li>{`${item.branch} ${item.currency}`}</li>}
+                    </For>
+                  </ul>
+                </div>
+              </Show>
+
+              <div class="pricing-formula-actions">
+                <button
+                  type="button"
+                  class="primary"
+                  data-action="formula-save"
+                  disabled={saving()}
+                  onClick={() => void onSave()}
+                >
+                  {saving() ? t('saving') : t('save')}
+                </button>
+              </div>
+            </section>
           </>
         )}
       </Show>
