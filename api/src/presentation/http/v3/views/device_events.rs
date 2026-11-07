@@ -99,8 +99,7 @@ impl PagedView for DeviceEventsPagedView {
             };
 
             let actors: Vec<String> = rows.iter().map(|r| r.actor.clone()).collect();
-            let names =
-                xc_auth::application::user::directory::user_names(&pool, &actors).await?;
+            let names = xc_auth::application::user::directory::user_names(&pool, &actors).await?;
 
             Ok(rows
                 .into_iter()
