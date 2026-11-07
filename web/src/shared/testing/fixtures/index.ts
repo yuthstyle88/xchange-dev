@@ -29,6 +29,7 @@ export * from './approval_decide';
 export * from './approval_requests';
 export * from './assistant_ask';
 export * from './attach_referral';
+export * from './backdate_currencies';
 export * from './binding_quote_issue';
 export * from './booking_slots';
 export * from './bookings';

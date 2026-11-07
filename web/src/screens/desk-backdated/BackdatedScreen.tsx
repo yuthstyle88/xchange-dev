@@ -1,7 +1,7 @@
 import { createSignal, For, onMount, Show, type Accessor, type JSX } from 'solid-js';
 import { ApiError, type ApiClient } from '../../shared/api/client';
 import type { Me } from '../../shared/api/generated/common';
-import type { DeskConfig, DeskRate } from '../../shared/api/generated/desk_config';
+import type { BackdateCurrenciesData, BackdateCurrencyRow } from '../../shared/api/generated/backdate_currencies';
 import type { StaffCustomerRow, StaffCustomersFilter } from '../../shared/api/generated/staff_customers';
 import type { TransactionBackdateInput } from '../../shared/api/generated/transaction_backdate';
 import type { TransactionDto } from '../../shared/api/generated/transactions';
@@ -45,7 +45,8 @@ function formatSatang(satang: bigint): string {
 /**
  * `quantity × rate ÷ unitSize`, rounded HALF_UP (away from zero) to 2 decimal places (`backdated-keying.md` §6, §13).
  */
-export function computeThb(quantity: string, rate: string, unitSize: string): string | null {
+export function computeThb(quantity: string, rate: string, unitSize?: string): string | null {
+  if (!unitSize) return null;
   const q = parseNonNegativeDecimal(quantity);
   const r = parseNonNegativeDecimal(rate);
   const u = parseNonNegativeDecimal(unitSize);
@@ -81,24 +82,6 @@ export function computeSettleThb(
   const settle = side === 'BUY' ? thbSatang - feeSatang : thbSatang + feeSatang;
   if (settle <= 0n) return null;
   return formatSatang(settle);
-}
-
-/**
- * Extracts `YYYY-MM-DD` in `Asia/Bangkok` from a picked `paidAt` (`YYYY-MM-DDTHH:mm` or RFC 3339).
- */
-export function valueDateFromPaidAt(paidAt: string): string {
-  const s = paidAt.trim();
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
-  if (m && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(s)) {
-    return m[1]!;
-  }
-  if (/(?:Z|[+-]\d{2}:\d{2})$/i.test(s)) {
-    const d = new Date(s);
-    if (!Number.isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok' }).format(d);
-    }
-  }
-  return m ? m[1]! : '';
 }
 
 /**
@@ -156,7 +139,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   const api = props.api ?? sharedApi();
   const me = props.me ?? sharedSession().me;
 
-  const [rates, setRates] = createSignal<DeskRate[]>([]);
+  const [currencies, setCurrencies] = createSignal<BackdateCurrencyRow[]>([]);
   const [customerSearch, setCustomerSearch] = createSignal('');
   const [customers, setCustomers] = createSignal<StaffCustomerRow[]>([]);
   const [customerId, setCustomerId] = createSignal('');
@@ -167,7 +150,6 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   const [feeThb, setFeeThb] = createSignal('0');
   const [expectedSettleThb, setExpectedSettleThb] = createSignal('');
   const [paidAt, setPaidAt] = createSignal('');
-  const [valueDate, setValueDate] = createSignal('');
   const [method, setMethod] = createSignal('Cash');
   const [reference, setReference] = createSignal('');
   const [account, setAccount] = createSignal('');
@@ -192,10 +174,10 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   onMount(() => {
     const branch = me()?.branch ?? '';
     void api
-      .view<DeskConfig>('desk_config', branch ? { branch } : {})
+      .view<BackdateCurrenciesData>('backdate_currencies', branch ? { branch } : {})
       .then((res) => {
-        const list = res.data?.rates ?? [];
-        setRates(list);
+        const list = res.data?.currencies ?? [];
+        setCurrencies(list);
         if (list.length > 0 && !list.some((r) => r.code === currency())) {
           setCurrency(list[0]!.code);
         }
@@ -203,8 +185,11 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
       .catch(() => undefined);
   });
 
-  const unitSize = () => rates().find((r) => r.code === currency())?.unitSize ?? '1';
-  const computedThb = () => computeThb(quantity(), rate(), unitSize());
+  const unitSize = (): string | undefined => currencies().find((r) => r.code === currency())?.unitSize;
+  const computedThb = () => {
+    const u = unitSize();
+    return u !== undefined ? computeThb(quantity(), rate(), u) : null;
+  };
   const settleThb = () => computeSettleThb(computedThb(), feeThb(), side());
 
   function clearField(field: string): void {
@@ -219,11 +204,6 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
   function handlePaidAtInput(val: string): void {
     setPaidAt(val);
     clearField('payment.paidAt');
-    const derived = valueDateFromPaidAt(val);
-    if (derived) {
-      setValueDate(derived);
-      clearField('valueDate');
-    }
   }
 
   async function searchCustomers(): Promise<void> {
@@ -278,7 +258,6 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
           bankFeeThb: bankFeeThb().trim() === '' ? '0' : bankFeeThb().trim(),
           paidAt: toBangkokRfc3339(paidAt()),
         },
-        valueDate: valueDate().trim(),
         passport: passportKey ? { uploadKey: passportKey } : null,
         notes: notes(),
       };
@@ -393,7 +372,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
             }}
           />
           <datalist id="backdate-currencies">
-            <For each={rates()}>{(r) => <option value={r.code} />}</For>
+            <For each={currencies()}>{(r) => <option value={r.code} />}</For>
           </datalist>
           <Show when={fieldErrorText('currency')}>
             {(msg) => (
@@ -427,7 +406,7 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
 
         <label class="desk-field">
           <span>
-            {t('rate')} ({t('unitSize')} {unitSize()} {currency()})
+            {unitSize() !== undefined ? `${t('rate')} (${t('unitSize')} ${unitSize()} ${currency()})` : t('rate')}
           </span>
           <input
             name="rate"
@@ -513,26 +492,6 @@ export function BackdatedScreen(props: { api?: ApiClient; me?: Accessor<Me | und
           <Show when={fieldErrorText('payment.paidAt')}>
             {(msg) => (
               <span class="desk-error" role="alert" data-field-error="payment.paidAt">
-                {msg()}
-              </span>
-            )}
-          </Show>
-        </label>
-
-        <label class="desk-field">
-          <span>{t('valueDate')}</span>
-          <input
-            name="valueDate"
-            type="date"
-            value={valueDate()}
-            onInput={(e) => {
-              setValueDate(e.currentTarget.value);
-              clearField('valueDate');
-            }}
-          />
-          <Show when={fieldErrorText('valueDate')}>
-            {(msg) => (
-              <span class="desk-error" role="alert" data-field-error="valueDate">
                 {msg()}
               </span>
             )}

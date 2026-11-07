@@ -447,3 +447,93 @@ within a date (`DocumentRef` uses Bangkok time; every branch today is in Asia/Ba
 | B15 | `GET` the desk transaction detail of B1 | `backdate.enteredBy` = Owner's id, `backdate.enteredAt` = `recorded_at` |
 | B16 | `BackdateWindow::check` with `value_date` = today (branch tz) and not closed | Ok |
 | B17 | `BackdatePricing::price` JPY qty 10000, `unit_size` 100, rate 0.2155 → | `thb_amount` 21.55 |
+
+## 15. After day 4's keying (F44, F46; sub-controller claude/3b81c9d5, 2026-11-06)
+
+claude/94389a6b keyed the owner's 104 real orders of 4 Nov on xc-v3 (`#564` issuecomment-6677985090). Two form
+defects came out of it. The owner approved cutting both ("เร่ง ออกใบจ่ายงาน", relayed by claude/d0aad3). F45 (which date a
+receipt number carries) is an open question on `#564` and is **not** part of this section.
+
+### 15.1 F44: the server dates the deal, the form does not guess
+
+- **Today:** the server already decides the business date. `BackdateWindow::check` refuses any `valueDate` that is
+  not `ShiftPlan::business_date_of(paidAt)` (CS-20b, `backdate.rs:376-389`). The form has its own rule, the calendar date of
+  `paidAt` (`valueDateFromPaidAt`, `BackdatedScreen.tsx:89`), so every deal paid between midnight and the 06:00 cutover defaults to the wrong
+  day. The keyer of 4 Nov changed 23 rows by hand.
+- `[required]` `TransactionBackdateInput.value_date` becomes `Option<String>` (`#[serde(default)]`,
+  `#[ts(optional = nullable)]`), as `TransactionCreateInput.value_date` already is (`transactions.rs:118`).
+- `[required]` Absent or `null` ⇒ the command derives it before building `BackdateRequest`, the way the live create does
+  (`transactions.rs:369-381`). It loads the branch plan with `ShiftPlanService::plan_in` and takes
+  `plan.business_date_of(paid_at)`, falling back to `paid_at`'s date in `plan.timezone()` for an empty plan. `BackdateRequest`,
+  `BackdateSale::run_in` and `BackdateWindow` are unchanged, so a sent `valueDate` is still checked exactly as in §4.
+- `[required]` The form sends no `valueDate`. It has no `valueDate` input, and `valueDateFromPaidAt` is deleted. The receipt it
+  links to already prints the business date (§8), so the form adds no date of its own.
+- §4's row "`valueDate` ≠ `paidAt`'s date" now reads: a **sent** `valueDate` that is not `paidAt`'s business date ⇒
+  `400 validationFailed valueDate`.
+
+### 15.2 F46: the form reads units from the table the server prices with
+
+- **Today:** the form's only currency source is `desk_config` (`BackdatedScreen.tsx:206`), which lists only currencies with a
+  published desk rate, with `unitSize` as `"1.0000"`. The server accepts any currency in `currencies` and prices
+  with that table's `unit_size` (`backdate.rs:182-184`). For a currency without a desk rate, the form falls back to `'1'`. That
+  is wrong for KRW (1000), and prints in a different form from the desk's.
+- `[required]` New view `backdate_currencies` (`http/v3/views/backdate_currencies.rs`; DTO
+  `dto/v3/backdate_currencies.rs`). It inherits `(EntryPath::Rpc, "transactionBackdate")`, so it reaches whoever the
+  command reaches. Its data is `{ currencies: [{ code, unitSize, minorUnit }] }`: every row of `currencies` except THB, ordered by
+  code, with `unitSize` normalised (`"1"`, `"100"`, `"1000"`).
+- `[required]` The form's currency list and unit come from `backdate_currencies` only. `desk_config` is no longer read by
+  this screen. A code typed that is not in the list shows no unit and no computed THB (the server will refuse it with
+  `validationFailed currency`).
+
+```mermaid
+classDiagram
+  class TransactionBackdateInput {
+    <<api/src/presentation/http/v3/commands/transaction_backdate.rs>>
+    value_date: Option~String~
+  }
+  class BackdateCurrenciesView {
+    <<api/src/presentation/http/v3/views/backdate_currencies.rs>>
+    NAME = "backdate_currencies"
+    INHERITS = (Rpc, "transactionBackdate")
+    load(branch, who, NoFilter) BackdateCurrenciesData
+  }
+  class BackdateCurrenciesData {
+    <<api/src/presentation/dto/v3/backdate_currencies.rs>>
+    currencies: Vec~BackdateCurrencyRow~
+  }
+  class BackdateCurrencyRow {
+    <<api/src/presentation/dto/v3/backdate_currencies.rs>>
+    code: String
+    unit_size: String
+    minor_unit: u8
+  }
+  class BackdatedScreen {
+    <<web/src/screens/desk-backdated/BackdatedScreen.tsx>>
+  }
+  BackdateCurrenciesView --> BackdateCurrenciesData
+  BackdateCurrenciesData *-- BackdateCurrencyRow
+  BackdatedScreen ..> BackdateCurrenciesView : GET views/backdate_currencies
+  BackdatedScreen ..> TransactionBackdateInput : POST, no valueDate
+```
+
+| Ticket | Owns | Uses |
+|---|---|---|
+| F44 | `transaction_backdate.rs` (the derive), generated `transaction_backdate.ts`, the form's date handling | `ShiftPlanService`, unchanged `BackdateSale` |
+| F46a | `BackdateCurrenciesView::load` | the skeleton's DTO and registration |
+| F46b (after F44) | the form's currency list and unit | F46a's view |
+
+No data migration: no table, column or constraint changes.
+
+### 15.3 Behaviour (the up-front tests lock these)
+
+| # | Case | Required result |
+|---|---|---|
+| F44-1 | B1's body without `valueDate`, `paidAt` 2026-11-04 13:23 ICT | 200; the row's `value_date` = 2026-11-04 |
+| F44-2 | Without `valueDate`, `paidAt` 2026-11-05 02:59 ICT (default plan, cutover 06:00) | 200; `value_date` = 2026-11-04 |
+| F44-3 | `valueDate: null`, `paidAt` 2026-11-05 02:59 ICT | as F44-2 |
+| F44-4 | `valueDate` 2026-11-05 sent, `paidAt` 2026-11-05 02:59 ICT | 400 `validationFailed` `valueDate` (unchanged, CS-20b) |
+| F44-5 | The form, any `paidAt` picked | no `input[name="valueDate"]`; the POST body has no `valueDate` key |
+| F46-1 | `GET views/backdate_currencies` as the Owner | 200; no THB; codes ascending; USD `unitSize` "1", JPY "100", KRW "1000"; JPY `minorUnit` 0 |
+| F46-2 | The form, KRW typed, rate 0.0250, quantity 100000 (KRW absent from `desk_config`) | label "ต่อหน่วย 1000 KRW"; computed THB 2.50 |
+| F46-3 | The form, USD typed | label "ต่อหน่วย 1 USD", never "1.0000" |
+| F46-4 | The form, an unknown code typed | no unit in the label, no computed THB |

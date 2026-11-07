@@ -38,6 +38,6 @@ expectedSettleThb?: string | null,
  */
 payment: TransactionPaymentInput, 
 /**
- * The business date, `YYYY-MM-DD`: `paidAt`'s date in the branch's timezone.
+ * Optional. Absent or null: the business date of `paidAt` under the branch's plan (§15.1).
  */
-valueDate: string, passport?: UploadRef | null, notes: string, };
+valueDate?: string | null, passport?: UploadRef | null, notes: string, };

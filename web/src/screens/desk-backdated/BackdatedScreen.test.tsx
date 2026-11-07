@@ -13,7 +13,6 @@ import {
   computeSettleThb,
   computeThb,
   toBangkokRfc3339,
-  valueDateFromPaidAt,
 } from './BackdatedScreen';
 import * as i18n from './i18n';
 
@@ -61,8 +60,25 @@ describe('desk-backdated (BK-11 #6146)', () => {
       expect(computeSettleThb('16075.00', '25.00', 'SELL')).toBe('16100.00');
     });
 
-    it('updates live computed THB in the form using unitSize from desk_config rates', async () => {
+    // F46 (docs/design/backdated-keying.md §15.2): units come from backdate_currencies, not desk_config. Restated by the
+    // ticket author claude/3b81c9d5; the new rows are in BackdatedScreen.units.test.tsx.
+    it('updates live computed THB in the form using unitSize from backdate_currencies', async () => {
       const api = new ApiClient(async (url) => {
+        if (url.startsWith('/api/v3/views/backdate_currencies')) {
+          return new Response(
+            JSON.stringify({
+              version: 1,
+              changed: true,
+              data: {
+                currencies: [
+                  { code: 'JPY', unitSize: '100', minorUnit: 0 },
+                  { code: 'USD', unitSize: '1', minorUnit: 2 },
+                ],
+              },
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          );
+        }
         if (url.startsWith('/api/v3/views/desk_config')) {
           return new Response(
             JSON.stringify({
@@ -99,23 +115,13 @@ describe('desk-backdated (BK-11 #6146)', () => {
     });
   });
 
-  describe('2. paidAt → valueDate pre-fill', () => {
-    it('extracts valueDate from paidAt and formats Asia/Bangkok RFC 3339 with +07:00', () => {
-      expect(valueDateFromPaidAt('2026-11-04T13:23')).toBe('2026-11-04');
+  // F44 (docs/design/backdated-keying.md §15.1): the form no longer pre-fills valueDate from the calendar date of
+  // paidAt, so the pre-fill test is gone and the body below has no valueDate. Restated by the ticket author
+  // claude/3b81c9d5; the new behaviour is in BackdatedScreen.value-date.test.tsx.
+  describe('2. paidAt formatting', () => {
+    it('formats Asia/Bangkok RFC 3339 with +07:00', () => {
       expect(toBangkokRfc3339('2026-11-04T13:23')).toBe('2026-11-04T13:23:00+07:00');
       expect(toBangkokRfc3339('2026-11-04T13:23:45')).toBe('2026-11-04T13:23:45+07:00');
-    });
-
-    it('pre-fills valueDate input when paidAt is picked', () => {
-      const api = new ApiClient(async () => new Response(JSON.stringify({ version: 1, changed: true }), { status: 200 }));
-      dispose = render(() => <BackdatedScreen api={api} />, host);
-
-      const paidAtInput = host.querySelector<HTMLInputElement>('input[name="paidAt"]')!;
-      const valueDateInput = host.querySelector<HTMLInputElement>('input[name="valueDate"]')!;
-
-      expect(valueDateInput.value).toBe('');
-      setInput(paidAtInput, '2026-11-04T13:23');
-      expect(valueDateInput.value).toBe('2026-11-04');
     });
   });
 
@@ -212,7 +218,6 @@ describe('desk-backdated (BK-11 #6146)', () => {
           bankFeeThb: '0',
           paidAt: '2026-11-04T13:23:00+07:00',
         },
-        valueDate: '2026-11-04',
         passport: null,
         notes: 'Telegram order #1',
       });
