@@ -1,10 +1,10 @@
 .xc-devices {
-  --ink: #25232b;
-  --muted: #706a77;
-  --brand: #a90045;
-  --line: #e5e1e7;
-  background: #f5f3f6;
-  color: var(--ink, #25232b);
+  --ink: var(--xc-ink);
+  --muted: var(--xc-muted);
+  --brand: var(--xc-brand);
+  --line: var(--xc-line);
+  background: var(--xc-bg);
+  color: var(--xc-ink);
   font: 15px/1.65 -apple-system, BlinkMacSystemFont, 'Tahoma', sans-serif;
   min-height: 100vh;
 }
@@ -15,7 +15,7 @@
 }
 
 .xc-devices .xc-shell-main a {
-  color: var(--brand, #a90045);
+  color: var(--xc-brand);
 }
 
 .xc-devices .xc-shell-main {
@@ -43,14 +43,14 @@
 
 .xc-devices .xc-shell-main p {
   margin: 8px 0;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
 }
 
 .xc-devices .xc-shell-banner .banner {
   text-align: center;
   padding: 10px;
-  background: #fff0ba;
-  color: #624200;
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
   font-weight: 650;
 }
 
@@ -59,7 +59,7 @@
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 1.4px;
-  color: var(--brand, #a90045);
+  color: var(--xc-brand);
 }
 
 .xc-devices .xc-shell-main .heading,
@@ -81,7 +81,7 @@
 .xc-devices .xc-shell-main label {
   display: block;
   font-size: 13px;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
 }
 
 .xc-devices .xc-shell-main input,
@@ -95,16 +95,16 @@
   display: block;
   width: 100%;
   padding: 10px;
-  border: 1px solid #cdc7d1;
+  border: 1px solid var(--xc-line);
   border-radius: 7px;
-  background: white;
-  color: var(--ink, #25232b);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
 }
 
 .xc-devices .xc-shell-main button {
-  border: 1px solid #d3cad5;
-  background: white;
-  color: var(--brand, #a90045);
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
   padding: 10px 14px;
   border-radius: 7px;
   font-weight: 650;
@@ -117,16 +117,16 @@
 }
 
 .xc-devices .xc-shell-main button.primary {
-  background: var(--brand, #a90045);
-  color: white;
-  border-color: var(--brand, #a90045);
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  border-color: var(--xc-brand);
 }
 
 .xc-devices .xc-shell-main a:focus-visible,
 .xc-devices .xc-shell-main button:focus-visible,
 .xc-devices .xc-shell-main input:focus-visible,
 .xc-devices .xc-shell-main select:focus-visible {
-  outline: 3px solid #de7daa;
+  outline: 3px solid var(--xc-focus);
   outline-offset: 2px;
 }
 
@@ -153,20 +153,20 @@
 }
 
 .xc-devices .xc-shell-main .metric {
-  background: #26212c;
-  color: white;
+  background: var(--xc-gray-900);
+  color: var(--xc-gray-0);
   padding: 20px;
   border-radius: 9px;
 }
 
 .xc-devices .xc-shell-main .metric p {
-  color: #c9c2d0;
+  color: var(--xc-gray-300);
 }
 
 .xc-devices .xc-shell-main .metric > span:first-child {
   display: block;
   margin: 8px 0;
-  color: #c9c2d0;
+  color: var(--xc-gray-300);
 }
 
 .xc-devices .xc-shell-main .metric b {
@@ -185,8 +185,8 @@
 .xc-devices .xc-shell-main .request-section,
 .xc-devices .xc-shell-main .jobs-section,
 .xc-devices .xc-shell-main .events-section {
-  background: white;
-  border: 1px solid var(--line, #e5e1e7);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 10px;
   padding: 20px;
 }
@@ -200,20 +200,20 @@
   align-self: flex-start;
   font-size: 10px;
   letter-spacing: .7px;
-  color: #6c4160;
-  background: #f3e9ef;
+  color: var(--xc-brand);
+  background: var(--xc-brand-soft);
   border-radius: 4px;
   padding: 3px 7px;
 }
 
 .xc-devices .xc-shell-main .tag.warn {
-  color: #835510;
-  background: #fff0ce;
+  color: var(--xc-warn);
+  background: var(--xc-warn-soft);
 }
 
 .xc-devices .xc-shell-main .note,
 .xc-devices .xc-shell-main .counter-notes {
-  background: #f7f4f7;
+  background: var(--xc-gray-50);
   padding: 10px;
   border-radius: 5px;
 }
@@ -274,7 +274,7 @@
 
 .xc-devices .xc-shell-main th {
   text-align: left;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
   font-size: 11px;
   letter-spacing: .3px;
 }
@@ -282,13 +282,13 @@
 .xc-devices .xc-shell-main th,
 .xc-devices .xc-shell-main td {
   padding: 13px 10px;
-  border-bottom: 1px solid var(--line, #e5e1e7);
+  border-bottom: 1px solid var(--xc-line);
   vertical-align: top;
 }
 
 .xc-devices .xc-shell-main td small {
   display: block;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
   max-width: 230px;
   word-break: break-all;
 }
@@ -307,16 +307,16 @@
 
 .xc-devices .xc-shell-main #message:not(:empty) {
   padding: 12px 16px;
-  background: #fce4eb;
-  border: 1px solid #e7b7c8;
+  background: var(--xc-brand-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 6px;
-  color: #851139;
+  color: var(--xc-brand-strong);
 }
 
 .xc-devices .xc-shell-main .empty {
   padding: 25px;
   text-align: center;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
 }
 
 @media (max-width: 1050px) {
@@ -393,11 +393,11 @@
   .xc-devices .xc-shell-main .events-section tr,
   .xc-devices .xc-shell-main .jobs-table tr,
   .xc-devices .xc-shell-main .events-table tr {
-    border: 1px solid var(--line, #e5e1e7);
+    border: 1px solid var(--xc-line);
     border-radius: 10px;
     margin: 0 0 12px;
     padding: 6px 12px;
-    background: #fff;
+    background: var(--xc-surface);
   }
 
   .xc-devices .xc-shell-main .table-wrap td,
@@ -409,7 +409,7 @@
     grid-template-columns: 7em minmax(0, 1fr);
     gap: 10px;
     padding: 8px 0;
-    border-bottom: 1px solid var(--line, #e5e1e7);
+    border-bottom: 1px solid var(--xc-line);
     overflow-wrap: anywhere;
   }
 
@@ -428,7 +428,7 @@
   .xc-devices .xc-shell-main .events-table td::before {
     content: attr(data-label);
     font-size: 12px;
-    color: var(--muted, #706a77);
+    color: var(--xc-muted);
   }
 
   .xc-devices .xc-shell-main .table-wrap td.empty,
@@ -481,7 +481,7 @@
 .xc-devices .xc-shell-main footer {
   text-align: center;
   padding: 30px;
-  color: var(--muted, #706a77);
+  color: var(--xc-muted);
   font-size: 12px;
 }
 
@@ -506,7 +506,7 @@
 }
 
 .xc-devices .xc-shell-brand {
-  color: var(--ink, #25232b);
+  color: var(--xc-ink);
 }
 
 

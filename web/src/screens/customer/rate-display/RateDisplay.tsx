@@ -20,6 +20,7 @@ import { BoardShell } from './board/BoardShell';
 import { FullscreenButton } from './FullscreenButton';
 import { th, en, zh } from './i18n';
 import { branchFromSearch } from './location';
+import '../../../shared/ui/xc-theme.css';
 import './rate-display.css';
 
 export const RATES_POLL_MS = 10_000;
@@ -59,7 +60,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
 
   if (!branch) {
     return (
-      <div class="xc-rate-display">
+      <div class="xc-rate-display xc-theme">
         <div class="xc-rate-display-message">{t('noBranch')}</div>
       </div>
     );
@@ -188,7 +189,7 @@ export function RateDisplay(props: RateDisplayProps): JSX.Element {
   );
 
   return (
-    <div class="xc-rate-display">
+    <div class="xc-rate-display xc-theme">
       <Show when={hostState() === 'loading' || (hostState() === 'ready' && matchedBranchId() === undefined)}>
         <div class="xc-rate-display-loading">{t('loading')}</div>
       </Show>

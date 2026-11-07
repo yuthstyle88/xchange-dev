@@ -5,8 +5,8 @@
   display: flex;
   align-items: center;
   overflow: hidden;
-  background: linear-gradient(90deg, #700028, var(--xc-rb-brand, #a5003c) 50%, #700028);
-  color: #fff;
+  background: linear-gradient(90deg, var(--xc-brand-950), var(--xc-brand) 50%, var(--xc-brand-950));
+  color: var(--xc-on-brand);
 }
 
 .xc-rb-ticker-track {
@@ -31,7 +31,7 @@
 
 .xc-rb-ticker-sep {
   font-style: normal;
-  color: #ffc9da;
+  color: var(--xc-brand-200);
   padding: 0 22px;
 }
 

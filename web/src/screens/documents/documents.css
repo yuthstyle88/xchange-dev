@@ -1,4 +1,4 @@
-/* #1349 V3-documents: v2's documents pages (src/devices.mjs, http/documents.rs before #1349), inside the shell */
+/* issue 1349 V3-documents: v2's documents pages (src/devices.mjs, http/documents.rs before issue 1349), inside the shell */
 .documents-screen {
   max-width: 700px;
   font-size: 18px;
@@ -18,11 +18,11 @@
 }
 
 .documents-screen a {
-  color: #ab0044;
+  color: var(--xc-brand);
 }
 
 .documents-screen .documents-refusal {
-  color: var(--danger, #a5003c);
+  color: var(--xc-danger);
 }
 
 .documents-screen .documents-back {

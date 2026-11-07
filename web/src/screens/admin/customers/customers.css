@@ -1,4 +1,4 @@
-/* Customers screen styles — ported from v2 for CD-2 (#714, #797) */
+/* Customers screen styles — ported from v2 for CD-2 (714, 797) */
 
 /* no v2 source: screen root wrapper container */
 .xc-admin .xc-content .customers-screen {
@@ -33,14 +33,14 @@
 /* v2 src/online/lib/admin-html.ts:1 #customer-summary */
 .xc-admin .xc-content .summary-status {
   font-size: 15px;
-  color: var(--ink);
+  color: var(--xc-ink);
   margin: 0;
 }
 
 /* v2 src/online/lib/admin-html.ts:1 #customer-summary */
 .xc-admin .xc-content .search-section .waiting-text {
   font-size: 15px;
-  color: var(--ink);
+  color: var(--xc-ink);
   padding: 0;
   margin: 0;
 }
@@ -48,13 +48,13 @@
 /* v2 src/online/lib/admin-html.ts:2 .empty */
 .xc-admin .xc-content .waiting-text {
   font-size: 14px;
-  color: var(--muted);
+  color: var(--xc-muted);
   padding: 12px 0;
 }
 
 /* v2 src/online/lib/admin-html.ts:2 .error */
 .xc-admin .xc-content .refusal-message {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 14px;
   margin: 12px 0;
 }
@@ -96,17 +96,17 @@
   align-items: center;
   gap: 13px;
   padding: 13px 17px;
-  background: #f1f2f5;
-  border: 1px solid #dee0e6;
+  background: var(--xc-bg);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
   font-size: 12px;
-  color: #5d616b;
+  color: var(--xc-muted);
   margin-bottom: 24px;
 }
 
 /* v2 src/online/lib/admin-html.ts:2 .error */
 .xc-admin .xc-content .banner.error {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 14px;
 }
 

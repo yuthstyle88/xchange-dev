@@ -1,4 +1,12 @@
-/* Shared card & form-row styles — CD-0 (#726, design docs/design/xchange-v3-cards.md) */
+/* Shared card & form-row styles — CD-0 (#726) & OL-1 (#6360, design §2.3) */
+
+.xc-theme .card {
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
+  padding: 20px;
+}
 
 /* -------------------------------------------------------------------------
    1. Admin look block (.xc-admin .xc-content)
@@ -6,9 +14,10 @@
 
 /* v2 admin-html.ts:1 .card, admin-workspace.css:24 .card */
 .xc-admin .xc-content .card {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
   margin-bottom: 22px;
   min-width: 0;
   overflow: hidden;
@@ -17,15 +26,15 @@
 /* v2 admin-html.ts:1 .dark-card, admin-workspace.css:24 .dark-card */
 .xc-admin .xc-content .card.dark-card,
 .xc-admin .xc-content .dark-card {
-  background: #2b2329;
-  color: white;
+  background: var(--xc-gray-900);
+  color: var(--xc-on-brand);
   padding: 23px 25px;
   border: 0;
 }
 
 /* v2 admin-html.ts:1 .dark-card .eyebrow */
 .xc-admin .xc-content .dark-card .eyebrow {
-  color: #c5a6b2;
+  color: var(--xc-brand-300);
 }
 
 /* v2 admin-html.ts:1 .dark-card h2 */
@@ -57,7 +66,7 @@
 .xc-admin .xc-content .card-heading .eyebrow {
   font-size: 11px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--xc-muted);
   letter-spacing: 0;
   margin-bottom: 3px;
 }
@@ -151,9 +160,9 @@
 /* v2 admin-html.ts:1 .stat, admin-workspace.css:23 .stat */
 .xc-admin .xc-content .stat-card,
 .xc-admin .xc-content .stat {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
   padding: 20px;
   position: relative;
 }
@@ -161,8 +170,8 @@
 /* v2 admin-workspace.css:23 .stat:first-child */
 .xc-admin .xc-content .stat-card:first-child,
 .xc-admin .xc-content .stat:first-child {
-  border-top: 1px solid var(--line);
-  border-left: 3px solid var(--brand);
+  border-top: 1px solid var(--xc-line);
+  border-left: 3px solid var(--xc-brand);
   padding-top: 20px;
 }
 
@@ -182,7 +191,7 @@
 /* v2 admin-html.ts:1 .stat-label, admin-workspace.css:23 .stat-label */
 .xc-admin .xc-content .stat-label {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--xc-muted);
 }
 
 /* v2 admin-html.ts:1 .stat-number, admin-workspace.css:23 .stat-number */
@@ -201,7 +210,7 @@
 .xc-admin .xc-content .stat-number span {
   font-size: 13px;
   font-weight: 400;
-  color: var(--muted);
+  color: var(--xc-muted);
   letter-spacing: 0;
 }
 
@@ -210,7 +219,7 @@
 .xc-admin .xc-content .stat-card small,
 .xc-admin .xc-content .stat small {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--xc-muted);
   line-height: 1.5;
   display: block;
 }
@@ -265,14 +274,14 @@
 .xc-admin .xc-content .form-hint {
   display: block;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--xc-muted);
 }
 
 /* v2 admin-workspace.css:37 .payment-card .unit, admin-html.ts:1 .unit */
 .xc-admin .xc-content .form-unit {
   display: block;
   font-size: 12px;
-  color: var(--muted);
+  color: var(--xc-muted);
 }
 
 /* v2 devices.css:1 .check */
@@ -287,7 +296,7 @@
   width: 19px;
   height: 19px;
   min-height: 19px;
-  accent-color: var(--brand);
+  accent-color: var(--xc-brand);
   margin: 0;
 }
 
@@ -304,9 +313,10 @@
 
 /* v2 devices.css:1 .devices article, .panel */
 .xc-devices .xc-shell-main .card {
-  background: white;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-xl);
+  box-shadow: var(--xc-shadow-sm);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -324,7 +334,7 @@
   font-size: 11px;
   font-weight: 750;
   letter-spacing: 1.4px;
-  color: var(--brand);
+  color: var(--xc-brand);
 }
 
 /* v2 devices.css:1 h2 */
@@ -400,7 +410,7 @@
 .xc-devices .xc-shell-main .form-field {
   display: block;
   font-size: 13px;
-  color: var(--muted);
+  color: var(--xc-muted);
 }
 
 /* v2 devices.css:1 label */
@@ -414,11 +424,11 @@
 .xc-devices .xc-shell-main .form-field > textarea {
   display: block;
   width: 100%;
-  padding: 10px;
-  border: 1px solid #cdc7d1;
-  border-radius: 7px;
-  background: white;
-  color: var(--ink);
+  padding: 10px 12px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
   box-sizing: border-box;
 }
 

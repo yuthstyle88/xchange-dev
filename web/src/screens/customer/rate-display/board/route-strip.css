@@ -26,7 +26,7 @@
   font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.14em;
-  color: var(--xc-rb-muted, #6f6a73);
+  color: var(--xc-rb-muted);
   text-transform: uppercase;
 }
 
@@ -46,7 +46,7 @@
 .xc-rb-route-substatus {
   display: block;
   font-size: 17px;
-  color: var(--xc-rb-muted, #6f6a73);
+  color: var(--xc-rb-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -55,7 +55,7 @@
 .xc-rb-route-plane {
   position: relative;
   height: 56px;
-  color: var(--xc-rb-brand, #a5003c);
+  color: var(--xc-rb-brand);
   transform: translateY(8px);
 }
 
@@ -78,22 +78,22 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--xc-rb-up, #13804f);
+  background: var(--xc-rb-up);
   position: relative;
   margin-right: 6px;
   vertical-align: middle;
 }
 
 .xc-rb-delayed .xc-rb-live-dot {
-  background: #d08a00;
+  background: var(--xc-warn);
 }
 
 .xc-rb-offline .xc-rb-live-dot {
-  background: var(--xc-rb-down, #c0153f);
+  background: var(--xc-rb-down);
 }
 
 .xc-rb-route-stale {
   font-size: 15px;
-  color: #9a6400;
+  color: var(--xc-warn);
   padding-top: 4px;
 }

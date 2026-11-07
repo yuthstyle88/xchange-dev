@@ -1,4 +1,4 @@
-/* pricing-policy.css — styles for PricingPolicy.tsx (FE pricing-board, #564). */
+/* pricing-policy.css — styles for PricingPolicy.tsx (FE pricing-board, 564). */
 
 .pricing-policy-form {
   display: flex;
@@ -8,10 +8,10 @@
 
 .pricing-policy-alert {
   padding: 8px 12px;
-  background-color: #fef2f2;
-  border: 1px solid #f87171;
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
   border-radius: 4px;
-  color: #991b1b;
+  color: var(--xc-danger);
   font-size: 14px;
 }
 
@@ -30,8 +30,8 @@
   display: inline-block;
   padding: 2px 6px;
   border-radius: 4px;
-  background-color: #e0f2fe;
-  color: #0369a1;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand);
   font-size: 12px;
 }
 
@@ -40,18 +40,18 @@
   flex-wrap: wrap;
   gap: 8px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--xc-muted);
 }
 
 .pricing-policy-readonly-margin {
   padding: 2px 4px;
-  background-color: #f8fafc;
+  background-color: var(--xc-paper);
   border-radius: 2px;
 }
 
 .pricing-policy-readonly-spread {
   padding: 2px 4px;
-  background-color: #f8fafc;
+  background-color: var(--xc-paper);
   border-radius: 2px;
 }
 
@@ -66,14 +66,14 @@
   flex-direction: column;
   gap: 6px;
   padding: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
 }
 
 .pricing-policy-tier-label {
   font-weight: 500;
   font-size: 13px;
-  color: #334155;
+  color: var(--xc-ink);
 }
 
 .pricing-policy-field {
@@ -84,12 +84,12 @@
 
 .pricing-policy-label {
   font-size: 12px;
-  color: #64748b;
+  color: var(--xc-muted);
 }
 
 .pricing-policy-input {
   padding: 6px 8px;
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   font-size: 13px;
 }
@@ -108,8 +108,8 @@
 
 .pricing-policy-btn-save {
   padding: 6px 16px;
-  background-color: #2563eb;
-  color: #ffffff;
+  background-color: var(--xc-brand);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -117,9 +117,9 @@
 
 .pricing-policy-btn-clear {
   padding: 6px 16px;
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
+  background-color: var(--xc-gray-75);
+  color: var(--xc-gray-700);
+  border: 1px solid var(--xc-line);
   border-radius: 4px;
   cursor: pointer;
 }
@@ -136,7 +136,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-policy-alert {
-  border-color: #edd4df;
+  border-color: var(--xc-brand-200);
   border-radius: 10px;
   background: var(--soft);
   color: var(--brand);
@@ -168,7 +168,7 @@
 .xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-input {
   min-height: 44px;
   margin: 0;
-  border-color: #cdd0d7;
+  border-color: var(--xc-line);
   border-radius: 12px;
   font-size: 15px;
   font-variant-numeric: tabular-nums;
@@ -177,7 +177,7 @@
 .xc-admin .xc-content.xc-content .pricing-policy-tier {
   border-color: var(--line);
   border-radius: 12px;
-  background: #fcfafb;
+  background: var(--xc-paper);
 }
 
 .xc-admin .xc-content.xc-content .pricing-policy-tier-label {
@@ -189,7 +189,7 @@
 .xc-admin .xc-content.xc-content .pricing-policy-readonly-spread {
   border-radius: 999px;
   padding: 2px 8px;
-  background: #eff0f4;
+  background: var(--xc-gray-100);
   font-variant-numeric: tabular-nums;
 }
 
@@ -205,12 +205,12 @@
   border: 1px solid var(--brand);
   border-radius: 12px;
   background: var(--brand);
-  color: #fff;
+  color: var(--xc-on-brand);
   font-weight: 700;
 }
 
 .xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-btn-save:hover {
-  background: #870032;
+  background: var(--xc-brand-strong);
 }
 
 .xc-admin .xc-content.xc-content .pricing-policy-form .pricing-policy-btn-clear {
@@ -218,7 +218,7 @@
   padding: 8px 16px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--ink);
   font-weight: 600;
 }

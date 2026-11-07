@@ -3,6 +3,7 @@ import { ApiClient, ApiError, type Fetch } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { QrCode } from '../../../shared/ui/QrCode';
 import { th, en, zh } from './i18n';
+import '../../../shared/ui/xc-theme.css';
 import '../_shell/xc-customer-tokens.css';
 import './copy-link.css';
 
@@ -152,7 +153,7 @@ export function CopyLink(props: CopyLinkProps): JSX.Element {
   });
 
   return (
-    <div class="xc-customer xc-copy-link">
+    <div class="xc-customer xc-theme xc-copy-link">
       <div class="xc-copy-link-card">
         <h1 class="xc-copy-link-title">{t('title')}</h1>
 

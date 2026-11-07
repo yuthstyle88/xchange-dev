@@ -1,4 +1,4 @@
-/* bulk-approve.css — styles for BulkApprove.tsx (FE pricing-board, #564). */
+/* bulk-approve.css — styles for BulkApprove.tsx (FE pricing-board, 564). */
 
 .bulk-approve {
   display: flex;
@@ -59,7 +59,7 @@
   border: 1px solid var(--brand);
   border-radius: 12px;
   background: var(--brand);
-  color: #fff;
+  color: var(--xc-on-brand);
   font-weight: 700;
 }
 
@@ -67,7 +67,7 @@
   min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--ink);
 }
 

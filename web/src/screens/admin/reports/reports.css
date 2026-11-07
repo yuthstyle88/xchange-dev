@@ -1,4 +1,4 @@
-/* LK-SD (#716), #795: admin reports screen look ported from v2 admin-html.ts */
+/* LK-SD (716), 795: admin reports screen look ported from v2 admin-html.ts */
 
 .xc-admin .xc-content .reports-screen {
   display: block;
@@ -24,5 +24,5 @@
 .xc-admin .xc-content .reports-screen .reports-toolbar .secondary,
 .xc-admin .xc-content .reports-screen button.secondary#export {
   font-size: 12px;
-  color: var(--brand, #a5003c);
+  color: var(--xc-brand);
 }

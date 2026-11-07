@@ -46,11 +46,11 @@
 }
 
 .xc-rb-up em {
-  color: var(--xc-rb-up, #13804f);
+  color: var(--xc-rb-up);
 }
 
 .xc-rb-down em {
-  color: var(--xc-rb-down, #c0153f);
+  color: var(--xc-rb-down);
 }
 
 @keyframes xc-rb-flap {
@@ -73,8 +73,8 @@
 @keyframes xc-rb-glow-up {
   0%,
   30% {
-    background: #d6f5e5;
-    color: var(--xc-rb-up, #13804f);
+    background: var(--xc-ok-soft);
+    color: var(--xc-rb-up);
   }
   100% {
     background: transparent;
@@ -84,8 +84,8 @@
 @keyframes xc-rb-glow-down {
   0%,
   30% {
-    background: #fde0e8;
-    color: var(--xc-rb-down, #c0153f);
+    background: var(--xc-danger-soft);
+    color: var(--xc-rb-down);
   }
   100% {
     background: transparent;

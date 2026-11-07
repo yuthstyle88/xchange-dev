@@ -29,9 +29,9 @@
 .branches-select {
   min-height: 40px;
   padding: 8px 12px;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 7px;
-  background: #fff;
+  background: var(--xc-surface);
   font: inherit;
 }
 
@@ -44,14 +44,14 @@
 .branches-empty {
   padding: 24px;
   text-align: center;
-  color: #676a73;
+  color: var(--xc-muted);
 }
 
 .branches-card {
-  background: #fff;
+  background: var(--xc-surface);
   border-radius: 8px;
   padding: 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--xc-shadow-sm);
 }
 
 .branches-heading {
@@ -82,9 +82,9 @@
 .branches-input {
   min-height: 40px;
   padding: 8px 12px;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 7px;
-  background: #fff;
+  background: var(--xc-surface);
   font: inherit;
 }
 
@@ -112,7 +112,7 @@
   align-items: center;
   gap: 16px;
   padding: 8px 12px;
-  background: #f9f9fa;
+  background: var(--xc-gray-50);
   border-radius: 6px;
 }
 
@@ -137,32 +137,32 @@
 .branches-time-input {
   min-height: 36px;
   padding: 6px 10px;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--xc-surface);
   font: inherit;
 }
 
 .branches-hours-closed {
-  color: #888;
+  color: var(--xc-muted);
   font-style: italic;
 }
 
 .branches-form-error {
   padding: 10px 14px;
-  background: #fdf2f2;
-  border: 1px solid #f8b4b4;
+  background: var(--xc-danger-soft);
+  border: 1px solid var(--xc-danger);
   border-radius: 6px;
-  color: #c81e1e;
+  color: var(--xc-danger);
   font-size: 14px;
 }
 
 .branches-form-success {
   padding: 10px 14px;
-  background: #edf7ed;
-  border: 1px solid #b7eb8f;
+  background: var(--xc-ok-soft);
+  border: 1px solid var(--xc-ok);
   border-radius: 6px;
-  color: #276749;
+  color: var(--xc-ok);
   font-size: 14px;
 }
 
@@ -179,18 +179,18 @@
   justify-content: center;
   min-height: 40px;
   padding: 8px 16px;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 7px;
-  background: #fff;
+  background: var(--xc-surface);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
 .branches-btn-primary {
-  background: #a5003c;
-  color: #fff;
-  border-color: #a5003c;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
+  border-color: var(--xc-brand);
 }
 
 .branches-tablets {
@@ -201,7 +201,7 @@
 
 .branches-tablets-intro {
   margin: 0;
-  color: #676a73;
+  color: var(--xc-muted);
   font-size: 14px;
 }
 
@@ -217,8 +217,8 @@
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  background: #f9f9fa;
-  border: 1px solid #cdd0d7;
+  background: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 8px;
 }
 
@@ -236,7 +236,7 @@
 
 .branches-tablets-code-meta {
   margin: 0;
-  color: #676a73;
+  color: var(--xc-muted);
   font-size: 13px;
 }
 
@@ -252,7 +252,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 10px 12px;
-  background: #f9f9fa;
+  background: var(--xc-gray-50);
   border-radius: 6px;
   flex-wrap: wrap;
 }
@@ -268,7 +268,7 @@
 }
 
 .branches-tablets-meta {
-  color: #676a73;
+  color: var(--xc-muted);
   font-size: 13px;
 }
 
@@ -286,7 +286,7 @@
 
 .branches-shifts-cutover {
   margin: 0;
-  color: #374151;
+  color: var(--xc-ink);
   font-size: 14px;
   font-weight: 500;
 }
@@ -296,14 +296,14 @@
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px 12px;
-  background: #f3f4f6;
+  background: var(--xc-gray-75);
   border-radius: 6px;
 }
 
 .branches-shifts-bar-segment {
   padding: 4px 10px;
-  background: #e0f2fe;
-  color: #075985;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
   border-radius: 4px;
   font-size: 13px;
   font-weight: 500;
@@ -311,9 +311,9 @@
 
 .branches-shifts-bar-gap {
   padding: 4px 10px;
-  background: #fee2e2;
-  color: #b91c1c;
-  border: 1px solid #f87171;
+  background: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border: 1px solid var(--xc-danger);
   border-radius: 4px;
   font-size: 13px;
   font-weight: 600;
@@ -330,7 +330,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 10px 12px;
-  background: #f9f9fa;
+  background: var(--xc-gray-50);
   border-radius: 6px;
 }
 
@@ -340,4 +340,3 @@
   gap: 10px;
   flex-wrap: wrap;
 }
-

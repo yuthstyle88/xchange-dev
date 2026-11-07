@@ -18,8 +18,8 @@
 }
 
 .xc-verification-panel {
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
   padding: 1rem;
 }
@@ -40,7 +40,7 @@
 .xc-verification-table td {
   text-align: left;
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--xc-border, #e2e8f0);
+  border-bottom: 1px solid var(--xc-line);
 }
 
 .xc-verification-table tbody tr {
@@ -48,9 +48,9 @@
 }
 
 .xc-verification-error {
-  background: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
+  background: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.375rem;
   padding: 0.75rem 1rem;
   display: flex;
@@ -65,7 +65,7 @@
   gap: 0.75rem;
   margin-top: 1rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--xc-border, #e2e8f0);
+  border-top: 1px solid var(--xc-line);
 }
 
 .xc-verification-decision-buttons {
@@ -78,7 +78,7 @@
 .xc-verification-doc-preview img {
   max-width: 100%;
   max-height: 360px;
-  border: 1px solid var(--xc-border, #e2e8f0);
+  border: 1px solid var(--xc-line);
   border-radius: 0.25rem;
   margin-top: 0.5rem;
 }

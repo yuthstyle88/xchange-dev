@@ -1,4 +1,4 @@
-/* MK-8c (#1646): Admin Campaign Performance screen styling */
+/* MK-8c (issue 1646): Admin Campaign Performance screen styling */
 
 .xc-cp-screen {
   display: flex;
@@ -14,7 +14,7 @@
   align-items: center;
   justify-content: center;
   padding: 3rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
   font-size: 1rem;
 }
 
@@ -23,16 +23,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  background-color: var(--color-danger-bg, #fef2f2);
-  border: 1px solid var(--color-danger-border, #fca5a5);
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.5rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
 }
 
 .xc-cp-retry-btn {
   padding: 0.375rem 0.75rem;
-  background-color: var(--color-danger-text, #991b1b);
-  color: #ffffff;
+  background-color: var(--xc-danger);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -41,23 +41,23 @@
 }
 
 .xc-cp-retry-btn:hover {
-  background-color: #7f1d1d;
+  background-color: var(--xc-brand-strong);
 }
 
 .xc-cp-empty {
   padding: 2rem;
   text-align: center;
-  color: var(--color-text-muted, #64748b);
-  background-color: var(--color-bg-muted, #f8fafc);
+  color: var(--xc-muted);
+  background-color: var(--xc-gray-50);
   border-radius: 0.5rem;
-  border: 1px dashed var(--color-border, #cbd5e1);
+  border: 1px dashed var(--xc-line);
 }
 
 .xc-cp-table-container {
   overflow-x: auto;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
-  background-color: var(--color-surface, #ffffff);
+  background-color: var(--xc-surface);
 }
 
 .xc-cp-table {
@@ -69,17 +69,17 @@
 
 .xc-cp-table th {
   padding: 0.75rem 1rem;
-  background-color: var(--color-bg-muted, #f8fafc);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-gray-50);
+  border-bottom: 1px solid var(--xc-line);
   font-weight: 600;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--xc-ink);
   white-space: nowrap;
 }
 
 .xc-cp-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
-  color: var(--color-text-primary, #1e293b);
+  border-bottom: 1px solid var(--xc-line);
+  color: var(--xc-ink);
 }
 
 .xc-cp-table tr:last-child td {
@@ -87,7 +87,7 @@
 }
 
 .xc-cp-table tr:hover td {
-  background-color: var(--color-bg-hover, #f8fafc);
+  background-color: var(--xc-gray-50);
 }
 
 .xc-cp-table td.text-right,
@@ -96,7 +96,7 @@
 }
 
 .xc-cp-dimmed {
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
   font-style: italic;
 }
 
@@ -105,7 +105,7 @@
 }
 
 .xc-version {
-  color: var(--color-text-secondary, #64748b);
+  color: var(--xc-muted);
 }
 
 .xc-redemptions {

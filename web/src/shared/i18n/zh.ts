@@ -4,6 +4,7 @@ export const zh: Record<Key, string> = {
   'field.password.show': '显示密码',
   'field.password.hide': '隐藏密码',
   'shell.langSwitch': '切换语言为 {language}',
+  'shell.menu': '菜单',
   'shell.account.branch': '分店 {branch}',
   'shell.account.signOut': '退出登录',
   'shell.account.switchBranch': '切换分行',

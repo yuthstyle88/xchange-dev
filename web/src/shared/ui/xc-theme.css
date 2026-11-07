@@ -1,0 +1,295 @@
+/* xc-theme.css — one value source and shared parts for every xchange web page (OL-1, #6360, design §2.1 & §2.3).
+   Values copied from api/static/kiosk/xc-tokens.css onto .xc-theme (never :root). */
+
+.xc-theme {
+  /* Brand (wine red). 700 is the brand; 900 is the darker "wine" used by V.9. */
+  --xc-brand-950: #650024;
+  --xc-brand-900: #85002f;
+  --xc-brand-800: #8b1239;
+  --xc-brand-700: #a5003c;
+  --xc-brand-500: #c45a82;
+  --xc-brand-300: #e2a9c0;
+  --xc-brand-200: #ecd0db;
+  --xc-brand-100: #f6e6ec;
+  --xc-brand-50: #fdf1f5;
+
+  /* Warm neutrals. 600 and darker pass 4.5:1 on every light surface below. */
+  --xc-gray-1000: #000000;
+  --xc-gray-950: #17161a;
+  --xc-gray-900: #251e22;
+  --xc-gray-800: #3a3439;
+  --xc-gray-700: #54494f;
+  --xc-gray-600: #6c6268;
+  --xc-gray-500: #8f8790;
+  --xc-gray-400: #b3b0b6;
+  --xc-gray-300: #cdc8ce;
+  --xc-gray-200: #dcd8dd;
+  --xc-gray-150: #e7e2e6;
+  --xc-gray-100: #eeecef;
+  --xc-gray-75: #f4f4f6;
+  --xc-gray-50: #f7f5f6;
+  --xc-gray-25: #faf8f7;
+  --xc-gray-0: #ffffff;
+
+  /* Status hues. */
+  --xc-green-900: #1f4f3d;
+  --xc-green-800: #205e49;
+  --xc-green-700: #1d7450;
+  --xc-green-500: #5f7f70;
+  --xc-green-200: #c3dccf;
+  --xc-green-100: #e3f2e9;
+  --xc-green-50: #eff8f2;
+  --xc-amber-900: #6a4700;
+  --xc-amber-800: #805516;
+  --xc-amber-700: #986814;
+  --xc-amber-500: #d29a26;
+  --xc-amber-300: #e9c48f;
+  --xc-amber-200: #ffeec4;
+  --xc-amber-50: #fff6e0;
+  --xc-red-700: #a4371f;
+  --xc-red-50: #fff0eb;
+  --xc-teal-900: #18333e;
+  --xc-scrim: #21151eb3;
+
+  /* Semantic roles — use these in components (design §2.1 & xc-tokens.css). */
+  --xc-bg: var(--xc-gray-75);
+  --xc-surface: var(--xc-gray-0);
+  --xc-ink: var(--xc-gray-900);
+  --xc-muted: var(--xc-gray-600);
+  --xc-line: var(--xc-gray-150);
+  --xc-paper: var(--xc-gray-25);
+  --xc-canvas: var(--xc-gray-75);
+  --xc-brand: var(--xc-brand-700);
+  --xc-brand-strong: var(--xc-brand-900);
+  --xc-brand-soft: var(--xc-brand-50);
+  --xc-brand-ink: var(--xc-gray-0);
+  --xc-on-brand: var(--xc-gray-0);
+  --xc-ok: var(--xc-green-700);
+  --xc-ok-soft: var(--xc-green-50);
+  --xc-success: var(--xc-green-700);
+  --xc-success-soft: var(--xc-green-50);
+  --xc-warn: var(--xc-amber-700);
+  --xc-warn-soft: var(--xc-amber-50);
+  --xc-warning: var(--xc-amber-700);
+  --xc-warning-soft: var(--xc-amber-50);
+  --xc-danger: var(--xc-red-700);
+  --xc-danger-soft: var(--xc-red-50);
+  --xc-info: var(--xc-teal-900);
+  --xc-focus: var(--xc-brand-700);
+  --xc-focus-ring: var(--xc-brand-100);
+
+  /* Type. */
+  --xc-font-sans: 'XC Noto Sans Thai', 'XC Noto Sans Arabic', 'XC Noto Sans Devanagari', 'XC Noto Sans Lao', 'XC Noto Sans Myanmar', Arial, Tahoma, sans-serif;
+  --xc-font-mono: Consolas, ui-monospace, monospace;
+  --xc-text-2xs: 10px;
+  --xc-text-xs: 11px;
+  --xc-text-sm: 12px;
+  --xc-text-md: 13px;
+  --xc-text-base: 14px;
+  --xc-text-lg: 16px;
+  --xc-text-xl: 18px;
+  --xc-text-2xl: 20px;
+  --xc-text-3xl: 22px;
+  --xc-text-4xl: 24px;
+  --xc-text-5xl: 28px;
+  --xc-text-6xl: 32px;
+  --xc-text-7xl: 40px;
+  --xc-text-8xl: 48px;
+  --xc-text-9xl: 64px;
+
+  /* Radius. */
+  --xc-radius-xs: 4px;
+  --xc-radius-sm: 6px;
+  --xc-radius-md: 8px;
+  --xc-radius-lg: 10px;
+  --xc-radius-xl: 12px;
+  --xc-radius-2xl: 16px;
+  --xc-radius-3xl: 20px;
+  --xc-radius-pill: 999px;
+
+  /* Elevation. */
+  --xc-shadow-sm: 0 1px 4px #33202b12;
+  --xc-shadow-md: 0 8px 24px #2a1e2614;
+  --xc-shadow-lg: 0 24px 80px #2105113a;
+  --xc-shadow-brand: 0 6px 18px #a5003c1f;
+
+  /* Spacing (4px scale). */
+  --xc-space-1: 4px;
+  --xc-space-2: 8px;
+  --xc-space-3: 12px;
+  --xc-space-4: 16px;
+  --xc-space-5: 20px;
+  --xc-space-6: 24px;
+  --xc-space-8: 32px;
+  --xc-space-10: 40px;
+  --xc-space-12: 48px;
+
+  /* Motion. */
+  --xc-duration-fast: 120ms;
+  --xc-duration-base: 200ms;
+  --xc-ease: cubic-bezier(.2, .7, .2, 1);
+
+  /* Legacy names kept as aliases while surfaces migrate. */
+  --brand: var(--xc-brand);
+  --xc: var(--xc-brand);
+  --wine: var(--xc-brand-strong);
+  --ink: var(--xc-ink);
+  --muted: var(--xc-muted);
+  --line: var(--xc-line);
+  --paper: var(--xc-paper);
+  --soft: var(--xc-brand-soft);
+  --bg: var(--xc-canvas);
+  --green: var(--xc-success);
+  --stage: var(--xc-gray-150);
+}
+
+/* Shared page look (design §2.3). */
+.xc-theme:where(:not(.xc-customer *)) {
+  background: var(--xc-bg);
+  color: var(--xc-ink);
+  font: 15px/1.6 var(--xc-font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xc-theme {
+    --xc-duration-fast: 0ms;
+    --xc-duration-base: 0ms;
+  }
+}
+
+/* Shared inputs, selects and textareas (design §2.3). */
+.xc-theme:where(:not(.xc-customer *)) .xc-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: var(--xc-space-4);
+}
+
+.xc-theme:where(:not(.xc-customer *)) .xc-field label {
+  display: block;
+  font-size: var(--xc-text-base);
+  font-weight: 600;
+  color: var(--xc-ink);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  box-sizing: border-box;
+  min-height: 44px;
+  height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  font: 16px/1.4 var(--xc-font-sans);
+  outline: none;
+  transition: border-color var(--xc-duration-fast), box-shadow var(--xc-duration-fast);
+}
+
+.xc-theme:where(:not(.xc-customer *)) textarea {
+  height: auto;
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea)::placeholder {
+  color: var(--xc-gray-400);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):hover {
+  border-color: var(--xc-gray-300);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: var(--xc-brand);
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(input:not([type="checkbox"]):not([type="radio"]), select, textarea)[aria-invalid="true"] {
+  border-color: var(--xc-danger);
+  box-shadow: 0 0 0 3px var(--xc-danger-soft);
+}
+
+.xc-theme:where(:not(.xc-customer *)) .xc-field [role="alert"],
+.xc-theme:where(:not(.xc-customer *)) .xc-field-error {
+  display: block;
+  font-size: var(--xc-text-md);
+  color: var(--xc-danger);
+}
+
+/* Shared buttons (design §2.3). */
+.xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn) {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--xc-space-2);
+  min-height: 44px;
+  padding: 10px 18px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  font: 600 15px/1.2 var(--xc-font-sans);
+  cursor: pointer;
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(.xc-btn--primary, .xc-btn.primary, button[type="submit"]) {
+  background: var(--xc-brand);
+  border-color: var(--xc-brand);
+  color: var(--xc-on-brand);
+  box-shadow: var(--xc-shadow-brand);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(.xc-btn--primary, .xc-btn.primary, button[type="submit"]):hover {
+  background: var(--xc-brand-strong);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(.xc-btn--secondary, .xc-btn.secondary) {
+  background: var(--xc-surface);
+  border-color: var(--xc-line);
+  color: var(--xc-brand);
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn):disabled,
+.xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn)[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.xc-theme:where(:not(.xc-customer *)) :where(button, .xc-btn):focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+/* Segmented ไทย | EN language switch (design §2.3). */
+.xc-theme:where(:not(.xc-customer *)) [role="group"].xc-lang-switch {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--xc-gray-75);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-pill);
+}
+
+.xc-theme:where(:not(.xc-customer *)) [role="group"].xc-lang-switch button {
+  min-height: 30px;
+  min-width: 44px;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--xc-radius-pill);
+  background: transparent;
+  color: var(--xc-muted);
+  font: 600 var(--xc-text-md)/1 var(--xc-font-sans);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+.xc-theme:where(:not(.xc-customer *)) [role="group"].xc-lang-switch button[aria-pressed="true"] {
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  box-shadow: var(--xc-shadow-sm);
+}
+
+@media (max-width: 760px) {
+  .xc-theme:where(:not(.xc-customer *)) [role="group"].xc-lang-switch button {
+    min-height: 44px;
+  }
+}

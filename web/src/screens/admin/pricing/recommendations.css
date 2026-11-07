@@ -5,8 +5,8 @@
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04), 0 6px 18px rgba(23, 24, 27, 0.04);
+  background: var(--xc-surface);
+  box-shadow: var(--xc-shadow-sm);
 }
 
 .xc-admin .xc-content.xc-content .recommendations .recommendations-title {
@@ -44,7 +44,7 @@
   gap: 4px 10px;
   min-height: 40px;
   padding: 6px 0;
-  border-top: 1px solid #eeeff2;
+  border-top: 1px solid var(--xc-line);
   font-size: 14px;
 }
 
@@ -56,8 +56,8 @@
   justify-self: start;
   padding: 2px 9px;
   border-radius: 999px;
-  background: #eff0f4;
-  color: #4b4f5b;
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-700);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
@@ -70,13 +70,13 @@
 
 .xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Warn'],
 .xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Medium'] {
-  background: #fff9ec;
-  color: #795919;
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
 }
 
 .xc-admin .xc-content.xc-content .recommendation-severity[data-severity='Low'] {
-  background: #f1f1f4;
-  color: #72747d;
+  background: var(--xc-gray-75);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content.xc-content .recommendation-currency {

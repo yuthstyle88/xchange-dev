@@ -1,4 +1,4 @@
-/* MK-8a (#1645): Admin Marketing Campaigns screen styling */
+/* MK-8a (issue 1645): Admin Marketing Campaigns screen styling */
 
 .xc-campaigns-screen {
   display: flex;
@@ -20,7 +20,7 @@
   align-items: center;
   justify-content: center;
   padding: 3rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
   font-size: 1rem;
 }
 
@@ -29,16 +29,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  background-color: var(--color-danger-bg, #fef2f2);
-  border: 1px solid var(--color-danger-border, #fca5a5);
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.5rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
 }
 
 .xc-campaigns-retry-btn {
   padding: 0.375rem 0.75rem;
-  background-color: var(--color-danger-text, #991b1b);
-  color: #ffffff;
+  background-color: var(--xc-danger);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -53,17 +53,17 @@
   gap: 1rem;
   padding: 2.5rem;
   text-align: center;
-  color: var(--color-text-muted, #64748b);
-  background-color: var(--color-bg-muted, #f8fafc);
+  color: var(--xc-muted);
+  background-color: var(--xc-gray-50);
   border-radius: 0.5rem;
-  border: 1px dashed var(--color-border, #cbd5e1);
+  border: 1px dashed var(--xc-line);
 }
 
 .xc-campaigns-table-container {
   overflow-x: auto;
-  border: 1px solid var(--color-border, #e2e8f0);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
-  background-color: var(--color-surface, #ffffff);
+  background-color: var(--xc-surface);
 }
 
 .xc-campaigns-table {
@@ -75,21 +75,21 @@
 
 .xc-campaigns-table th {
   padding: 0.75rem 1rem;
-  background-color: var(--color-bg-muted, #f8fafc);
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-gray-50);
+  border-bottom: 1px solid var(--xc-line);
   font-weight: 600;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--xc-ink);
   white-space: nowrap;
 }
 
 .xc-campaigns-table td {
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--color-border, #f1f5f9);
-  color: var(--color-text-primary, #1e293b);
+  border-bottom: 1px solid var(--xc-line);
+  color: var(--xc-ink);
 }
 
 .xc-campaigns-table tr:hover td {
-  background-color: var(--color-bg-hover, #f8fafc);
+  background-color: var(--xc-gray-50);
   cursor: pointer;
 }
 
@@ -107,8 +107,8 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  background-color: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
   padding: 1.5rem;
 }
@@ -117,7 +117,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  border-bottom: 1px solid var(--xc-line);
   padding-bottom: 1rem;
 }
 
@@ -142,26 +142,26 @@
 .xc-form-group label {
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--color-text-secondary, #475569);
+  color: var(--xc-muted);
 }
 
 .xc-input {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #cbd5e1);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
-  color: var(--color-text-primary, #1e293b);
+  color: var(--xc-ink);
 }
 
 .xc-input:focus {
   outline: none;
-  border-color: var(--color-primary, #2563eb);
+  border-color: var(--xc-brand);
 }
 
 .xc-btn-primary {
   padding: 0.5rem 1rem;
-  background-color: var(--color-primary, #2563eb);
-  color: #ffffff;
+  background-color: var(--xc-brand);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -176,9 +176,9 @@
 
 .xc-btn-secondary {
   padding: 0.5rem 1rem;
-  background-color: var(--color-bg-muted, #f1f5f9);
-  color: var(--color-text-primary, #1e293b);
-  border: 1px solid var(--color-border, #cbd5e1);
+  background-color: var(--xc-gray-75);
+  color: var(--xc-ink);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
@@ -192,8 +192,8 @@
 
 .xc-btn-warning {
   padding: 0.5rem 1rem;
-  background-color: var(--color-warning-bg, #f59e0b);
-  color: #ffffff;
+  background-color: var(--xc-warn);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -203,8 +203,8 @@
 
 .xc-btn-success {
   padding: 0.5rem 1rem;
-  background-color: var(--color-success, #16a34a);
-  color: #ffffff;
+  background-color: var(--xc-ok);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -222,28 +222,28 @@
 }
 
 .xc-status-active {
-  background-color: #dcfce7;
-  color: #15803d;
+  background-color: var(--xc-ok-soft);
+  color: var(--xc-ok);
 }
 
 .xc-status-draft {
-  background-color: #f1f5f9;
-  color: #475569;
+  background-color: var(--xc-gray-75);
+  color: var(--xc-muted);
 }
 
 .xc-status-simulated {
-  background-color: #e0f2fe;
-  color: #0369a1;
+  background-color: var(--xc-brand-soft);
+  color: var(--xc-brand);
 }
 
 .xc-status-paused {
-  background-color: #fef3c7;
-  color: #b45309;
+  background-color: var(--xc-warn-soft);
+  color: var(--xc-warn);
 }
 
 .xc-status-expired {
-  background-color: #fee2e2;
-  color: #b91c1c;
+  background-color: var(--xc-danger-soft);
+  color: var(--xc-danger);
 }
 
 .xc-issued-coupons {
@@ -251,8 +251,8 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 1rem;
-  background-color: var(--color-bg-muted, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   margin-top: 1rem;
 }
@@ -265,34 +265,34 @@
 
 .xc-coupon-id {
   font-family: monospace;
-  color: var(--color-text-secondary, #64748b);
+  color: var(--xc-muted);
   font-size: 0.8125rem;
 }
 
 .xc-coupon-code {
   font-family: monospace;
   font-weight: 700;
-  color: var(--color-text-primary, #0f172a);
-  background-color: #fef08a;
+  color: var(--xc-ink);
+  background-color: var(--xc-amber-200);
   padding: 0.125rem 0.375rem;
   border-radius: 0.25rem;
 }
 
 .xc-select {
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #cbd5e1);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
-  color: var(--color-text-primary, #1e293b);
-  background-color: var(--color-surface, #ffffff);
+  color: var(--xc-ink);
+  background-color: var(--xc-surface);
 }
 
 .xc-campaign-create {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  background-color: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
   padding: 1.5rem;
 }
@@ -302,8 +302,8 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem;
-  background-color: var(--color-bg-muted, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
   margin-top: 1rem;
 }
@@ -320,17 +320,17 @@
   flex-direction: column;
   gap: 1rem;
   padding: 1.25rem;
-  background-color: var(--color-bg-muted, #f8fafc);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
 }
 
 .xc-field-error {
   font-size: 0.8125rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
 }
 
-/* #4842 SIM-1/SIM-2: the Simulate scenario row (branch, currency, amount) beside the Simulate button. */
+/* issue 4842 SIM-1/SIM-2: the Simulate scenario row (branch, currency, amount) beside the Simulate button. */
 .xc-campaign-sim-row {
   display: flex;
   flex-wrap: wrap;
@@ -344,7 +344,7 @@
   gap: 0.25rem;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--color-text-secondary, #475569);
+  color: var(--xc-muted);
 }
 
 .xc-campaign-sim-field .xc-input,
@@ -355,5 +355,5 @@
 .xc-campaign-sim-note {
   margin: 0;
   font-size: 0.8125rem;
-  color: var(--color-text-secondary, #475569);
+  color: var(--xc-muted);
 }

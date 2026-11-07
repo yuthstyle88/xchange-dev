@@ -1,6 +1,6 @@
 .xc-shift-card {
   padding: 1.5rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
   border-radius: 0.5rem;
 }
 
@@ -15,15 +15,15 @@
   font-size: 1.25rem;
   font-weight: 600;
   margin: 0;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-shift-notice {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
-  background: var(--xc-success-bg, #ecfdf5);
-  color: var(--xc-success, #059669);
-  border: 1px solid var(--xc-success-border, #a7f3d0);
+  background: var(--xc-ok-soft);
+  color: var(--xc-ok);
+  border: 1px solid var(--xc-green-200);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
@@ -31,9 +31,9 @@
 .xc-shift-error {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
-  background: var(--xc-danger-bg, #fef2f2);
-  color: var(--xc-danger, #ef4444);
-  border: 1px solid var(--xc-danger-border, #fecaca);
+  background: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
@@ -48,23 +48,23 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-text, #111827);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e5e7eb);
+  color: var(--xc-ink);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   cursor: pointer;
 }
 
 .xc-shift-action-btn:hover {
-  background: var(--xc-surface-hover, #f9fafb);
+  background: var(--xc-gray-50);
 }
 
 .xc-shift-close-waiting {
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
-  color: var(--xc-text-muted, #6b7280);
-  background: var(--xc-surface-subtle, #f9fafb);
-  border: 1px solid var(--xc-border, #e5e7eb);
+  color: var(--xc-muted);
+  background: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   display: inline-flex;
   align-items: center;
@@ -74,9 +74,9 @@
 .xc-shift-handover-form {
   margin: 1rem 0;
   padding: 1rem;
-  border: 1px solid var(--xc-border, #e5e7eb);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
-  background: var(--xc-surface-subtle, #f9fafb);
+  background: var(--xc-gray-50);
 }
 
 .xc-shift-section {
@@ -87,7 +87,7 @@
   font-size: 1rem;
   font-weight: 600;
   margin: 0 0 0.75rem 0;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-shift-denoms {
@@ -106,7 +106,7 @@
 
 .xc-shift-denom-label {
   font-size: 0.875rem;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-shift-denom-currency {
@@ -121,7 +121,7 @@
   width: 6rem;
   padding: 0.375rem 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid var(--xc-border, #d1d5db);
+  border: 1px solid var(--xc-line);
   border-radius: 0.25rem;
   text-align: right;
 }
@@ -136,15 +136,15 @@
 .xc-shift-form-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-text, #374151);
+  color: var(--xc-ink);
 }
 
 .xc-shift-select {
   padding: 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid var(--xc-border, #d1d5db);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
 }
 
 .xc-shift-form-actions {
@@ -157,8 +157,8 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: #ffffff;
-  background: var(--xc-primary, #2563eb);
+  color: var(--xc-on-brand);
+  background: var(--xc-brand);
   border: 1px solid transparent;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -173,9 +173,9 @@
   padding: 0.5rem 1rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-text, #374151);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #d1d5db);
+  color: var(--xc-ink);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   cursor: pointer;
 }
@@ -192,9 +192,9 @@
   justify-content: space-between;
   align-items: center;
   padding: 0.75rem 1rem;
-  border: 1px solid var(--xc-border, #e5e7eb);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
 }
 
 .xc-shift-item-info {
@@ -206,12 +206,12 @@
 .xc-shift-item-title {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-shift-item-sub {
   font-size: 0.75rem;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
 }
 
 .xc-shift-item-actions {
@@ -223,29 +223,29 @@
   padding: 0.375rem 0.75rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-text, #111827);
-  background: var(--xc-surface, #ffffff);
-  border: 1px solid var(--xc-border, #e5e7eb);
+  color: var(--xc-ink);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   cursor: pointer;
 }
 
 .xc-shift-btn:hover {
-  background: var(--xc-surface-hover, #f9fafb);
+  background: var(--xc-gray-50);
 }
 
 .xc-shift-btn-danger {
-  color: var(--xc-danger, #ef4444);
-  border-color: var(--xc-danger-border, #fecaca);
+  color: var(--xc-danger);
+  border-color: var(--xc-brand-200);
 }
 
 .xc-shift-btn-danger:hover {
-  background: var(--xc-danger-bg, #fef2f2);
+  background: var(--xc-danger-soft);
 }
 
 .xc-shift-empty {
   font-size: 0.875rem;
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
   margin: 0.5rem 0;
 }
 
@@ -264,14 +264,14 @@
 .xc-shift-reject-input {
   padding: 0.375rem 0.5rem;
   font-size: 0.875rem;
-  border: 1px solid var(--xc-border, #d1d5db);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
 }
 
 .xc-shift-field-error,
 .xc-shift-count-error {
   font-size: 0.75rem;
-  color: var(--xc-danger, #ef4444);
+  color: var(--xc-danger);
 }
 
 .xc-shift-picker {
@@ -284,9 +284,9 @@
 .xc-shift-picker-outside {
   padding: 0.75rem 1rem;
   font-size: 0.875rem;
-  color: var(--xc-text-muted, #6b7280);
-  background: var(--xc-surface-subtle, #f9fafb);
-  border: 1px solid var(--xc-border, #e5e7eb);
+  color: var(--xc-muted);
+  background: var(--xc-gray-50);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
 }
 
@@ -295,6 +295,6 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
   cursor: pointer;
 }

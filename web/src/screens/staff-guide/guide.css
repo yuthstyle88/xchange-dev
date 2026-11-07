@@ -3,21 +3,20 @@ body {
   margin: 40px auto;
   padding: 20px;
   font: 18px/1.7 sans-serif;
-  color: #242424;
 }
 
 h1,
 h2 {
-  color: #a5003c;
+  color: var(--xc-brand);
 }
 
 section {
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--xc-line);
   padding-bottom: 20px;
 }
 
 a {
-  color: #a5003c;
+  color: var(--xc-brand);
 }
 
 @media print {
@@ -72,7 +71,7 @@ html body:has(.xc-shell) {
 
 /* v2 staff-guide.html:1 nav link colour */
 .xc-shell .xc-shell-nav a {
-  color: #a5003c;
+  color: var(--xc-brand);
 }
 
 /* v2 staff-guide.html:1 browser default focus ring */

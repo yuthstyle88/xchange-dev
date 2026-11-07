@@ -228,6 +228,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   let slotsSeq = 0;
   let slotSelectEl: HTMLSelectElement | undefined;
   let branchSelectEl: HTMLSelectElement | undefined;
+  let successEl: HTMLDivElement | undefined;
 
   createEffect(() => {
     branches();
@@ -466,6 +467,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       const data = await createBooking.send(payload);
       if (seq !== submitSeq) return;
       setSuccessData(data);
+      queueMicrotask(() => successEl?.scrollIntoView?.({ block: 'start', behavior: 'smooth' }));
       void loadSlots(currentBranch, serviceDate());
     } catch (err) {
       if (seq !== submitSeq) return;
@@ -511,7 +513,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
       </Show>
 
       <Show when={successData()}>
-        <div class="xc-book-success alert-success" role="status">
+        <div ref={successEl} class="xc-book-success alert-success" role="status">
           <p>{t('bookingSuccess')}</p>
           <p>{fill(t('bookingNo'), { no: successData()!.bookingNo || successData()!.id })}</p>
           <Show when={successData()!.qrToken}>

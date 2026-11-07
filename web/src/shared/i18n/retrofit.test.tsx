@@ -154,17 +154,24 @@ describe('AppShell carries the language switch', () => {
     return host;
   }
 
+  // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 and §3): the header also holds the mobile menu
+  // button, so this counts the language-switch group (role="group"), not the header's buttons.
   it('has one switch, in its header, and it toggles the language of the page', () => {
     const host = mount();
-    const inHeader = host.querySelectorAll('header button');
-    expect(inHeader).toHaveLength(1);
+    const groups = host.querySelectorAll('header [role="group"]');
+    expect(groups).toHaveLength(1);
     expect(host.querySelectorAll('footer button')).toHaveLength(0);
     expect(host.querySelectorAll('main button')).toHaveLength(0);
 
-    (inHeader[0] as HTMLButtonElement).click();
+    const buttons = Array.from(groups[0]!.querySelectorAll<HTMLButtonElement>('button'));
+    const enButton = buttons.find((b) => b.textContent?.trim() === 'EN');
+    const thButton = buttons.find((b) => b.textContent?.trim() === 'ไทย');
+    expect(enButton, 'the EN button').toBeDefined();
+    expect(thButton, 'the ไทย button').toBeDefined();
+    enButton!.click();
     expect(lang()).toBe('en');
     expect(document.documentElement.lang).toBe('en');
-    (inHeader[0] as HTMLButtonElement).click();
+    thButton!.click();
     expect(lang()).toBe('th');
   });
 });

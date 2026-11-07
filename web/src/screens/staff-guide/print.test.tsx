@@ -16,11 +16,15 @@ const BACK = 'กลับแอดมิน';
 const PRINT = 'พิมพ์คู่มือ';
 
 // G9, xchange-v2-source@4d0bdbb:src/devices-public/staff-guide.html:1 (the print rule is checked by matching below).
+// Restated for OL-3d (docs/design/xchange-one-look.md §3 "OL-3: print.test.tsx:20-23 pins v2 literals"): v2's colours
+// #a5003c and #ddd become the xc-theme.css tokens --xc-brand and --xc-line. The body rule loses v2's color:#242424:
+// `body` is above the .xc-theme root, where no token is defined, and the root already sets var(--xc-ink) (#251e22).
+// Every other value stays v2's.
 const V2_RULES = [
-  'body{max-width:880px;margin:40px auto;padding:20px;font:18px/1.7 sans-serif;color:#242424}',
-  'h1,h2{color:#a5003c}',
-  'section{border-bottom:1px solid #ddd;padding-bottom:20px}',
-  'a{color:#a5003c}',
+  'body{max-width:880px;margin:40px auto;padding:20px;font:18px/1.7 sans-serif}',
+  'h1,h2{color:var(--xc-brand)}',
+  'section{border-bottom:1px solid var(--xc-line);padding-bottom:20px}',
+  'a{color:var(--xc-brand)}',
 ];
 
 let dispose: (() => void) | undefined;

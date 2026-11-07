@@ -24,7 +24,7 @@
 .pricing-formula-branches th,
 .pricing-formula-branches td {
   padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid var(--line, #e2e8f0);
+  border-bottom: 1px solid var(--xc-line);
   text-align: left;
 }
 

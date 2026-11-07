@@ -1,4 +1,4 @@
-/* V3-staff-report #1350: the print sheet (B.1 row 21, D-B8). A4 with a 12mm margin; the tools and the shell's chrome
+/* V3-staff-report: the print sheet (B.1 row 21, D-B8). A4 with a 12mm margin; the tools and the shell's chrome
    are not printed. */
 @media print {
   @page {
@@ -13,6 +13,6 @@
   }
 
   .staff-report {
-    color: #000;
+    color: var(--xc-gray-1000);
   }
 }

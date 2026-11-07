@@ -2,6 +2,7 @@
 import { For, Show, type JSX } from 'solid-js';
 import type { PlannerBenefitDto, PlannerBenefitItemDto } from '../../../shared/api/generated/planner_preview';
 import { screenT } from '../../../shared/i18n';
+import { formatRate } from '../../../shared/ui/rate';
 import { en, th, zh } from './i18n';
 
 const t = screenT('customer.benefit-estimate', { th, en, zh });
@@ -22,7 +23,7 @@ export function IndicativeBenefit(props: IndicativeBenefitProps): JSX.Element {
     if (item.benefitClass === 'REWARD') {
       return `${item.amountThb} THB`;
     }
-    return `${item.rateBefore} → ${item.rateAfter}`;
+    return `${formatRate(item.rateBefore, '1', '')} → ${formatRate(item.rateAfter, '1', '')}`;
   };
 
   const hasTotal = () => {

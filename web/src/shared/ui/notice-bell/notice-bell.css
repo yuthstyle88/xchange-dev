@@ -7,8 +7,11 @@
 .notice-bell {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  color: #fff;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--xc-on-brand);
   text-decoration: none;
   padding: 4px 8px;
   border-radius: 8px;
@@ -28,8 +31,8 @@
   height: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  background: #ab0044;
-  color: #fff;
+  background: var(--xc-brand);
+  color: var(--xc-on-brand);
   font-size: 12px;
   font-weight: 700;
   line-height: 1;
@@ -49,13 +52,13 @@
 
 .notice-toast {
   pointer-events: auto;
-  background: #fff;
-  color: #0f172a;
-  border: 1px solid #e2e8f0;
-  border-left: 4px solid #ab0044;
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  border: 1px solid var(--xc-line);
+  border-left: 4px solid var(--xc-brand);
   border-radius: 8px;
   padding: 10px 14px;
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+  box-shadow: var(--xc-shadow-md);
 }
 
 .notice-toast-title {
@@ -66,6 +69,6 @@
 
 .notice-toast-body {
   font-size: 13px;
-  color: #334155;
+  color: var(--xc-muted);
   line-height: 1.4;
 }

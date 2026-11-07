@@ -1,15 +1,15 @@
 /* P01 v2 board shell (rate-display.md §9.1). Tokens live on .xc-rb, never on :root (LK-6). RB-4 adds the canvas
    scaling and the look from docs/design/reference/rate-board-example/rate-board.css. */
 .xc-rb {
-  --xc-rb-ink: #1b1a1f;
-  --xc-rb-muted: #6f6a73;
-  --xc-rb-paper: #fffdf8;
-  --xc-rb-line: #e6dfd6;
-  --xc-rb-brand: #a5003c;
-  --xc-rb-brand-dark: #6e0028;
-  --xc-rb-night: #121018;
-  --xc-rb-up: #13804f;
-  --xc-rb-down: #c0153f;
+  --xc-rb-ink: var(--xc-ink);
+  --xc-rb-muted: var(--xc-muted);
+  --xc-rb-paper: var(--xc-gray-25);
+  --xc-rb-line: var(--xc-line);
+  --xc-rb-brand: var(--xc-brand);
+  --xc-rb-brand-dark: var(--xc-brand-950);
+  --xc-rb-night: var(--xc-gray-950);
+  --xc-rb-up: var(--xc-ok);
+  --xc-rb-down: var(--xc-danger);
 
   position: absolute;
   top: 50%;
@@ -24,7 +24,7 @@
   color: var(--xc-rb-ink);
   border-radius: 36px;
   overflow: hidden;
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--xc-shadow-lg);
   box-sizing: border-box;
 }
 

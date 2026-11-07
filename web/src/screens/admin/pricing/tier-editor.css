@@ -15,7 +15,7 @@
 .xc-admin .xc-content.xc-content .tier-editor-alert {
   margin: 14px 16px 0;
   padding: 10px 12px;
-  border: 1px solid #edd4df;
+  border: 1px solid var(--xc-brand-200);
   border-radius: 10px;
   background: var(--soft);
   color: var(--brand);
@@ -34,7 +34,7 @@
   margin: 0;
   padding: 14px 16px;
   border: 0;
-  border-bottom: 1px solid #e8e2e5;
+  border-bottom: 1px solid var(--xc-line);
 }
 
 .xc-admin .xc-content.xc-content .tier-editor-tier-title {
@@ -83,15 +83,15 @@
   min-height: 48px;
   margin: 0;
   padding: 10px 14px;
-  border: 1px solid #cdd0d7;
+  border: 1px solid var(--xc-line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--xc-surface);
   color: var(--ink);
   font-size: 17px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
-  box-shadow: inset 0 1px 2px rgba(23, 24, 27, 0.04);
+  box-shadow: inset 0 1px 2px color-mix(in srgb, var(--xc-ink) 4%, transparent);
 }
 
 .xc-admin .xc-content.xc-content .tier-editor .tier-editor-input:focus {
@@ -104,7 +104,7 @@
 }
 
 .xc-admin .xc-content.xc-content .tier-editor .tier-editor-input:disabled {
-  background: #f1f1f4;
+  background: var(--xc-gray-75);
   color: var(--muted);
 }
 
@@ -131,7 +131,7 @@
 
 .xc-admin .xc-content.xc-content .tier-editor-hint-rates {
   font-size: 14px;
-  color: #4b4f5b;
+  color: var(--xc-gray-700);
   font-variant-numeric: tabular-nums;
 }
 
@@ -157,14 +157,14 @@
   border: 1px solid var(--brand);
   border-radius: 12px;
   background: var(--brand);
-  color: #fff;
+  color: var(--xc-on-brand);
   font-size: 15px;
   font-weight: 700;
-  box-shadow: 0 6px 16px rgba(165, 0, 60, 0.22);
+  box-shadow: var(--xc-shadow-brand);
 }
 
 .xc-admin .xc-content.xc-content .tier-editor .tier-editor-approve:hover {
-  background: #870032;
+  background: var(--xc-brand-strong);
 }
 
 @media (min-width: 760px) {

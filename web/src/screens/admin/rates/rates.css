@@ -4,7 +4,7 @@
 
 /* admin-workspace.css:24 .xc-workspace .card */
 .xc-admin .xc-content .rates-section {
-  background: white;
+  background: var(--xc-surface);
   border: 1px solid var(--line);
   border-radius: 8px;
   margin-bottom: 22px;
@@ -73,7 +73,7 @@
 
 /* admin-workspace.css:24 .xc-workspace .card */
 .xc-admin .xc-content .bot-reference-section {
-  background: white;
+  background: var(--xc-surface);
   border: 1px solid var(--line);
   border-radius: 8px;
   margin-bottom: 22px;
@@ -92,7 +92,7 @@
 }
 
 .xc-admin .xc-content .bot-error {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 13px;
   margin: 0;
 }
@@ -115,7 +115,7 @@
 
 .xc-admin .xc-content .bot-reference-info {
   background: var(--soft);
-  border: 1px solid #edd4df;
+  border: 1px solid var(--xc-brand-200);
   border-radius: 6px;
   padding: 10px 14px;
   font-size: 13px;
@@ -141,7 +141,7 @@
 }
 
 .xc-admin .xc-content .form-error {
-  color: #a5003c;
+  color: var(--xc-danger);
   font-size: 13px;
   margin: 8px 0;
 }
@@ -164,8 +164,8 @@
   padding: 3px 9px;
   border-radius: 5px;
   font-size: 12px;
-  background: #eff0f4;
-  color: #4b4f5b;
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-700);
 }
 
 .xc-admin .xc-content .draft-status-label {
@@ -179,25 +179,25 @@
 .xc-admin .xc-content .admin-rates-screen .btn-simulate,
 .xc-admin .xc-content .admin-rates-screen .btn-submit,
 .xc-admin .xc-content .admin-rates-screen .btn-adjust-all {
-  background: white;
-  border-color: #d6d8df;
-  color: #363840;
+  background: var(--xc-surface);
+  border-color: var(--xc-line);
+  color: var(--xc-ink);
 }
 
 /* admin-html.ts:1 .primary */
 .xc-admin .xc-content .admin-rates-screen .btn-publish {
   background: var(--brand);
-  color: white;
+  color: var(--xc-on-brand);
   border-color: var(--brand);
 }
 
 .xc-admin .xc-content .admin-rates-screen .btn-publish:hover {
-  background: #870032;
+  background: var(--xc-brand-strong);
 }
 
 /* admin-html.ts:1 .positive */
 .xc-admin .xc-content .in-bound-status {
-  color: #187151;
+  color: var(--xc-ok);
   font-size: 13px;
   font-weight: 600;
   margin-top: 8px;
@@ -221,7 +221,7 @@
   display: inline-block;
   font-size: 12px;
   color: var(--brand);
-  background: #fbecf2;
+  background: var(--xc-brand-soft);
   padding: 3px 9px;
   border-radius: 5px;
 }

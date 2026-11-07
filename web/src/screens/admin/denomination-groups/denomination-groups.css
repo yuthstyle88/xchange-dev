@@ -21,8 +21,8 @@
   align-items: center;
   gap: 16px;
   padding: 12px 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
 }
 
@@ -32,7 +32,7 @@
 }
 
 .xc-admin .xc-content .board-key-display {
-  color: var(--ink-secondary, #64748b);
+  color: var(--xc-muted);
   min-width: 80px;
 }
 
@@ -42,14 +42,14 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
-  background: var(--surface, #fff);
-  border: 1px solid var(--line, #e2e8f0);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 6px;
 }
 
 .xc-admin .xc-content .error-msg,
 .xc-admin .xc-content .row-error {
-  color: var(--danger, #dc2626);
+  color: var(--xc-danger);
   font-size: 13px;
 }
 

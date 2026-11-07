@@ -12,8 +12,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  background-color: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
 }
 
@@ -22,7 +22,7 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.875rem;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--xc-ink);
   cursor: pointer;
 }
 
@@ -36,15 +36,15 @@
   padding: 0.375rem 0.75rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--xc-brand);
   background-color: transparent;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--xc-brand);
   border-radius: 0.375rem;
   cursor: pointer;
 }
 
 .admin-notices-mark-all-btn:hover:not(:disabled) {
-  background-color: var(--color-bg-hover, #f8fafc);
+  background-color: var(--xc-gray-50);
 }
 
 .admin-notices-mark-all-btn:disabled {
@@ -57,7 +57,7 @@
   align-items: center;
   justify-content: center;
   padding: 3rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
   font-size: 1rem;
 }
 
@@ -66,16 +66,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem 1.25rem;
-  background-color: var(--color-danger-bg, #fef2f2);
-  border: 1px solid var(--color-danger-border, #fca5a5);
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.5rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
 }
 
 .admin-notices-retry-btn {
   padding: 0.375rem 0.75rem;
-  background-color: var(--color-danger-text, #991b1b);
-  color: #ffffff;
+  background-color: var(--xc-danger);
+  color: var(--xc-on-brand);
   border: none;
   border-radius: 0.375rem;
   font-size: 0.875rem;
@@ -85,20 +85,20 @@
 
 .admin-notices-action-error {
   padding: 0.75rem 1rem;
-  background-color: var(--color-danger-bg, #fef2f2);
-  border: 1px solid var(--color-danger-border, #fca5a5);
+  background-color: var(--xc-danger-soft);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.375rem;
-  color: var(--color-danger-text, #991b1b);
+  color: var(--xc-danger);
   font-size: 0.875rem;
 }
 
 .admin-notices-empty {
   padding: 3rem;
   text-align: center;
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
   font-size: 1rem;
-  background-color: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
 }
 
@@ -113,14 +113,14 @@
   flex-direction: column;
   gap: 0.5rem;
   padding: 1rem 1.25rem;
-  background-color: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--xc-surface);
+  border: 1px solid var(--xc-line);
   border-radius: 0.5rem;
 }
 
 .admin-notices-item-unread {
-  border-left: 4px solid var(--color-primary, #2563eb);
-  background-color: var(--color-bg-unread, #f0f7ff);
+  border-left: 4px solid var(--xc-brand);
+  background-color: var(--xc-brand-soft);
 }
 
 .admin-notices-item-header {
@@ -132,7 +132,7 @@
 .admin-notices-title {
   font-weight: 600;
   font-size: 1rem;
-  color: var(--color-text-primary, #0f172a);
+  color: var(--xc-ink);
 }
 
 .admin-notices-badge {
@@ -143,24 +143,24 @@
 }
 
 .admin-notices-badge-unread {
-  background-color: var(--color-primary-bg, #dbeafe);
-  color: var(--color-primary, #1d4ed8);
+  background-color: var(--xc-brand-100);
+  color: var(--xc-brand);
 }
 
 .admin-notices-badge-read {
-  background-color: var(--color-bg-muted, #f1f5f9);
-  color: var(--color-text-muted, #64748b);
+  background-color: var(--xc-gray-75);
+  color: var(--xc-muted);
 }
 
 .admin-notices-time {
   margin-left: auto;
   font-size: 0.75rem;
-  color: var(--color-text-muted, #64748b);
+  color: var(--xc-muted);
 }
 
 .admin-notices-body {
   font-size: 0.875rem;
-  color: var(--color-text-secondary, #334155);
+  color: var(--xc-muted);
   line-height: 1.5;
   white-space: pre-wrap;
 }
@@ -175,15 +175,15 @@
   padding: 0.25rem 0.625rem;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: var(--color-primary, #2563eb);
+  color: var(--xc-brand);
   background-color: transparent;
-  border: 1px solid var(--color-primary, #2563eb);
+  border: 1px solid var(--xc-brand);
   border-radius: 0.25rem;
   cursor: pointer;
 }
 
 .admin-notices-mark-btn:hover:not(:disabled) {
-  background-color: var(--color-bg-hover, #f8fafc);
+  background-color: var(--xc-gray-50);
 }
 
 .admin-notices-mark-btn:disabled {

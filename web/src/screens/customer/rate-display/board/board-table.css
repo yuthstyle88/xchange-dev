@@ -13,7 +13,7 @@
 }
 
 .xc-rb-heading-row {
-  color: var(--xc-rb-ink, #1b1a1f);
+  color: var(--xc-rb-ink);
   font-size: 22px;
   font-weight: 700;
 }
@@ -29,7 +29,7 @@
 }
 
 .xc-rb-band-h:nth-child(even) {
-  background: #f6efe6;
+  background: var(--xc-gray-75);
   border-radius: 12px 12px 0 0;
 }
 
@@ -43,12 +43,12 @@
   font-weight: 600;
   letter-spacing: 0.06em;
   margin-top: 2px;
-  color: #6f6a73;
+  color: var(--xc-muted);
   text-transform: uppercase;
 }
 
 .xc-rb-row {
-  border-bottom: 1px solid #e6dfd6;
+  border-bottom: 1px solid var(--xc-line);
   font-size: var(--fs, 28px);
 }
 
@@ -57,8 +57,8 @@
 }
 
 .xc-rb-row-featured {
-  background: #fdf6e9;
-  box-shadow: inset 4px 0 0 var(--xc-rb-brand, #a5003c);
+  background: var(--xc-warn-soft);
+  box-shadow: inset 4px 0 0 var(--xc-rb-brand);
 }
 
 .xc-rb-contact-cell {
@@ -67,7 +67,7 @@
   text-align: center;
   font-size: calc(var(--fs, 28px) * 0.65);
   font-weight: 600;
-  color: #6f6a73;
+  color: var(--xc-muted);
 }
 
 .xc-rb-cur {
@@ -94,7 +94,7 @@
 .xc-rb-cur-unit {
   font-size: calc(var(--fs, 28px) * 0.45);
   font-weight: 600;
-  color: #6f6a73;
+  color: var(--xc-muted);
 }
 
 .xc-rb-band-cell {
@@ -103,7 +103,7 @@
 }
 
 .xc-rb-row .xc-rb-band-cell:nth-child(even) {
-  background: #f6efe6;
+  background: var(--xc-gray-75);
 }
 
 .xc-rb-band-repeat {
@@ -120,11 +120,11 @@
 }
 
 .xc-rb-buy {
-  color: var(--xc-rb-ink, #1b1a1f);
+  color: var(--xc-rb-ink);
 }
 
 .xc-rb-sell {
-  color: var(--xc-rb-brand, #a5003c);
+  color: var(--xc-rb-brand);
 }
 
 .xc-rb-spot {
@@ -137,8 +137,8 @@
   pointer-events: none;
   z-index: 2;
   opacity: 0;
-  background: linear-gradient(90deg, #a5003c26, #a5003c0f 45%, #a5003c05);
-  box-shadow: inset 7px 0 0 var(--xc-rb-brand, #a5003c);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--xc-brand) 15%, transparent), color-mix(in srgb, var(--xc-brand) 6%, transparent) 45%, color-mix(in srgb, var(--xc-brand) 2%, transparent));
+  box-shadow: inset 7px 0 0 var(--xc-rb-brand);
   mix-blend-mode: multiply;
   overflow: hidden;
   transition: transform 0.7s cubic-bezier(0.5, 0, 0.2, 1), height 0.7s, opacity 0.4s;
@@ -155,7 +155,7 @@
   bottom: 0;
   left: 0;
   width: 30%;
-  background: linear-gradient(90deg, transparent, #ffffffb0, transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--xc-gray-0) 70%, transparent), transparent);
   transform: translateX(-120%);
 }
 
@@ -170,5 +170,5 @@
 }
 
 .xc-rb-lit .xc-rb-cur-code {
-  color: var(--xc-rb-brand, #a5003c);
+  color: var(--xc-rb-brand);
 }

@@ -5,15 +5,15 @@
   justify-content: space-between;
   align-items: center;
   padding: 24px 52px 18px;
-  background: linear-gradient(120deg, var(--xc-rb-brand, #a5003c), #6e0028);
-  color: #ffffff;
+  background: linear-gradient(120deg, var(--xc-brand), var(--xc-brand-950));
+  color: var(--xc-on-brand);
   overflow: hidden;
 }
 
 .xc-rb-sheen {
   position: absolute;
   inset: 0;
-  background: linear-gradient(105deg, transparent 38%, #ffffff40 50%, transparent 62%);
+  background: linear-gradient(105deg, transparent 38%, color-mix(in srgb, var(--xc-gray-0) 25%, transparent) 50%, transparent 62%);
   transform: translateX(-110%);
   animation: xc-rb-sheen 8s ease-in-out infinite;
 }
@@ -41,7 +41,7 @@
 
 .xc-rb-brand small {
   display: block;
-  color: #ffd5e3;
+  color: var(--xc-brand-200);
   margin-top: 8px;
   font-size: 16px;
   letter-spacing: 0.14em;
@@ -75,7 +75,7 @@
 
 .xc-rb-date {
   display: block;
-  color: #ffd5e3;
+  color: var(--xc-brand-200);
   margin-top: 6px;
   letter-spacing: 0.04em;
   text-transform: none;

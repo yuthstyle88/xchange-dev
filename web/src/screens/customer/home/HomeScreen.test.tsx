@@ -379,7 +379,9 @@ describe('HomeScreen (C01 Customer Home)', () => {
       // Check results
       expect(host.textContent).toContain(text('estimateResult'));
       expect(host.textContent).toContain('3,542.00 THB');
-      expect(host.textContent).toContain('35.42000000');
+      // Restated for UX-2 (#6461, #6417 item 2): the applied rate goes through the one formatter (shared/ui/rate.ts).
+      expect(host.textContent).not.toContain('35.42000000');
+      expect(host.textContent).toContain('35.42');
     });
 
     it('P5 rule: an estimate is never shown as a final rate (disclaimer present)', async () => {

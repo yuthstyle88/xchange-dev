@@ -64,6 +64,13 @@
   color: var(--xc-text-muted);
 }
 
+.xc-sign-in-switch a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-block: 8px;
+}
+
 .xc-sign-in-error {
   color: var(--xc-danger);
 }

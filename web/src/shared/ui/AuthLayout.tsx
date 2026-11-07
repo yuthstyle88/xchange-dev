@@ -1,6 +1,7 @@
 import type { JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
 import { VersionFooter } from './VersionFooter';
+import './xc-theme.css';
 import './auth.css';
 
 export function AuthLayout(props: {
@@ -9,7 +10,7 @@ export function AuthLayout(props: {
   children?: JSX.Element;
 }): JSX.Element {
   return (
-    <div class="xc-auth">
+    <div class="xc-auth xc-theme">
       <main class="xc-auth-card">
         <header class="xc-auth-header">
           <div class="xc-auth-header-top">

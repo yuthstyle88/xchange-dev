@@ -10,20 +10,20 @@
   padding: 14px 16px 14px 6px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(23, 24, 27, 0.04), 0 6px 18px rgba(23, 24, 27, 0.05);
+  background: var(--xc-surface);
+  box-shadow: var(--xc-shadow-sm);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 .xc-admin .xc-content.xc-content .pricing-card:hover {
-  border-color: #e2e3e9;
-  box-shadow: 0 2px 4px rgba(23, 24, 27, 0.05), 0 10px 26px rgba(23, 24, 27, 0.08);
+  border-color: var(--xc-gray-200);
+  box-shadow: var(--xc-shadow-md);
 }
 
 .xc-admin .xc-content.xc-content .pricing-card-opened,
 .xc-admin .xc-content.xc-content .pricing-card-selected {
-  border-color: #edd4df;
-  background: linear-gradient(var(--soft), var(--soft)) top / 100% 64px no-repeat, #fff;
+  border-color: var(--xc-brand-200);
+  background: linear-gradient(var(--soft), var(--soft)) top / 100% 64px no-repeat, var(--xc-surface);
 }
 
 .xc-admin .xc-content.xc-content .pricing-card-rowless {
@@ -93,8 +93,8 @@
 .xc-admin .xc-content.xc-content .pricing-badge-overridden {
   padding: 1px 8px;
   border-radius: 999px;
-  background: #eff0f4;
-  color: #4b4f5b;
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-700);
   font-size: 11px;
   font-weight: 600;
 }
@@ -176,7 +176,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-other-name {
-  color: #8a8d95;
+  color: var(--xc-gray-500);
 }
 
 .xc-admin .xc-content.xc-content .pricing-pair {
@@ -195,7 +195,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-rate-sep {
   margin: 0 5px;
-  color: #c4c6cc;
+  color: var(--xc-gray-300);
   font-weight: 400;
 }
 
@@ -233,30 +233,30 @@
   font-size: 12px;
   font-weight: 700;
   line-height: 1.5;
-  background: #eff0f4;
-  color: #4b4f5b;
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-700);
 }
 
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Tiers'],
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Pending'],
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Unpriced'] {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: var(--xc-brand-soft);
+  color: var(--xc-brand);
 }
 
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Current'] {
-  background: #eaf6ef;
-  color: #246446;
+  background: var(--xc-ok-soft);
+  color: var(--xc-ok);
 }
 
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Review'] {
-  background: #fff9ec;
-  color: #795919;
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
 }
 
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Reference'] {
-  background: #f1f1f4;
-  color: #72747d;
+  background: var(--xc-gray-75);
+  color: var(--xc-muted);
 }
 
 .xc-admin .xc-content.xc-content .pricing-pill-follow {
@@ -291,7 +291,7 @@
 .xc-admin .xc-content.xc-content .pricing-chip-flag {
   font-size: 12px;
   font-weight: 600;
-  color: #795919;
+  color: var(--xc-warn);
 }
 
 .xc-admin .xc-content.xc-content .pricing-note-red {

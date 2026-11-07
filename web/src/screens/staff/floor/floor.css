@@ -1,6 +1,6 @@
 .xc-floor-card {
   padding: 1.5rem;
-  background: var(--xc-surface, #ffffff);
+  background: var(--xc-surface);
   border-radius: 0.5rem;
   display: flex;
   flex-direction: column;
@@ -9,18 +9,18 @@
 
 .xc-floor-notice {
   padding: 0.75rem 1rem;
-  background: var(--xc-success-subtle, #ecfdf5);
-  color: var(--xc-success, #059669);
-  border: 1px solid var(--xc-success-border, #a7f3d0);
+  background: var(--xc-ok-soft);
+  color: var(--xc-ok);
+  border: 1px solid var(--xc-green-200);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
 
 .xc-floor-error {
   padding: 0.75rem 1rem;
-  background: var(--xc-danger-subtle, #fef2f2);
-  color: var(--xc-danger, #dc2626);
-  border: 1px solid var(--xc-danger-border, #fecaca);
+  background: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border: 1px solid var(--xc-brand-200);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }
@@ -28,7 +28,7 @@
 .xc-floor-phase {
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--xc-text, #111827);
+  color: var(--xc-ink);
 }
 
 .xc-floor-my-shift {
@@ -39,15 +39,15 @@
 }
 
 .xc-floor-shift-info {
-  color: var(--xc-text-muted, #6b7280);
+  color: var(--xc-muted);
 }
 
 .xc-floor-break-badge {
   display: inline-block;
   padding: 0.125rem 0.5rem;
-  background: var(--xc-warning-subtle, #fef3c7);
-  color: var(--xc-warning, #d97706);
-  border: 1px solid var(--xc-warning-border, #fde68a);
+  background: var(--xc-warn-soft);
+  color: var(--xc-warn);
+  border: 1px solid var(--xc-amber-200);
   border-radius: 9999px;
   font-size: 0.75rem;
   font-weight: 500;
@@ -67,8 +67,8 @@
   font-size: 0.875rem;
   font-weight: 500;
   border-radius: 0.375rem;
-  border: 1px solid var(--xc-border, #d1d5db);
-  background: var(--xc-surface, #ffffff);
+  border: 1px solid var(--xc-line);
+  background: var(--xc-surface);
   cursor: pointer;
 }
 
@@ -93,7 +93,7 @@
 
 .xc-floor-target-input {
   padding: 0.375rem 0.5rem;
-  border: 1px solid var(--xc-border, #d1d5db);
+  border: 1px solid var(--xc-line);
   border-radius: 0.375rem;
   font-size: 0.875rem;
 }

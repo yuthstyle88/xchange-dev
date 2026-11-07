@@ -152,15 +152,18 @@ describe('AuthLayout — the card (§12.21.1)', () => {
     for (const header of Array.from(host.querySelectorAll('header'))) expect(card.contains(header)).toBe(true);
   });
 
+  // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 and §3): the switch is a segmented ไทย | EN group.
   it('LangSwitch is inside the card header and switches the language', async () => {
     const host = await mount();
     const header = cardOf(host).querySelector('header')!;
-    const button = Array.from(header.querySelectorAll('button')).find((b) => b.textContent?.trim() === 'EN');
-    expect(button, 'the EN switch inside the card header').toBeDefined();
+    const button = Array.from(header.querySelectorAll<HTMLButtonElement>('[role="group"] button')).find(
+      (b) => b.textContent?.trim() === 'EN',
+    );
+    expect(button, 'the EN button of the ไทย | EN switch inside the card header').toBeDefined();
     button!.click();
     await settle();
     expect(lang()).toBe('en');
-    expect(button!.textContent?.trim()).toBe('TH');
+    expect(button!.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('the help line, when given, is inside the card after the title and before the children', async () => {

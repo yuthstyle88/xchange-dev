@@ -303,14 +303,19 @@ describe("the shared zh table is complete (L9)", () => {
 });
 
 describe("LangSwitch (§3.3)", () => {
-  it("G1 staff: still the single toggle showing the other language", async () => {
-    const { Switch } = await fresh();
+  // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.3 "Language switch" and §3): the staff switch is
+  // the segmented ไทย | EN group, two buttons with aria-pressed, instead of one toggle showing the other language.
+  it("G1 staff: the segmented ไทย | EN group, two buttons, the current one pressed", async () => {
+    const { core, Switch } = await fresh();
     dispose = render(() => <Switch />, host);
-    const buttons = host.querySelectorAll("button");
-    expect(buttons.length).toBe(1);
-    expect(buttons[0]!.textContent?.trim()).toBe("EN");
-    buttons[0]!.click();
-    expect(host.querySelector("button")!.textContent?.trim()).toBe("TH");
+    const group = host.querySelector('[role="group"]');
+    expect(group, 'the staff switch is one role="group"').not.toBeNull();
+    const buttons = [...group!.querySelectorAll("button")];
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual(["ไทย", "EN"]);
+    expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual(["true", "false"]);
+    buttons[1]!.click();
+    expect(core.lang()).toBe("en");
+    expect(buttons.map((b) => b.getAttribute("aria-pressed"))).toEqual(["false", "true"]);
   });
 
   it("G2 customer: one button per language, the current one pressed, labels through t", async () => {

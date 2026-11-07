@@ -249,13 +249,15 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
     ).toBe(false);
   });
 
+  // Restated for OL-1 (#6360, docs/design/xchange-one-look.md §2.2 and §3): the root always carries xc-theme too,
+  // so these compare the root's class set (order-free) instead of className.
   describe('AppShell look prop rendering (second revision)', () => {
-    it('renders <div class="xc-shell"> when look is omitted', () => {
+    it('renders <div class="xc-shell xc-theme"> when look is omitted', () => {
       const host = document.createElement('div');
       const dispose = render(() => createComponent(AppShell, { title: 'Default Shell' }), host);
       const root = host.firstElementChild;
       expect(root).not.toBeNull();
-      expect(root?.className).toBe('xc-shell');
+      expect(Array.from(root!.classList).sort()).toEqual(['xc-shell', 'xc-theme']);
       expect(root?.classList.contains('xc-shell')).toBe(true);
       expect(root?.classList.contains('xc-devices')).toBe(false);
       expect(root?.classList.contains('xc-kiosk')).toBe(false);
@@ -264,7 +266,7 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       dispose();
     });
 
-    it('renders <div class="xc-shell xc-devices"> when look="devices"', () => {
+    it('renders <div class="xc-shell xc-theme xc-devices"> when look="devices"', () => {
       const host = document.createElement('div');
       const dispose = render(
         () => createComponent(AppShell, { title: 'Devices', look: 'devices' }),
@@ -272,13 +274,13 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       );
       const root = host.firstElementChild;
       expect(root).not.toBeNull();
-      expect(root?.className).toBe('xc-shell xc-devices');
+      expect(Array.from(root!.classList).sort()).toEqual(['xc-devices', 'xc-shell', 'xc-theme']);
       expect(root?.classList.contains('xc-shell')).toBe(true);
       expect(root?.classList.contains('xc-devices')).toBe(true);
       dispose();
     });
 
-    it('renders <div class="xc-shell xc-kiosk"> when look="kiosk"', () => {
+    it('renders <div class="xc-shell xc-theme xc-kiosk"> when look="kiosk"', () => {
       const host = document.createElement('div');
       const dispose = render(
         () => createComponent(AppShell, { title: 'Kiosk', look: 'kiosk' }),
@@ -286,13 +288,13 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       );
       const root = host.firstElementChild;
       expect(root).not.toBeNull();
-      expect(root?.className).toBe('xc-shell xc-kiosk');
+      expect(Array.from(root!.classList).sort()).toEqual(['xc-kiosk', 'xc-shell', 'xc-theme']);
       expect(root?.classList.contains('xc-shell')).toBe(true);
       expect(root?.classList.contains('xc-kiosk')).toBe(true);
       dispose();
     });
 
-    it('renders <div class="xc-shell xc-admin"> when look="admin"', () => {
+    it('renders <div class="xc-shell xc-theme xc-admin"> when look="admin"', () => {
       const host = document.createElement('div');
       const dispose = render(
         () => createComponent(AppShell, { title: 'Admin', look: 'admin' }),
@@ -300,7 +302,7 @@ describe('shell-look gate (LK-1, #627, #630)', () => {
       );
       const root = host.firstElementChild;
       expect(root).not.toBeNull();
-      expect(root?.className).toBe('xc-shell xc-admin');
+      expect(Array.from(root!.classList).sort()).toEqual(['xc-admin', 'xc-shell', 'xc-theme']);
       expect(root?.classList.contains('xc-shell')).toBe(true);
       expect(root?.classList.contains('xc-admin')).toBe(true);
       dispose();

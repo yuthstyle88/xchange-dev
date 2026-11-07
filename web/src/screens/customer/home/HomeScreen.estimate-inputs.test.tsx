@@ -259,7 +259,9 @@ describe('Customer home: clear estimate on input change and drop stale calculate
     await flush();
 
     expect(estimateCard()).not.toBeNull();
-    expect(estimateCard()!.textContent).toContain('35.42000000');
+    // Restated for UX-2 (#6461, #6417 item 2): the applied rate goes through the one formatter (shared/ui/rate.ts).
+    expect(estimateCard()!.textContent).not.toContain('35.42000000');
+    expect(estimateCard()!.textContent).toContain('35.42');
 
     const branchSelect = host.querySelector<HTMLSelectElement>('#branch-select')!;
     branchSelect.value = 'XC-B02';
