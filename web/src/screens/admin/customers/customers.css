@@ -65,6 +65,15 @@
   width: 100%;
 }
 
+.xc-admin .xc-content .admin-main .customers-table th {
+  white-space: normal;
+  padding: 12px 14px;
+}
+
+.xc-admin .xc-content .admin-main .customers-table td {
+  padding: 14px;
+}
+
 /* v2 src/online/lib/admin-html.ts:1 #customer-pagination */
 .xc-admin .xc-content .pagination {
   display: flex;
