@@ -82,3 +82,23 @@
   border-radius: 0.25rem;
   margin-top: 0.5rem;
 }
+
+.xc-verification-panel form > div {
+  margin-bottom: var(--xc-space-4);
+}
+
+.xc-verification-panel form > div > label {
+  display: grid;
+  gap: 6px;
+}
+
+.xc-verification-panel form > div > label > span {
+  font-weight: 600;
+  color: var(--xc-ink);
+}
+
+.xc-verification-panel form > div > label > input:not([type="file"]),
+.xc-verification-panel form > div > label > select {
+  width: 100%;
+}
+
