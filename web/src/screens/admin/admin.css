@@ -444,6 +444,7 @@
 
 .xc-admin .xc-content.xc-content .table-scroll {
   overflow-x:auto;
+  background: linear-gradient(to right, var(--xc-surface) 30%, transparent) left center / 40px 100% no-repeat local, linear-gradient(to left, var(--xc-surface) 30%, transparent) right center / 40px 100% no-repeat local, radial-gradient(farthest-side at 0 50%, var(--xc-gray-300), transparent) left center / 12px 100% no-repeat scroll, radial-gradient(farthest-side at 100% 50%, var(--xc-gray-300), transparent) right center / 12px 100% no-repeat scroll, var(--xc-surface);
 }
 
 .xc-admin .xc-content.xc-content table {
@@ -1618,6 +1619,33 @@
   color: var(--xc-gray-700);
   font-size: 14px;
   font-weight: 600;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.xc-admin .xc-content .workspace-history > summary::-webkit-details-marker,
+.xc-admin .xc-content .rate-history > summary::-webkit-details-marker {
+  display: none;
+}
+
+.xc-admin .xc-content .workspace-history > summary::after,
+.xc-admin .xc-content .rate-history > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  flex: none;
+  margin-right: 2px;
+}
+
+.xc-admin .xc-content .workspace-history[open] > summary::after,
+.xc-admin .xc-content .rate-history[open] > summary::after {
+  transform: rotate(-135deg);
 }
 
 .xc-admin .xc-content .workspace-history[open] > summary,
@@ -2002,8 +2030,13 @@
 }
 
 .xc-admin .xc-content .admin-footer a {
-  color: var(--xc-muted);
+  color: var(--xc-brand);
+  font-weight: 600;
   text-decoration: none;
+}
+
+.xc-admin .xc-content .admin-footer a::after {
+  content: " ↗";
 }
 
 .xc-admin .xc-content .admin-footer a:hover {
