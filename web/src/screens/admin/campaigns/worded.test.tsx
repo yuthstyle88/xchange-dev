@@ -111,7 +111,7 @@ describe('WE-8: screens/admin/campaigns/ failed-call wordedError (docs/design/we
   }
 
   function getErrorText(): string | null {
-    const el = container.querySelector('.xc-campaigns-error span');
+    const el = container.querySelector('.xc-list-error span');
     return el ? (el.textContent ?? '').trim() : null;
   }
 

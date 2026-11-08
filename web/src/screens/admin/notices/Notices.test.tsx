@@ -181,8 +181,8 @@ describe('SM-3: Notices (§9 specs)', () => {
     dispose = render(() => <Notices {...dummyProps()} />, container);
     await flushPromises();
 
-    expect(container.querySelector('.admin-notices-error')).not.toBeNull();
-    const retryBtn = container.querySelector('.admin-notices-retry-btn') as HTMLButtonElement;
+    expect(container.querySelector('.xc-list-error')).not.toBeNull();
+    const retryBtn = container.querySelector('.xc-list-retry') as HTMLButtonElement;
     expect(retryBtn).not.toBeNull();
     expect(retryBtn.textContent).toContain(table.th.retry);
 
@@ -201,7 +201,7 @@ describe('SM-3: Notices (§9 specs)', () => {
     ];
     retryBtn.click();
     await flushPromises();
-    expect(container.querySelector('.admin-notices-error')).toBeNull();
+    expect(container.querySelector('.xc-list-error')).toBeNull();
     expect(container.textContent).toContain('Notice 1');
   });
 
