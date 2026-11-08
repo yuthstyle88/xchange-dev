@@ -13,7 +13,7 @@ const t = screenT('staff-report', { th, en });
 
 render(
   () => (
-    <AppShell title={t('title')} queueCard="folded">
+    <AppShell title={t('title')} queueCard="pill">
       <StaffReport />
     </AppShell>
   ),
