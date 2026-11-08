@@ -52,7 +52,7 @@ describe('staff-report look', () => {
   });
 
   it('SR-2 the page has the desk gutter', async () => {
-    expect(decls(await readHere('staff-report.css'), '.staff-report')?.get('padding')).toBe('16px 0'); // restated by OL-8 content-width: the shell owns the side gutter
+    expect(decls(await readHere('staff-report.css'), '.staff-report')?.get('padding')).toBe('var(--xc-space-4) 0'); // restated by OL-8 content-width: the shell owns the side gutter
   });
 
   it('SR-3 each metric is a stat card: label above a large tabular figure', async () => {
