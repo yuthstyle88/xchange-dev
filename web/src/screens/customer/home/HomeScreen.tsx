@@ -25,6 +25,7 @@ import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { openingHoursRows } from '../../../shared/ui/openingHours';
 import { formatRate } from '../../../shared/ui/rate';
 import { th, en, zh } from './i18n';
+import '../../../shared/ui/list-states.css';
 import './home.css';
 
 export interface HomeScreenProps {
@@ -637,7 +638,7 @@ export function HomeScreen(props: HomeScreenProps): JSX.Element {
 
           <Show when={ratesState() === 'ready'}>
             <div class="xc-home-table-wrapper">
-              <table class="xc-home-table">
+              <table class="xc-list-table xc-home-table">
                 <thead>
                   <tr>
                     <th>{t('currency')}</th>

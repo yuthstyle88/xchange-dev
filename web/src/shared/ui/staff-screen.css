@@ -1,0 +1,19 @@
+/* Shared staff-screen parts (OL-8 CSS reuse): the card title and the small white bordered button. */
+
+.xc-screen-title {
+  margin: 0;
+  font-size: var(--xc-text-2xl);
+  font-weight: 600;
+  color: var(--xc-ink);
+}
+
+.xc-screen-btn {
+  padding: 6px var(--xc-space-3);
+  font-size: var(--xc-text-base);
+  font-weight: 500;
+  color: var(--xc-ink);
+  background: var(--xc-surface);
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-sm);
+  cursor: pointer;
+}

@@ -10,6 +10,7 @@ import { can } from '../parts/can';
 import { command } from '../parts/command';
 import { ReasonDialog } from '../parts/ReasonDialog';
 import { th, en } from './i18n';
+import '../../../shared/ui/staff-screen.css';
 import './holds.css';
 
 export interface HoldsCardProps {
@@ -168,7 +169,7 @@ export function HoldsCard(props: HoldsCardProps): JSX.Element {
   return (
     <div class="xc-holds-card">
       <div class="xc-holds-header">
-        <h2 class="xc-holds-title">{t('title')}</h2>
+        <h2 class="xc-screen-title">{t('title')}</h2>
       </div>
 
       <Show when={notice()}>

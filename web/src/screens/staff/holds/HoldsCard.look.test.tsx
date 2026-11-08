@@ -76,7 +76,7 @@ describe('HoldsCard look tests (#5135)', () => {
     }
   }
 
-  it('renders root xc-holds-card, xc-holds-header, h2.xc-holds-title, labelled inputs with placeholders, and styled buttons', async () => {
+  it('renders root xc-holds-card, xc-holds-header, h2.xc-screen-title, labelled inputs with placeholders, and styled buttons', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => view([])),
@@ -91,7 +91,7 @@ describe('HoldsCard look tests (#5135)', () => {
     const header = host.querySelector('.xc-holds-header');
     expect(header).not.toBeNull();
 
-    const title = header?.querySelector('h2.xc-holds-title');
+    const title = header?.querySelector('h2.xc-screen-title');
     expect(title).not.toBeNull();
     expect(title?.textContent).toBe('พักบัญชีลูกค้า');
 
@@ -127,7 +127,7 @@ describe('HoldsCard look tests (#5135)', () => {
     dispose = render(() => <HoldsCard ctx={makeCtx()} />, host);
     await flush();
 
-    const title = host.querySelector('.xc-holds-title');
+    const title = host.querySelector('.xc-screen-title');
     expect(title?.textContent).toBe('Customer holds');
 
     const keyInput = host.querySelector<HTMLInputElement>('[data-testid="holds-key"]');

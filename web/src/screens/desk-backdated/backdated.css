@@ -12,3 +12,4 @@
 @media (max-width: 560px) {
   .backdated-grid2, .backdated-grid3 { grid-template-columns: minmax(0, 1fr); }
 }
+.backdated-summary .xc-btn { text-decoration: none; }

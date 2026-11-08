@@ -260,7 +260,7 @@ describe('#2441 Campaigns: opening another campaign never shows or sends the pre
   }
 
   function errorText(): string {
-    return Array.from(root.querySelectorAll('.xc-campaigns-error'))
+    return Array.from(root.querySelectorAll('.xc-list-error'))
       .map((el) => el.textContent ?? '')
       .join('')
       .trim();

@@ -10,7 +10,7 @@ import { queueCardYielding } from './queue-card-yield';
 import './queue-card.css';
 
 /** How a page shows the card, set by the page's AppShell. */
-export type QueueCardMode = 'open' | 'folded' | 'hidden';
+export type QueueCardMode = 'open' | 'folded' | 'pill' | 'hidden';
 
 function checkInitialFold(startFolded: boolean): boolean {
   if (startFolded) return true;
@@ -29,15 +29,19 @@ function holdsQueueOperate(session: SessionStore): boolean {
   return session.me()?.permissions.includes('QueueOperate') ?? false;
 }
 
-export function QueueCard(props: { session: SessionStore; startFolded?: boolean }): JSX.Element {
+export function QueueCard(props: { session: SessionStore; startFolded?: boolean; stayFolded?: boolean }): JSX.Element {
   return (
     <Show when={holdsQueueOperate(props.session)}>
-      <OperatorCard session={props.session} startFolded={props.startFolded ?? false} />
+      <OperatorCard
+        session={props.session}
+        startFolded={props.startFolded ?? false}
+        stayFolded={props.stayFolded ?? false}
+      />
     </Show>
   );
 }
 
-function OperatorCard(props: { session: SessionStore; startFolded: boolean }): JSX.Element {
+function OperatorCard(props: { session: SessionStore; startFolded: boolean; stayFolded: boolean }): JSX.Element {
   const [isFolded, setIsFolded] = createSignal(checkInitialFold(props.startFolded));
   let preYieldFolded = false;
   let userTouchedDuringYield = false;
@@ -180,7 +184,7 @@ function OperatorCard(props: { session: SessionStore; startFolded: boolean }): J
       const line = statusText();
       if (line !== lastStatusLine) {
         lastStatusLine = line;
-        if (s.count > 0) {
+        if (s.count > 0 && !props.stayFolded) {
           setIsFolded(false);
         }
       }

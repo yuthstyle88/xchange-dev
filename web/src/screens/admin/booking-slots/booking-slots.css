@@ -58,7 +58,6 @@
 .bs-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
 .xc-admin .xc-content .closures-form { display: grid; grid-template-columns: minmax(160px, 200px) minmax(0, 1fr) auto; align-items: start; gap: 16px; }
 .xc-admin .xc-content .closures-form > button { margin-top: 28px; }
-.bs-count { margin-top: 4px; font-size: 12px; color: var(--xc-muted); text-align: right; }
 .bs-empty { padding: 16px 0; color: var(--xc-muted); }
 .closure-item { padding: 8px 0; border-bottom: 1px solid var(--xc-line); }
 .closure-item .closure-date { min-width: 110px; font-variant-numeric: tabular-nums; }

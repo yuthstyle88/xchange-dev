@@ -24,6 +24,7 @@ vi.mock('../parts/toast', () => ({ toast: vi.fn(), Toast: () => null }));
 
 const VIEW = '/api/v3/views/pricing_formula';
 const UUID = 'B9082fb61-5ff1-41f9-b4e4-c4507b926544';
+const LONG_NAME = 'สาขาเซ็นทรัลเวิลด์ ชั้น 3';
 
 function data() {
   return makePricingFormulaData({
@@ -34,9 +35,9 @@ function data() {
     },
     inputs: ['ref_buy', 'ref_sell'].map((name) => ({ name })),
     branches: [
-      { branch: UUID, source: 'DEFAULT', own: null },
-      { branch: 'MAIN', source: 'DEFAULT', own: null },
-      { branch: 'B2', source: 'DEFAULT', own: null },
+      { branch: UUID, name: LONG_NAME, source: 'DEFAULT', own: null },
+      { branch: 'MAIN', name: 'สำนักงานใหญ่', source: 'DEFAULT', own: null },
+      { branch: 'B2', name: 'สาขาสยาม', source: 'DEFAULT', own: null },
     ],
   });
 }
@@ -107,24 +108,20 @@ describe('admin-pricing-formula: three cards', () => {
   });
 });
 
-describe('admin-pricing-formula: branch ids as people read them', () => {
-  it('PF-4 branchLabel: over 12 characters → first 8 + "…"; 12 or fewer → unchanged', () => {
-    const label = (screen as unknown as { branchLabel?: (id: string) => string }).branchLabel;
-    expect(typeof label, 'PricingFormula.tsx exports branchLabel').toBe('function');
-    expect(label!(UUID)).toBe('B9082fb6…');
-    expect(label!('MAIN')).toBe('MAIN');
-    expect(label!('B2')).toBe('B2');
-    expect(label!('ABCDEFGHIJKL')).toBe('ABCDEFGHIJKL');
-    expect(label!('ABCDEFGHIJKLM')).toBe('ABCDEFGH…');
+describe('admin-pricing-formula: branches by name (OL-8 row 54)', () => {
+  it('PF-4 branchLabel is gone: the screen no longer shortens ids', () => {
+    expect((screen as unknown as { branchLabel?: unknown }).branchLabel, 'PricingFormula.tsx exports no branchLabel').toBeUndefined();
   });
 
-  it('PF-5 the row shows the short form with the whole id in title; short ids print as they are', async () => {
+  it('PF-5 each row prints the branch name from the view, whole, with the branch id in title and data-branch', async () => {
     await mount();
     const cell = (id: string) => host.querySelector<HTMLElement>(`tr[data-branch="${id}"] td`)!;
-    expect(cell(UUID).textContent?.trim()).toBe('B9082fb6…');
+    expect(cell(UUID).textContent?.trim()).toBe(LONG_NAME);
     expect(cell(UUID).getAttribute('title')).toBe(UUID);
-    expect(cell('MAIN').textContent?.trim()).toBe('MAIN');
-    expect(cell('B2').textContent?.trim()).toBe('B2');
+    expect(cell('MAIN').textContent?.trim()).toBe('สำนักงานใหญ่');
+    expect(cell('MAIN').getAttribute('title')).toBe('MAIN');
+    expect(cell('B2').textContent?.trim()).toBe('สาขาสยาม');
+    expect(cell('B2').getAttribute('title')).toBe('B2');
   });
 });
 

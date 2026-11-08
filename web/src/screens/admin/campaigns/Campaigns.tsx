@@ -60,6 +60,7 @@ import {
   type RuleForm,
 } from './campaign-rules';
 import * as table from './i18n';
+import '../../../shared/ui/list-states.css';
 import './campaigns.css';
 
 const t = screenT('admin.campaigns', table);
@@ -829,11 +830,11 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
             <Show when={listError()}>
               {(errMessage) => (
-                <div class="xc-campaigns-error">
+                <div class="xc-list-error">
                   <span>{errMessage()}</span>
                   <button
                     type="button"
-                    class="xc-campaigns-retry-btn"
+                    class="xc-list-retry"
                     onClick={() => void loadList(props.branch?.(), props.period().from, props.period().to)}
                   >
                     {t('retry')}
@@ -843,7 +844,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
             </Show>
 
             <Show when={loadingList() && campaignsList().length === 0}>
-              <div class="xc-campaigns-loading">{t('loading')}</div>
+              <div class="xc-list-loading">{t('loading')}</div>
             </Show>
 
             <Show when={isEmpty()}>
@@ -860,8 +861,8 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
             </Show>
 
             <Show when={campaignsList().length > 0}>
-              <div class="xc-campaigns-table-container">
-                <table class="xc-campaigns-table">
+              <div class="xc-list-table-wrap">
+                <table class="xc-list-table xc-campaigns-table">
                   <thead>
                     <tr>
                       <th>{t('headerName')}</th>
@@ -932,7 +933,7 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
             <Show when={createError()}>
               {(errMessage) => (
-                <div class="xc-campaigns-error">
+                <div class="xc-list-error">
                   <span>{errMessage()}</span>
                 </div>
               )}
@@ -1224,14 +1225,14 @@ export function Campaigns(props: AdminMenuProps): JSX.Element {
 
           <Show when={detailError()}>
             {(errMessage) => (
-              <div class="xc-campaigns-error">
+              <div class="xc-list-error">
                 <span>{errMessage()}</span>
               </div>
             )}
           </Show>
 
           <Show when={loadingDetail()}>
-            <div class="xc-campaigns-loading">{t('loading')}</div>
+            <div class="xc-list-loading">{t('loading')}</div>
           </Show>
 
           <div class="xc-form-grid">

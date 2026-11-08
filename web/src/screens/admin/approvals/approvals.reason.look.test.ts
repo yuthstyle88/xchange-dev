@@ -2,6 +2,7 @@
 // chars"). The decision reason is a 3-line textarea (admin.css already sizes every admin textarea, min-height 88px), still
 // capped at 500 characters with the "n / 500" counter under it. The six screen tests that find the reason field now look
 // for `textarea` (changed with this test by its author, claude/94389a6b, for the sub-controller claude/1cc51615).
+// Restated by the sub-controller for OL-8 reuse-field-count: the counter class is the shared xc-field-count.
 // Do not edit, delete or weaken; add tests in a file of your own.
 import { beforeAll, describe, expect, it } from 'vitest';
 
@@ -22,7 +23,7 @@ beforeAll(async () => {
 function decisionForm(): string {
   const at = tsx.indexOf('class="approval-decision-form"');
   expect(at, 'decision form present').toBeGreaterThanOrEqual(0);
-  const end = tsx.indexOf('approval-reason-count', at);
+  const end = tsx.indexOf('xc-field-count', at);
   expect(end, 'counter after the field').toBeGreaterThan(at);
   return tsx.slice(at, end);
 }
@@ -42,6 +43,6 @@ describe('approval decision reason field', () => {
   });
 
   it('AR-3 unchanged: the counter still reads "{length} / 500"', () => {
-    expect(tsx).toContain('<div class="approval-reason-count">{reason().length} / 500</div>');
+    expect(tsx).toContain('<div class="xc-field-count">{reason().length} / 500</div>');
   });
 });

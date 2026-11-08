@@ -43,9 +43,9 @@ function data(over: Partial<PricingFormulaData> = {}) {
       name,
     })),
     branches: [
-      { branch: 'MAIN', source: 'ORGANISATION', own: null },
-      { branch: 'B2', source: 'BRANCH', own: { buyFormula: 'ref_buy * 0.99', sellFormula: 'ref_sell * 1.01' } },
-      { branch: 'B3', source: 'DEFAULT', own: null },
+      { branch: 'MAIN', name: 'MAIN', source: 'ORGANISATION', own: null },
+      { branch: 'B2', name: 'B2', source: 'BRANCH', own: { buyFormula: 'ref_buy * 0.99', sellFormula: 'ref_sell * 1.01' } },
+      { branch: 'B3', name: 'B3', source: 'DEFAULT', own: null },
     ],
     ...over,
   });

@@ -62,17 +62,6 @@
 }
 
 /* RequestForm */
-.xc-queue-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.25rem;
-  background: var(--xc-surface);
-  border: 0;
-  border-radius: var(--xc-radius-card);
-  box-shadow: var(--xc-shadow-card);
-}
-
 .xc-queue-field {
   display: flex;
   flex-direction: column;

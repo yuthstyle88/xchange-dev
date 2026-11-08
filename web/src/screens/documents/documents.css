@@ -1,5 +1,5 @@
 /* issue 1349 V3-documents: v2's documents pages (src/devices.mjs, http/documents.rs before issue 1349), inside the shell */
-.documents-screen { display: grid; gap: 16px; max-width: 700px; padding: 16px; }
+.documents-screen { display: grid; gap: 16px; padding: var(--xc-space-4) 0; }
 .documents-screen .documents-title { margin: 0; }
 .documents-screen .documents-ref { margin: 0; }
 .documents-screen .documents-list { margin: 0; list-style: none; }

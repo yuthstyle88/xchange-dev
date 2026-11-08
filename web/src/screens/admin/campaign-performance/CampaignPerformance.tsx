@@ -12,6 +12,7 @@ import { screenT } from '../../../shared/i18n';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import '../../../shared/ui/list-states.css';
 import './campaign-performance.css';
 
 const t = screenT('admin.campaign-performance', table);
@@ -95,11 +96,11 @@ export function CampaignPerformance(props: AdminMenuProps): JSX.Element {
     <div class="xc-cp-screen">
       <Show when={error()}>
         {(errMessage) => (
-          <div class="xc-cp-error">
+          <div class="xc-list-error">
             <span>{errMessage()}</span>
             <button
               type="button"
-              class="xc-cp-retry-btn"
+              class="xc-list-retry xc-cp-retry-btn"
               onClick={() => void loadData(props.branch?.(), props.period().from, props.period().to)}
             >
               {t('retry')}
@@ -109,7 +110,7 @@ export function CampaignPerformance(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Show when={loading() && rows().length === 0}>
-        <div class="xc-cp-loading">{t('loading')}</div>
+        <div class="xc-list-loading">{t('loading')}</div>
       </Show>
 
       <Show when={!loading() && !error() && rows().length === 0}>
@@ -117,8 +118,8 @@ export function CampaignPerformance(props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Show when={rows().length > 0}>
-        <div class="xc-cp-table-container">
-          <table class="xc-cp-table">
+        <div class="xc-list-table-wrap">
+          <table class="xc-list-table xc-cp-table">
             <thead>
               <tr>
                 <th>{t('headerCampaign')}</th>

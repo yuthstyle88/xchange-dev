@@ -527,3 +527,7 @@
 
 /* OL-7 row 98 (#6855): the actor's name in the device log; the raw id stays in its title. */
 .xc-devices .xc-shell-main .dev-actor-name { font-weight: 600; }
+
+.xc-devices .xc-shell-main .dev-detail { list-style: none; margin: 0; padding: 0; font-size: var(--xc-text-md); }
+.xc-devices .xc-shell-main .dev-detail-key { color: var(--xc-muted); }
+

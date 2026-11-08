@@ -20,16 +20,17 @@
 //   'rate.noSourceDate': 'ไม่มีเรทอ้างอิง'
 //   'rate.publishedAt':  'ประกาศเมื่อ {at}'
 //
-// `{at}` is `new Date(publishedAt).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' })`, the same call Admin Rates
-// uses for its history (`web/src/screens/admin/rates/Rates.tsx:27-30`).
+// `{at}` is `formatBangkokDateTime(publishedAt)` (web/src/shared/format/bangkok-time.ts): `dd/mm/yyyy HH:mm`, CE year,
+// in every language (CE-1, round 13; was `toLocaleString(locale())`, a Buddhist year in Thai).
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import { fill, locale, setLang } from '../i18n';
+import { fill, setLang } from '../i18n';
 import { en } from '../i18n/en';
 import { th } from '../i18n/th';
 import { zh } from '../i18n/zh';
 import { RateFreshness } from './RateFreshness';
+import { formatBangkokDateTime } from '../format/bangkok-time';
 
 const KEYS = ['rate.stale', 'rate.sourceDate', 'rate.noSourceDate', 'rate.publishedAt'] as const;
 const PUBLISHED = '2026-10-10T03:15:00Z';
@@ -54,8 +55,9 @@ function text(host: HTMLElement): string {
   return (host.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
+/** CE-1: the shared F55 shape `dd/mm/yyyy HH:mm` in Asia/Bangkok, the same in every language (never th-TH's Buddhist year). */
 function at(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+  return formatBangkokDateTime(iso);
 }
 
 /** `th[key]` read through a string index, so the file runs before the keys exist (they then read undefined). */

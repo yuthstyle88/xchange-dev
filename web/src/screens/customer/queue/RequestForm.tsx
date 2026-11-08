@@ -2,13 +2,14 @@
 // Renders select[name="type"] (BUY | SELL), select[name="currency"] (one option per `rates` code),
 // input[name="amount"] and button[data-action="submit-request"]. The button hands `{type, currency, amount}` to
 // `onSubmit`; it is disabled while `busy`.
-// Classes: xc-queue-form, xc-queue-field, xc-queue-label, xc-queue-select, xc-queue-input, xc-queue-submit.
+// Classes: xc-customer-card (shared/ui/customer-page.css), xc-queue-field, xc-queue-label, xc-queue-select, xc-queue-input, xc-queue-submit.
 // Texts (i18n.ts): type, buy, sell, currency, amount, submit, submitting.
 import { createSignal, For, Show, type JSX } from 'solid-js';
 import { ApiError } from '../../../shared/api/client';
 import { screenT } from '../../../shared/i18n';
 import { fieldError } from '../../../shared/i18n/field-error';
 import { atMost, checkDecimal, MONEY } from '../../../shared/ui/bounded';
+import '../../../shared/ui/customer-page.css';
 import * as table from './i18n';
 import type { QueueRate, RequestFormValue, TradeType } from './queue-api';
 
@@ -68,7 +69,7 @@ export function RequestForm(props: RequestFormProps): JSX.Element {
   };
 
   return (
-    <form class="xc-queue-form" onSubmit={handleSubmit}>
+    <form class="xc-customer-card" onSubmit={handleSubmit}>
       <div class="xc-queue-field">
         <label class="xc-queue-label" for="request-type">
           {t('type')}
