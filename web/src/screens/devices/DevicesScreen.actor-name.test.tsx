@@ -100,10 +100,12 @@ describe('device log actor cell', () => {
     expect(cell.querySelector('[title]')?.getAttribute('title')).toBe(ANNA_ID);
   });
 
-  it('DA-2 a line with no name shows the stored actor, as before', async () => {
+  // Restated for OL-8 devices-actor-fallback (#6903) by the sub-controller, round 13: a line with no name shows the
+  // stored actor shortened like every other id on the page (shortId: "agent:7b1c2a90"); the title keeps the whole actor.
+  it('DA-2 a line with no name shows the stored actor, shortened like every id, whole in the title', async () => {
     await mount();
     const [, agent, kiosk] = actorCells();
-    expect(agent!.textContent?.trim()).toBe(AGENT);
+    expect(agent!.textContent?.trim()).toBe('agent:7b1c2a90');
     expect(agent!.querySelector('[title]')?.getAttribute('title')).toBe(AGENT);
     expect(kiosk!.textContent?.trim()).toBe('ลูกค้า (ตู้)');
   });
