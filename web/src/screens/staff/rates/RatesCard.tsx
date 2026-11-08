@@ -7,6 +7,8 @@ import { RateFreshness } from '../../../shared/ui/RateFreshness';
 import { formatRate } from '../../../shared/ui/rate';
 import type { StaffCtx } from '../cards';
 import { th, en } from './i18n';
+import '../../../shared/ui/list-states.css';
+import '../../../shared/ui/staff-screen.css';
 import './rates.css';
 
 export interface RatesCardProps {
@@ -56,7 +58,7 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
     <div class="xc-rates-card">
       <div class="xc-rates-header">
         <div class="xc-rates-title-group">
-          <h2 class="xc-rates-title">{t('title')}</h2>
+          <h2 class="xc-screen-title">{t('title')}</h2>
           <Show when={!error() && rates()?.publication}>
             {(pub) => (
               <span class="xc-rates-version">
@@ -79,7 +81,7 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
           fallback={<p class="xc-rates-empty">{t('empty')}</p>}
         >
           <div class="xc-rates-table-container">
-            <table class="xc-rates-table">
+            <table class="xc-list-table">
               <thead>
                 <tr class="xc-rates-head-row">
                   <th class="xc-rates-th-currency">{t('currency')}</th>
@@ -110,7 +112,7 @@ export function RatesCard(props: RatesCardProps): JSX.Element {
           <p role="alert" class="xc-rates-error-message">{wordedError(error())}</p>
           <button
             type="button"
-            class="xc-rates-retry-button"
+            class="xc-screen-btn xc-rates-retry-button"
             disabled={loading()}
             onClick={() => void load()}
           >

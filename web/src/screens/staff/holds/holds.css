@@ -11,13 +11,6 @@
   margin-bottom: 1rem;
 }
 
-.xc-holds-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--xc-ink);
-}
-
 .xc-holds-notice {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;

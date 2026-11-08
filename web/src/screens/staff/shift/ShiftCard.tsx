@@ -26,6 +26,7 @@ import { countsToVerify, formatCountTime, myWaitingCloseCount, myWaitingOpenCoun
 import { th, en } from './i18n';
 import { ShiftPicker, shiftChosenOrUnneeded } from './ShiftPicker';
 import { createWaitingCounts } from './waiting-counts';
+import '../../../shared/ui/staff-screen.css';
 import './shift.css';
 
 type HandoverAcceptBody = CashRecordInput & { shiftTemplateId?: string };
@@ -456,7 +457,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   return (
     <div class="xc-shift-card">
       <div class="xc-shift-header">
-        <h2 class="xc-shift-title">{t('title')}</h2>
+        <h2 class="xc-screen-title">{t('title')}</h2>
       </div>
 
       <Show when={notice()}>
@@ -681,7 +682,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                           <button
                             type="button"
                             data-testid="shift-verify"
-                            class="xc-shift-btn"
+                            class="xc-screen-btn xc-shift-btn"
                             disabled={busy()}
                             onClick={() => handleVerifyCount(c.id)}
                           >
@@ -691,7 +692,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                             <button
                               type="button"
                               data-testid="shift-count-reject"
-                              class="xc-shift-btn xc-shift-btn-danger"
+                              class="xc-screen-btn xc-shift-btn xc-shift-btn-danger"
                               disabled={busy()}
                               onClick={() => handleOpenRejectCount(c.id)}
                             >
@@ -728,7 +729,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                         <button
                           type="button"
                           data-testid="shift-count-reject-confirm"
-                          class="xc-shift-btn xc-shift-btn-danger"
+                          class="xc-screen-btn xc-shift-btn xc-shift-btn-danger"
                           disabled={busy()}
                           onClick={() => handleConfirmRejectCount(c.id)}
                         >
@@ -774,7 +775,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                     <button
                       type="button"
                       data-testid="shift-accept"
-                      class="xc-shift-btn"
+                      class="xc-screen-btn xc-shift-btn"
                       disabled={busy() || !acceptReady()}
                       onClick={() => handleAcceptHandover(h.id)}
                     >
@@ -783,7 +784,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
                     <button
                       type="button"
                       data-testid="shift-reject"
-                      class="xc-shift-btn xc-shift-btn-danger"
+                      class="xc-screen-btn xc-shift-btn xc-shift-btn-danger"
                       disabled={busy()}
                       onClick={() => handleRejectHandover(h.id)}
                     >
