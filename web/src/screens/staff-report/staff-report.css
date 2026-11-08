@@ -2,7 +2,7 @@
 .staff-report {
   display: grid;
   gap: 16px;
-  padding: 16px;
+  padding: 16px 0;
 }
 
 .staff-report-tools {

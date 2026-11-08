@@ -210,7 +210,7 @@ body:has(.xc-shell) {
 
 /* Main container */
 .xc-shell-main {
-  max-width: 1040px;
+  max-width: 1008px;
   margin: auto;
   padding: 24px 24px 48px;
   box-sizing: border-box;

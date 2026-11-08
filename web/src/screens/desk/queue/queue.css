@@ -1,4 +1,4 @@
-.desk-queue { display: grid; gap: 16px; padding: 16px; }
+.desk-queue { display: grid; gap: 16px; padding: 16px 0; }
 .desk-queue-board, .desk-queue-sections { display: grid; gap: 16px; }
 .desk-queue-counter { display: grid; gap: 12px; }
 .desk-queue .desk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
