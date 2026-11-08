@@ -152,8 +152,9 @@ impl BranchView for PricingFormulaView {
                 reason: row.reason,
             });
 
-            let branch_rows: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
-                "SELECT b.id, b.name, rpv.buy_formula, rpv.sell_formula \
+            let branch_rows: Vec<(String, String, Option<String>, Option<String>)> =
+                sqlx::query_as(
+                    "SELECT b.id, b.name, rpv.buy_formula, rpv.sell_formula \
                  FROM branches b \
                  LEFT JOIN LATERAL ( \
                      SELECT buy_formula, sell_formula \
@@ -164,11 +165,11 @@ impl BranchView for PricingFormulaView {
                  ) rpv ON true \
                  WHERE b.organization_id = $1 \
                  ORDER BY b.id ASC",
-            )
-            .bind(org_id)
-            .fetch_all(&mut *tx)
-            .await
-            .map_err(AppError::Database)?;
+                )
+                .bind(org_id)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(AppError::Database)?;
 
             tx.commit().await.map_err(AppError::Database)?;
 
