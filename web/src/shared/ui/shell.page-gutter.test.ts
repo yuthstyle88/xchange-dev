@@ -57,7 +57,7 @@ function baseRules(): string {
 describe('page-gutter: one content width and gutter on .xc-shell-main', () => {
   it('PG-1 the content width is the mock-up page width, centred, with the padding inside it', () => {
     const d = mainDecls(baseRules());
-    expect(d.get('max-width')).toBe('1040px');
+    expect(d.get('max-width')).toBe('1008px'); // restated by OL-8 content-width (960 px column)
     expect(d.get('margin')).toBe('auto');
     expect(d.get('box-sizing')).toBe('border-box');
   });
