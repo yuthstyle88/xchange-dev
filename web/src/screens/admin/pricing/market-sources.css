@@ -5,10 +5,10 @@
   display: flex;
   gap: 8px;
   margin: 0 -16px;
-  padding: 0 16px 2px;
+  padding: 0 var(--xc-space-4) 2px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
-  scroll-padding-inline: 16px;
+  scroll-padding-inline: var(--xc-space-4);
   scrollbar-width: thin;
 }
 
