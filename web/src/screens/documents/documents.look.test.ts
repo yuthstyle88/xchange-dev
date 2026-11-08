@@ -43,7 +43,7 @@ describe('documents look', () => {
     const d = decls(await readHere('documents.css'), '.documents-screen');
     expect(d?.get('display')).toBe('grid');
     expect(d?.get('gap')).toBe('16px');
-    expect(d?.get('padding')).toBe('16px');
+    expect(d?.get('padding')).toBe('16px 0'); // restated by OL-8 content-width: the shell owns the side gutter
     expect(d?.has('font-size')).toBe(false);
   });
 
