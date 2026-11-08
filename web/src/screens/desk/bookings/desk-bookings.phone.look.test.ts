@@ -48,7 +48,7 @@ describe('desk-bookings at phone width', () => {
 
   it('BP-3 .xc-desk-bookings has no side gutter or width of its own: the shell owns them', async () => {
     const d = decls(await readHere('desk-bookings.css'), '.xc-desk-bookings');
-    expect(d?.get('padding')).toBe('16px 0');
+    expect(d?.get('padding')).toBe('var(--xc-space-4) 0');
     expect(d?.get('max-width')).toBe('none');
     expect(d?.get('margin')).toBe('0');
   });

@@ -82,7 +82,7 @@ describe('desk-queue look', () => {
     const d = decls(await readHere('queue.css'), '.desk-queue');
     expect(d?.get('display')).toBe('grid');
     expect(d?.get('gap')).toBe('16px');
-    expect(d?.get('padding')).toBe('16px 0'); // restated by OL-8 content-width: the shell owns the side gutter
+    expect(d?.get('padding')).toBe('var(--xc-space-4) 0'); // restated by OL-8 content-width: the shell owns the side gutter
   });
 
   it('DQ-3 both board sections are shared cards, also when empty, and the empty line stays', () => {
