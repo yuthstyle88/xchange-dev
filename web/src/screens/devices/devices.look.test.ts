@@ -105,7 +105,8 @@ describe('devices look', () => {
     expect(tsx).toContain('<small class="dev-id" title={j.id}>{shortId(j.id)}</small>');
     expect(tsx).toContain("<small class=\"dev-id\" title={j.ref || undefined}>{j.ref ? shortId(j.ref) : t('noRef')}</small>");
     expect(tsx).toContain('<span class="dev-id" title={j.actor}>{shortId(j.actor)}</span>');
-    expect(tsx).toContain('<span class="dev-id" title={ev.actor}>{ev.actor}</span>');
+    // Restated for OL-8 devices-actor-fallback (#6903): the event actor with no name is shortened too.
+    expect(tsx).toContain('<span class="dev-id" title={ev.actor}>{shortId(ev.actor)}</span>');
     expect(tsx).toContain("<small class=\"dev-id\" title={ev.ref || undefined}>{ev.ref ? shortId(ev.ref) : '—'}</small>");
   });
 
