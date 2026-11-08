@@ -76,7 +76,7 @@ describe('AttendanceCard look tests (#5135)', () => {
     }
   }
 
-  it('renders root xc-attendance-card with data-testid="attendance-card", xc-attendance-header, h2.xc-attendance-title, and list rows as xc-attendance-row', async () => {
+  it('renders root xc-attendance-card with data-testid="attendance-card", xc-attendance-header, h2.xc-screen-title, and list rows as xc-attendance-row', async () => {
     const rows = [
       makeStaffAttendanceRow({
         id: 'att-1',
@@ -104,7 +104,7 @@ describe('AttendanceCard look tests (#5135)', () => {
     const header = host.querySelector('.xc-attendance-header');
     expect(header).not.toBeNull();
 
-    const title = header?.querySelector('h2.xc-attendance-title');
+    const title = header?.querySelector('h2.xc-screen-title');
     expect(title).not.toBeNull();
     expect(title?.textContent).toBe('ลงเวลาวันนี้');
 
@@ -131,7 +131,7 @@ describe('AttendanceCard look tests (#5135)', () => {
     dispose = render(() => <AttendanceCard ctx={makeCtx()} />, host);
     await flush();
 
-    const title = host.querySelector('.xc-attendance-title');
+    const title = host.querySelector('.xc-screen-title');
     expect(title?.textContent).toBe("Today's attendance");
   });
 });

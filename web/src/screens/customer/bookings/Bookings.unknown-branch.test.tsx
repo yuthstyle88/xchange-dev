@@ -114,7 +114,7 @@ describe('Bookings.tsx — a booking on a branch missing from the public list (#
     });
 
     expect(host.querySelector('.xc-bookings-error')).toBeNull();
-    expect(host.querySelectorAll('.xc-booking-card')).toHaveLength(3);
+    expect(host.querySelectorAll('.xc-customer-card')).toHaveLength(3);
 
     const siam = card(host, 'bk-siam');
     expect(siam).not.toBeNull();
@@ -159,6 +159,6 @@ describe('Bookings.tsx — a booking on a branch missing from the public list (#
 
     expect(host.querySelector('.xc-bookings-error [data-action="retry"]')).not.toBeNull();
     expect(host.querySelector('.xc-bookings-list')).toBeNull();
-    expect(host.querySelectorAll('.xc-booking-card')).toHaveLength(0);
+    expect(host.querySelectorAll('.xc-customer-card')).toHaveLength(0);
   });
 });

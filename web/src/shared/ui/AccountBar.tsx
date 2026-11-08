@@ -196,7 +196,11 @@ export function AccountBar(props: {
             {t('shell.account.signOut')}
           </button>
           <Show when={props.queueCard !== 'hidden'}>
-            <QueueCard session={session()} startFolded={props.queueCard === 'folded'} />
+            <QueueCard
+              session={session()}
+              startFolded={props.queueCard === 'folded' || props.queueCard === 'pill'}
+              stayFolded={props.queueCard === 'pill'}
+            />
           </Show>
         </div>
       )}

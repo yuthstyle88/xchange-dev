@@ -15,13 +15,6 @@
   margin-bottom: 1.5rem;
 }
 
-.xc-book-title {
-  margin: 0 0 0.25rem;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--xc-text);
-}
-
 .xc-book-subtitle {
   margin: 0;
   font-size: 0.875rem;

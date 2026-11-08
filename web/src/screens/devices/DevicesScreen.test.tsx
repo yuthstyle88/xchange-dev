@@ -788,21 +788,28 @@ describe('DevicesScreen tables (#404 D12-D15, D21)', () => {
     }
   });
 
-  it("events: time, actor, kind label (or the raw kind), ref or —, detail as sent (D13, §9)", async () => {
+  // Restated for OL-8 device-log-detail (verifier row 98) by claude/01DKFAnW (pane claude-15), round 13 (sub-controller claude/1cc51615):
+  // the detail is no longer shown "as sent" (raw JSON) but as "label: value" lines in `ul.dev-detail`, the JSON kept
+  // in the list's title (log-detail.test.ts LD-4..LD-10, DevicesScreen.log-detail.test.tsx DL-1). `jobId` is a known
+  // key (งาน); `a` is not, and keeps its name. The CSV still writes the detail as sent (csv.test.ts, unchanged).
+  it("events: time, actor, kind label (or the raw kind), ref or —, detail as labelled lines (D13, §9, OL-8)", async () => {
     const server = new FakeServer({ B1: b1() });
     mount(server, 'B1');
     await loaded();
     const rows = bodyRows(eventsTable());
     expect(rows).toHaveLength(3);
     const expected = [
-      [stamp('2026-10-08T03:04:05.000Z'), 'front1', KIND_THAI.PRINT_RECEIPT!, 'TX-2', '{"jobId":"J3"}'],
-      [stamp('2026-10-08T03:00:00.000Z'), 'backend1', 'SOMETHING_NEW', '—', '{"a":1}'],
-      [stamp('2026-10-08T02:58:00.000Z'), 'agent', KIND_THAI.DRAWER_OPENED!, 'TX-1', '{"jobId":"J2"}'],
+      [stamp('2026-10-08T03:04:05.000Z'), 'front1', KIND_THAI.PRINT_RECEIPT!, 'TX-2', 'งาน: J3'],
+      [stamp('2026-10-08T03:00:00.000Z'), 'backend1', 'SOMETHING_NEW', '—', 'a: 1'],
+      [stamp('2026-10-08T02:58:00.000Z'), 'agent', KIND_THAI.DRAWER_OPENED!, 'TX-1', 'งาน: J2'],
     ];
+    const raw = ['{"jobId":"J3"}', '{"a":1}', '{"jobId":"J2"}'];
     expect(rows.map((tr) => [...tr.cells].map(textOf))).toEqual(expected);
     for (const [i, tr] of rows.entries()) {
       expect(textOf(tr.cells[3]!.querySelector('small')), `row ${i} ref`).toBe(expected[i]![3]);
-      expect(textOf(tr.cells[4]!.querySelector('code')), `row ${i} detail`).toBe(expected[i]![4]);
+      const list = tr.cells[4]!.querySelector('ul.dev-detail');
+      expect(textOf(list), `row ${i} detail`).toBe(expected[i]![4]);
+      expect(list?.getAttribute('title'), `row ${i} detail title`).toBe(raw[i]);
     }
   });
 

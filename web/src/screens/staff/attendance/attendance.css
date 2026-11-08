@@ -11,13 +11,6 @@
   margin-bottom: 1rem;
 }
 
-.xc-attendance-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin: 0;
-  color: var(--xc-ink);
-}
-
 .xc-attendance-error-panel {
   display: flex;
   align-items: center;
@@ -33,17 +26,6 @@
 .xc-attendance-error {
   color: var(--xc-danger);
   font-size: 0.875rem;
-}
-
-.xc-attendance-btn {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--xc-ink);
-  background: var(--xc-surface);
-  border: 1px solid var(--xc-line);
-  border-radius: 0.375rem;
-  cursor: pointer;
 }
 
 .xc-attendance-btn:hover {

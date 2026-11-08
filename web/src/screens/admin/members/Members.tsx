@@ -15,6 +15,7 @@ import { MoneyText } from '../../../shared/ui/MoneyText';
 
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import '../../../shared/ui/list-states.css';
 import './members.css';
 
 const t = screenT('admin.members', table);
@@ -230,7 +231,7 @@ export function Members(_props: AdminMenuProps): JSX.Element {
     <div class="xc-campaigns-screen members-screen">
       <Show when={error() && !error()!.field ? error()!.message : null}>
         {(msg) => (
-          <div class="xc-campaigns-error" role="alert">
+          <div class="xc-list-error" role="alert">
             <span>{msg()}</span>
           </div>
         )}
@@ -401,8 +402,8 @@ export function Members(_props: AdminMenuProps): JSX.Element {
               </div>
             </div>
 
-            <div class="xc-campaigns-table-container">
-              <table class="xc-campaigns-table">
+            <div class="xc-list-table-wrap">
+              <table class="xc-list-table xc-campaigns-table">
                 <thead>
                   <tr>
                     <th>{t('sampleHeaderName')}</th>

@@ -5,6 +5,7 @@ import { screenT } from '../../../shared/i18n';
 import { createNotifications } from '../../../shared/notifications';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
+import '../../../shared/ui/list-states.css';
 import './notices.css';
 
 const t = screenT('admin.notices', table);
@@ -52,13 +53,13 @@ export function Notices(_props: AdminMenuProps): JSX.Element {
       </Show>
 
       <Show when={loading()}>
-        <div class="admin-notices-loading">{t('loading')}</div>
+        <div class="xc-list-loading">{t('loading')}</div>
       </Show>
 
       <Show when={!loading() && loadError()}>
-        <div class="admin-notices-error">
+        <div class="xc-list-error">
           <span>{loadError()}</span>
-          <button type="button" class="admin-notices-retry-btn" onClick={refetch}>
+          <button type="button" class="xc-list-retry" onClick={refetch}>
             {t('retry')}
           </button>
         </div>

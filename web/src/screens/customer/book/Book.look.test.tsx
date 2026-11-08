@@ -125,13 +125,14 @@ describe('cust-book: the selects say what to do', () => {
     vi.restoreAllMocks();
   });
 
-  it('BK-3 before a branch is chosen the currency select says to choose a branch', async () => {
+  // Round 13 (BK-CP, #564): the placeholder is the currency's own "choose a branch first", not the branch prompt.
+  it('BK-3 before a branch is chosen the currency select says to choose a branch first', async () => {
     dispose = render(() => <BookScreen fetch={fetchStub} />, host);
     await flush();
     const options = host.querySelectorAll<HTMLOptionElement>('select[name="currency"] option');
     expect(options.length).toBe(1);
     expect(options[0]!.value).toBe('');
-    expect(options[0]!.textContent).toBe('เลือกสาขา…');
+    expect(options[0]!.textContent).toBe('เลือกสาขาก่อน');
   });
 
   it('BK-4 a day with no slots says so once: the status line, not the select as well', async () => {

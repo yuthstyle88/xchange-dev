@@ -342,15 +342,14 @@ describe('V3-staff-report screen: v2 strings in th (B.1, D-B6)', () => {
     expect(text).toContain(squash('Finance: รอกระทบยอดจากหลักฐานอิสระ'));
   });
 
-  it("formats generatedAt th-TH in the answer's timezone, not the browser's (row 20)", async () => {
+  it("formats generatedAt as dd/mm/yyyy HH:mm (CE year) in the answer's timezone, not the browser's (row 20, CE-1)", async () => {
     const at = '2026-10-05T16:30:00Z'; // 23:30 in Bangkok, 01:30 the next day in Tokyo
     reportAnswer = () => ok(report({ generatedAt: at, timezone: 'Asia/Tokyo' }));
     await mountMain();
     await loaded();
-    const tokyo = new Date(at).toLocaleString('th-TH', { timeZone: 'Asia/Tokyo' });
-    const bangkok = new Date(at).toLocaleString('th-TH', { timeZone: 'Asia/Bangkok' });
-    expect(pageText()).toContain(squash(`สร้างรายงาน ${tokyo}`));
-    expect(pageText()).not.toContain(squash(bangkok));
+    expect(pageText()).toContain(squash('สร้างรายงาน 06/10/2026 01:30'));
+    expect(pageText()).not.toContain(squash('05/10/2026 23:30'));
+    expect(pageText(), 'no Buddhist year').not.toContain('2569');
   });
 
   it('the screen sources hold no Thai letters: every text comes from i18n.ts (D-B6)', () => {

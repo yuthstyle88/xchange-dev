@@ -376,13 +376,6 @@
   margin-bottom: 0.75rem;
 }
 
-.xc-home-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 0.875rem;
-}
-
 .xc-home-table th,
 .xc-home-table td {
   padding: 0.625rem 0.5rem;

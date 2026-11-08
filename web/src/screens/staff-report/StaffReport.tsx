@@ -10,7 +10,8 @@ import type {
   StaffDailyReportData,
   StaffDailyReportFilter,
 } from '../../shared/api/generated/staff_daily_report';
-import { lang, screenT } from '../../shared/i18n';
+import { formatDateTimeInZone } from '../../shared/format/bangkok-time';
+import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { formatMoney } from '../../shared/ui/MoneyText';
 import * as table from './i18n';
@@ -38,12 +39,7 @@ function figure(value: string | null): string {
 
 /** `generatedAt` in the branch's timezone the server answered (B.1 row 20), not the browser's. */
 function generated(at: string, timeZone: string): string {
-  const locale = lang() === 'th' ? 'th-TH' : 'en-GB';
-  try {
-    return new Date(at).toLocaleString(locale, { timeZone });
-  } catch {
-    return at;
-  }
+  return formatDateTimeInZone(at, timeZone);
 }
 
 function CurrencyRow(props: { row: ReportCurrencyRow }): JSX.Element {

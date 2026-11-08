@@ -1,0 +1,22 @@
+/* Shared customer page pieces: OL-8 reuse-customer-title-card (#564). Unlayered on purpose, so they beat
+   the customer base layer (@layer xc-customer-base in screens/customer/_shell/xc-customer-tokens.css). */
+
+/* The page title (h1) at the top of a customer screen. */
+.xc-customer-page-title {
+  margin: 0 0 var(--xc-space-1);
+  font-size: var(--xc-text-4xl);
+  font-weight: 700;
+  color: var(--xc-text);
+}
+
+/* The white card a customer form or list item sits on. */
+.xc-customer-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--xc-space-4);
+  padding: var(--xc-space-5);
+  background: var(--xc-surface);
+  border: 0;
+  border-radius: var(--xc-radius-card);
+  box-shadow: var(--xc-shadow-card);
+}

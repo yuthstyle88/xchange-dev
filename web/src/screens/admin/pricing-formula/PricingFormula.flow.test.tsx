@@ -40,7 +40,7 @@ const VIEW_DATA = makePricingFormulaData({
     sellFormula: 'ref_sell * (1 + (sell_pct + tier_sell_pct) / 100)',
   },
   inputs: [{ name: 'ref_buy' }, { name: 'ref_sell' }, { name: 'ref_mid' }],
-  branches: [{ branch: 'MAIN', source: 'ORGANISATION', own: null }],
+  branches: [{ branch: 'MAIN', name: 'MAIN', source: 'ORGANISATION', own: null }],
 });
 
 const PREVIEW_OK = makePricingFormulaPreviewOutput({

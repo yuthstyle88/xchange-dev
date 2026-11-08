@@ -44,7 +44,7 @@ vi.mock('./formula-override', () => {
 vi.mock('../parts/FormulaRefusal', () => import('../parts/formula-stubs.testing'));
 vi.mock('../parts/spread-failure', () => import('../parts/formula-stubs.testing'));
 
-const OWN_ENTRY = { branch: 'MAIN', source: 'ORGANISATION', own: null };
+const OWN_ENTRY = { branch: 'MAIN', name: 'MAIN', source: 'ORGANISATION', own: null };
 
 describe('pricing-formula-web T9: the policy card saves the branch formula', () => {
   let host: HTMLDivElement;

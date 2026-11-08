@@ -200,7 +200,7 @@ describe('#2426 Campaigns: write buttons while a write is in flight', () => {
   }
 
   function errorText(): string {
-    return Array.from(root.querySelectorAll('.xc-campaigns-error'))
+    return Array.from(root.querySelectorAll('.xc-list-error'))
       .map((el) => el.textContent ?? '')
       .join('')
       .trim();

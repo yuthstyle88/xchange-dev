@@ -1,5 +1,6 @@
 import { Show, type JSX } from 'solid-js';
-import { fill, locale, t } from '../i18n';
+import { formatBangkokDateTime } from '../format/bangkok-time';
+import { fill, t } from '../i18n';
 import './rate-freshness.css';
 
 export interface RateFreshnessProps {
@@ -10,11 +11,7 @@ export interface RateFreshnessProps {
 
 export function RateFreshness(props: RateFreshnessProps): JSX.Element {
   const at = () =>
-    props.publishedAt
-      ? new Date(props.publishedAt).toLocaleString(locale(), {
-          timeZone: 'Asia/Bangkok',
-        })
-      : '';
+    props.publishedAt ? formatBangkokDateTime(props.publishedAt) : '';
 
   return (
     <p class="xc-rate-freshness">

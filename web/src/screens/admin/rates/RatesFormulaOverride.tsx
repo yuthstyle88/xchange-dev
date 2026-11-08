@@ -60,6 +60,7 @@ export function RatesFormulaOverride(props: RatesFormulaOverrideProps): JSX.Elem
       const org = data.organisation ?? data.default;
       const entry = data.branches.find((b) => b.branch === branch) ?? {
         branch,
+        name: branch,
         source: data.organisation ? 'ORGANISATION' : 'DEFAULT',
         own: null,
       };

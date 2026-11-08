@@ -126,7 +126,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
     expect(container.querySelector('.xc-cp-table')).toBeNull();
     expect(container.textContent).not.toContain('Golden October');
     expect(container.textContent).not.toContain('120');
-    expect(container.querySelector('.xc-cp-loading')?.textContent).toBe(table.th.loading);
+    expect(container.querySelector('.xc-list-loading')?.textContent).toBe(table.th.loading);
   });
 
   it('period changes, answer arrives: clears old rows while pending and shows only the new period rows', async () => {
@@ -146,7 +146,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
       expect(pendingResolvers).toHaveLength(1);
     });
     expect(container.textContent).not.toContain('Golden October');
-    expect(container.querySelector('.xc-cp-loading')?.textContent).toBe(table.th.loading);
+    expect(container.querySelector('.xc-list-loading')?.textContent).toBe(table.th.loading);
 
     pendingResolvers[0](okResponse(makeCampaignPerformanceData({ versions: [NOV_ROW] })));
 
@@ -155,7 +155,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
       expect(container.textContent).toContain('85');
     });
     expect(container.textContent).not.toContain('Golden October');
-    expect(container.querySelector('.xc-cp-loading')).toBeNull();
+    expect(container.querySelector('.xc-list-loading')).toBeNull();
   });
 
   it('period changes, read fails: clears old rows immediately, then shows error and retry with no rows', async () => {
@@ -180,7 +180,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
     pendingResolvers[0](errorResponse(500, 'serverError'));
 
     await vi.waitFor(() => {
-      expect(container.querySelector('.xc-cp-error')?.textContent).toContain(th['error.serverError']);
+      expect(container.querySelector('.xc-list-error')?.textContent).toContain(th['error.serverError']);
     });
     expect(container.querySelector('.xc-cp-retry-btn')).not.toBeNull();
     expect(container.querySelector('.xc-cp-table')).toBeNull();
@@ -207,7 +207,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
     // Same context: existing rows stay visible while refreshing
     expect(container.querySelector('.xc-cp-table')).not.toBeNull();
     expect(container.textContent).toContain('Golden October');
-    expect(container.querySelector('.xc-cp-loading')).toBeNull();
+    expect(container.querySelector('.xc-list-loading')).toBeNull();
 
     pendingResolvers[0](okResponse(makeCampaignPerformanceData({ versions: [OCT_ROW] })));
     await vi.waitFor(() => {
@@ -224,7 +224,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
     });
     expect(container.querySelector('.xc-cp-table')).toBeNull();
     expect(container.textContent).not.toContain('Golden October');
-    expect(container.querySelector('.xc-cp-loading')?.textContent).toBe(table.th.loading);
+    expect(container.querySelector('.xc-list-loading')?.textContent).toBe(table.th.loading);
   });
 
   it('branch change (same period): treated like a period change, rows cleared while loading', async () => {
@@ -245,7 +245,7 @@ describe('Admin Campaign Performance context change (#2337)', () => {
     });
     expect(container.querySelector('.xc-cp-table')).toBeNull();
     expect(container.textContent).not.toContain('Golden October');
-    expect(container.querySelector('.xc-cp-loading')?.textContent).toBe(table.th.loading);
+    expect(container.querySelector('.xc-list-loading')?.textContent).toBe(table.th.loading);
 
     pendingResolvers[0](okResponse(makeCampaignPerformanceData({ versions: [SILOM_ROW] })));
     await vi.waitFor(() => {

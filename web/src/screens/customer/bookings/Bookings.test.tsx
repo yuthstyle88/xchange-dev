@@ -383,7 +383,7 @@ describe('APP-17: Customer My Bookings Screen C03 (#987)', () => {
     it('renders newest booking first and reflects booking status', async () => {
       await boot();
 
-      const bookingItems = root.querySelectorAll('.xc-booking-card, [data-booking-id]');
+      const bookingItems = root.querySelectorAll('.xc-customer-card, [data-booking-id]');
       expect(bookingItems.length, 'renders list of booking cards').toBeGreaterThanOrEqual(2);
 
       // Status text from i18n

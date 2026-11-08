@@ -133,7 +133,7 @@ export function BoardTable(props: BoardTableProps): JSX.Element {
       <thead>
         <BandHeadings headings={props.model.headings} singleColumn={props.model.singleColumn} />
       </thead>
-      <tbody ref={tbodyEl} class="xc-rb-tbody">
+      <tbody ref={tbodyEl}>
         <For each={rowKeys()}>
           {(key) => {
             const row = createMemo(() => rowsByKey().get(key)!);

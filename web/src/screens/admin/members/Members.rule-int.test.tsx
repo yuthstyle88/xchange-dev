@@ -114,7 +114,7 @@ describe('Admin Members: refuse non-integer recency_days and frequency in segmen
   }
 
   function errorBannerText(): string | null {
-    const alert = root.querySelector('.xc-campaigns-error[role="alert"]');
+    const alert = root.querySelector('.xc-list-error[role="alert"]');
     return alert ? (alert.textContent ?? '').trim() : null;
   }
 
