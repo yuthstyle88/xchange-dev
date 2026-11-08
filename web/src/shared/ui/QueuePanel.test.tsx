@@ -37,6 +37,7 @@ import { queueStore, type QueueStore } from '../queue/queue-store';
 import type { KioskQueueRow, Me } from '../testing/fixtures';
 import { makeKioskQueueRow, makeQueueBoardData } from '../testing/fixtures';
 import { QueuePanel } from './QueuePanel';
+import { formatBangkokDateTime } from '../format/bangkok-time';
 import { meOf } from '../../test-support/me';
 
 // ── fixtures ─────────────────────────────────────────────────────────────────
@@ -324,8 +325,9 @@ function term(article: Element, label: string): string {
   return text(dt.nextElementSibling);
 }
 
-function stamp(ms: number | string, loc = 'th-TH'): string {
-  return new Date(ms).toLocaleString(loc, { timeZone: 'Asia/Bangkok' });
+/** CE-1: `dd/mm/yyyy HH:mm` in Asia/Bangkok, the same in th and en (was toLocaleString(th-TH | en-GB)). */
+function stamp(ms: number | string, _loc = 'th-TH'): string {
+  return formatBangkokDateTime(new Date(ms).toISOString());
 }
 
 function pressed(host: Element): string[] {
@@ -876,7 +878,7 @@ describe('P12: a failed read', () => {
 // ── P14: the other language ──────────────────────────────────────────────────
 
 describe('P14: lang en', () => {
-  it('every text of the panel comes from en, and times use en-GB in Asia/Bangkok', async () => {
+  it('every text of the panel comes from en, and times read dd/mm/yyyy HH:mm in Asia/Bangkok (CE-1)', async () => {
     setLang('en');
     const p = mount();
     const b = p.branch();
@@ -891,7 +893,7 @@ describe('P14: lang en', () => {
 
     expect(text(p.host)).not.toMatch(THAI);
     expect(text(card(p.host, `${b}-Q2`))).toContain(stamp(started, 'en-GB'));
-    expect(text(card(p.host, `${b}-Q2`))).not.toContain(stamp(started));
+    expect(text(card(p.host, `${b}-Q2`))).toContain('08/10/2026 09:10');
     const labels = [...p.host.querySelectorAll('button')].map((b2) => text(b2));
     for (const thai of ['รอรับเรื่อง', 'กำลังทำรายการ', 'เสร็จสิ้น', 'โหลดล่าสุด']) {
       expect(labels.some((l) => enOf([thai]).includes(l)), thai).toBe(true);

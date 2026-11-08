@@ -13,7 +13,8 @@ import {
   type ViewParams,
 } from '../api/client';
 import { cancelKioskRequest } from '../api/kiosk-cancel';
-import { fill, locale, t } from '../i18n';
+import { formatBangkokDateTime } from '../format/bangkok-time';
+import { fill, t } from '../i18n';
 import { wordedError } from '../i18n/worded-error';
 import { useQueueStore } from '../queue/queue-store';
 import type { KioskQueueRow } from '../queue/wire';
@@ -59,9 +60,7 @@ export function QueuePanel(props: QueuePanelProps): JSX.Element {
   });
 
   const stamp = (iso: string | number) => {
-    return new Date(iso).toLocaleString(locale(), {
-      timeZone: 'Asia/Bangkok',
-    });
+    return formatBangkokDateTime(new Date(iso).toISOString());
   };
 
   const statusMessage = () => {
