@@ -26,7 +26,8 @@
 // It renders no input and sends no request other than that GET.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { render } from 'solid-js/web';
-import { fill, locale, setLang } from '../../../shared/i18n';
+import { fill, setLang } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import {
   makePublishedLineDto,
   makePublishedPublicationDto,
@@ -254,7 +255,7 @@ describe('freshness: the shared RateFreshness (rates.md §4.10)', () => {
     const p = el.querySelector('p.xc-rate-freshness');
     expect(p, 'RateFreshness is embedded').not.toBeNull();
     expect(el.querySelector('.xc-rate-stale')).toBeNull();
-    const at = new Date(PUBLISHED_AT).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+    const at = formatBangkokDateTime(PUBLISHED_AT); // CE-1: dd/mm/yyyy HH:mm, CE year
     expect(p!.textContent).toContain('อัตราอ้างอิง ธปท. วันที่ 2026-10-09'); // F7: owner-approved wording, #564
     expect(p!.textContent).toContain(fill('ประกาศเมื่อ {at}', { at }));
   });

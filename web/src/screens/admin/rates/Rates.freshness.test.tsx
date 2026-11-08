@@ -8,7 +8,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSignal, type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
-import { fill, locale, setLang } from '../../../shared/i18n';
+import { fill, setLang } from '../../../shared/i18n';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { th } from '../../../shared/i18n/th';
 import {
   makePublishedLineDto,
@@ -115,8 +116,9 @@ function key(k: string): string {
   return (th as Record<string, string>)[k] ?? `<missing ${k}>`;
 }
 
+/** CE-1: the shared F55 shape `dd/mm/yyyy HH:mm` in Asia/Bangkok, the same in every language (never th-TH's Buddhist year). */
 function at(iso: string): string {
-  return new Date(iso).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' });
+  return formatBangkokDateTime(iso);
 }
 
 beforeEach(() => {
