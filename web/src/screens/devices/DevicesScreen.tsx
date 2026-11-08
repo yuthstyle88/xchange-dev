@@ -801,7 +801,7 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                         <td data-label={t('colActor')}>
                           <Show
                             when={ev.actorName}
-                            fallback={<span class="dev-id" title={ev.actor}>{ev.actor}</span>}
+                            fallback={<span class="dev-id" title={ev.actor}>{shortId(ev.actor)}</span>}
                           >
                             {(name) => <span class="dev-actor-name" title={ev.actor}>{name()}</span>}
                           </Show>
