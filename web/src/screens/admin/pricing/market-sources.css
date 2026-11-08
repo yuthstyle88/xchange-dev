@@ -8,6 +8,7 @@
   padding: 0 16px 2px;
   overflow-x: auto;
   scroll-snap-type: x proximity;
+  scroll-padding-inline: 16px;
   scrollbar-width: thin;
 }
 
