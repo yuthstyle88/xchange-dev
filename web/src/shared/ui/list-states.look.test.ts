@@ -43,43 +43,46 @@ beforeAll(async () => {
 const SHARED = 'list-states.css';
 const IMPORT = "import '../../../shared/ui/list-states.css';";
 
+// The shared rules read the xc-theme tokens (owner's round-13 order "งาน css รียูส ด้วยนะ"): --xc-space-12 = 48px = 3rem,
+// --xc-text-lg = 16px = 1rem, --xc-space-4/5 = 16/20px, --xc-space-3 = 12px, --xc-radius-sm/md = 6/8px,
+// --xc-text-base = 14px = .875rem. 6px has no space token. Computed look unchanged. Restated by the sub-controller.
 const LOADING = {
   'align-items': 'center',
   color: 'var(--xc-muted)',
   display: 'flex',
-  'font-size': '1rem',
+  'font-size': 'var(--xc-text-lg)',
   'justify-content': 'center',
-  padding: '3rem',
+  padding: 'var(--xc-space-12)',
 };
 const RETRY = {
   'background-color': 'var(--xc-danger)',
   border: 'none',
-  'border-radius': '0.375rem',
+  'border-radius': 'var(--xc-radius-sm)',
   color: 'var(--xc-on-brand)',
   cursor: 'pointer',
-  'font-size': '0.875rem',
+  'font-size': 'var(--xc-text-base)',
   'font-weight': '500',
-  padding: '0.375rem 0.75rem',
+  padding: '6px var(--xc-space-3)',
 };
 const ERROR = {
   'align-items': 'center',
   'background-color': 'var(--xc-danger-soft)',
   border: '1px solid var(--xc-brand-200)',
-  'border-radius': '0.5rem',
+  'border-radius': 'var(--xc-radius-md)',
   color: 'var(--xc-danger)',
   display: 'flex',
   'justify-content': 'space-between',
-  padding: '1rem 1.25rem',
+  padding: 'var(--xc-space-4) var(--xc-space-5)',
 };
 const TABLE_WRAP = {
   'background-color': 'var(--xc-surface)',
   border: '1px solid var(--xc-line)',
-  'border-radius': '0.5rem',
+  'border-radius': 'var(--xc-radius-md)',
   'overflow-x': 'auto',
 };
 const TABLE = {
   'border-collapse': 'collapse',
-  'font-size': '0.875rem',
+  'font-size': 'var(--xc-text-base)',
   'text-align': 'left',
   width: '100%',
 };
