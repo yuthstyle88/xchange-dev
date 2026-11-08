@@ -118,10 +118,11 @@ describe('OL-6 B F52 a page decides whether the queue card shows', () => {
     expect(card()!.classList.contains('minimized')).toBe(false);
   });
 
-  it('QM-5 the pages set the flag in their entry: backdated and transaction detail hidden, the report folded', async () => {
+  // restated by OL-8 staff-queue-pill (ruling (a)): the report keeps the pill, `queueCard="pill"`
+  it('QM-5 the pages set the flag in their entry: backdated and transaction detail hidden, the report a pill', async () => {
     expect(await readSrc('../../screens/desk-backdated/main.tsx')).toMatch(/<AppShell[^>]*\squeueCard="hidden"/);
     expect(await readSrc('../../screens/desk-transaction/main.tsx')).toMatch(/<AppShell[^>]*\squeueCard="hidden"/);
-    expect(await readSrc('../../screens/staff-report/main.tsx')).toMatch(/<AppShell[^>]*\squeueCard="folded"/);
+    expect(await readSrc('../../screens/staff-report/main.tsx')).toMatch(/<AppShell[^>]*\squeueCard="pill"/);
     expect(await readSrc('../../screens/desk/main.tsx')).not.toContain('queueCard=');
   });
 
