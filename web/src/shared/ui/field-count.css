@@ -1,0 +1,7 @@
+/* Character counter under a field ("n / max"); one look for every admin screen (OL-8 reuse-field-count). */
+.xc-field-count {
+  margin-top: var(--xc-space-1);
+  font-size: var(--xc-text-sm);
+  color: var(--xc-muted);
+  text-align: right;
+}

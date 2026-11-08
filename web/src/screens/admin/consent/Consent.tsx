@@ -11,6 +11,7 @@ import { screenT } from '../../../shared/i18n';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import '../../../shared/ui/field-count.css';
 import './consent.css';
 
 const t = screenT('admin.consent', table);
@@ -251,7 +252,7 @@ export function Consent(props: AdminMenuProps): JSX.Element {
               disabled={publishing()}
             />
           </label>
-          <div class="consent-body-count">{body().length} / 20000</div>
+          <div class="xc-field-count">{body().length} / 20000</div>
 
           <Show when={publishError()}>
             <div class="error" role="alert" data-field-error="body">
