@@ -16,6 +16,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import * as table from './i18n';
 import '../../../shared/ui/card.css';
+import '../../../shared/ui/list-states.css';
 import './rate-alert-settings.css';
 
 const t = screenT('admin.rate-alert-settings', table);
@@ -241,7 +242,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
   return (
     <div class="rate-alert-settings">
       <Show when={loading()}>
-        <div class="rate-alert-loading" data-state="loading">
+        <div class="xc-list-loading" data-state="loading">
           {t('loading')}
         </div>
       </Show>
@@ -251,7 +252,7 @@ export function RateAlertSettings(props: AdminMenuProps): JSX.Element {
           <span>{loadError()}</span>
           <button
             type="button"
-            class="rate-alert-retry-btn"
+            class="xc-list-retry"
             data-action="retry"
             onClick={() => void loadSettings()}
           >

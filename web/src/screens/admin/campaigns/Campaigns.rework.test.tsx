@@ -232,7 +232,7 @@ describe('Campaigns rework tests (#1699)', () => {
       dispose = render(() => <Campaigns {...dummyProps()} />, host);
       await settle();
 
-      const errEl = host.querySelector('.xc-campaigns-error');
+      const errEl = host.querySelector('.xc-list-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
       expect(span?.textContent).toBe(errorText('network', ''));
@@ -246,7 +246,7 @@ describe('Campaigns rework tests (#1699)', () => {
       dispose = render(() => <Campaigns {...dummyProps()} />, host);
       await settle();
 
-      const errEl = host.querySelector('.xc-campaigns-error');
+      const errEl = host.querySelector('.xc-list-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
       expect(span?.textContent).toBe(errorText('network', ''));
@@ -260,7 +260,7 @@ describe('Campaigns rework tests (#1699)', () => {
       dispose = render(() => <Campaigns {...dummyProps()} />, host);
       await settle();
 
-      const errEl = host.querySelector('.xc-campaigns-error');
+      const errEl = host.querySelector('.xc-list-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
       expect(span?.textContent).toBe('RAW-unmapped-server-details');
@@ -274,7 +274,7 @@ describe('Campaigns rework tests (#1699)', () => {
       dispose = render(() => <Campaigns {...dummyProps()} />, host);
       await settle();
 
-      const errEl = host.querySelector('.xc-campaigns-error');
+      const errEl = host.querySelector('.xc-list-error');
       expect(errEl, 'error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
       expect(span?.textContent).toBe(table.th['error.outOfScope']);
@@ -296,7 +296,7 @@ describe('Campaigns rework tests (#1699)', () => {
       row?.click();
       await settle();
 
-      const errEl = host.querySelector('.xc-campaigns-error');
+      const errEl = host.querySelector('.xc-list-error');
       expect(errEl, 'detail error banner must be displayed').not.toBeNull();
       const span = errEl?.querySelector('span') ?? errEl;
       expect(span?.textContent).toBe(errorText('serverError', ''));

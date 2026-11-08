@@ -70,7 +70,7 @@ describe('R5-1 (#4844): StartingPrices first-load disabling', () => {
     viewHandler = () => gate.promise;
     mount();
 
-    expect(container.querySelector('.xc-sp-loading')).not.toBeNull();
+    expect(container.querySelector('.xc-list-loading')).not.toBeNull();
     const addInput = container.querySelector<HTMLInputElement>('.xc-sp-add-code-input')!;
     const addBtn = container.querySelector<HTMLButtonElement>('.xc-sp-add-code-btn')!;
     const saveBtn = container.querySelector<HTMLButtonElement>('.xc-sp-save-btn')!;
@@ -121,7 +121,7 @@ describe('R5-1 (#4844): StartingPrices first-load disabling', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('[data-currency="USD"]')).not.toBeNull();
-      expect(container.querySelector('.xc-sp-loading')).toBeNull();
+      expect(container.querySelector('.xc-list-loading')).toBeNull();
     });
 
     const usdBuy = container.querySelector<HTMLInputElement>('[data-currency="USD"] input[data-field="buy"]')!;
@@ -186,7 +186,7 @@ describe('R5-1 (#4844): StartingPrices first-load disabling', () => {
     const addInput = container.querySelector<HTMLInputElement>('.xc-sp-add-code-input')!;
     const addBtn = container.querySelector<HTMLButtonElement>('.xc-sp-add-code-btn')!;
     const saveBtn = container.querySelector<HTMLButtonElement>('.xc-sp-save-btn')!;
-    const retryBtn = container.querySelector<HTMLButtonElement>('.xc-sp-retry-btn')!;
+    const retryBtn = container.querySelector<HTMLButtonElement>('.xc-list-retry')!;
 
     expect(addInput.disabled).toBe(false);
     expect(addBtn.disabled).toBe(false);

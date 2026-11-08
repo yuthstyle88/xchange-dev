@@ -108,7 +108,7 @@ describe('T14 (#4913): StartingPrices bounds and field refusals', () => {
     );
     await vi.waitFor(() => {
       expect(container.querySelector('[data-currency="USD"]')).not.toBeNull();
-      expect(container.querySelector('.xc-sp-loading')).toBeNull();
+      expect(container.querySelector('.xc-list-loading')).toBeNull();
     });
   }
 

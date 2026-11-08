@@ -167,13 +167,13 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
       const errEl = container.querySelector('.xc-sp-error');
       expect(errEl).not.toBeNull();
       expect(errEl?.textContent).toContain('เซิร์ฟเวอร์ขัดข้อง');
-      expect(container.querySelector('.xc-sp-retry-btn')).not.toBeNull();
+      expect(container.querySelector('.xc-list-retry')).not.toBeNull();
     });
 
     // Retry button click
     viewStatus = 200;
     viewItems = [];
-    const retryBtn = container.querySelector('.xc-sp-retry-btn') as HTMLButtonElement;
+    const retryBtn = container.querySelector('.xc-list-retry') as HTMLButtonElement;
     retryBtn.click();
 
     // Empty state: no price rows, only the "add currency" row/section
@@ -386,7 +386,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.xc-sp-add-currency')).not.toBeNull();
-      expect(container.querySelector('.xc-sp-loading')).toBeNull();
+      expect(container.querySelector('.xc-list-loading')).toBeNull();
     });
 
     const addInput = container.querySelector('.xc-sp-add-code-input') as HTMLInputElement;
@@ -484,7 +484,7 @@ describe('SP-3: StartingPrices (§9 specs)', () => {
 
     await vi.waitFor(() => {
       expect(container.querySelector('.xc-sp-add-currency')).not.toBeNull();
-      expect(container.querySelector('.xc-sp-loading')).toBeNull();
+      expect(container.querySelector('.xc-list-loading')).toBeNull();
     });
 
     const addInput = container.querySelector('.xc-sp-add-code-input') as HTMLInputElement;
