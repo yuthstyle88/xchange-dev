@@ -29,6 +29,7 @@ import { deviceNotice } from './banner';
 import { eventsCsv } from './csv';
 import * as table from './i18n';
 import { kindLabel, statusLabel } from './labels';
+import { detailLines, shortId } from './log-detail';
 import './devices.css';
 
 if (
@@ -707,12 +708,12 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                     {(j) => (
                       <tr>
                         <td data-label={t('colJobTime')}>
-                          {formatBangkokDateTime(j.created)} <small class="dev-id" title={j.id}>{j.id}</small>
+                          {formatBangkokDateTime(j.created)} <small class="dev-id" title={j.id}>{shortId(j.id)}</small>
                         </td>
                         <td data-label={t('colJobKind')}>
-                          {kindLabel(j.kind)} <small class="dev-id" title={j.ref || undefined}>{j.ref || t('noRef')}</small>
+                          {kindLabel(j.kind)} <small class="dev-id" title={j.ref || undefined}>{j.ref ? shortId(j.ref) : t('noRef')}</small>
                         </td>
-                        <td data-label={t('colJobActor')}><span class="dev-id" title={j.actor}>{j.actor}</span></td>
+                        <td data-label={t('colJobActor')}><span class="dev-id" title={j.actor}>{shortId(j.actor)}</span></td>
                         <td data-label={t('colJobStatus')}>{statusLabel(j.status)}</td>
                         <td data-label={t('colJobActions')}>
                           <Show when={j.status === 'QUEUED'}>
@@ -807,10 +808,21 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                         </td>
                         <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
                         <td data-label={t('colRef')}>
-                          <small class="dev-id" title={ev.ref || undefined}>{ev.ref || '—'}</small>
+                          <small class="dev-id" title={ev.ref || undefined}>{ev.ref ? shortId(ev.ref) : '—'}</small>
                         </td>
                         <td data-label={t('colDetail')}>
-                          <code title={ev.detail}>{ev.detail}</code>
+                          <ul class="dev-detail" title={ev.detail}>
+                            <For each={detailLines(ev.detail)}>
+                              {(line) => (
+                                <li>
+                                  <Show when={line.label}>
+                                    <span class="dev-detail-key">{`${line.label}: `}</span>
+                                  </Show>
+                                  <span title={line.full}>{line.text}</span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
                         </td>
                       </tr>
                     )}
