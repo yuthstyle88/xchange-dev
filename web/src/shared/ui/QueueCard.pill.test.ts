@@ -140,11 +140,12 @@ describe('pages that start with the card folded', () => {
     expect(appShellTag(read('../../screens/admin/AdminShell.tsx'))).toContain('queueCard="folded"');
   });
 
-  it('QP-P8 the staff guide passes queueCard="folded" (row 30)', () => {
-    expect(appShellTag(read('../../screens/staff-guide/StaffGuide.tsx'))).toContain('queueCard="folded"');
+  // restated by OL-8 staff-queue-pill (ruling (a)): the guide and the report keep the pill, `queueCard="pill"`
+  it('QP-P8 the staff guide passes queueCard="pill" (row 30)', () => {
+    expect(appShellTag(read('../../screens/staff-guide/StaffGuide.tsx'))).toContain('queueCard="pill"');
   });
 
-  it('QP-P9 unchanged: /staff/report already passes queueCard="folded" (row 27)', () => {
-    expect(appShellTag(read('../../screens/staff-report/main.tsx'))).toContain('queueCard="folded"');
+  it('QP-P9 /staff/report passes queueCard="pill" (row 27)', () => {
+    expect(appShellTag(read('../../screens/staff-report/main.tsx'))).toContain('queueCard="pill"');
   });
 });
