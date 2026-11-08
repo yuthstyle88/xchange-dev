@@ -92,9 +92,10 @@ describe('approvals look', () => {
   });
 
   it('AP-4 the reason counter is small, muted and right-aligned', () => {
-    expect(readHere('Approvals.tsx')).toContain('<div class="approval-reason-count">{reason().length} / 500</div>');
-    const d = decls(readHere('approvals.css'), '.approval-reason-count');
-    expect(d?.get('font-size')).toBe('12px');
+    expect(readHere('Approvals.tsx')).toContain('<div class="xc-field-count">{reason().length} / 500</div>');
+    // Restated by the sub-controller for OL-8 reuse-field-count: the rule moved to shared/ui/field-count.css.
+    const d = decls(readHere('../../../shared/ui/field-count.css'), '.xc-field-count');
+    expect(d?.get('font-size')).toBe('var(--xc-text-sm)');
     expect(d?.get('color')).toBe('var(--xc-muted)');
     expect(d?.get('text-align')).toBe('right');
   });
