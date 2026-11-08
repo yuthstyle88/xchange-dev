@@ -25,6 +25,7 @@ import type { BookingCreateInput, BookingCreateOutput } from '../../../shared/ap
 import type { PlannerBenefitDto } from '../../../shared/api/generated/planner_preview';
 import type { PublishedRatesData } from '../../../shared/api/generated/published_rates';
 import { th, en, zh } from './i18n';
+import '../../../shared/ui/customer-page.css';
 import './book.css';
 
 export const BOOKING_SLOTS_VIEW_ROUTE = '/api/v3/views/booking_slots';
@@ -502,7 +503,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
   return (
     <div class="xc-book-screen" data-testid="book-screen">
       <header class="xc-book-header">
-        <h1 class="xc-book-title">{t('title')}</h1>
+        <h1 class="xc-customer-page-title">{t('title')}</h1>
         <p class="xc-book-subtitle">{t('subtitle')}</p>
       </header>
 

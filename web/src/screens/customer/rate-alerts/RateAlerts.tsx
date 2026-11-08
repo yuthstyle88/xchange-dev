@@ -30,6 +30,7 @@ import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
 import { AlertFacts } from './AlertFacts';
 import { endOfDayInZone } from './expires-at';
+import '../../../shared/ui/customer-page.css';
 import './rate-alerts.css';
 
 const t = screenT('customer.rate-alerts', table);
@@ -445,8 +446,8 @@ export function RateAlertsScreen(props: RateAlertsScreenProps): JSX.Element {
   return (
     <div class="xc-rate-alerts-screen">
       <header class="xc-alerts-header">
-        <div class="xc-alerts-title-group">
-          <h1>{t('title')}</h1>
+        <div>
+          <h1 class="xc-customer-page-title">{t('title')}</h1>
           <p class="xc-alerts-subtitle">{t('subtitle')}</p>
         </div>
       </header>
