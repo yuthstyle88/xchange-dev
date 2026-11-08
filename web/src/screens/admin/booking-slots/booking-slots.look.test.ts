@@ -77,8 +77,9 @@ describe('booking-slots look', () => {
     expect(f?.get('display')).toBe('grid');
     expect(f?.get('align-items')).toBe('start');
     expect(decls(css, '.xc-admin .xc-content .closures-form > button')?.get('margin-top')).toBe('28px');
-    expect(decls(css, '.bs-count')?.get('color')).toBe('var(--xc-muted)');
-    expect(readHere('BookingSlots.tsx')).toContain('<div class="bs-count">{newReason().length} / 200</div>');
+    // Restated by the sub-controller for OL-8 reuse-field-count: the counter uses the shared .xc-field-count.
+    expect(decls(readHere('../../../shared/ui/field-count.css'), '.xc-field-count')?.get('color')).toBe('var(--xc-muted)');
+    expect(readHere('BookingSlots.tsx')).toContain('<div class="xc-field-count">{newReason().length} / 200</div>');
   });
 
   it('BL-4 a slot row is a grid line; the date shows once in the day summary', () => {
