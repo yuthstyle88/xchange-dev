@@ -39,6 +39,7 @@ import { BookingExtras } from './BookingExtras';
 import { BookingWait } from './BookingWait';
 import { isSignedOut, SignInNeeded } from '../_shell/SignInNeeded';
 import * as table from './i18n';
+import '../../../shared/ui/customer-page.css';
 import './bookings.css';
 
 const t = screenT('customer.bookings', table);
@@ -408,7 +409,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
   return (
     <div class="xc-bookings-screen">
       <header class="xc-bookings-header">
-        <h1 class="xc-bookings-title">{t('title')}</h1>
+        <h1 class="xc-customer-page-title">{t('title')}</h1>
         <p class="xc-bookings-subtitle">{t('subtitle')}</p>
       </header>
 
@@ -471,7 +472,7 @@ export function BookingsScreen(props: BookingsScreenProps = {}): JSX.Element {
           <For each={bookings()}>
             {(booking) => {
               return (
-                <div class="xc-booking-card" data-booking-id={booking.id}>
+                <div class="xc-customer-card" data-booking-id={booking.id}>
                   <div class="xc-booking-header">
                     <span class="xc-booking-no">{booking.bookingNo}</span>
                     <span class={`xc-booking-status xc-status-${booking.status.toLowerCase()}`}>

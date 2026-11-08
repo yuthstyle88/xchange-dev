@@ -94,17 +94,6 @@
   font-weight: 500;
 }
 
-.xc-profile-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  background: var(--xc-surface);
-  border: 0;
-  border-radius: var(--xc-radius-card);
-  padding: 1.25rem;
-  box-shadow: var(--xc-shadow-card);
-}
-
 .xc-profile-row {
   display: flex;
   justify-content: space-between;

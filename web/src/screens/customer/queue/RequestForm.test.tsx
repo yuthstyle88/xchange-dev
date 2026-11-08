@@ -146,9 +146,9 @@ describe('QW-2c: RequestForm', () => {
     });
   });
 
-  it('row 6: classes xc-queue-form, xc-queue-field, xc-queue-label, xc-queue-select, xc-queue-input, xc-queue-submit', () => {
+  it('row 6: classes xc-customer-card (shared form card), xc-queue-field, xc-queue-label, xc-queue-select, xc-queue-input, xc-queue-submit', () => {
     mount();
-    expect(host.querySelector('.xc-queue-form')).not.toBeNull();
+    expect(host.querySelector('.xc-customer-card')).not.toBeNull();
     expect(host.querySelectorAll('.xc-queue-field').length).toBeGreaterThanOrEqual(3);
     expect(host.querySelectorAll('.xc-queue-label').length).toBeGreaterThanOrEqual(3);
     expect(host.querySelectorAll('.xc-queue-select').length).toBe(2);

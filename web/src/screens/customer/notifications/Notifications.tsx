@@ -6,6 +6,7 @@ import { createNotifications } from '../../../shared/notifications';
 import type { MyNotificationObject } from '../../../shared/api/generated/my_notifications';
 import { SignInNeeded, watchSignedOut } from '../_shell/SignInNeeded';
 import * as table from './i18n';
+import '../../../shared/ui/customer-page.css';
 import './Notifications.css';
 
 const t = screenT('customer.notifications', table);
@@ -41,8 +42,8 @@ export function NotificationsScreen(props: NotificationsScreenProps): JSX.Elemen
   return (
     <div class="xc-notifications-screen">
       <header class="xc-notifications-header">
-        <div class="xc-notifications-title-group">
-          <h1>{t('title')}</h1>
+        <div>
+          <h1 class="xc-customer-page-title">{t('title')}</h1>
           <p class="xc-notifications-subtitle">{t('subtitle')}</p>
         </div>
       </header>

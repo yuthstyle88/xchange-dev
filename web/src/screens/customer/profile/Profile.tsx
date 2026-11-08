@@ -12,6 +12,7 @@ import type {
 import { lang, screenT } from '../../../shared/i18n';
 import { isServerFailure, wordedError } from '../../../shared/i18n/worded-error';
 import * as table from './i18n';
+import '../../../shared/ui/customer-page.css';
 import './profile.css';
 
 const t = screenT('customer.profile', table);
@@ -235,7 +236,7 @@ export function ProfileScreen(props: ProfileScreenProps = {}): JSX.Element {
               </p>
             </Show>
 
-            <form class="xc-profile-form" onSubmit={handleSave}>
+            <form class="xc-customer-card xc-profile-form" onSubmit={handleSave}>
               <div class="xc-profile-row">
                 <span>{t('customerNo')}</span>
                 <span>{p().customerNo}</span>
