@@ -98,20 +98,28 @@ describe('devices look', () => {
     expect(d?.get('max-width')).toBe('12ch');
     expect(d?.get('text-overflow')).toBe('ellipsis');
     expect(d?.get('white-space')).toBe('nowrap');
+    // Restated for OL-8 device-log-detail (verifier row 98) by claude/01DKFAnW (pane claude-15), round 13: job id, job ref, job actor and
+    // event ref show `shortId(...)` (a UUID's first 8 characters, log-detail.test.ts LD-1..LD-3); the title still holds
+    // the whole value. The event actor is round 12's actor-name cell, unchanged.
     const tsx = readHere('DevicesScreen.tsx');
-    expect(tsx).toContain('<small class="dev-id" title={j.id}>{j.id}</small>');
-    expect(tsx).toContain("<small class=\"dev-id\" title={j.ref || undefined}>{j.ref || t('noRef')}</small>");
-    expect(tsx).toContain('<span class="dev-id" title={j.actor}>{j.actor}</span>');
+    expect(tsx).toContain('<small class="dev-id" title={j.id}>{shortId(j.id)}</small>');
+    expect(tsx).toContain("<small class=\"dev-id\" title={j.ref || undefined}>{j.ref ? shortId(j.ref) : t('noRef')}</small>");
+    expect(tsx).toContain('<span class="dev-id" title={j.actor}>{shortId(j.actor)}</span>');
     expect(tsx).toContain('<span class="dev-id" title={ev.actor}>{ev.actor}</span>');
-    expect(tsx).toContain("<small class=\"dev-id\" title={ev.ref || undefined}>{ev.ref || '—'}</small>");
+    expect(tsx).toContain("<small class=\"dev-id\" title={ev.ref || undefined}>{ev.ref ? shortId(ev.ref) : '—'}</small>");
   });
 
-  it('DV-7 event detail is one line above 640px, with the whole text in the title', () => {
+  // Restated for OL-8 device-log-detail (verifier row 98) by claude/01DKFAnW (pane claude-15), round 13: the detail is a list of
+  // "label: value" lines (`ul.dev-detail`), no longer one cut line of raw JSON; the list's title keeps the whole JSON.
+  // The `td code` rule is left in devices.css untouched.
+  it('DV-7 event detail is a labelled list, with the whole JSON in the title', () => {
     const wide = media(readHere('devices.css'), 'min-width: 641px');
     const d = decls(wide, `${M} .events-table td code`);
     expect(d?.get('max-width')).toBe('360px');
     expect(d?.get('white-space')).toBe('nowrap');
     expect(d?.get('text-overflow')).toBe('ellipsis');
-    expect(readHere('DevicesScreen.tsx')).toContain('<code title={ev.detail}>{ev.detail}</code>');
+    const tsx = readHere('DevicesScreen.tsx');
+    expect(tsx).toContain('<ul class="dev-detail" title={ev.detail}>');
+    expect(tsx).not.toContain('<code title={ev.detail}>{ev.detail}</code>');
   });
 });
