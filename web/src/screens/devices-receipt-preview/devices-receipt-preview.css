@@ -31,3 +31,9 @@
   height: 560px;
   border: 0;
 }
+
+.xc-shell-main:has(> .xc-receipt-preview) > .xc-shell-title {
+  max-width: 360px;
+  margin-inline: auto;
+}
+
