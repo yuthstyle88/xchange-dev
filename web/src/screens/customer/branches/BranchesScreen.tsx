@@ -17,6 +17,7 @@ import { openingHoursRows } from '../../../shared/ui/openingHours';
 import { BranchLive } from './BranchLive';
 import { TakeNumber } from './TakeNumber';
 import { th, en, zh } from './i18n';
+import '../../../shared/ui/customer-page.css';
 import './branches.css';
 
 export interface BranchesScreenProps {
@@ -111,8 +112,8 @@ export function BranchesScreen(props: BranchesScreenProps): JSX.Element {
   return (
     <div class="xc-branches-screen">
       <header class="xc-branches-header">
-        <div class="xc-branches-title-group">
-          <h1>{t('title')}</h1>
+        <div>
+          <h1 class="xc-customer-page-title">{t('title')}</h1>
           <p class="xc-branches-subtitle">{t('subtitle')}</p>
         </div>
       </header>

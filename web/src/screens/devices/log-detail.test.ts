@@ -206,7 +206,7 @@ describe('the detail list look', () => {
     expect(list?.get('list-style')).toBe('none');
     expect(list?.get('margin')).toBe('0');
     expect(list?.get('padding')).toBe('0');
-    expect(list?.get('font-size')).toBe('13px');
+    expect(list?.get('font-size')).toBe('var(--xc-text-md)');
     expect(decls(css, '.xc-devices .xc-shell-main .dev-detail-key')?.get('color')).toBe('var(--xc-muted)');
   });
 });

@@ -1,6 +1,6 @@
 /* Desk Bookings Styles - B02 Screen */
 .xc-desk-bookings {
-  padding: 16px 0;
+  padding: var(--xc-space-4) 0;
   max-width: none;
   margin: 0;
   font-family: inherit;

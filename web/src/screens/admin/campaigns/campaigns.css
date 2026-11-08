@@ -15,37 +15,6 @@
   align-items: center;
 }
 
-.xc-campaigns-loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem;
-  color: var(--xc-muted);
-  font-size: 1rem;
-}
-
-.xc-campaigns-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem 1.25rem;
-  background-color: var(--xc-danger-soft);
-  border: 1px solid var(--xc-brand-200);
-  border-radius: 0.5rem;
-  color: var(--xc-danger);
-}
-
-.xc-campaigns-retry-btn {
-  padding: 0.375rem 0.75rem;
-  background-color: var(--xc-danger);
-  color: var(--xc-on-brand);
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
 .xc-campaigns-empty {
   display: flex;
   flex-direction: column;
@@ -54,20 +23,6 @@
   padding: 2.5rem;
   text-align: center;
   color: var(--xc-muted);
-}
-
-.xc-campaigns-table-container {
-  overflow-x: auto;
-  border: 1px solid var(--xc-line);
-  border-radius: 0.5rem;
-  background-color: var(--xc-surface);
-}
-
-.xc-campaigns-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-  font-size: 0.875rem;
 }
 
 .xc-campaigns-table th {

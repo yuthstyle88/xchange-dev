@@ -1,7 +1,7 @@
 .xc-staff-container {
   max-width: none;
   margin: 0 auto;
-  padding: 1.5rem 0;
+  padding: var(--xc-space-6) 0;
 }
 
 .xc-staff-header {

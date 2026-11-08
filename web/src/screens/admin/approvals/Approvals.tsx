@@ -19,6 +19,7 @@ import {
 } from '../parts/decide';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import '../../../shared/ui/field-count.css';
 import './approvals.css';
 
 const t = screenT('admin.approvals', table);
@@ -476,7 +477,7 @@ function RequestCard(props: RequestCardProps): JSX.Element {
                   disabled={busy()}
                 />
               </label>
-              <div class="approval-reason-count">{reason().length} / 500</div>
+              <div class="xc-field-count">{reason().length} / 500</div>
 
               <Show when={error()}>
                 <div class="error" role="alert">{error()}</div>

@@ -21,6 +21,7 @@ import type {
 import '../../../shared/ui/card.css';
 import * as table from './i18n';
 import { groupSlotsByDay } from './slot-days';
+import '../../../shared/ui/field-count.css';
 import './booking-slots.css';
 
 function formatSlotTime(iso: string): string {
@@ -577,7 +578,7 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
               value={newReason()}
               onInput={(e) => setNewReason(e.currentTarget.value)}
             />
-            <div class="bs-count">{newReason().length} / 200</div>
+            <div class="xc-field-count">{newReason().length} / 200</div>
             <Show when={fieldErrors().reason}>
               {(msg) => (
                 <div role="alert" class="error field-error" data-error-for="reason" data-field-error="reason">

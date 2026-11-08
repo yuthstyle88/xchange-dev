@@ -73,11 +73,11 @@ const px = (v: string | undefined): number => Number(/^(-?\d+(?:\.\d+)?)px$/.exe
 
 /** Screen wrappers that sit directly in `main.xc-shell-main`, the file that styles them, and their selector. */
 const WRAPPERS: ReadonlyArray<{ file: string; selector: string; padding: string }> = [
-  { file: '../../screens/desk/desk.css', selector: '.desk-page', padding: '16px 0' },
-  { file: '../../screens/desk/queue/queue.css', selector: '.desk-queue', padding: '16px 0' },
-  { file: '../../screens/staff-report/staff-report.css', selector: '.staff-report', padding: '16px 0' },
-  { file: '../../screens/staff/staff.css', selector: '.xc-staff-container', padding: '1.5rem 0' },
-  { file: '../../screens/documents/documents.css', selector: '.documents-screen', padding: '16px 0' },
+  { file: '../../screens/desk/desk.css', selector: '.desk-page', padding: 'var(--xc-space-4) 0' },
+  { file: '../../screens/desk/queue/queue.css', selector: '.desk-queue', padding: 'var(--xc-space-4) 0' },
+  { file: '../../screens/staff-report/staff-report.css', selector: '.staff-report', padding: 'var(--xc-space-4) 0' },
+  { file: '../../screens/staff/staff.css', selector: '.xc-staff-container', padding: 'var(--xc-space-6) 0' },
+  { file: '../../screens/documents/documents.css', selector: '.documents-screen', padding: 'var(--xc-space-4) 0' },
   { file: '../../screens/staff-guide/guide.css', selector: '.staff-guide', padding: '0' },
 ];
 

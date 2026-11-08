@@ -639,7 +639,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
     dispose = render(() => <RateAlertsScreen fetch={fetchFn} />, host);
 
     await vi.waitFor(() => {
-      expect(host.querySelector('.xc-alerts-title-group h1')?.textContent).toBe(TH.title);
+      expect(host.querySelector('.xc-alerts-header h1.xc-customer-page-title')?.textContent).toBe(TH.title);
       expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-side')?.textContent).toBe(TH.sideBuy);
       expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-unit')?.textContent).toContain('ต่อ 1');
       expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-current-rate')?.textContent).toContain(TH.currentRate);
@@ -649,7 +649,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
     // Switch to EN
     setLang('en');
     expect(lang()).toBe('en');
-    expect(host.querySelector('.xc-alerts-title-group h1')?.textContent).toBe(EN.title);
+    expect(host.querySelector('.xc-alerts-header h1.xc-customer-page-title')?.textContent).toBe(EN.title);
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-side')?.textContent).toBe(EN.sideBuy);
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-unit')?.textContent).toContain('per 1');
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-current-rate')?.textContent).toContain(EN.currentRate);
@@ -659,7 +659,7 @@ describe('AL-5 customer rate-alerts screen (design §4.4, §9.1 C11)', () => {
     // Switch to ZH
     setLang('zh');
     expect(lang()).toBe('zh');
-    expect(host.querySelector('.xc-alerts-title-group h1')?.textContent).toBe(ZH.title);
+    expect(host.querySelector('.xc-alerts-header h1.xc-customer-page-title')?.textContent).toBe(ZH.title);
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-side')?.textContent).toBe(ZH.sideBuy);
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-unit')?.textContent).toContain('每 1');
     expect(host.querySelector('[data-alert-id="alert-lang-non-null"] .xc-alert-current-rate')?.textContent).toContain(ZH.currentRate);

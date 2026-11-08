@@ -14,6 +14,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import type { AdminMenuProps } from '../menus';
 import { toast } from '../parts/toast';
 import * as table from './i18n';
+import '../../../shared/ui/list-states.css';
 import './starting-prices.css';
 
 const t = screenT('admin.starting-prices', table);
@@ -333,13 +334,13 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
   return (
     <div class="xc-sp-screen" data-section="starting-prices">
       <Show when={loading()}>
-        <div class="xc-sp-loading">{t('loading')}</div>
+        <div class="xc-list-loading">{t('loading')}</div>
       </Show>
 
       <Show when={loadError()}>
         <div class="xc-sp-error" role="alert">
           <span>{loadError()}</span>
-          <button type="button" class="xc-sp-retry-btn" onClick={() => void loadView(false)}>
+          <button type="button" class="xc-list-retry" onClick={() => void loadView(false)}>
             {t('retry')}
           </button>
         </div>
@@ -372,8 +373,8 @@ export function StartingPrices(props: AdminMenuProps): JSX.Element {
         </Show>
 
         <Show when={allCurrencies().length > 0}>
-          <div class="xc-sp-table-scroll">
-            <table class="xc-sp-table">
+          <div class="xc-list-table-wrap">
+            <table class="xc-list-table xc-sp-table">
               <thead>
                 <tr>
                   <th>{t('headerCurrency')}</th>

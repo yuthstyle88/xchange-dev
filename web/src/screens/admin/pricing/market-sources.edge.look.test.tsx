@@ -66,14 +66,14 @@ describe('admin-pricing OL-8 row 50: the chip rail opens with its first chip ins
   it('ME-1 the rail sets scroll-padding-inline: 16px, so a snapped chip keeps the 16px inset', () => {
     const d = decls(css, RAIL);
     expect(d, `rule \`${RAIL}\``).toBeDefined();
-    expect(d!.get('scroll-padding-inline')).toBe('16px');
+    expect(d!.get('scroll-padding-inline')).toBe('var(--xc-space-4)');
   });
 
   it('ME-2 the snap inset equals the rail padding on both sides, and the bleed equals it too', () => {
     const d = decls(css, RAIL)!;
     const [padL, padR] = inline(d.get('padding') ?? '0');
     const [marL, marR] = inline(d.get('margin') ?? '0');
-    expect([padL, padR]).toEqual(['16px', '16px']);
+    expect([padL, padR]).toEqual(['var(--xc-space-4)', 'var(--xc-space-4)']);
     expect([marL, marR]).toEqual(['-16px', '-16px']);
     expect(d.get('scroll-padding-inline')).toBe(padL);
     expect(d.has('scroll-padding'), 'one scroll-padding declaration: scroll-padding-inline').toBe(false);
