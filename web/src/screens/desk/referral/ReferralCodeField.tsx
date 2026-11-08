@@ -8,6 +8,7 @@ import type { MeView } from '../../../shared/api/generated/me';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { can } from '../../staff/parts/can';
 import * as texts from './i18n';
+import '../../../shared/ui/staff-screen.css';
 import './referral.css';
 
 export interface ReferralCodeFieldProps {
@@ -115,7 +116,7 @@ export function ReferralCodeField(props: ReferralCodeFieldProps): JSX.Element {
             />
             <button
               type="button"
-              class="desk-referral-btn"
+              class="xc-screen-btn desk-referral-btn"
               onClick={() => void handleSubmit()}
               disabled={locked() || submitting() || meError() !== null}
               title={meError() !== null ? permissionsUnavailableText(meError()) : undefined}

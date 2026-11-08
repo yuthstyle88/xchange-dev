@@ -13,6 +13,7 @@ import { command } from '../parts/command';
 import { attendanceLines } from './attendance-rows';
 import { checkCloseFor, defaultClockOutLocal, formatOpenClockIn, toRfc3339Bangkok } from './close-for';
 import { th, en } from './i18n';
+import '../../../shared/ui/staff-screen.css';
 import './attendance.css';
 
 export interface AttendanceCardProps {
@@ -154,13 +155,13 @@ export function AttendanceCard(props: AttendanceCardProps): JSX.Element {
   return (
     <div data-testid="attendance-card" class="xc-attendance-card">
       <div class="xc-attendance-header">
-        <h2 class="xc-attendance-title">{t('title')}</h2>
+        <h2 class="xc-screen-title">{t('title')}</h2>
       </div>
 
       <Show when={error() !== null}>
         <div class="xc-attendance-error-panel">
           <div data-testid="attendance-error" class="xc-attendance-error">{wordedError(error())}</div>
-          <button type="button" class="xc-attendance-btn" onClick={() => void load()}>
+          <button type="button" class="xc-screen-btn xc-attendance-btn" onClick={() => void load()}>
             {t('refresh')}
           </button>
         </div>
@@ -205,7 +206,7 @@ export function AttendanceCard(props: AttendanceCardProps): JSX.Element {
                   <span class="xc-attendance-time">{formatOpenClockIn(row.clockIn)}</span>
                   <button
                     type="button"
-                    class="xc-attendance-btn"
+                    class="xc-screen-btn xc-attendance-btn"
                     onClick={() => openCloseForm(row)}
                   >
                     {t('closeFor')}
@@ -289,7 +290,7 @@ export function AttendanceCard(props: AttendanceCardProps): JSX.Element {
                     <div class="xc-attendance-form-actions">
                       <button
                         type="button"
-                        class="xc-attendance-btn"
+                        class="xc-screen-btn xc-attendance-btn"
                         onClick={() => setClosingId(null)}
                       >
                         {t('cancel')}
@@ -297,7 +298,7 @@ export function AttendanceCard(props: AttendanceCardProps): JSX.Element {
                       <button
                         type="submit"
                         data-testid="attendance-close-submit"
-                        class="xc-attendance-btn"
+                        class="xc-screen-btn xc-attendance-btn"
                         disabled={busy()}
                       >
                         {t('confirm')}
