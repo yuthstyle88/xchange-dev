@@ -95,7 +95,7 @@
   border-radius: 999px;
   background: var(--xc-gray-100);
   color: var(--xc-gray-700);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -138,7 +138,7 @@
 .xc-admin .xc-content.xc-content .pricing-line dd.pricing-line-aside {
   flex: 0 0 auto;
   min-width: 64px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
   text-align: right;
   white-space: nowrap;
@@ -155,7 +155,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-line-sub dt,
 .xc-admin .xc-content.xc-content .pricing-line-others {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .xc-admin .xc-content.xc-content .pricing-line-others {
@@ -275,7 +275,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-mode-tag {
   align-self: center;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 

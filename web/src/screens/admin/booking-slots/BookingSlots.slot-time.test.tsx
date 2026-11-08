@@ -185,6 +185,29 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
   });
 
   it('row 3: capacity, close, and open writes still send the slot id unchanged on a Bangkok-formatted slot row', async () => {
+    // OL-7 row 92: a row offers only the action its status allows, so "open" is written from a CLOSED slot (slot-0930).
+    branchData[B01] = makeViewData(B01, [
+      makeAdminSlotDto({
+        id: 'slot-0900',
+        branchId: B01,
+        serviceDate: '2026-10-17',
+        startAt: '2026-10-17T02:00:00+00:00',
+        endAt: '2026-10-17T02:30:00+00:00',
+        capacity: 8,
+        reserved: 2,
+        status: 'OPEN',
+      }),
+      makeAdminSlotDto({
+        id: 'slot-0930',
+        branchId: B01,
+        serviceDate: '2026-10-17',
+        startAt: '2026-10-17T02:30:00+00:00',
+        endAt: '2026-10-17T03:00:00+00:00',
+        capacity: 8,
+        reserved: 0,
+        status: 'CLOSED',
+      }),
+    ]);
     await mount();
 
     const item = slotItem('slot-0900');
@@ -195,19 +218,20 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
     capInput!.value = '10';
     capInput!.dispatchEvent(new Event('input', { bubbles: true }));
 
-    const findSlotButton = (label: string): HTMLButtonElement => {
-      const btn = Array.from(slotItem('slot-0900').querySelectorAll('button')).find(
+    const findSlotButton = (label: string, id = 'slot-0900'): HTMLButtonElement => {
+      const btn = Array.from(slotItem(id).querySelectorAll('button')).find(
         (b) => b.textContent?.trim() === label,
       );
       expect(btn, `slot button ${label} exists`).toBeDefined();
       return btn!;
     };
 
+    expect(slotItem('slot-0930').querySelector('.slot-time')?.textContent?.trim()).toBe('09:30 - 10:00');
     findSlotButton(table.th.updateCapacity).click();
     await settle();
     findSlotButton(table.th.close).click();
     await settle();
-    findSlotButton(table.th.open).click();
+    findSlotButton(table.th.open, 'slot-0930').click();
     await settle();
 
     expect(writes).toEqual([
@@ -223,7 +247,7 @@ describe('#2495: BookingSlots renders slot startAt and endAt as Bangkok wall-clo
       },
       {
         method: 'POST',
-        path: '/api/booking-slots/slot-0900/open',
+        path: '/api/booking-slots/slot-0930/open',
         body: { branch: B01 },
       },
     ]);

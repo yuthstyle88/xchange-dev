@@ -1,0 +1,49 @@
+.xc-file-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+  min-width: 0;
+}
+
+.xc-file-field .xc-file-field-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.xc-file-field-pick {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-md);
+  background: var(--xc-surface);
+  color: var(--xc-brand);
+  font: 600 14px/1.4 var(--xc-font-sans);
+  cursor: pointer;
+  flex: none;
+}
+
+.xc-file-field-input:focus-visible + .xc-file-field-pick {
+  outline: 3px solid var(--xc-brand);
+  outline-offset: 2px;
+}
+
+.xc-file-field-input:disabled + .xc-file-field-pick {
+  background: var(--xc-gray-100);
+  color: var(--xc-gray-600);
+  cursor: not-allowed;
+}
+
+.xc-file-field-name {
+  color: var(--xc-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

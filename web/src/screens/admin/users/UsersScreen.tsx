@@ -2,6 +2,7 @@ import {
   createEffect,
   createSignal,
   For,
+  onCleanup,
   Show,
   untrack,
   type JSX,
@@ -121,6 +122,15 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
   // Row writes (revoke ×, Disable): one in flight at a time (#2413).
   const [rowWriting, setRowWriting] = createSignal<boolean>(false);
   const [confirmingReset, setConfirmingReset] = createSignal<string | null>(null);
+  const [openMenu, setOpenMenu] = createSignal<string | null>(null);
+
+  const onOutsidePointerDown = (e: Event) => {
+    if (openMenu() && !(e.target instanceof Element && e.target.closest('.users-more'))) {
+      setOpenMenu(null);
+    }
+  };
+  document.addEventListener('pointerdown', onOutsidePointerDown);
+  onCleanup(() => document.removeEventListener('pointerdown', onOutsidePointerDown));
 
   // Create form state
   const [createName, setCreateName] = createSignal('');
@@ -906,68 +916,6 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                 >
                                   {t('profileButton')}
                                 </button>
-                                <Show
-                                  when={confirmingReset() === user.userId}
-                                  fallback={
-                                    <button
-                                      type="button"
-                                      class="users-btn"
-                                      data-users-action="reset"
-                                      onClick={() => setConfirmingReset(user.userId)}
-                                      disabled={rowWriting()}
-                                    >
-                                      {t('resetPassword')}
-                                    </button>
-                                  }
-                                >
-                                  <button
-                                    type="button"
-                                    class="users-btn users-btn-primary"
-                                    data-users-action="reset-confirm"
-                                    onClick={() => {
-                                      setConfirmingReset(null);
-                                      void handleResetPassword(user);
-                                    }}
-                                    disabled={rowWriting()}
-                                  >
-                                    {t('resetConfirm')}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    class="users-btn"
-                                    data-users-action="reset-cancel"
-                                    onClick={() => setConfirmingReset(null)}
-                                  >
-                                    {t('resetCancel')}
-                                  </button>
-                                </Show>
-                              </Show>
-
-                              <Show when={isActive()}>
-                                <button
-                                  type="button"
-                                  class="users-btn users-btn-grant"
-                                  onClick={() => openGrant(user)}
-                                >
-                                  {t('grant')}
-                                </button>
-                                <button
-                                  type="button"
-                                  class="users-btn"
-                                  data-users-action="suspend"
-                                  onClick={() => handleSuspend(user)}
-                                  disabled={rowWriting()}
-                                >
-                                  {t('suspend')}
-                                </button>
-                                <button
-                                  type="button"
-                                  class="users-btn users-btn-disable"
-                                  onClick={() => handleDisable(user)}
-                                  disabled={rowWriting()}
-                                >
-                                  {t('disable')}
-                                </button>
                               </Show>
 
                               <Show when={isSuspended()}>
@@ -980,6 +928,123 @@ export function UsersScreen(props: AdminMenuProps): JSX.Element {
                                 >
                                   {t('resume')}
                                 </button>
+                              </Show>
+
+                              <Show when={isActive() || isSuspended()}>
+                                {(() => {
+                                  let toggleEl: HTMLButtonElement | undefined;
+                                  const isOpen = () => openMenu() === user.userId;
+                                  return (
+                                    <div class="users-more">
+                                      <button
+                                        ref={toggleEl}
+                                        type="button"
+                                        class="users-btn users-more-toggle"
+                                        data-users-menu="toggle"
+                                        aria-haspopup="menu"
+                                        aria-expanded={isOpen() ? 'true' : 'false'}
+                                        aria-label={t('moreActions')}
+                                        onClick={() => setOpenMenu(isOpen() ? null : user.userId)}
+                                      >
+                                        ⋯
+                                      </button>
+                                      <Show when={isOpen()}>
+                                        <div
+                                          class="users-more-menu"
+                                          data-users-menu="list"
+                                          role="menu"
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Escape') {
+                                              setOpenMenu(null);
+                                              toggleEl?.focus();
+                                            }
+                                          }}
+                                        >
+                                          <Show
+                                            when={confirmingReset() === user.userId}
+                                            fallback={
+                                              <button
+                                                type="button"
+                                                role="menuitem"
+                                                class="users-btn"
+                                                data-users-action="reset"
+                                                onClick={() => setConfirmingReset(user.userId)}
+                                                disabled={rowWriting()}
+                                              >
+                                                {t('resetPassword')}
+                                              </button>
+                                            }
+                                          >
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              class="users-btn users-btn-primary"
+                                              data-users-action="reset-confirm"
+                                              onClick={() => {
+                                                setConfirmingReset(null);
+                                                setOpenMenu(null);
+                                                void handleResetPassword(user);
+                                              }}
+                                              disabled={rowWriting()}
+                                            >
+                                              {t('resetConfirm')}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              class="users-btn"
+                                              data-users-action="reset-cancel"
+                                              onClick={() => {
+                                                setConfirmingReset(null);
+                                                setOpenMenu(null);
+                                              }}
+                                            >
+                                              {t('resetCancel')}
+                                            </button>
+                                          </Show>
+                                          <Show when={isActive()}>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              class="users-btn users-btn-grant"
+                                              onClick={() => {
+                                                setOpenMenu(null);
+                                                openGrant(user);
+                                              }}
+                                            >
+                                              {t('grant')}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              class="users-btn"
+                                              data-users-action="suspend"
+                                              onClick={() => {
+                                                setOpenMenu(null);
+                                                void handleSuspend(user);
+                                              }}
+                                              disabled={rowWriting()}
+                                            >
+                                              {t('suspend')}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              role="menuitem"
+                                              class="users-btn users-btn-disable"
+                                              onClick={() => {
+                                                setOpenMenu(null);
+                                                void handleDisable(user);
+                                              }}
+                                              disabled={rowWriting()}
+                                            >
+                                              {t('disable')}
+                                            </button>
+                                          </Show>
+                                        </div>
+                                      </Show>
+                                    </div>
+                                  );
+                                })()}
                               </Show>
 
                               <Show when={isDisabled()}>

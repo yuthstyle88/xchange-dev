@@ -2,8 +2,10 @@
 
 .xc-admin .xc-content .admin-queue-toast {
   position: fixed;
-  right: 22px;
-  top: 24px;
+  right: 20px;
+  /* queue-panel.css sets top: 24px on the same class; without this the box stretches top to bottom (OL-7 verify). */
+  top: auto;
+  bottom: var(--xc-queue-card-space, 20px);
   z-index: 1050;
   padding: 18px;
   background: var(--xc-surface);

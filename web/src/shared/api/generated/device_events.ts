@@ -3,4 +3,4 @@
 /**
  * A row in the `device_events` page.
  */
-export type DeviceEventRow = { seq: string, kind: string, ref: string, at: string, actor: string, detail: string, };
+export type DeviceEventRow = { seq: string, kind: string, ref: string, at: string, actor: string, actorName: string | null, detail: string, };

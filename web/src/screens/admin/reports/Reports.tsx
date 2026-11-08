@@ -559,7 +559,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                     disabled={busyExport()}
                     onClick={() => void exporting(handleEmployeeCsv)}
                   >
-                    {t('downloadCsv')}
+                    {t('exportCsv')}
                   </button>
                 </Show>
               }

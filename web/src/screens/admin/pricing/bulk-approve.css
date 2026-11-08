@@ -71,6 +71,15 @@
   color: var(--ink);
 }
 
+.xc-admin .xc-content.xc-content .bulk-approve .bulk-approve-btn:disabled,
+.xc-admin .xc-content.xc-content .bulk-approve .bulk-approve-cancel:disabled {
+  opacity: 1;
+  background: var(--xc-gray-100);
+  border-color: var(--xc-line);
+  color: var(--xc-gray-600);
+  box-shadow: none;
+}
+
 .xc-admin .xc-content.xc-content .bulk-approve-confirm {
   flex-wrap: wrap;
   width: 100%;

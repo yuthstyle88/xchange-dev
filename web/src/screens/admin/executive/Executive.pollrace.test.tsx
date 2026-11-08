@@ -80,7 +80,6 @@ function alerts() {
       kind: 'ratePending',
       branchId: 'B1',
       since: '2026-10-06T02:00:00Z',
-      detail: 'RQ-77',
       drilldown: drill('approval_requests', { branch: 'B1', type: 'RATE_PUBLICATION' }),
     }),
   ];

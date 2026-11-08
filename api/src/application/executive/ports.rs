@@ -234,6 +234,21 @@ impl AlertKind {
     }
 }
 
+/// Figures of one "ต้องดำเนินการ" item; the screen words them in its own language.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AlertDetail {
+    None,
+    StaleMinutes(i32),
+    Differences(Vec<(String, Decimal)>),
+    Stock {
+        currency: String,
+        available: Decimal,
+        on_hand: Decimal,
+        reserved: Decimal,
+        floor: Decimal,
+    },
+}
+
 /// One "ต้องดำเนินการ" item.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Alert {
@@ -241,7 +256,7 @@ pub struct Alert {
     pub branch: BranchId,
     /// When the item began; `None` when its source holds no time.
     pub since: Option<DateTime<Utc>>,
-    pub detail: String,
+    pub detail: AlertDetail,
     pub drilldown: Option<Drilldown>,
 }
 

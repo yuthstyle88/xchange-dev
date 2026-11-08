@@ -39,7 +39,10 @@ describe('alert-settings look', () => {
   it('AS-1 the container adds no padding, so the card lines up with the heading', () => {
     const d = decls(readHere('alert-settings.css'), '.alert-settings-container');
     expect(d?.has('padding')).toBe(false);
-    expect(d?.get('max-width')).toBe('640px');
+    // OL-7 row 93 (verifier: "card still narrower than the content column, x 286–925, 640px vs ~955px elsewhere"):
+    // the 640px cap is what kept it narrow; the card now takes the content column like every other admin card.
+    // Changed from toBe('640px') by claude/94389a6b with the up-front tests of test/ol7-admin-alert-settings.
+    expect(d?.has('max-width')).toBe(false);
   });
 
   it('AS-2 the card is the shared card with 20px padding', () => {

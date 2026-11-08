@@ -177,7 +177,8 @@ body:has(.xc-admin) .queue-card-action {
 }
 
 body:has(.xc-admin) .queue-card.minimized {
-  width: 280px;
+  width: auto;
+  max-width: 140px;
 }
 
 body:has(.xc-admin) .queue-card .queue-sound-controls button {
@@ -196,7 +197,7 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
 
   body:has(.xc-admin) .queue-card.minimized {
     left: auto;
-    width: 260px;
+    width: auto;
   }
 }
 
@@ -212,4 +213,23 @@ body:has(.xc-admin) .queue-card .queue-sound-controls button {
   padding: 4px 0;
   color: var(--xc-muted);
   font-size: 13px;
+}
+
+.queue-card.minimized {
+  left: auto;
+  width: auto;
+  max-width: 140px;
+}
+
+.queue-card.minimized .queue-card-title {
+  display: none;
+}
+
+.queue-card.minimized .queue-card-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

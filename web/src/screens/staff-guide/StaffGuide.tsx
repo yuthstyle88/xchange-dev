@@ -27,6 +27,7 @@ export function StaffGuide(props: StaffGuideProps): JSX.Element {
   return (
     <AppShell
       title={t('title')}
+      queueCard="folded"
       nav={
         <nav><a href={toAdmin() ? '/' : '/staff'}>{toAdmin() ? t('back') : t('backStaff')}</a> · <button type="button" onClick={handlePrint}>{t('print')}</button></nav>
       }

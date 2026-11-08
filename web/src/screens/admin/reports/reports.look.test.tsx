@@ -63,7 +63,8 @@ function shown(el: Element): boolean {
 }
 
 const tabs = () => [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-const CSV = new Set([th.exportCsv, th.downloadCsv]);
+// OL-7 row 61 (restated by claude/bbe9ce8b): every tab's CSV button reads th.exportCsv; downloadCsv is gone.
+const CSV = new Set([th.exportCsv]);
 const csvButtons = () =>
   [...host.querySelectorAll<HTMLButtonElement>('button')].filter((b) => CSV.has((b.textContent ?? '').trim()) && shown(b));
 
@@ -79,7 +80,7 @@ describe('reports CSV action', () => {
       expect(buttons[0]!.closest(`#workspace-reports-${i} .card-heading`), `tab ${i}`).not.toBeNull();
       labels.push(buttons[0]!.textContent!.trim());
     }
-    expect(labels).toEqual([th.exportCsv, th.exportCsv, th.downloadCsv]);
+    expect(labels).toEqual([th.exportCsv, th.exportCsv, th.exportCsv]);
   });
 
   it('RP-2 the toolbar above the tabs is gone', async () => {

@@ -9,6 +9,17 @@
   margin: 0 auto;
 }
 
+.xc-admin .xc-content .pricing-formula-screen > .card {
+  margin-bottom: 0;
+}
+
+.xc-admin .xc-content .pricing-formula-editor,
+.xc-admin .xc-content .pricing-formula-save {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .pricing-formula-header {
   display: flex;
   flex-direction: column;

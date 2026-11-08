@@ -46,6 +46,17 @@
   --xc-red-200: var(--xc-brand-200);
   --xc-teal-200: #c6d6dd;
   --xc-teal-50: #eef4f6;
+  --xc-disabled-bg: var(--xc-gray-100);
+  --xc-disabled-text: var(--xc-gray-600);
+  --xc-disabled-border: var(--xc-border);
+}
+
+.xc-customer button:disabled {
+  background: var(--xc-disabled-bg);
+  border-color: var(--xc-disabled-border);
+  color: var(--xc-disabled-text);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
 /* The page under a customer screen is the kiosk's warm canvas edge to edge. */
@@ -137,11 +148,6 @@ body:has(.xc-customer) {
     border-color: var(--xc-brand);
     background: var(--xc-brand);
     color: var(--xc-on-brand);
-  }
-
-  .xc-customer :where(button:disabled) {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
 
   .xc-customer :where(button[aria-pressed='true']) {

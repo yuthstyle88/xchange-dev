@@ -632,7 +632,11 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
                             {formatSlotTime(slot.startAt)} - {formatSlotTime(slot.endAt)}
                           </span>
                           <span class="slot-status" data-status={slot.status}>
-                            {slot.status}
+                            {slot.status === 'OPEN'
+                              ? t('statusOpen')
+                              : slot.status === 'CLOSED'
+                                ? t('statusClosed')
+                                : slot.status}
                           </span>
                           <span class="slot-reserved">
                             {t('reserved')}: {slot.reserved}
@@ -658,12 +662,16 @@ export function BookingSlots(props: AdminMenuProps): JSX.Element {
                               {t('updateCapacity')}
                             </button>
                           </div>
-                          <button type="button" disabled={writing()} onClick={() => void handleCloseSlot(slot.id)}>
-                            {t('close')}
-                          </button>
-                          <button type="button" disabled={writing()} onClick={() => void handleOpenSlot(slot.id)}>
-                            {t('open')}
-                          </button>
+                          <Show when={slot.status === 'OPEN'}>
+                            <button type="button" disabled={writing()} onClick={() => void handleCloseSlot(slot.id)}>
+                              {t('close')}
+                            </button>
+                          </Show>
+                          <Show when={slot.status === 'CLOSED'}>
+                            <button type="button" disabled={writing()} onClick={() => void handleOpenSlot(slot.id)}>
+                              {t('open')}
+                            </button>
+                          </Show>
                         </div>
                       )}
                     </For>

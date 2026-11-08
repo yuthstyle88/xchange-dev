@@ -62,7 +62,7 @@ body.customer-kiosk #amount-in button.selected:after{display:none}
  body.customer-kiosk #payment-choice select{min-height:44px;padding:6px 10px;font-size:15px}
  /* 5. a full-width red Review (.xa-btn) */
  body.customer-kiosk #review{width:100%;min-height:52px;margin:14px 0 0;border:0;border-radius:12px;background:var(--xc-brand);color:var(--xc-on-brand);font-size:17px;font-weight:800;letter-spacing:0;box-shadow:none}
- body.customer-kiosk #review:disabled{background:var(--xc-gray-300);opacity:1}
+ body.customer-kiosk #review:disabled{background:var(--xc-gray-100);color:var(--xc-gray-600);border:1px solid var(--xc-gray-300);opacity:1;cursor:not-allowed}
 }
 
 /* xchange: the attract loop's step-1 card (kiosk-attract.js #xa-s1) shows the screen above: the field with the

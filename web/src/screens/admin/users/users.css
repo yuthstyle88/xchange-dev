@@ -188,7 +188,20 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+
+.users-more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.users-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
 }
 
 .users-dialog-backdrop {
@@ -320,4 +333,13 @@
   .users-row-actions { min-width: 268px; }
   .xc-admin .xc-content.xc-content .users-row-actions button { min-height: 36px; padding: 6px 12px; font-size: 13px; }
   .xc-admin .xc-content.xc-content .users-role-tag .users-btn-revoke { min-height: 28px; padding: 2px 8px; font-size: 12px; }
+}
+
+/* OL-7 row 86 (#6853): the row's "⋯" toggle opens the more menu; a square 44 px control. */
+.xc-admin .xc-content .users-more-toggle {
+  min-width: 44px;
+  padding-left: 0;
+  padding-right: 0;
+  font-size: 18px;
+  line-height: 1;
 }

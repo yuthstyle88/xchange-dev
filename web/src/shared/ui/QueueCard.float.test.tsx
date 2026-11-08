@@ -356,7 +356,10 @@ describe('queue-card.css (QF5, QF6)', () => {
       'z-index': '25',
       padding: '14px',
     });
-    expectDecls(r, 'body:has(.xc-admin) .queue-card.minimized', '', { width: '280px' });
+    // Restated for OL-7 queue-card-pill by claude/94389a6b, on the decision of the sub-controller claude/1cc51615
+    // (/tmp/ol7/ORDER-claude-19-b.md item 1, option A, ~22:10 ICT 2026-11-07): the folded card is a pill (badge + toggle,
+    // ≤ 140px) so it fits the 160px gutter beside the content column at 1280px; v2's 280px folded bar is dropped.
+    expectDecls(r, 'body:has(.xc-admin) .queue-card.minimized', '', { width: 'auto', 'max-width': '140px' });
   });
 
   it('CS5: the admin ≤600 overrides (admin-workspace.css:34)', async () => {
@@ -368,7 +371,8 @@ describe('queue-card.css (QF5, QF6)', () => {
       width: 'auto',
       'max-width': 'none',
     });
-    expectDecls(r, 'body:has(.xc-admin) .queue-card.minimized', '(max-width:600px)', { left: 'auto', width: '260px' });
+    // Restated for OL-7 queue-card-pill (same decision as CS4): the folded admin card on a phone is the pill too.
+    expectDecls(r, 'body:has(.xc-admin) .queue-card.minimized', '(max-width:600px)', { left: 'auto', width: 'auto' });
   });
 
   it('CS6: no body padding rule (v2 @4739 body{padding-bottom:84px} is not ported) and nothing on :root', async () => {

@@ -437,6 +437,7 @@ export function AdminShell(props: AdminShellProps): JSX.Element {
     <AppShell
       look="admin"
       title={t('pageTitle')}
+      queueCard="folded"
       ownsMain={true}
       nav={
         <button

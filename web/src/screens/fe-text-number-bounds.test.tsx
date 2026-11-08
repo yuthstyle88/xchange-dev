@@ -63,11 +63,12 @@ describe('fe-text-number-bounds (#4972)', () => {
     const [shown] = createSignal(true);
     dispose = render(() => <Approvals branch={branch} period={period} shown={shown} />, container);
 
+    // Restated for OL-7 #6812 (row 80): the approval reason is now a <textarea>; the 500 bound and counter are unchanged.
     await vi.waitFor(() => {
-      expect(container.querySelector('input')).not.toBeNull();
+      expect(container.querySelector('input, textarea')).not.toBeNull();
     });
 
-    const appInput = container.querySelector('input')!;
+    const appInput = container.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')!;
     expect(appInput.maxLength).toBe(500);
     expect(container.textContent).toContain('0 / 500');
 

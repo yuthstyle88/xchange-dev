@@ -3,6 +3,8 @@ import type { Key } from './th';
 export const zh: Record<Key, string> = {
   'field.password.show': '显示密码',
   'field.password.hide': '隐藏密码',
+  'field.file.choose': '选择文件',
+  'field.file.none': '未选择文件',
   'shell.langSwitch': '切换语言为 {language}',
   'shell.menu': '菜单',
   'shell.nav.counter': '柜台',

@@ -33,7 +33,7 @@ a {
 
 /* The shell fills the page: v2's body column above (pinned by print.test.tsx) stops here. */
 html body:has(.xc-shell) { max-width: none; margin: 0; padding: 0; }
-.staff-guide { display: grid; gap: 16px; max-width: 880px; margin: 0 auto; padding: 16px; }
+.staff-guide { display: grid; gap: 16px; max-width: none; margin: 0; padding: 0; }
 .staff-guide h2 { margin: 0 0 8px; }
 .staff-guide p { margin: 0; }
 .staff-guide p + p { margin-top: 8px; }

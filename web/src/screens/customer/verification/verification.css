@@ -55,6 +55,29 @@
   font-weight: 700;
 }
 
+.xc-verification-step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.xc-verification-step--active .xc-verification-step-num {
+  background: var(--xc-brand);
+  border-color: var(--xc-brand);
+  color: var(--xc-on-brand);
+}
+
+.xc-verification-step-label {
+  text-wrap: balance;
+  line-height: 1.3;
+}
+
 .xc-verification-card {
   display: flex;
   flex-direction: column;
@@ -192,4 +215,10 @@
 
 .xc-verification-error-message {
   margin: 0;
+}
+
+@media (max-width: 400px) {
+  .xc-verification-step-label {
+    font-size: 0.75rem;
+  }
 }
