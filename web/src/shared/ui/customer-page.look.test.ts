@@ -11,9 +11,12 @@ interface NodeFs {
   existsSync(file: string): boolean;
 }
 
+// The shared rules read the xc-theme tokens (owner's round-13 order "งาน css รียูส ด้วยนะ": no hard-coded size
+// where a token exists). --xc-space-1 = 4px = 0.25rem, --xc-text-4xl = 24px = 1.5rem, --xc-space-4 = 16px = 1rem,
+// --xc-space-5 = 20px = 1.25rem: the computed look is unchanged. Restated by the sub-controller.
 const TITLE = new Map([
-  ['margin', '0 0 0.25rem'],
-  ['font-size', '1.5rem'],
+  ['margin', '0 0 var(--xc-space-1)'],
+  ['font-size', 'var(--xc-text-4xl)'],
   ['font-weight', '700'],
   ['color', 'var(--xc-text)'],
 ]);
@@ -21,13 +24,18 @@ const TITLE = new Map([
 const CARD = new Map([
   ['display', 'flex'],
   ['flex-direction', 'column'],
-  ['gap', '1rem'],
-  ['padding', '1.25rem'],
+  ['gap', 'var(--xc-space-4)'],
+  ['padding', 'var(--xc-space-5)'],
   ['background', 'var(--xc-surface)'],
   ['border', '0'],
   ['border-radius', 'var(--xc-radius-card)'],
   ['box-shadow', 'var(--xc-shadow-card)'],
 ]);
+
+/** The copied blocks as they were written on the screens (rem literals); none may remain. */
+const TITLE_COPY = new Map([...TITLE, ['margin', '0 0 0.25rem'], ['font-size', '1.5rem']]);
+const CARD_COPY = new Map([...CARD, ['gap', '1rem'], ['padding', '1.25rem']]);
+
 
 // Screen stylesheets that held a copy, and the copied selector each must no longer have.
 const COPIES: Array<{ css: string; selector: string }> = [
@@ -126,7 +134,7 @@ describe('OL-8 reuse-customer-title-card: one shared customer title and card', (
     const copies: string[] = [];
     for (const css of files) {
       for (const b of blocks(read('../../screens/customer/' + css))) {
-        if (sameDecls(b.decls, TITLE) || sameDecls(b.decls, CARD)) copies.push(`${css}: ${b.selector}`);
+        if (sameDecls(b.decls, TITLE) || sameDecls(b.decls, CARD) || sameDecls(b.decls, TITLE_COPY) || sameDecls(b.decls, CARD_COPY)) copies.push(`${css}: ${b.selector}`);
       }
     }
     expect(copies).toEqual([]);
