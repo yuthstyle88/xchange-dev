@@ -53,7 +53,7 @@ export function SafeBalance(props: SafeBalanceProps): JSX.Element {
       <div>
         <div class="desk-rate-line">
           <span>{t('safeTitle')}</span>
-          <a data-testid="safe-transfer-link" href="/staff">
+          <a class="xc-btn xc-btn--secondary" data-testid="safe-transfer-link" href="/staff">
             {t('safeTransfer')}
           </a>
         </div>
