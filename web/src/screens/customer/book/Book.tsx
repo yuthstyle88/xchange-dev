@@ -756,7 +756,7 @@ export function BookScreen(props: BookScreenProps): JSX.Element {
               void updatePreview();
             }}
           >
-            <Show when={!branchId()}><option value="">{t('selectBranch')}</option></Show>
+            <Show when={!branchId()}><option value="" disabled>{t('currencyNeedsBranch')}</option></Show>
             <For each={bookCurrencies()}>
               {(c) => <option value={c}>{c}</option>}
             </For>
