@@ -1,8 +1,7 @@
 .xc-copy-link {
   display: flex;
   justify-content: center;
-  align-items: center;
-  min-height: 100vh;
+  align-items: flex-start;
   padding: 1rem;
   box-sizing: border-box;
 }

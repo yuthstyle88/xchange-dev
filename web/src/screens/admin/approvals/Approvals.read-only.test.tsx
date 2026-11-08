@@ -147,7 +147,7 @@ describe('R4/F37 Approvals: a row the reader may not decide is read-only', () =>
     const c = await card('can');
     expect(buttons(c, th.approve)).toHaveLength(1);
     expect(buttons(c, th.reject)).toHaveLength(1);
-    expect(c.querySelector('input[type="text"]')).not.toBeNull();
+    expect(c.querySelector('textarea')).not.toBeNull();
     expect(c.textContent).not.toContain(WAITING_TH);
   });
 
@@ -160,7 +160,7 @@ describe('R4/F37 Approvals: a row the reader may not decide is read-only', () =>
     });
     expect(buttons(c, th.approve), 'no Approve button').toHaveLength(0);
     expect(buttons(c, th.reject), 'no Reject button').toHaveLength(0);
-    expect(c.querySelector('input[type="text"]'), 'no reason input').toBeNull();
+    expect(c.querySelector('textarea'), 'no reason input').toBeNull();
     // The detail line of #5314 is still there: the reader sees what is waiting.
     expect(c.textContent).toContain('#74f7ecfe · MAIN · เกินวงเงิน — ผู้บริหารตัดสิน');
 

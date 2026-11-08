@@ -457,6 +457,7 @@ export function Rates(props: AdminMenuProps): JSX.Element {
             </tbody>
           </table>
         </div>
+        <p class="rates-live-note">{t('ratesLiveNote')}</p>
       </div>
 
       {/* BOT Reference Section */}

@@ -797,7 +797,14 @@ export function DevicesScreen(props: DevicesScreenProps): JSX.Element {
                     {(ev) => (
                       <tr>
                         <td data-label={t('colTime')}>{formatBangkokDateTime(ev.at)}</td>
-                        <td data-label={t('colActor')}><span class="dev-id" title={ev.actor}>{ev.actor}</span></td>
+                        <td data-label={t('colActor')}>
+                          <Show
+                            when={ev.actorName}
+                            fallback={<span class="dev-id" title={ev.actor}>{ev.actor}</span>}
+                          >
+                            {(name) => <span class="dev-actor-name" title={ev.actor}>{name()}</span>}
+                          </Show>
+                        </td>
                         <td data-label={t('colEvent')}>{kindLabel(ev.kind)}</td>
                         <td data-label={t('colRef')}>
                           <small class="dev-id" title={ev.ref || undefined}>{ev.ref || '—'}</small>

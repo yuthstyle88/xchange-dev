@@ -34,7 +34,7 @@ use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 use xchange::application::executive::metrics::MetricUnavailable;
 use xchange::application::executive::ports::{
-    Alert, AlertFacts, AlertKind, BoxFuture, CashFacts, ExecutiveFilter, ShiftStatus,
+    Alert, AlertDetail, AlertFacts, AlertKind, BoxFuture, CashFacts, ExecutiveFilter, ShiftStatus,
 };
 use xchange::bootstrap::{self, AppState};
 use xchange::infrastructure::executive::alert_facts::PgAlertFacts;
@@ -315,19 +315,30 @@ async fn floor_usd_500_on_hand_499_9999_is_one_low_stock_alert() {
     assert_eq!(drilldown["filter"]["currency"], "USD");
     assert_eq!(drilldown["dropped"], serde_json::json!([]));
 
-    // Detail naming currency, on hand, and floor
-    let detail = alert["detail"].as_str().unwrap_or("");
+    // The figures, not a sentence (OL-7 row 64, restated by claude/bbe9ce8b): currency, on hand and floor.
     assert!(
-        detail.contains("USD"),
-        "detail must name currency USD: {detail}"
+        alert.get("detail").is_none(),
+        "no free-text detail: {alert}"
     );
-    assert!(
-        detail.contains("499.9999"),
-        "detail must name on-hand 499.9999: {detail}"
+    let stock = &alert["stock"];
+    let dec =
+        |v: &Value| Decimal::from_str(v.as_str().expect("a decimal string")).expect("a decimal");
+    assert_eq!(stock["currency"], "USD", "{alert}");
+    assert_eq!(
+        dec(&stock["onHand"]),
+        Decimal::from_str("499.9999").unwrap(),
+        "{alert}"
     );
-    assert!(
-        detail.contains("500"),
-        "detail must name floor 500: {detail}"
+    assert_eq!(
+        dec(&stock["available"]),
+        Decimal::from_str("499.9999").unwrap(),
+        "{alert}"
+    );
+    assert_eq!(dec(&stock["reserved"]), Decimal::ZERO, "{alert}");
+    assert_eq!(
+        dec(&stock["floor"]),
+        Decimal::from_str("500").unwrap(),
+        "{alert}"
     );
 
     room.finish().await;
@@ -394,17 +405,15 @@ async fn floors_for_usd_and_eur_both_below_are_two_alerts() {
     assert_eq!(alerts.len(), 2, "{alerts:?}");
     assert!(alerts.iter().all(|(b, _)| b == B1));
 
-    let details: Vec<String> = alerts
+    let mut currencies: Vec<String> = alerts
         .iter()
-        .map(|(_, a)| a["detail"].as_str().unwrap_or("").to_owned())
+        .map(|(_, a)| a["stock"]["currency"].as_str().unwrap_or("").to_owned())
         .collect();
-    assert!(
-        details.iter().any(|d| d.contains("USD")),
-        "one alert for USD: {details:?}"
-    );
-    assert!(
-        details.iter().any(|d| d.contains("EUR")),
-        "one alert for EUR: {details:?}"
+    currencies.sort();
+    assert_eq!(
+        currencies,
+        vec!["EUR", "USD"],
+        "one alert per currency: {alerts:?}"
     );
 
     room.finish().await;
@@ -456,21 +465,23 @@ async fn cash_facts_swapped_fake_impl_alert_follows_port() {
         "must produce 1 lowStock alert from port: {alerts:?}"
     );
     assert_eq!(low_stock[0].branch.as_str(), B1);
-    assert!(
-        low_stock[0].detail.contains("USD"),
-        "detail names USD: {}",
-        low_stock[0].detail
-    );
-    assert!(
-        low_stock[0].detail.contains("350"),
-        "detail names port quantity 350: {}",
-        low_stock[0].detail
-    );
-    assert!(
-        low_stock[0].detail.contains("500"),
-        "detail names floor 500: {}",
-        low_stock[0].detail
-    );
+    match &low_stock[0].detail {
+        AlertDetail::Stock {
+            currency,
+            on_hand,
+            floor,
+            ..
+        } => {
+            assert_eq!(currency, "USD");
+            assert_eq!(
+                *on_hand,
+                Decimal::from_str("350").unwrap(),
+                "the port's quantity"
+            );
+            assert_eq!(*floor, Decimal::from_str("500").unwrap());
+        }
+        other => panic!("a lowStock alert carries AlertDetail::Stock: {other:?}"),
+    }
 
     room.finish().await;
 }

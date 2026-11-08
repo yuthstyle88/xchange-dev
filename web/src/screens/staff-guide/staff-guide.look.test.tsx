@@ -69,7 +69,11 @@ describe('staff-guide look', () => {
     expect(d?.get('padding')).toBe('0');
   });
 
-  it('SG-3 the six parts are shared cards in a centred .staff-guide column', async () => {
+  // Restated 2026-11-07 by claude/studio-claude-17 (OL-7 rows 8 + 28, VERIFY.md on main 4a577dac, shots 014/015): the
+  // guide drew an 880px column at x 200-1080 while desk, queue, bookings, backdated, transaction, staff, report and
+  // documents all use the shell's 960px column at x 160 (1280 wide). `.staff-guide` now adds no width, margin or padding
+  // of its own; it fills the shell column. Was: max-width 880px, margin 0 auto, padding 16px.
+  it('SG-3 the six parts are shared cards in a .staff-guide grid that fills the shell column', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response('{"version":"1.0.0","build":"0123456789","builtAt":"x","channel":"staging"}')),
@@ -82,9 +86,9 @@ describe('staff-guide look', () => {
     const d = decls(await readHere('guide.css'), '.staff-guide');
     expect(d?.get('display')).toBe('grid');
     expect(d?.get('gap')).toBe('16px');
-    expect(d?.get('max-width')).toBe('880px');
-    expect(d?.get('margin')).toBe('0 auto');
-    expect(d?.get('padding')).toBe('16px');
+    expect(d?.get('max-width')).toBe('none');
+    expect(d?.get('margin')).toBe('0');
+    expect(d?.get('padding')).toBe('0');
   });
 
   it('SG-4 headings and paragraphs inside a part have tidy margins', async () => {

@@ -24,7 +24,8 @@ const EXPORTER_ME: unknown = (() => {
 const REPORTS = 'admin_reports';
 const TRANSACTIONS = 'admin_transactions';
 const TABS = ['ช่องทางชำระเงิน', 'สกุลเงินและส่วนต่าง', 'แยกพนักงาน'];
-const EMPLOYEE_CSV = 'ดาวน์โหลด CSV';
+// OL-7 row 61: the employee tab's CSV button reads like every other CSV export; it is `#employee-csv`.
+const EMPLOYEE_CSV = 'ส่งออกรายการ CSV';
 
 const PER_EMPLOYEE_HEADERS = [
   'เลขรายการ / เวลา',

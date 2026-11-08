@@ -1,6 +1,8 @@
 export const th = {
   'field.password.show': 'แสดงรหัสผ่าน',
   'field.password.hide': 'ซ่อนรหัสผ่าน',
+  'field.file.choose': 'เลือกไฟล์',
+  'field.file.none': 'ยังไม่ได้เลือกไฟล์',
   'shell.langSwitch': 'เปลี่ยนภาษาเป็น {language}',
   'shell.menu': 'เมนู',
   'shell.nav.counter': 'เคาน์เตอร์',

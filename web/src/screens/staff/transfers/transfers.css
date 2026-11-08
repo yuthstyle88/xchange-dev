@@ -111,6 +111,13 @@
   white-space: nowrap;
 }
 
+.xc-transfers-table th:nth-child(2),
+.xc-transfers-table td:nth-child(2),
+.xc-transfers-table th:nth-child(3),
+.xc-transfers-table td:nth-child(3) {
+  white-space: nowrap;
+}
+
 .xc-transfers-table th {
   font-weight: 600;
   color: var(--xc-ink);

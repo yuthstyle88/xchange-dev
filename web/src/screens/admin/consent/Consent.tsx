@@ -251,7 +251,7 @@ export function Consent(props: AdminMenuProps): JSX.Element {
               disabled={publishing()}
             />
           </label>
-          <div>{body().length} / 20000</div>
+          <div class="consent-body-count">{body().length} / 20000</div>
 
           <Show when={publishError()}>
             <div class="error" role="alert" data-field-error="body">

@@ -9,7 +9,7 @@ use ts_rs::TS;
 use crate::application::executive::drilldown::Drilldown;
 use crate::application::executive::metrics::Metric;
 use crate::application::executive::overview::{BranchRow, Overview};
-use crate::application::executive::ports::{Alert, ExecutiveFilter};
+use crate::application::executive::ports::{Alert, AlertDetail, ExecutiveFilter};
 
 /// An organisation view's answer (D-5): the versions of the branches in scope; `data` only when one moved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -129,8 +129,29 @@ pub struct AlertDto {
     pub kind: String,
     pub branch_id: String,
     pub since: Option<String>,
-    pub detail: String,
+    pub stale_minutes: Option<i32>,
+    pub differences: Vec<AlertAmountDto>,
+    pub stock: Option<AlertStockDto>,
     pub drilldown: Option<DrilldownDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "executive_overview.ts")]
+pub struct AlertAmountDto {
+    pub currency: String,
+    pub amount: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "executive_overview.ts")]
+pub struct AlertStockDto {
+    pub currency: String,
+    pub available: String,
+    pub on_hand: String,
+    pub reserved: String,
+    pub floor: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
@@ -193,11 +214,45 @@ impl BranchRowDto {
 
 impl AlertDto {
     fn of(a: &Alert) -> Self {
+        let (stale_minutes, differences, stock) = match &a.detail {
+            AlertDetail::None => (None, Vec::new(), None),
+            AlertDetail::StaleMinutes(m) => (Some(*m), Vec::new(), None),
+            AlertDetail::Differences(diffs) => (
+                None,
+                diffs
+                    .iter()
+                    .map(|(currency, amount)| AlertAmountDto {
+                        currency: currency.clone(),
+                        amount: amount.to_string(),
+                    })
+                    .collect(),
+                None,
+            ),
+            AlertDetail::Stock {
+                currency,
+                available,
+                on_hand,
+                reserved,
+                floor,
+            } => (
+                None,
+                Vec::new(),
+                Some(AlertStockDto {
+                    currency: currency.clone(),
+                    available: available.to_string(),
+                    on_hand: on_hand.to_string(),
+                    reserved: reserved.to_string(),
+                    floor: floor.to_string(),
+                }),
+            ),
+        };
         Self {
             kind: a.kind.as_str().to_owned(),
             branch_id: a.branch.as_str().to_owned(),
             since: a.since.map(time),
-            detail: a.detail.clone(),
+            stale_minutes,
+            differences,
+            stock,
             drilldown: a.drilldown.as_ref().map(DrilldownDto::of),
         }
     }

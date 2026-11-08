@@ -6,7 +6,8 @@
 // The answer is EX-3's (#1071), typed by the generated `executive_overview.ts`, with the contract points the
 // BE controller fixed on #1071 (issuecomment-6108369072): alert kinds `ratePending` / `staleData` /
 // `countDifference`; `branches=B1,B2`, where an empty item is `400 validationFailed` and an id outside scope
-// is `403 outOfScope`; an undecodable exception row's alert carries only the row id as its detail.
+// is `403 outOfScope`. Since OL-7 row 64 (restated by claude/bbe9ce8b) an alert carries figures, never a record id:
+// an undecodable exception row's alert has no figures and shows only its kind, branch and time.
 //
 // The screen computes no figure (D-2, D-3): every number, every "unavailable" and every drill-down comes from
 // the answer, and money is shown with the shared `formatMoney` from the decimal string.
@@ -142,7 +143,6 @@ function alerts() {
       kind: 'ratePending',
       branchId: 'B1',
       since: '2026-10-06T02:00:00Z',
-      detail: 'RQ-77',
       drilldown: drill('approval_requests', { branch: 'B1', type: 'RATE_PUBLICATION' }),
     }),
     makeAlertDto({
@@ -150,14 +150,14 @@ function alerts() {
       kind: 'countDifference',
       branchId: 'B2',
       since: null,
-      detail: 'EXC-9f3a',
+      differences: [],
       drilldown: drill('cash_counts', { branch: 'B2' }, ['difference']),
     }),
     makeAlertDto({
       kind: 'staleData',
       branchId: 'B2',
       since: '2026-10-06T00:30:00Z',
-      detail: 'XC-2026-0009',
+      staleMinutes: 45,
       drilldown: drill('admin_transactions', { branch: 'B2' }),
     }),
   ];
@@ -523,27 +523,28 @@ describe('EX-4 A01: the branch table (§4.2)', () => {
 // ── the alerts ───────────────────────────────────────────────────────────────
 
 describe('EX-4 A01: ต้องดำเนินการ (§4.3; #1071 rulings, gaps 4–6)', () => {
-  it('one row per alert, each with its own kind label, its branch and its detail', async () => {
+  it('one row per alert, each with its own kind label, its branch and its worded figures', async () => {
     const m = mount();
     await settle();
     expect(text(m.el)).toContain('ต้องดำเนินการ');
     const rate = text(theAlert(m.el, 'ratePending'));
     expect(rate).toContain('เรทรออนุมัติ');
     expect(rate.includes('สาขาหนึ่ง') || rate.includes('B1'), `the branch: ${rate}`).toBe(true);
-    expect(rate).toContain('RQ-77');
+    expect(rate).not.toContain('RATE_PUBLICATION');
     const stale = text(theAlert(m.el, 'staleData'));
     expect(stale).toContain('ข้อมูลค้าง');
-    expect(stale).toContain('XC-2026-0009');
+    expect(stale).toContain('ค้างเกิน 45 นาที');
     const count = text(theAlert(m.el, 'countDifference'));
     expect(count).toContain('เงินนับไม่ตรง');
     expect(count.includes('สาขาสอง') || count.includes('B2'), `the branch: ${count}`).toBe(true);
   });
 
-  it("an undecodable exception row's alert shows its id and assumes no other field", async () => {
+  it("an undecodable exception row's alert shows no id and assumes no other field", async () => {
     const m = mount();
     await settle();
     const count = theAlert(m.el, 'countDifference');
-    expect(text(count)).toContain('EXC-9f3a');
+    expect(text(count)).toContain('เงินนับไม่ตรง');
+    expect(count.querySelector('.executive-alert-detail'), 'no empty detail span').toBeNull();
     expect(text(count)).not.toContain('undefined');
     expect(text(count)).not.toContain('null');
   });
@@ -562,7 +563,7 @@ describe('EX-4 A01: ต้องดำเนินการ (§4.3; #1071 ruling
     await settle();
     const count = theAlert(m.el, 'countDifference');
     expect(count.querySelectorAll('[data-drilldown]').length).toBe(0);
-    expect(text(count)).toContain('EXC-9f3a');
+    expect(text(count)).toContain('เงินนับไม่ตรง');
   });
 
   it('no alerts: no alert row, and no error', async () => {

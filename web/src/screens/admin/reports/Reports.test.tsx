@@ -61,7 +61,8 @@ const TRANSACTIONS = 'admin_transactions';
 const THAI = /[฀-๿]/;
 const TABS = ['ช่องทางชำระเงิน', 'สกุลเงินและส่วนต่าง', 'แยกพนักงาน'];
 const EXPORT = 'ส่งออกรายการ CSV';
-const EMPLOYEE_CSV = 'ดาวน์โหลด CSV';
+// OL-7 row 61: the employee tab's CSV button reads like every other CSV export; it is `#employee-csv`.
+const EMPLOYEE_CSV = 'ส่งออกรายการ CSV';
 const FOOTNOTE = 'รวมเฉพาะรายการสำเร็จตามช่วงวันที่และสาขาที่เลือก · ยอดรับ–จ่ายและส่วนต่างเรทไม่ใช่กำไรสุทธิ';
 /** v2's base-page footnote, which the served page rewrites (`admin-workspace.js:115`). */
 const OLD_FOOTNOTE = 'นับเฉพาะรายการสำเร็จในช่วงวันที่ที่เลือก';
@@ -678,8 +679,8 @@ describe('V2-reports: the three tabs as served (P2; admin-workspace.js:99-120)',
     await openTab(TABS[1]!);
     expect(visibleButtons(EXPORT).length).toBe(1);
     await openTab(TABS[2]!);
-    expect(visibleButtons(EXPORT).length, 'hidden on แยกพนักงาน').toBe(0);
-    expect(visibleButtons(EMPLOYEE_CSV).length, "the employee CSV is its own").toBe(1);
+    expect(visibleButtons(EXPORT).filter((b) => b.id !== 'employee-csv').length, 'hidden on แยกพนักงาน').toBe(0);
+    expect(visibleButtons(EMPLOYEE_CSV).map((b) => b.id), 'the employee CSV is its own').toEqual(['employee-csv']);
     await openTab(TABS[0]!);
     expect(visibleButtons(EXPORT).length).toBe(1);
   });
@@ -1105,7 +1106,7 @@ describe('V2-reports: CSV (P4; admin-html:170, employee-summary.js:22-25; design
     expect(names).toHaveLength(0);
   });
 
-  it("ดาวน์โหลด CSV walks admin_transactions with the employee filter and writes v2's employee file oldest first", async () => {
+  it("the employee tab's CSV (#employee-csv) walks admin_transactions with the employee filter and writes v2's employee file oldest first", async () => {
     server.first.dao = [
       tx(3, {
         type: 'SELL',

@@ -101,7 +101,7 @@ function mountScreen(): HTMLElement {
 }
 
 function setReason(container: HTMLElement, value: string): void {
-  const input = container.querySelector<HTMLInputElement>('[data-request="r1"] input[type="text"]');
+  const input = container.querySelector<HTMLTextAreaElement>('[data-request="r1"] textarea');
   expect(input, 'reason input in [data-request="r1"]').not.toBeNull();
   input!.value = value;
   input!.dispatchEvent(new Event('input', { bubbles: true }));

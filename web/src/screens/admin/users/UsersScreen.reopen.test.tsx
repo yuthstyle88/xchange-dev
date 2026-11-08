@@ -7,6 +7,20 @@ import { setLang } from '../../../shared/i18n';
 import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
+// OL-7 row 86 (restated by claude/94389a6b on the sub-controller claude/1cc51615's decision, /tmp/ol7/ORDER-claude-19-b.md
+// item 2): reset, grant, suspend and disable now sit in each row's "more" menu, rendered only while it is open. A lookup
+// that does not find its button opens the first closed menu under `root` that holds it; nothing else in the test changes.
+function withMore<T extends ParentNode>(root: T, sel: string): T {
+  if (!root.querySelector(sel)) {
+    for (const t of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-users-menu="toggle"]'))) {
+      if (t.getAttribute('aria-expanded') === 'true') continue;
+      t.click();
+      if (root.querySelector(sel)) break;
+    }
+  }
+  return root;
+}
+
 // #2472: each dialog opening is its own generation. A write's late answer only
 // closes / sets the error of the same opening it was sent from, not a dialog of
 // the same kind and user that was closed and reopened meanwhile.
@@ -105,7 +119,7 @@ function mountScreen(): HTMLElement {
 }
 
 function btn(container: ParentNode, selector: string): HTMLButtonElement {
-  const el = container.querySelector<HTMLButtonElement>(selector);
+  const el = withMore(container, selector).querySelector<HTMLButtonElement>(selector);
   expect(el, selector).not.toBeNull();
   return el!;
 }
@@ -117,7 +131,7 @@ function rowButton(c: HTMLElement, userName: string, selector: string): HTMLButt
 }
 
 function type(c: HTMLElement, selector: string, value: string): void {
-  const input = c.querySelector<HTMLInputElement>(selector);
+  const input = withMore(c, selector).querySelector<HTMLInputElement>(selector);
   expect(input, selector).not.toBeNull();
   input!.value = value;
   input!.dispatchEvent(new Event('input', { bubbles: true }));

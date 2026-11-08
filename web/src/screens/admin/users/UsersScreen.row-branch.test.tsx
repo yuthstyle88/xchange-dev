@@ -5,6 +5,20 @@ import { setLang } from '../../../shared/i18n';
 import { makeAdminUserRole, makeAdminUserRow } from '../../../shared/testing/fixtures';
 import { UsersScreen } from './UsersScreen';
 
+// OL-7 row 86 (restated by claude/94389a6b on the sub-controller claude/1cc51615's decision, /tmp/ol7/ORDER-claude-19-b.md
+// item 2): reset, grant, suspend and disable now sit in each row's "more" menu, rendered only while it is open. A lookup
+// that does not find its button opens the first closed menu under `root` that holds it; nothing else in the test changes.
+function withMore<T extends ParentNode>(root: T, sel: string): T {
+  if (!root.querySelector(sel)) {
+    for (const t of Array.from(root.querySelectorAll<HTMLButtonElement>('[data-users-menu="toggle"]'))) {
+      if (t.getAttribute('aria-expanded') === 'true') continue;
+      t.click();
+      if (root.querySelector(sel)) break;
+    }
+  }
+  return root;
+}
+
 interface WriteCall {
   path: string;
   rawBody: string;
@@ -110,7 +124,7 @@ function rowButton(container: HTMLElement, userName: string, selector: string): 
     tr.textContent?.includes(userName),
   );
   expect(row, `row for ${userName}`).toBeDefined();
-  const el = row!.querySelector<HTMLButtonElement>(selector);
+  const el = withMore(row!, selector).querySelector<HTMLButtonElement>(selector);
   expect(el, `${selector} in row ${userName}`).not.toBeNull();
   return el!;
 }
