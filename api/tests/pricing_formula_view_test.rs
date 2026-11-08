@@ -35,8 +35,8 @@ async fn with_no_formula_rows_every_branch_follows_the_default() {
     assert_eq!(
         data["branches"],
         json!([
-            {"branch": "MAIN", "source": "DEFAULT", "own": null},
-            {"branch": PFB, "source": "DEFAULT", "own": null},
+            {"branch": "MAIN", "name": "XC-B", "source": "DEFAULT", "own": null},
+            {"branch": PFB, "name": PFB, "source": "DEFAULT", "own": null},
         ])
     );
     room.finish().await;
@@ -74,8 +74,8 @@ async fn the_current_organisation_formula_and_each_branchs_source() {
     assert_eq!(
         data["branches"],
         json!([
-            {"branch": "MAIN", "source": "ORGANISATION", "own": null},
-            {"branch": PFB, "source": "BRANCH", "own": {"buyFormula": "ref_buy - 0.01", "sellFormula": "ref_sell + 0.01"}},
+            {"branch": "MAIN", "name": "XC-B", "source": "ORGANISATION", "own": null},
+            {"branch": PFB, "name": PFB, "source": "BRANCH", "own": {"buyFormula": "ref_buy - 0.01", "sellFormula": "ref_sell + 0.01"}},
         ])
     );
     room.finish().await;
