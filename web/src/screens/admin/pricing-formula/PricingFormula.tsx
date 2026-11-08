@@ -25,10 +25,6 @@ import './pricing-formula.css';
 const t = screenT('admin.pricing-formula', table);
 const tf = formulaTable.formulaT;
 
-export function branchLabel(id: string): string {
-  return id.length > 12 ? `${id.slice(0, 8)}…` : id;
-}
-
 export function PricingFormula(props: AdminMenuProps): JSX.Element {
   const api = new ApiClient();
   const reasonId = createUniqueId();
@@ -227,7 +223,7 @@ export function PricingFormula(props: AdminMenuProps): JSX.Element {
                     <For each={d().branches}>
                       {(b) => (
                         <tr data-branch={b.branch}>
-                          <td title={b.branch}>{branchLabel(b.branch)}</td>
+                          <td title={b.branch}>{b.name}</td>
                           <td>{tf(`source.${b.source}` as formulaTable.Key)}</td>
                           <td>
                             <Show when={b.own} fallback={tf('dash')}>

@@ -51,6 +51,8 @@ pub struct OrganisationFormulaDto {
 #[ts(export_to = "pricing_formula.ts")]
 pub struct BranchFormulaDto {
     pub branch: String,
+    /// `branches.name`.
+    pub name: String,
     /// `BRANCH` · `ORGANISATION` · `DEFAULT` (what `FormulaResolver::resolve` answers for its current version).
     pub source: String,
     /// The branch's own texts when `source` is `BRANCH`, else `null`.
@@ -150,8 +152,8 @@ impl BranchView for PricingFormulaView {
                 reason: row.reason,
             });
 
-            let branch_rows: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
-                "SELECT b.id, rpv.buy_formula, rpv.sell_formula \
+            let branch_rows: Vec<(String, String, Option<String>, Option<String>)> = sqlx::query_as(
+                "SELECT b.id, b.name, rpv.buy_formula, rpv.sell_formula \
                  FROM branches b \
                  LEFT JOIN LATERAL ( \
                      SELECT buy_formula, sell_formula \
@@ -172,7 +174,7 @@ impl BranchView for PricingFormulaView {
 
             let branches = branch_rows
                 .into_iter()
-                .map(|(branch, buy, sell)| {
+                .map(|(branch, name, buy, sell)| {
                     let (source, own) = match (buy, sell) {
                         (Some(buy_formula), Some(sell_formula)) => (
                             "BRANCH".to_string(),
@@ -186,6 +188,7 @@ impl BranchView for PricingFormulaView {
                     };
                     BranchFormulaDto {
                         branch,
+                        name,
                         source,
                         own,
                     }

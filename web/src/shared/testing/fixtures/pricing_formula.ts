@@ -8,6 +8,7 @@ export type { BranchFormulaDto, FormulaInputDto, FormulaTextsDto, OrganisationFo
 export function makeBranchFormulaDto(o: Partial<BranchFormulaDto> = {}): BranchFormulaDto {
   return {
     branch: 'branch',
+    name: 'name',
     source: 'source',
     own: null,
     ...o,

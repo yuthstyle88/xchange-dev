@@ -2,6 +2,10 @@
 
 export type BranchFormulaDto = { branch: string, 
 /**
+ * `branches.name`.
+ */
+name: string, 
+/**
  * `BRANCH` · `ORGANISATION` · `DEFAULT` (what `FormulaResolver::resolve` answers for its current version).
  */
 source: string, 
