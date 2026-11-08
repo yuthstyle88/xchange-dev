@@ -79,8 +79,8 @@ describe('pricing-formula-web T7: the branch override block', () => {
         version: 1,
         changed: true,
         data: data([
-          { branch: 'MAIN', source: 'ORGANISATION', own: null },
-          { branch: 'B2', source: 'BRANCH', own: { buyFormula: 'ref_buy * 0.99', sellFormula: 'ref_sell * 1.01' } },
+          { branch: 'MAIN', name: 'MAIN', source: 'ORGANISATION', own: null },
+          { branch: 'B2', name: 'B2', source: 'BRANCH', own: { buyFormula: 'ref_buy * 0.99', sellFormula: 'ref_sell * 1.01' } },
         ]),
       });
     host = document.createElement('div');
@@ -145,7 +145,7 @@ describe('pricing-formula-web T7: the branch override block', () => {
     expect(reads).toHaveLength(1);
     expect(reads[0]).toContain('branch=MAIN');
     expect(setState).toHaveBeenLastCalledWith({
-      current: { branch: 'MAIN', source: 'ORGANISATION', own: null },
+      current: { branch: 'MAIN', name: 'MAIN', source: 'ORGANISATION', own: null },
       choice: 'ORGANISATION',
       buy: ORG.buyFormula,
       sell: ORG.sellFormula,
@@ -153,7 +153,7 @@ describe('pricing-formula-web T7: the branch override block', () => {
   });
 
   it('V2: no organisation formula ⇒ prefilled from the default texts', async () => {
-    viewAnswer = () => json({ version: 1, changed: true, data: data([{ branch: 'MAIN', source: 'DEFAULT', own: null }], false) });
+    viewAnswer = () => json({ version: 1, changed: true, data: data([{ branch: 'MAIN', name: 'MAIN', source: 'DEFAULT', own: null }], false) });
     mount();
     await open();
     expect(setState).toHaveBeenLastCalledWith(expect.objectContaining({ buy: DEFAULT.buyFormula, sell: DEFAULT.sellFormula }));
