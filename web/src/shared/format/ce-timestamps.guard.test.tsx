@@ -23,7 +23,6 @@ const ALLOWED = [
   'screens/admin/approvals/Approvals.tsx',
   'screens/admin/booking-slots/BookingSlots.tsx',
   'screens/admin/pricing-formula/PricingFormula.tsx',
-  'screens/admin/pricing/MarketSources.tsx',
   'screens/admin/rates/Rates.tsx',
   'screens/admin/rates/RatesHistory.tsx',
   'screens/customer/queue/RequestQr.tsx',
