@@ -23,14 +23,12 @@ const ALLOWED = [
   'screens/admin/approvals/Approvals.tsx',
   'screens/admin/booking-slots/BookingSlots.tsx',
   'screens/admin/pricing-formula/PricingFormula.tsx',
-  'screens/admin/pricing/MarketSources.tsx',
   'screens/admin/rates/Rates.tsx',
   'screens/admin/rates/RatesHistory.tsx',
   'screens/customer/queue/RequestQr.tsx',
   'screens/customer/rate-alerts/AlertFacts.tsx',
   'screens/customer/rate-alerts/RateAlerts.tsx',
   'screens/customer/rate-display/board/BoardClock.tsx',
-  'shared/ui/QueueCard.tsx',
 ];
 
 const sources = import.meta.glob<string>(['/src/**/*.ts', '/src/**/*.tsx', '!/src/**/*.test.*'], {

@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show, type JSX } from 'solid-js';
 import { Portal } from 'solid-js/web';
-import { locale, t } from '../i18n';
+import { t } from '../i18n';
+import { formatBangkokDateTime } from '../format/bangkok-time';
 import { summarize } from '../queue/board';
 import { queueBranch, useQueueStore } from '../queue/queue-store';
 import { announce, soundOn } from '../queue/queue-sound';
@@ -261,9 +262,7 @@ function OperatorCard(props: { session: SessionStore; startFolded: boolean; stay
                   {(w) => {
                     const stamp = () =>
                       w.calledAt
-                        ? new Date(w.calledAt).toLocaleString(locale(), {
-                            timeZone: 'Asia/Bangkok',
-                          })
+                        ? formatBangkokDateTime(w.calledAt)
                         : t('queue.card.noData');
                     return (
                       <div class="queue-card-worker">

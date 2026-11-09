@@ -1,6 +1,7 @@
 // §9 MarketSources: one chip per source: name, age, stale, error; refresh if allowed (FE pricing-board, #564, #3760; docs/design/blueprint/pricing-tiers.md §9).
 import { For, Show, type JSX } from 'solid-js';
 import type { PricingSourceDto } from '../../../shared/api/generated/pricing_board';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { en, th } from './i18n';
 import { sourceLabel, type MarketSourceCode } from './pricing-labels';
@@ -24,7 +25,7 @@ export function MarketSources(props: MarketSourcesProps): JSX.Element {
           <div class="xc-market-source-chip" data-source={s.source}>
             <span class="xc-source-name">{sourceLabel(s.source)}</span>
             <Show when={s.fetchedAt}>
-              <span class="xc-source-time">{new Date(s.fetchedAt!).toLocaleString()}</span>
+              <span class="xc-source-time">{formatBangkokDateTime(s.fetchedAt!)}</span>
             </Show>
             <Show when={s.stale}>
               <span class="xc-source-stale">{t('stale')}</span>
