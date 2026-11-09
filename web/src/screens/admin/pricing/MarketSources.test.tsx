@@ -44,15 +44,31 @@ function mount(props: {
 }
 
 describe('MarketSources (§9 PB-4)', () => {
-  it('row 1: a fresh source renders a chip with its name (from i18n) and age (fetchedAt via toLocaleString)', () => {
+  // Amended for OL-9 (feat/one-look-9) by the controller claude/1cc51615, on the owner's ruling relayed by
+  // claude/d0aad3 2026-11-09 ("MarketSources.tsx:27 moves to the shared CE formatter (dd/mm/yyyy HH:mm, CE)"):
+  // the age was `toLocaleString()` (the device's locale and zone); it is now the shared F55 text in Asia/Bangkok.
+  it('row 1: a fresh source renders a chip with its name (from i18n) and age (fetchedAt via the shared CE formatter)', () => {
     mount({ sources: [SAMPLE_SOURCES[0]!] });
     const chip = host.querySelector('[data-source="TT"]');
     expect(chip).not.toBeNull();
     expect(chip?.textContent).toContain(th['source.TT']);
-    const expectedDate = new Date('2026-10-19T08:00:00Z').toLocaleString();
-    expect(chip?.textContent).toContain(expectedDate);
+    expect(chip?.querySelector('.xc-source-time')?.textContent).toBe('19/10/2026 15:00');
     expect(chip?.textContent).not.toContain(th.stale);
     expect(chip?.textContent).not.toContain(th.sourceError);
+  });
+
+  it('row 1b (OL-9): the age is the same CE text in Thai and English: no Buddhist year, no seconds', () => {
+    for (const lang of ['th', 'en'] as const) {
+      setLang(lang);
+      mount({ sources: [SAMPLE_SOURCES[0]!] });
+      const time = host.querySelector('[data-source="TT"] .xc-source-time')?.textContent ?? '';
+      expect(time, lang).toBe('19/10/2026 15:00');
+      expect(time, `${lang}: CE year`).not.toContain('2569');
+      expect(time, `${lang}: no seconds`).not.toMatch(/\d:\d{2}:\d{2}/);
+      dispose?.();
+      dispose = undefined;
+      host.remove();
+    }
   });
 
   it('row 2: stale: true marks the chip with the stale text in TH and EN', () => {
