@@ -30,7 +30,6 @@ const ALLOWED = [
   'screens/customer/rate-alerts/AlertFacts.tsx',
   'screens/customer/rate-alerts/RateAlerts.tsx',
   'screens/customer/rate-display/board/BoardClock.tsx',
-  'shared/ui/QueueCard.tsx',
 ];
 
 const sources = import.meta.glob<string>(['/src/**/*.ts', '/src/**/*.tsx', '!/src/**/*.test.*'], {

@@ -15,18 +15,24 @@
 //     one `.queue-card-worker` child per `working` entry, in the server's order;
 //   - [required] each line reads `<staff> กำลังทำรายการ <queue> · เริ่ม <time>` (en:
 //     `<staff> serving <queue> · started <time>`), the old bar's `workerLine` text, with `<time>` =
-//     `new Date(startedAt).toLocaleString(locale(), { timeZone: 'Asia/Bangkok' })`, or
+//     the shared F55 formatter's `dd/mm/yyyy HH:mm` in Asia/Bangkok with a CE year (`10/10/2026 09:15`,
+//     the same in both languages; see the OL-9 amendment below), or
 //     `ยังไม่มีข้อมูล` / `No data` when `startedAt` is null (the bar's `noData`);
 //   - [required] minimized: the lines are not shown (absent, or under an element with `hidden`);
 //   - [required] an empty `working` list, or offline (the bar's `showWorkers()`), renders no list element.
 //
 // Amended for OR-7.7 (#1030, ruling (b) issuecomment-6105567502) by the test-writer claude/5d45b017:
 // the `Me` fixture (`kind`/`role`/`username`) → `meOf(…)` and `employee {id, role}` → `employeeOf(…)` (`web/src/test-support/me.ts`, design §3.3: FRONT → TELLER at its branch). Nothing else changes.
+// Amended for OL-9 (feat/one-look-9) by the controller claude/1cc51615, on the owner's ruling relayed by claude/d0aad3
+// 2026-11-09 ("QueueCard.tsx:264 and MarketSources.tsx:27 move to the shared CE formatter (dd/mm/yyyy HH:mm, CE)"):
+// the stamp was `toLocaleString(locale(), { timeZone: 'Asia/Bangkok' })`, which in Thai prints a Buddhist year
+// (`10/10/2569 09:15:00`). K1/K2 now pin the CE text `10/10/2026 09:15` and K1 also pins no 2569 and no seconds.
+// Nothing else changes.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Accessor, JSX } from 'solid-js';
 import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
-import { locale, setLang, t } from '../i18n';
+import { setLang, t } from '../i18n';
 import { queueStore, type QueueError, type QueueStore } from '../queue/queue-store';
 import type { Me, QueueBoardData } from '../testing/fixtures';
 import { makeQueueBoardData } from '../testing/fixtures';
@@ -210,10 +216,8 @@ function shown(el: HTMLElement): boolean {
 
 const realToLocaleString = Date.prototype.toLocaleString;
 
-/** The stamp the line must carry, computed with the real `toLocaleString`. */
-function stamp(iso: string): string {
-  return realToLocaleString.call(new Date(iso), locale(), { timeZone: 'Asia/Bangkok' });
-}
+/** The stamp the line must carry for STARTED: the shared formatter's CE text, the same in TH and EN (OL-9). */
+const STAMP = '10/10/2026 09:15';
 
 /**
  * Run the page as a browser whose own zone is UTC: a `toLocaleString` call that names no
@@ -256,10 +260,12 @@ describe('the workers list in the expanded card (QF8)', () => {
     expect(list(), 'the list element .queue-card-workers').not.toBeNull();
     const got = lines();
     expect(got.map((l) => l.textContent?.trim())).toEqual([
-      `nok กำลังทำรายการ Q-1 · เริ่ม ${stamp(STARTED)}`,
+      `nok กำลังทำรายการ Q-1 · เริ่ม ${STAMP}`,
       'ploy กำลังทำรายการ Q-2 · เริ่ม ยังไม่มีข้อมูล',
     ]);
     expect(got[0]!.textContent, 'Bangkok time, not UTC').toMatch(/\b0?9[:.]15/);
+    expect(got[0]!.textContent, 'CE year, not the Buddhist 2569').not.toContain('2569');
+    expect(got[0]!.textContent, 'no seconds').not.toContain('09:15:00');
     expect(got.every(shown), 'every line is shown').toBe(true);
   });
 
@@ -269,7 +275,7 @@ describe('the workers list in the expanded card (QF8)', () => {
     answer({ workingCount: 2, working: TWO });
     await flush();
     expect(lines().map((l) => l.textContent?.trim())).toEqual([
-      `nok serving Q-1 · started ${stamp(STARTED)}`,
+      `nok serving Q-1 · started ${STAMP}`,
       'ploy serving Q-2 · started No data',
     ]);
   });
@@ -329,7 +335,7 @@ describe('the workers list in the expanded card (QF8)', () => {
     answer({ workingCount: 2, working: TWO });
     await flush();
     expect(lines().map((l) => l.textContent?.trim())).toEqual([
-      `nok กำลังทำรายการ Q-1 · เริ่ม ${stamp(STARTED)}`,
+      `nok กำลังทำรายการ Q-1 · เริ่ม ${STAMP}`,
       'ploy กำลังทำรายการ Q-2 · เริ่ม ยังไม่มีข้อมูล',
     ]);
     const anywhere = [...document.querySelectorAll('*')].filter(
