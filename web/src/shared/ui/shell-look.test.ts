@@ -35,6 +35,7 @@ const CHILD_MODULE_ENTRIES: Record<string, string[]> = {
   'receipt-sample.html': ['/src/screens/receipt-sample/ReceiptSample.tsx'],
   'staff-guide.html': ['/src/screens/staff-guide/StaffGuide.tsx'],
   'staff-guide-html.html': ['/src/screens/staff-guide/StaffGuide.tsx'],
+  'staff-settings.html': ['/src/screens/staff-settings/StaffSettings.tsx'],
   'staff.html': ['/src/screens/staff/StaffPage.tsx'],
 };
 
