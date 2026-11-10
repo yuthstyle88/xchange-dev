@@ -27,6 +27,8 @@ import { fieldError, type FieldMessage } from '../../../shared/i18n/field-error'
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { Card, CardBody, CardHead } from '../../../shared/ui/Card';
+import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { useBranchCountable } from '../../../shared/ui/currency-count/useBranchCountable';
 import { PermissionsUnavailable, permissionsUnavailableText } from '../../../shared/ui/PermissionsUnavailable';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { toast } from '../parts/toast';
@@ -465,11 +467,13 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
 
   // ── new transfer ────────────────────────────────────────────────────────────
 
+  const countable = useBranchCountable(api, () =>
+    props.shown() && (can(MANAGE) || meError() !== null) ? props.branch() : null,
+  );
   const [kind, setKind] = createSignal('');
   const [toBranch, setToBranch] = createSignal('');
   const [fromShift, setFromShift] = createSignal('');
   const [toShift, setToShift] = createSignal('');
-  const [lineCurrency, setLineCurrency] = createSignal('');
   const [lineQty, setLineQty] = createSignal<Record<number, string>>({});
   const [createFieldErrors, setCreateFieldErrors] = createSignal<{
     toBranch?: string;
@@ -480,9 +484,6 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   const [note, setNote] = createSignal('');
 
   const openShifts = () => props.shifts().filter((s) => s.status === 'OPEN');
-  const lineCurrencies = () => [...new Set(denominations().map((d) => d.currency))];
-  const lineShown = (d: DenominationRow) =>
-    d.currency === lineCurrency() || Boolean(lineQty()[d.id]) || Boolean(createLineErrors()[d.id]);
 
   function create(e: Event) {
     e.preventDefault();
@@ -824,50 +825,22 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
                   </div>
                 </Show>
 
-                <div>
-                  <label for="transfer-currency">{t('headerCurrency')}</label>
-                  <select
-                    id="transfer-currency"
-                    name="lineCurrency"
-                    value={lineCurrency()}
-                    onChange={(e) => setLineCurrency(e.currentTarget.value)}
-                  >
-                    <option value="">{t('chooseCurrency')}</option>
-                    <For each={lineCurrencies()}>{(c) => <option value={c}>{c}</option>}</For>
-                  </select>
-                </div>
-
-                <div class="transfer-lines">
-                  <For each={denominations()}>
-                    {(d) => (
-                      <div hidden={!lineShown(d)}>
-                        <label for={`transfer-line-${d.id}`}>
-                          {d.currency} {d.faceValue}
-                        </label>
-                        <input
-                          id={`transfer-line-${d.id}`}
-                          type="text"
-                          inputMode="numeric"
-                          data-denomination={String(d.id)}
-                          value={lineQty()[d.id] ?? ''}
-                          onInput={(e) => {
-                            const value = e.currentTarget.value;
-                            setLineQty((prev) => ({ ...prev, [d.id]: value }));
-                            setCreateLineErrors((prev) => {
-                              if (!(d.id in prev)) return prev;
-                              const next = { ...prev };
-                              delete next[d.id];
-                              return next;
-                            });
-                          }}
-                        />
-                        <Show when={createLineErrors()[d.id]}>
-                          {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
-                        </Show>
-                      </div>
-                    )}
-                  </For>
-                </div>
+                <CurrencyCount
+                  denominations={denominations()}
+                  countable={countable()}
+                  locked={['THB']}
+                  quantities={lineQty()}
+                  setQuantity={(id, value) => {
+                    setLineQty((prev) => ({ ...prev, [id]: value }));
+                    setCreateLineErrors((prev) => {
+                      if (!(id in prev)) return prev;
+                      const next = { ...prev };
+                      delete next[id];
+                      return next;
+                    });
+                  }}
+                  lineErrors={createLineErrors()}
+                />
 
                 <div>
                   <label for="transfer-note">{t('noteLabel')}</label>

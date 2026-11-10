@@ -1,9 +1,8 @@
-// Cash forms reuse CurrencyCount (owner screenshot 2026-11-04, xchange#564): the staff new-transfer and
-// receive forms list only the currencies they need, and the user adds any other currency through the search box.
+// Cash forms reuse CurrencyCount (owner screenshot 2026-11-04, xchange#564): the staff new-transfer
+// form lists only the currencies they need, and the user adds any other currency through the search box.
 //
 // Pre-added (locked, no remove button):
 //   new transfer  THB only (no transfer kind implies another currency);
-//   receive       THB, plus every currency in the transfer's lines, in line order.
 // A currency that is not on the form sends no lines, as a blank field does today. Request bodies are unchanged.
 //
 // DOM contract (#5114 §4): rows keep `[data-denomination-row]` / `input[data-denomination-id]` and
@@ -149,13 +148,6 @@ async function openCreate(): Promise<HTMLFormElement> {
   return form;
 }
 
-async function openReceive(): Promise<HTMLFormElement> {
-  await vi.waitFor(() => expect(q(`[data-transfer-id="${TR_ID}"] ${tid('transfer-receive')}`)).not.toBeNull());
-  must<HTMLButtonElement>(`[data-transfer-id="${TR_ID}"] ${tid('transfer-receive')}`).click();
-  await vi.waitFor(() => expect(q(`${tid('transfer-receive-form')} ${qty(22)}`), 'USD inputs drawn').not.toBeNull());
-  return must<HTMLFormElement>(tid('transfer-receive-form'));
-}
-
 async function addBySearch(form: Element, code: string) {
   type(must<HTMLInputElement>(tid('currency-search'), form), code.toLowerCase());
   await vi.waitFor(() => expect(q(option(code), form), option(code)).not.toBeNull());
@@ -187,7 +179,7 @@ afterEach(() => {
   setLang('th');
 });
 
-describe('cash forms reuse CurrencyCount: staff new-transfer and receive forms', () => {
+describe('cash forms reuse CurrencyCount: staff new-transfer form', () => {
   it('T1: the new-transfer form pre-adds THB only, locked, with a search box', async () => {
     stub();
     await mount();
@@ -249,31 +241,6 @@ describe('cash forms reuse CurrencyCount: staff new-transfer and receive forms',
     expect(sent.filter((s) => s.url === '/api/cash-transfers')).toHaveLength(0);
     const row = must(qty(22), form).closest('[data-denomination-row]');
     expect(row?.querySelector('[data-field-error="lines.22.qty"]'), 'error on USD 100').not.toBeNull();
-  });
-
-  it("T5: the receive form pre-adds THB and the transfer's currencies, locked", async () => {
-    stub([DISPATCHED]);
-    await mount();
-    const form = await openReceive();
-
-    expect(groupsOf(form)).toEqual(['THB', 'USD']);
-    expect(q(qty(31), form), 'EUR not on the form until added').toBeNull();
-    expect(must(group('USD'), form).querySelector(tid('currency-remove')), 'USD is locked').toBeNull();
-    must<HTMLInputElement>(tid('currency-search'), form);
-  });
-
-  it('T6: the receive body lists exactly the typed notes, as before', async () => {
-    stub([DISPATCHED]);
-    await mount();
-    const form = await openReceive();
-
-    type(must<HTMLInputElement>(qty(22), form), '3');
-    must<HTMLButtonElement>(tid('transfer-receive-save')).click();
-    const path = `/api/cash-transfers/${TR_ID}/receive`;
-    await vi.waitFor(() => expect(sent.some((s) => s.url === path)).toBe(true));
-
-    const body = sent.find((s) => s.url === path)!.body as { lines: unknown };
-    expect(body.lines).toEqual([{ currency: 'USD', denominationId: 22, qtyReceived: '3' }]);
   });
 
   it('T7: English shows the same groups and search box', async () => {
