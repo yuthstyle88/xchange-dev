@@ -210,7 +210,7 @@ describe('CashFlows: error handling for denominations and transfer_branches read
       expect(alert).not.toBeNull();
       expect(alert?.textContent?.trim()).toBe(th['error.serverError']);
     });
-    expect(root.querySelectorAll('.cash-new-transfer .transfer-lines > div').length).toBe(0);
+    expect(root.querySelectorAll('input[data-denomination-id]').length).toBe(0);
   });
 
   // Row 2: transfer_branches read fails (network) -> Refusal sentence shown
@@ -235,7 +235,7 @@ describe('CashFlows: error handling for denominations and transfer_branches read
       expect(verifyIds()).toEqual(['cc-A']);
     });
     expect(root.querySelector('.cash-flows [role="alert"]')).toBeNull();
-    expect(root.querySelectorAll('.cash-new-transfer .transfer-lines > div').length).toBe(1);
+    expect(root.querySelectorAll('input[data-denomination-id]').length).toBe(1);
     choose('#transfer-kind', 'BRANCH');
     await vi.waitFor(() => expect(root.querySelector('#transfer-to-branch')).not.toBeNull());
     const branchOptions = [...root.querySelectorAll('#transfer-to-branch option')].map(

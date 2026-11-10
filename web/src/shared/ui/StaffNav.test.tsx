@@ -3,7 +3,8 @@
 // OL-6 L5 (#6542), docs/design/xchange-one-look-layout.md §1 D2, §2 Q2, §3 L5; the map is #6542 issuecomment-6689849443.
 // Written before the implementation by claude/f6a909ac for sub-controller claude/1cc51615. Do not edit, delete or weaken.
 //
-// One test per row of #6542 §9, with the notice-toast row. The map has 4 items, not 5: ตั้งค่า has no page today.
+// One test per row of #6542 §9, with the notice-toast row. Restated for #6552: the 5-item map adds ตั้งค่า
+// (`/staff/settings`, shown when any of `settingsRead`, `AlertSettingsSave`, `RateAlertSettingsSave` is held).
 // `staff-nav.ts` loads through import.meta.glob, so tsc passes before it exists and the tests go red on a wrong value.
 //
 // jsdom has no layout and no media queries, so what shows at a width comes from shell.css's own rules: display,
@@ -18,21 +19,38 @@ import { warmModules } from '../testing/warm-modules';
 const CUSTOMER_MARKUP =
   '<div class="xc-shell xc-theme"><header class="xc-shell-header" data-menu-open="false"><div id="xc-shell-menu" class="xc-shell-panel" data-open="false"></div><h1 class="xc-shell-title">คีย์ย้อนหลัง</h1><div role="group" class="xc-lang-switch"><button type="button" aria-pressed="true" aria-label="เปลี่ยนภาษาเป็น ไทย">ไทย</button><button type="button" aria-pressed="false" aria-label="เปลี่ยนภาษาเป็น English">EN</button></div></header><fieldset class="xc-lock" style="border:0;padding:0;margin:0;min-width:0"><main class="xc-shell-main"><section id="the-content"></section></main></fieldset><div class="xc-shell-footer"><footer><div><span>v1.0.0<!----> · 0123456<!----> · staging</span> <span>2026-10-08T01:02:03Z</span></div></footer></div></div>';
 
-type StaffNavItem = { key: string; href: string; permission?: string; icon: string };
+type StaffNavItem = {
+  key: string;
+  href: string;
+  permission?: string;
+  visible?: (permissions: readonly string[]) => boolean;
+  icon: string;
+};
 type StaffNavModule = {
   STAFF_NAV?: StaffNavItem[];
   visibleStaffNav?: (permissions: readonly string[]) => StaffNavItem[];
+  hasVisibleSettings?: (permissions: readonly string[]) => boolean;
 };
 
 const staffNavModule = import.meta.glob<StaffNavModule>('./staff-nav.ts', { eager: true })['./staff-nav.ts'];
 
-const MAP = [
+const SETTINGS_PERMISSIONS = ['settingsRead', 'AlertSettingsSave', 'RateAlertSettingsSave'] as const;
+
+const FOUR_ITEMS = [
   { key: 'shell.nav.counter', href: '/desk', permission: 'ExchangeTransact', icon: '⇄', th: 'เคาน์เตอร์' },
   { key: 'shell.nav.backdated', href: '/desk/backdated', permission: 'exchangeBackdate', icon: '↺', th: 'คีย์ย้อนหลัง' },
   { key: 'shell.nav.vault', href: '/#cash', permission: 'CashManage', icon: '▣', th: 'ตู้เซฟ' },
   { key: 'shell.nav.reports', href: '/#reports', permission: 'CompatRead', icon: '≡', th: 'รายงาน' },
 ];
-const ALL_PERMISSIONS = ['SignedIn', ...MAP.map((i) => i.permission)];
+const SETTINGS_ITEM = {
+  key: 'shell.nav.settings',
+  href: '/staff/settings',
+  permission: undefined,
+  icon: '⚙',
+  th: 'ตั้งค่า',
+};
+const MAP = [...FOUR_ITEMS, SETTINGS_ITEM];
+const ALL_PERMISSIONS = ['SignedIn', ...FOUR_ITEMS.map((i) => i.permission), ...SETTINGS_PERMISSIONS];
 
 const READY = {
   status: 'ok',
@@ -305,16 +323,21 @@ afterEach(() => {
 
 // ── §9 ───────────────────────────────────────────────────────────────────────
 
-describe('StaffNav (OL-6 L5, #6542 §2b, §3 item 1)', () => {
+describe('StaffNav (OL-6 L5, #6542 §2b, §3 item 1, restated for #6552)', () => {
   it('STAFF_NAV is the §2b map, in order', () => {
     const list = (staffNavModule?.STAFF_NAV ?? []).map(({ key, href, permission, icon }) => ({ key, href, permission, icon }));
     expect(list).toEqual(MAP.map(({ key, href, permission, icon }) => ({ key, href, permission, icon })));
+    expect(staffNavModule?.STAFF_NAV?.[4]?.visible).toBeTypeOf('function');
+    expect(staffNavModule?.STAFF_NAV?.[4]?.visible).toBe(staffNavModule?.hasVisibleSettings);
   });
 
   it('visibleStaffNav returns the items whose permission is held, in order', () => {
     const visible = (held: readonly string[]) => (staffNavModule?.visibleStaffNav?.(held) ?? []).map((i) => i.href);
     expect(visible(ALL_PERMISSIONS)).toEqual(MAP.map((i) => i.href));
     expect(visible(['CompatRead', 'ExchangeTransact'])).toEqual(['/desk', '/#reports']);
+    for (const perm of SETTINGS_PERMISSIONS) {
+      expect(visible([perm]), perm).toEqual(['/staff/settings']);
+    }
     expect(visible([])).toEqual([]);
   });
 
@@ -333,10 +356,11 @@ describe('StaffNav (OL-6 L5, #6542 §2b, §3 item 1)', () => {
   });
 });
 
-describe('the staff nav in AppShell (OL-6 L5, #6542 §9)', () => {
+describe('the staff nav in AppShell (OL-6 L5, #6542 §9, restated for #6552)', () => {
   it.each([
     ['/desk/backdated', '/desk/backdated'],
     ['/desk', '/desk'],
+    ['/staff/settings', '/staff/settings'],
     ['/desk/queue', null],
   ])('staff session, no nav, all permissions, on %s: the items in order, and the current page has aria-current', async (path, current) => {
     window.history.pushState({}, '', path);
@@ -353,13 +377,30 @@ describe('the staff nav in AppShell (OL-6 L5, #6542 §9)', () => {
     expect(shown(rules, navLinks(host)[0]!, 'wide'), 'inline above 760px').toBe(true);
   });
 
-  it.each(MAP.map((i) => [i.th, i] as const))('permissions missing the one for %s: that item is absent', async (_th, item) => {
+  it.each(FOUR_ITEMS.map((i) => [i.th, i] as const))('permissions missing the one for %s: that item is absent', async (_th, item) => {
     const held = ALL_PERMISSIONS.filter((p) => p !== item.permission);
     stubNetwork(meWith(held));
     const host = mount(await load());
     await signedIn(host);
     await settle();
     expect(hrefs(host)).toEqual(MAP.filter((i) => i !== item).map((i) => i.href));
+  });
+
+  it('permissions missing all settings permissions: ตั้งค่า is absent; any single settings permission shows ตั้งค่า', async () => {
+    const withoutSettings = ['SignedIn', ...FOUR_ITEMS.map((i) => i.permission)];
+    stubNetwork(meWith(withoutSettings));
+    const host = mount(await load());
+    await signedIn(host);
+    await settle();
+    expect(hrefs(host)).toEqual(FOUR_ITEMS.map((i) => i.href));
+
+    for (const perm of SETTINGS_PERMISSIONS) {
+      stubNetwork(meWith(['SignedIn', perm]));
+      const h = mount(await load());
+      await signedIn(h);
+      await settle();
+      expect(hrefs(h), perm).toEqual(['/staff/settings']);
+    }
   });
 
   it('a screen passes nav: its nav is used, no StaffNav', async () => {

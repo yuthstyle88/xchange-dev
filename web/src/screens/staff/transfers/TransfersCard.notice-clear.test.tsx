@@ -178,6 +178,16 @@ function q<T extends Element = HTMLElement>(sel: string): T | null {
   return host.querySelector<T>(sel);
 }
 
+async function addBySearch(form: Element, code: string) {
+  const searchInput = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  if (!searchInput) return;
+  typeInto(searchInput, code.toLowerCase());
+  await settle();
+  const opt = form.querySelector<HTMLButtonElement>(`[data-testid="currency-option"][data-currency="${code}"]`);
+  opt?.click();
+  await settle();
+}
+
 function must<T extends Element = HTMLElement>(sel: string): T {
   const el = q<T>(sel);
   expect(el, sel).not.toBeNull();
@@ -369,9 +379,7 @@ describe("#2725: Staff Transfers notice clearing on failure", () => {
     await settle();
     await vi.waitFor(() => expect(q(tid("transfer-form"))).not.toBeNull());
     const form = must<HTMLFormElement>(tid("transfer-form"));
-    await vi.waitFor(() =>
-      expect(form.querySelector('input[data-denomination-id="21"]')).not.toBeNull(),
-    );
+    await addBySearch(form, "USD");
 
     typeInto(must<HTMLSelectElement>(tid("transfer-kind")), "EXTERNAL_OUT");
     await settle();
@@ -445,9 +453,7 @@ describe("#2725: Staff Transfers notice clearing on failure", () => {
     await settle();
     await vi.waitFor(() => expect(q(tid("transfer-form"))).not.toBeNull());
     const form = must<HTMLFormElement>(tid("transfer-form"));
-    await vi.waitFor(() =>
-      expect(form.querySelector('input[data-denomination-id="21"]')).not.toBeNull(),
-    );
+    await addBySearch(form, "USD");
 
     typeInto(must<HTMLSelectElement>(tid("transfer-kind")), "EXTERNAL_OUT");
     await settle();

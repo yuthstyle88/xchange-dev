@@ -1,6 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
-import type { BranchCurrenciesData, BranchCurrencyRow } from '../../../shared/api/generated/branch_currencies';
 import type { CashLineInput, CountSubmitInput } from '../../../shared/api/generated/cash';
 import type { CashCountRow, CashCountTotalRow } from '../../../shared/api/generated/cash_counts';
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
@@ -11,6 +10,7 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { checkInteger } from '../../../shared/ui/bounded';
 import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { useBranchCountable } from '../../../shared/ui/currency-count/useBranchCountable';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { yieldQueueCard } from '../../../shared/ui/queue-card-yield';
 import type { StaffCtx } from '../cards';
@@ -58,7 +58,7 @@ export function CountForm(p: CountFormProps): JSX.Element {
   const submitCmd = command<CountSubmitInput, { id: string }>(api, 'POST', '/api/cash-counts');
 
   const [ownDenominations, setOwnDenominations] = createSignal<DenominationRow[]>([]);
-  const [countable, setCountable] = createSignal<string[] | undefined>(undefined);
+  const countable = useBranchCountable(api, () => p.ctx.me.branchId);
   const [myShift, setMyShift] = createSignal<MyShift | null>(null);
   const [myShiftLoaded, setMyShiftLoaded] = createSignal<boolean>(p.kind !== 'CLOSE');
   const [quantities, setQuantities] = createSignal<Record<number, string>>({});
@@ -74,20 +74,6 @@ export function CountForm(p: CountFormProps): JSX.Element {
   });
 
   onMount(() => {
-    void (async () => {
-      try {
-        const res = await api.view<BranchCurrenciesData | BranchCurrencyRow[]>('branch_currencies', {
-          branch: p.ctx.me.branchId,
-        });
-        const data = res.data;
-        const rows = Array.isArray(data) ? data : data?.rows;
-        if (Array.isArray(rows)) {
-          setCountable(rows.map((r) => r.code));
-        }
-      } catch {
-        setCountable(undefined);
-      }
-    })();
     if (!p.denominations) {
       void (async () => {
         try {

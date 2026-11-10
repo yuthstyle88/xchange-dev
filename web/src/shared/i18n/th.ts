@@ -9,6 +9,7 @@ export const th = {
   'shell.nav.backdated': 'คีย์ย้อนหลัง',
   'shell.nav.vault': 'ตู้เซฟ',
   'shell.nav.reports': 'รายงาน',
+  'shell.nav.settings': 'ตั้งค่า',
   'shell.account.branch': 'สาขา {branch}',
   'shell.account.signOut': 'ออกจากระบบ',
   'shell.account.switchBranch': 'สลับสาขา',

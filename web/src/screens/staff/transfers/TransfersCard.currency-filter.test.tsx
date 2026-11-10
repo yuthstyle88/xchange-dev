@@ -156,59 +156,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+async function addBySearch(form: Element, code: string) {
+  const searchInput = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  if (!searchInput) return;
+  typeInto(searchInput, code.toLowerCase());
+  await settle();
+  const opt = form.querySelector<HTMLButtonElement>(`[data-testid="currency-option"][data-currency="${code}"]`);
+  opt?.click();
+  await settle();
+}
+
 describe('TransfersCard currency filter & totals (F49 / #6712)', () => {
-  it('select[name="transferCurrency"] lists currencies present in denominations() with THB first when present', async () => {
+  it('row 1 of item 9: Adding currencies keeps each currency’s quantities in the POST', async () => {
     stub();
     await mount();
     const form = await openCreate();
-    const select = form.querySelector<HTMLSelectElement>('select[name="transferCurrency"]');
-    expect(select).not.toBeNull();
-    const options = Array.from(select!.options).map((o) => o.value);
-    // DENOMS has EUR, THB, USD. With THB first:
-    expect(options).toEqual(['THB', 'EUR', 'USD']);
-    expect(select!.value).toBe('THB');
-  });
 
-  it("only the chosen currency's rows are shown", async () => {
-    stub();
-    await mount();
-    const form = await openCreate();
-    const select = form.querySelector<HTMLSelectElement>('select[name="transferCurrency"]')!;
-
-    const thbRow = form.querySelector<HTMLDivElement>('input[data-denomination-id="11"]')!.closest<HTMLElement>('[data-denomination-row]')!;
-    const usdRow = form.querySelector<HTMLDivElement>('input[data-denomination-id="21"]')!.closest<HTMLElement>('[data-denomination-row]')!;
-
-    // Initially THB is selected: THB shown, USD hidden
-    expect(thbRow.style.display).toBe('');
-    expect(thbRow.hasAttribute('hidden')).toBe(false);
-    expect(usdRow.style.display).toBe('none');
-    expect(usdRow.hasAttribute('hidden')).toBe(true);
-
-    // Switch to USD
-    typeInto(select, 'USD');
-    await settle();
-
-    expect(thbRow.style.display).toBe('none');
-    expect(thbRow.hasAttribute('hidden')).toBe(true);
-    expect(usdRow.style.display).toBe('');
-    expect(usdRow.hasAttribute('hidden')).toBe(false);
-  });
-
-  it('row 1 of item 9: Switching currency keeps the other currency’s quantities in the POST', async () => {
-    stub();
-    await mount();
-    const form = await openCreate();
-    const select = form.querySelector<HTMLSelectElement>('select[name="transferCurrency"]')!;
-
-    // Select USD and type quantity 2
-    typeInto(select, 'USD');
-    await settle();
+    // Add USD and type quantity 2
+    await addBySearch(form, 'USD');
     const usdInput = form.querySelector<HTMLInputElement>('input[data-denomination-id="21"]')!;
     typeInto(usdInput, '2');
 
-    // Switch back to THB and type quantity 3
-    typeInto(select, 'THB');
-    await settle();
+    // Type THB quantity 3
     const thbInput = form.querySelector<HTMLInputElement>('input[data-denomination-id="11"]')!;
     typeInto(thbInput, '3');
 
@@ -280,14 +249,6 @@ describe('TransfersCard currency filter & totals (F49 / #6712)', () => {
     expect(sent.find((s) => s.url === '/api/cash-transfers')).toBeUndefined();
   });
 
-  it('row 3 of item 9: No denominations → no select', async () => {
-    stub([]);
-    await mount();
-    const form = await openCreate();
-    const select = form.querySelector('select[name="transferCurrency"]');
-    expect(select).toBeNull();
-  });
-
   it('row 4 of item 9: Totals use exact decimals, not floats: 0.25 × 3 is 0.75', async () => {
     stub();
     await mount();
@@ -302,9 +263,7 @@ describe('TransfersCard currency filter & totals (F49 / #6712)', () => {
     expect(totalEl.textContent).toBe('THB 0.75');
 
     // 0.10 × 3 is 0.30000000000000004 in binary float; exact decimals give 0.3
-    const select = form.querySelector<HTMLSelectElement>('select[name="transferCurrency"]')!;
-    typeInto(select, 'USD');
-    await settle();
+    await addBySearch(form, 'USD');
     typeInto(form.querySelector<HTMLInputElement>('input[data-denomination-id="23"]')!, '3');
     await settle();
     expect(totalEl.textContent).toBe('THB 0.75 · USD 0.3');
@@ -314,7 +273,6 @@ describe('TransfersCard currency filter & totals (F49 / #6712)', () => {
     stub();
     await mount();
     const form = await openCreate();
-    const select = form.querySelector<HTMLSelectElement>('select[name="transferCurrency"]')!;
     const totalEl = form.querySelector<HTMLElement>('[data-testid="transfer-total"]')!;
 
     // Type 2 x 1000 THB
@@ -322,9 +280,8 @@ describe('TransfersCard currency filter & totals (F49 / #6712)', () => {
     typeInto(thb1000, '2');
     await settle();
 
-    // Switch to USD and type 3 x 50 USD
-    typeInto(select, 'USD');
-    await settle();
+    // Add USD and type 3 x 50 USD
+    await addBySearch(form, 'USD');
     const usd50 = form.querySelector<HTMLInputElement>('input[data-denomination-id="22"]')!;
     typeInto(usd50, '3');
     await settle();

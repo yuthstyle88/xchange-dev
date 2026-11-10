@@ -165,9 +165,18 @@ function typeInto(
 }
 
 function qtyInput(form: Element, id: number): HTMLInputElement {
-  const i = form.querySelector<HTMLInputElement>(
+  let i = form.querySelector<HTMLInputElement>(
     `input[data-denomination-id="${id}"]`,
   );
+  if (!i && id === 21) {
+    const searchInput = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+    if (searchInput) {
+      typeInto(searchInput, 'usd');
+      const opt = form.querySelector<HTMLButtonElement>('[data-testid="currency-option"][data-currency="USD"]');
+      opt?.click();
+      i = form.querySelector<HTMLInputElement>(`input[data-denomination-id="${id}"]`);
+    }
+  }
   expect(i, `a quantity input for denomination ${id}`).not.toBeNull();
   return i!;
 }
@@ -189,9 +198,11 @@ async function save() {
 }
 
 function clickCancel(form: Element) {
-  const cancelBtn = [...form.querySelectorAll<HTMLButtonElement>('button')].find(
-    (b) => b.type === 'button',
-  );
+  const cancelBtn =
+    form.querySelector<HTMLButtonElement>('.xc-transfers-actions button[type="button"]') ??
+    [...form.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.type === 'button',
+    );
   expect(cancelBtn).toBeDefined();
   cancelBtn!.click();
 }
