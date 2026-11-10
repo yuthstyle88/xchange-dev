@@ -138,12 +138,13 @@ describe('QueueDisplay: connection and stale-data status (#6556)', () => {
 
   it('First poll pending: shows Connecting… directly under .queue-display-toolbar and no empty text', async () => {
     let resolvePoll!: (r: Response) => void;
-    displayAnswers = [
+    hostAnswers = [
       () =>
         new Promise<Response>((res) => {
           resolvePoll = res;
         }),
     ];
+    displayAnswers = [() => json(200, { version: 1, changed: true, data: { called: [], recent: [] } })];
     mount();
     const toolbar = host.querySelector('.queue-display-toolbar');
     const st = statusEl();
@@ -155,7 +156,7 @@ describe('QueueDisplay: connection and stale-data status (#6556)', () => {
     expect(st?.textContent).toBe('Connecting…');
     expect(emptyEls()).toHaveLength(0);
 
-    resolvePoll(json(200, { version: 1, changed: true, data: { called: [], recent: [] } }));
+    resolvePoll(json(200, { org: 'ORG_1' }));
     await tick(0);
     expect(st?.getAttribute('data-connection')).toBe('ok');
     expect(st?.textContent).toBe('');

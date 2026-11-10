@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { ApiClient } from '../../../shared/api/client';
 import { readHostOrg } from '../../../shared/api/public-host';
+import { formatBangkokDateTime } from '../../../shared/format/bangkok-time';
 import { screenT } from '../../../shared/i18n';
 import { chime, soundOn, toggleSound } from '../../../shared/queue/queue-sound';
 import { FullscreenButton } from '../../customer/rate-display/FullscreenButton';
@@ -9,6 +10,21 @@ import '../../../shared/ui/xc-theme.css';
 import { en, th, zh } from './i18n';
 
 const tr = screenT('customer.queue-display', { th, en, zh });
+
+export type QueueConnectionState = 'loading' | 'ok' | 'stale';
+
+export function connectionAfter(
+  prev: QueueConnectionState,
+  outcome: 'ok' | 'fail',
+  failures: number,
+): { connection: QueueConnectionState; failures: number } {
+  if (outcome === 'ok') return { connection: 'ok', failures: 0 };
+  const nextFailures = failures + 1;
+  return {
+    connection: nextFailures >= 2 ? 'stale' : prev,
+    failures: nextFailures,
+  };
+}
 
 export interface QueueDisplayProps {
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -34,10 +50,14 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
   const [recent, setRecent] = createSignal<
     Array<{ displayNumber: string; status: string; calledAt: string }>
   >([]);
+  const [connection, setConnection] = createSignal<QueueConnectionState>('loading');
+  const [lastOk, setLastOk] = createSignal<Date | null>(null);
 
   const api = new ApiClient(props.fetch);
   let org: string | null = null;
   let sinceVersion: number | null = null;
+  let failures = 0;
+  let disposed = false;
 
   const branch = () => branchFromSearch(props.search);
 
@@ -48,7 +68,7 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
         org = await readHostOrg(api);
       }
       const code = branch();
-      if (!code) return;
+      if (!code || disposed) return;
       const base = `/api/public/orgs/${encodeURIComponent(org)}/branches/${encodeURIComponent(code)}/queue-display`;
       const url = sinceVersion !== null ? `${base}?since=${sinceVersion}` : base;
       const body = await api.publicGet<{
@@ -59,6 +79,7 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
           recent?: Array<{ displayNumber?: string; status?: string; calledAt?: string }>;
         };
       }>(url);
+      if (disposed) return;
       if (typeof body.version === 'number') {
         sinceVersion = body.version;
       }
@@ -74,8 +95,15 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
           chime();
         }
       }
+      const next = connectionAfter(connection(), 'ok', failures);
+      failures = next.failures;
+      setLastOk(new Date());
+      setConnection(next.connection);
     } catch {
-      // keep last good render
+      if (disposed) return;
+      const next = connectionAfter(connection(), 'fail', failures);
+      failures = next.failures;
+      setConnection(next.connection);
     }
   };
 
@@ -85,8 +113,24 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
     const id = setInterval(() => {
       void poll();
     }, ms);
-    onCleanup(() => clearInterval(id));
+    onCleanup(() => {
+      disposed = true;
+      clearInterval(id);
+    });
   });
+
+  const statusText = () => {
+    const conn = connection();
+    if (conn === 'loading') return tr('connecting');
+    if (conn === 'stale') {
+      const ok = lastOk();
+      const suffix = ok
+        ? `${tr('lastUpdated')} ${formatBangkokDateTime(ok.toISOString()).slice(-5)}`
+        : tr('neverUpdated');
+      return `${tr('stale')} ${suffix}`;
+    }
+    return '';
+  };
 
   return (
     <main class="queue-display-screen xc-theme" data-branch={branch() ?? ''}>
@@ -102,12 +146,24 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
         </Show>
         <FullscreenButton label={tr('fullscreen')} />
       </div>
+      <div
+        class="queue-display-status"
+        role="status"
+        aria-live="polite"
+        data-connection={connection()}
+      >
+        {statusText()}
+      </div>
       <div class="queue-display-grid">
         <section class="queue-display-section">
           <h1 class="queue-display-heading">{tr('nowCalling')}</h1>
           <Show
             when={called().length > 0}
-            fallback={<div class="queue-display-empty">{tr('empty')}</div>}
+            fallback={
+              <Show when={connection() === 'ok'}>
+                <div class="queue-display-empty">{tr('empty')}</div>
+              </Show>
+            }
           >
             <div class="queue-display-list">
               <For each={called()}>
@@ -129,7 +185,11 @@ export function QueueDisplay(props: QueueDisplayProps): JSX.Element {
           <h2 class="queue-display-heading">{tr('recentCalled')}</h2>
           <Show
             when={recent().length > 0}
-            fallback={<div class="queue-display-empty">{tr('empty')}</div>}
+            fallback={
+              <Show when={connection() === 'ok'}>
+                <div class="queue-display-empty">{tr('empty')}</div>
+              </Show>
+            }
           >
             <div class="queue-display-list">
               <For each={recent()}>

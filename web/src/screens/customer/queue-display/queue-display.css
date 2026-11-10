@@ -35,6 +35,20 @@ body:has(.queue-display-screen) {
   background: var(--xc-gray-75);
 }
 
+.queue-display-status {
+  padding: 0.75rem 1.25rem;
+  font-size: var(--xc-text-lg);
+  font-weight: 600;
+  background: var(--xc-danger-soft);
+  color: var(--xc-danger);
+  border: 1px solid var(--xc-danger);
+  border-radius: var(--xc-radius-md);
+}
+
+.queue-display-status:empty {
+  display: none;
+}
+
 .queue-display-grid {
   display: grid;
   grid-template-columns: 2fr 1fr;
