@@ -211,7 +211,10 @@ async fn a_branch_manager_gets_a_code_good_for_60_seconds_and_one_row() {
         .find(|p| p.key == "MANAGER")
         .expect("MANAGER");
     assert_eq!(issued_by, manager.id);
-    assert!(!stored.contains(&code.replace('-', "")), "the code is not stored as typed");
+    assert!(
+        !stored.contains(&code.replace('-', "")),
+        "the code is not stored as typed"
+    );
     room.finish().await;
 }
 
@@ -248,7 +251,12 @@ async fn a_revoked_or_unknown_counter_is_refused() {
     let room = Room::open().await;
     for agent in [REVOKED, UNKNOWN] {
         let answer = room.issue("MANAGER", agent).await;
-        assert_eq!(error_of(&answer), "COUNTER_REVOKED", "{agent}: {}", answer.text);
+        assert_eq!(
+            error_of(&answer),
+            "COUNTER_REVOKED",
+            "{agent}: {}",
+            answer.text
+        );
     }
     assert_eq!(room.rows().await, 0);
     room.finish().await;

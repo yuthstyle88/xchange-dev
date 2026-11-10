@@ -10,6 +10,7 @@ import type {
   CounterUnlockIssueOutput,
 } from '../../shared/api/generated/counter_unlock_issue';
 import { keyedWrite } from '../../shared/api/keyed-write';
+import { formatBangkokDateTime } from '../../shared/format/bangkok-time';
 import { screenT } from '../../shared/i18n';
 import { wordedError } from '../../shared/i18n/worded-error';
 import { getXcCounter } from '../../shared/xc-counter/bridge';
@@ -65,7 +66,7 @@ export function CounterUnlock(props: {
     }
   };
 
-  const until = (iso: string) => new Date(iso).toLocaleTimeString('th-TH');
+  const until = (iso: string) => formatBangkokDateTime(iso);
 
   return (
     <>
