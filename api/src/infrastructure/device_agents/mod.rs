@@ -12,3 +12,4 @@ pub mod pg_agent_repository;
 pub mod pg_counter_store;
 pub mod report;
 pub mod session_binding;
+pub mod unlock_tokens;

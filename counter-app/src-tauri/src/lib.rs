@@ -1,5 +1,5 @@
 //! XC Counter: a thin Mac shell around the staff desk. It draws no screen of its own beyond the
-//! pair-code field and the manager-PIN exit; it adds only what a browser cannot do: device
+//! pair-code field and the manager-code exit; it adds only what a browser cannot do: device
 //! access, kiosk lock and counter identity (`docs/design/xc-counter-app.md` §2).
 //!
 //! The skeleton owns this file, `Cargo.toml`, `tauri.conf.json`, `capabilities/` and
@@ -100,8 +100,8 @@ pub fn on_info(prev_locked: bool, answer: InfoAnswer) -> InfoAction {
 /// Applies the server's `kioskLock` answer to `window`.
 ///
 /// Debug builds never lock (`#[cfg(debug_assertions)]`), so a developer or a manual hardware
-/// check on a dev build can always leave. Until the manager-PIN exit route is decided (#564),
-/// the way out of a locked release build is the owner turning `kioskLock` off on
+/// check on a dev build can always leave. A locked release build leaves with a manager's one-time
+/// code (`ui/exit.html`, design §8.8), or by the owner turning `kioskLock` off on
 /// Admin → เคาน์เตอร์, which applies within 60 s.
 fn apply_lock(window: &tauri::WebviewWindow, lock: bool) -> Result<(), kiosk::ExitError> {
     if lock {

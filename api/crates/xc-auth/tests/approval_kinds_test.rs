@@ -41,10 +41,11 @@ fn seed_approval_kinds_are_the_nine_in_permission_all_with_no_module() {
         "APPROVAL_KINDS is §11.9's nine plus §13.3's ApproveLedgerAdjustment (LA-1)"
     );
     // Restated for #6004 (user-management-rbac.md §11.11): Permission::ALL grows 65 -> 67 (SettingsRead, BranchSettingsSave).
+    // Restated for XC Counter kiosk exit (#6569): 68 -> 69 (CounterUnlock).
     assert_eq!(
         Permission::ALL.len(),
-        68,
-        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), 63 (staff corrections AttendanceCloseFor), 64 (LA-1), 65 (#5733 PricingFormulaSave), 67 (#6004 SettingsRead, BranchSettingsSave), 68 (backdated keying ExchangeBackdate)"
+        69,
+        "Permission::ALL grows 52 -> 61, then 62 (BQ-7), 63 (staff corrections AttendanceCloseFor), 64 (LA-1), 65 (#5733 PricingFormulaSave), 67 (#6004 SettingsRead, BranchSettingsSave), 68 (backdated keying ExchangeBackdate), 69 (#6569 CounterUnlock)"
     );
     for p in APPROVAL_KINDS {
         assert_eq!(
@@ -90,7 +91,8 @@ fn seed_version_4_adds_the_nine() {
     // staff corrections SC-D2: AttendanceCloseFor at 7; LA-1: ApproveLedgerAdjustment at 8; #5733: PricingFormulaSave at 9.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
     for p in APPROVAL_KINDS {
         // LA-1 (ledger-inventory.md §13.3): the tenth kind enters at version 8, not with §11.9's nine.
         let want = if p == P::ApproveLedgerAdjustment {

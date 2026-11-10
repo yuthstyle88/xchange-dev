@@ -31,7 +31,7 @@ It owns the counter's devices: the drawer, and the scanner when the owner says t
 
 **A thin shell, never a second UI (owner: *"เราใช้ แอฟ ครอบแล้วมันง่าย"*, *"แต่pos ผมทำ แอป เพียว เลย มันเลยยาก"*).**
 `pos108-terminal` rebuilt every screen natively in Slint, and that made it hard. XC Counter draws **no screen of its own** beyond
-the pair-code field and the manager-PIN exit. Every desk and kiosk screen stays the web app, so there is one codebase and one look
+the pair-code field and the manager-code exit (§8.8). Every desk and kiosk screen stays the web app, so there is one codebase and one look
 (`xchange-one-look.md`). The app adds only what a browser cannot do: device access, kiosk lock and counter identity.
 From `pos108-terminal` it reuses only the release machinery: signed bundles and self-update.
 
@@ -53,7 +53,7 @@ From `pos108-terminal` it reuses only the release machinery: signed bundles and 
 - **Kiosk lock**, owner-set per counter (§4):
   - full-screen with no window chrome;
   - Cmd+Q, Cmd+W and Cmd+Tab are intercepted while locked;
-  - an "ออก" action needs a manager PIN, checked by the server.
+  - leaving needs a one-time code a manager issues at the desk, checked by the server (§8.8).
 - **Pairing reuses the agent's.**
   - On first run the app shows a pair-code field, `POST /api/device-agent/pair`, exactly as today.
   - The token is kept in the macOS Keychain, never in a file.
@@ -224,7 +224,60 @@ The skeleton writes the §5 migration, so CA-0 and CA-1 can run their DB tests i
 ### 8.7 Rulings made while building (sub-controller claude/4beadaaf; each one is on its ticket)
 - **The kiosk lock follows the server's answer only** (#6403). "Not set = lock on" is a rule about the owner's setting, so it applies once `GET /api/device-agent/info` has answered. With no answer there is no counter identity, so the app does not lock, and a failed read never unlocks. Debug builds never lock.
 - **A 401 is an answer, not a failed read** (#6413). A revoked counter unlocks, stops its runner and shows the pair page.
-- **The way out of a locked release build,** until the exit route is decided (#564 issuecomment-6676949646), is the owner turning `kioskLock` off on Admin → เคาน์เตอร์. The app applies it within 60 s.
+- **The way out of a locked release build** is a manager's one-time code (§8.8), or the owner turning `kioskLock` off on Admin → เคาน์เตอร์, which the app applies within 60 s.
 - **Revoke also fails the job `LEASED` to the revoked counter,** whatever its target (#6373).
 - **`branchCounterSave` writes one audit row** with each setting's before and after values (#6414).
 - **The navigation allow-list is the measured desk and sign-in pages** (`/desk…`, `/login`, `/staff/desk`). The IPC capability stays `/desk*` and `/kiosk-staff*` (#6377).
+
+### 8.8 Leaving the kiosk lock (xchange#6569)
+Option A, approved by the owner on PR 6426's thread: a manager or the owner issues a short-lived code at the desk, and the
+counter's app asks the server to accept it. There is no PIN. The owner's decisions on #6569 (2026-11-09 08:09 ICT, "อนุมัติ"):
+a `counter_unlock_tokens` table for one-time use, `Permission::CounterUnlock` for manager and owner only, and a 60 s lifetime.
+
+- **The code is a random one-time secret, not a signed token.** The server already holds a row per code, because one-time use
+  needs one. So it judges the code by looking it up, and a signature would add nothing. The code has the pairing code's shape
+  (`XXXXX-XXXXX`, 50 bits of Crockford base32, `DeviceSecret::new_pairing_code`), so staff type it, dash and case optional.
+  Only its hash is stored (`DeviceSecret::code_hash`), never the code.
+- **Issue:** `POST /api/v3/commands/counter_unlock_issue {agentId}` → `{code, expiresAt}`. The policy row is
+  `areas/counter_unlock.rs` (`EntryPath::Rpc`, `counterUnlockIssue`, `Permission::CounterUnlock`). The counter must be live
+  (`COUNTER_REVOKED`) and in the caller's session branch (`COUNTER_OTHER_BRANCH`), the same checks as `deskBindCounter`.
+- **Use:** `POST /api/device-agent/kiosk-exit {code}` under the counter's agent token. One `UPDATE … WHERE agent_id = caller
+  AND code_hash = … AND redeemed_at IS NULL AND expires_at > now`: 204 when it changed a row, else 403 `UNLOCK_REFUSED`, so
+  two requests cannot both use a code. A code issued for counter A does nothing on counter B. 401 as `claim`.
+- **The app** (`kiosk::exit_with_pin`, which keeps its name and argument; the value is the code) unlocks only on 204. A 403
+  is `ExitError::Refused`; no answer is `ExitError::Server`, and the lock stays on. It never judges a code itself.
+- **The desk** (`web/src/screens/desk/CounterUnlock.tsx`): inside the app, a link to the app's `exit.html`; for a holder of
+  `counterUnlock`, a panel that lists the branch's counters (`branch_counters`) and shows the issued code with its expiry.
+- **Audit:** the row is the record: who issued it (`issued_by`), for which counter, when, and when it was used
+  (`redeemed_at`). A refused use is logged with the counter's id and never the code.
+
+```mermaid
+classDiagram
+    class CounterUnlockIssueCommand {
+        NAME = "counterUnlockIssue"
+        run_as(caller, agentId) CounterUnlockIssueOutput
+    }
+    class PgUnlockTokens {
+        issue_in(tx, agent_id, issued_by, now) IssuedCode
+        redeem(agent_id, code, now) bool
+    }
+    class IssuedCode {
+        code: String
+        expires_at: DateTime
+    }
+    class kiosk_exit_handler {
+        POST /api/device-agent/kiosk-exit
+    }
+    class kiosk {
+        exit_with_pin(window, server, tokens, pin)
+        redeem(server, tokens, code)
+    }
+    class CounterUnlock {
+        branchId, canIssue
+    }
+    CounterUnlock ..> CounterUnlockIssueCommand : counterUnlockIssue
+    CounterUnlockIssueCommand --> PgUnlockTokens : issue_in
+    PgUnlockTokens --> IssuedCode
+    kiosk ..> kiosk_exit_handler : agent token + code
+    kiosk_exit_handler --> PgUnlockTokens : redeem
+```

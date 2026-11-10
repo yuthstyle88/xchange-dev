@@ -149,7 +149,8 @@ async fn v1_a_version_4_database_gains_shift_close_certify_for_executive_and_adm
     // BQ-7 (binding quote) raised it to 6, staff corrections SC-D2 to 7, LA-1 (ledger adjustment) to 8, #5733 to 9.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
     for role in RoleGrants::BUILT_IN {
         assert_eq!(
             stored_set(&db, role.as_str()).await,

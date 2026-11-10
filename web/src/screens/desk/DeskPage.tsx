@@ -3,6 +3,7 @@ import { screenT } from '../../shared/i18n';
 import { sharedSession, type SessionStore } from '../../shared/session/session';
 import '../../shared/ui/card.css';
 import './desk.css';
+import { CounterUnlock } from './CounterUnlock';
 import * as screenI18n from './i18n';
 import { LowCashBanner } from './LowCashBanner';
 import type { DeskStep, FrameStore } from './steps';
@@ -33,6 +34,7 @@ export function DeskPage<S extends FrameStore>(props: {
   const storeAny = props.store as any;
   const session = () => sessionProp ?? (storeAny?.path ? sharedSession() : undefined);
   const canBackdate = () => session()?.me()?.permissions?.includes('exchangeBackdate') ?? false;
+  const canUnlockCounter = () => session()?.me()?.permissions?.includes('counterUnlock') ?? false;
   const withEntry = props.store as S & {
     entry?: () => { banner: () => string; actions?: () => JSX.Element } | undefined;
     lowCash?: { low(): string[]; reload(): Promise<void> };
@@ -80,6 +82,7 @@ export function DeskPage<S extends FrameStore>(props: {
             {t('backdatedLink')}
           </a>
         </Show>
+        <CounterUnlock branchId={session()?.me()?.branch ?? undefined} canIssue={canUnlockCounter()} />
         {task?.nav()}
       </nav>
 

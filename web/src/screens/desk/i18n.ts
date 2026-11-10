@@ -52,6 +52,12 @@ export const th = {
   lowCashTitle: 'เงินในลิ้นชักเหลือน้อย ให้ผู้จัดการเบิก OD จากตู้เซฟ',
   lowCashCurrencies: 'สกุลที่เหลือน้อย: {currencies}',
   backdatedLink: 'คีย์ย้อนหลัง',
+  // XC Counter kiosk exit (docs/design/xc-counter-app.md §8.8)
+  counterExitLink: 'ออกจากโหมดล็อก',
+  counterUnlockHeading: 'รหัสปลดล็อกเคาน์เตอร์',
+  counterUnlockCounter: 'เคาน์เตอร์',
+  counterUnlockIssue: 'ออกรหัส',
+  counterUnlockCode: 'รหัส {code} ใช้ได้ครั้งเดียว ถึง {time}',
 } as const;
 
 export const en: Record<keyof typeof th, string> = {
@@ -105,4 +111,9 @@ export const en: Record<keyof typeof th, string> = {
   lowCashTitle: 'The drawer is running low. Ask the manager to move cash from the safe',
   lowCashCurrencies: 'Low on: {currencies}',
   backdatedLink: 'Backdated entry',
+  counterExitLink: 'Leave lock mode',
+  counterUnlockHeading: 'Counter unlock code',
+  counterUnlockCounter: 'Counter',
+  counterUnlockIssue: 'Issue code',
+  counterUnlockCode: 'Code {code}, one use, until {time}',
 };
