@@ -263,7 +263,7 @@ describe('CashFlows: branch switch (#2417)', () => {
   it("empties the create form on a switch and Create does not send A's destination or quantities", async () => {
     const { setBranch } = await mountOnA();
     choose('#transfer-to-branch', 'X');
-    const qty = root.querySelector<HTMLInputElement>('#transfer-line-1')!;
+    const qty = root.querySelector<HTMLInputElement>('input[data-denomination-id="1"]')!;
     qty.value = '5';
     qty.dispatchEvent(new Event('input', { bubbles: true }));
 
@@ -274,7 +274,7 @@ describe('CashFlows: branch switch (#2417)', () => {
     });
 
     expect(root.querySelector<HTMLSelectElement>('#transfer-to-branch')!.value).toBe('');
-    expect(root.querySelector<HTMLInputElement>('#transfer-line-1')!.value).toBe('');
+    expect(root.querySelector<HTMLInputElement>('input[data-denomination-id="1"]')!.value).toBe('');
 
     choose('#transfer-to-branch', 'Y');
     root.querySelector<HTMLButtonElement>('[data-action="create"]')!.click();

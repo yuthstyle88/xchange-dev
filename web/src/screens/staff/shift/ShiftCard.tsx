@@ -17,7 +17,9 @@ import type { HandoverPendingRow } from '../../../shared/api/generated/handovers
 import type { DenominationRow } from '../../../shared/api/generated/denominations';
 import type { HandoverReceiverRow } from '../../../shared/api/generated/handover_receivers';
 import type { OpenShiftChoice } from '../../../shared/api/generated/open_shift_choices';
-import { formatFaceValue } from '../../../shared/ui/currency-count/face-value';
+import type { MyShift } from '../../../shared/api/generated/my_shift';
+import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { useBranchCountable } from '../../../shared/ui/currency-count/useBranchCountable';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
@@ -63,6 +65,27 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
   const [pendingHandovers, setPendingHandovers] = createSignal<HandoverPendingRow[]>([]);
   const [denominations, setDenominations] = createSignal<DenominationRow[]>([]);
   const [handoverReceivers, setHandoverReceivers] = createSignal<HandoverReceiverRow[]>([]);
+  const countable = useBranchCountable(api, () => props.ctx.me.branchId);
+  const [myShift, setMyShift] = createSignal<MyShift | null>(null);
+
+  const loadMyShift = async () => {
+    try {
+      const res = await api.view<MyShift | null>('my_shift');
+      setMyShift(res.data ?? null);
+    } catch {
+      setMyShift(null);
+    }
+  };
+
+  const handoverLocked = (): string[] => {
+    const codes = ['THB'];
+    for (const b of myShift()?.balances ?? []) {
+      if (/[1-9]/.test(b.expected) && !codes.includes(b.code)) {
+        codes.push(b.code);
+      }
+    }
+    return codes;
+  };
 
   const [countKind, setCountKind] = createSignal<'OPEN' | 'CLOSE' | null>(null);
   const [showHandover, setShowHandover] = createSignal<boolean>(false);
@@ -176,6 +199,7 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
     setCountKind(null);
     setSelectedReceiver('');
     void loadHandoverReceivers();
+    void loadMyShift();
     if (denominations().length === 0) {
       void loadDenominations();
     }
@@ -577,36 +601,22 @@ export function ShiftCard(props: ShiftCardProps): JSX.Element {
               </For>
             </select>
           </div>
-          <div class="xc-shift-denoms">
-            <For each={denominations()}>
-              {(d) => (
-                <div data-denomination-row data-face-value={d.faceValue} class="xc-shift-denom-row">
-                  <span class="xc-shift-denom-label">
-                    <span class="xc-shift-denom-currency">{d.currency}</span>{' '}
-                    <span class="xc-shift-denom-val">{formatFaceValue(d.faceValue)}</span>
-                  </span>
-                  <input
-                    data-denomination-id={d.id}
-                    class="xc-shift-denom-input"
-                    type="text"
-                    inputMode="numeric"
-                    value={handoverQuantities()[d.id] ?? ''}
-                    onInput={(e) => {
-                      const v = e.currentTarget.value;
-                      setHandoverQuantities((prev) => ({ ...prev, [d.id]: v }));
-                    }}
-                    onChange={(e) => {
-                      const v = e.currentTarget.value;
-                      setHandoverQuantities((prev) => ({ ...prev, [d.id]: v }));
-                    }}
-                  />
-                  <Show when={handoverLineErrors()[d.id]}>
-                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
+          <CurrencyCount
+            denominations={denominations()}
+            countable={countable()}
+            locked={handoverLocked()}
+            quantities={handoverQuantities()}
+            setQuantity={(id, value) => {
+              setHandoverQuantities((prev) => ({ ...prev, [id]: value }));
+              setHandoverLineErrors((prev) => {
+                if (!(id in prev)) return prev;
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }}
+            lineErrors={handoverLineErrors()}
+          />
           <div class="xc-shift-form-actions">
             <button
               type="submit"

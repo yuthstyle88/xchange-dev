@@ -24,7 +24,7 @@ import { pendingWrite } from '../parts/pending-write';
 import { Toast } from '../parts/toast';
 import { QUEUE_CARD_PATH, queueCardUnchanged } from '../../../shared/testing/page-wide';
 import { menu } from './menu';
-import { en, th } from './i18n';
+import { th } from './i18n';
 
 const DENOMINATIONS = [
   makeDenominationRow({ id: 11, currency: 'USD', faceValue: '100', groupCode: 'G' }),
@@ -191,16 +191,16 @@ afterEach(async () => {
 });
 
 const form = (el: ParentNode) => el.querySelector<HTMLElement>('[data-section="new-transfer"]')!;
-const picker = (el: ParentNode) => form(el).querySelector<HTMLSelectElement>('select[name="lineCurrency"]');
-const box = (el: ParentNode, id: number) => form(el).querySelector<HTMLInputElement>(`input[data-denomination="${id}"]`)!;
-/** The box's own wrapper inside `.transfer-lines`: the element that is hidden or shown. */
-const line = (el: ParentNode, id: number) => {
-  let n: HTMLElement = box(el, id);
-  while (n.parentElement && !n.parentElement.classList.contains('transfer-lines')) n = n.parentElement;
-  return n;
-};
-const shownIds = (el: ParentNode) =>
-  DENOMINATIONS.map((d) => d.id).filter((id) => !line(el, id).hidden && line(el, id).closest('[hidden]') === null);
+const box = (el: ParentNode, id: number) => form(el).querySelector<HTMLInputElement>(`input[data-denomination-id="${id}"]`)!;
+
+async function addBySearch(el: ParentNode, code: string) {
+  const searchInput = form(el).querySelector<HTMLInputElement>('[data-testid="currency-search"]')!;
+  type(searchInput, code.toLowerCase());
+  await settle();
+  const opt = form(el).querySelector<HTMLButtonElement>(`[data-testid="currency-option"][data-currency="${code}"]`)!;
+  opt.click();
+  await settle();
+}
 
 function choose(select: HTMLSelectElement, value: string): void {
   select.value = value;
@@ -214,58 +214,23 @@ function type(input: HTMLInputElement, value: string): void {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-describe('admin-cash: the new-transfer form asks the currency first', () => {
-  it('CL-1 a currency picker lists each currency of the denominations once, in the server order, after a blank choice', async () => {
-    const el = await mount();
-    const p = picker(el);
-    expect(p, 'select[name="lineCurrency"] in the new-transfer form').not.toBeNull();
-    expect([...p!.options].map((o) => o.value)).toEqual(['', 'USD', 'EUR', 'THB']);
-    expect(p!.value).toBe('');
-  });
-
-  it('CL-2 before a currency is chosen no quantity box shows, though every box stays in the form', async () => {
-    const el = await mount();
-    expect(form(el).querySelectorAll('input[data-denomination]')).toHaveLength(4);
-    expect(shownIds(el)).toEqual([]);
-  });
-
-  it("CL-3 choosing USD shows USD's boxes only", async () => {
-    const el = await mount();
-    choose(picker(el)!, 'USD');
-    await settle();
-    expect(shownIds(el)).toEqual([11, 12]);
-    choose(picker(el)!, 'EUR');
-    await settle();
-    expect(shownIds(el)).toEqual([21]);
-  });
-
-  it('CL-4 a typed box stays shown and keeps its value after switching currency, and create sends every typed line', async () => {
+describe('admin-cash: the new-transfer form adds currencies and preserves quantities', () => {
+  it('CL-4 a typed box stays shown and keeps its value after adding currencies, and create sends every typed line', async () => {
     const el = await mount();
     choose(form(el).querySelector<HTMLSelectElement>('select[name="kind"]')!, 'EXTERNAL_OUT');
-    choose(picker(el)!, 'EUR');
-    await settle();
+    await addBySearch(el, 'EUR');
     type(box(el, 21), '10');
-    choose(picker(el)!, 'USD');
-    await settle();
+    await addBySearch(el, 'USD');
     type(box(el, 12), '4');
     await settle();
-    expect(shownIds(el)).toEqual([11, 12, 21]);
     expect(box(el, 21).value).toBe('10');
+    expect(box(el, 12).value).toBe('4');
     form(el).querySelector<HTMLButtonElement>('button[data-action="create"]')!.click();
     await settle();
     const w = server.sent.filter((s) => s.method === 'POST' && s.path === '/api/cash-transfers');
     expect(w).toHaveLength(1);
     const lines = (JSON.parse(w[0]!.body ?? '{}') as { lines: { denominationId: number }[] }).lines;
     expect(lines.map((l) => l.denominationId).sort()).toEqual([12, 21]);
-  });
-
-  it("CL-5 the picker's label is the page's Currency header and its blank choice asks for a currency (th / en)", async () => {
-    const el = await mount();
-    const label = form(el).querySelector(`label[for="${picker(el)!.id}"]`);
-    expect(label?.textContent?.trim()).toBe(th.headerCurrency);
-    expect(picker(el)!.options[0]!.textContent?.trim()).toBe('เลือกสกุลเงิน');
-    expect((th as Record<string, string>).chooseCurrency).toBe('เลือกสกุลเงิน');
-    expect((en as Record<string, string>).chooseCurrency).toBe('Choose a currency');
   });
 });
 

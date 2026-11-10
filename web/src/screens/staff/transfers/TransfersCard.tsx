@@ -18,6 +18,8 @@ import { fieldError } from '../../../shared/i18n/field-error';
 import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { checkInteger } from '../../../shared/ui/bounded';
+import { CurrencyCount } from '../../../shared/ui/currency-count/CurrencyCount';
+import { useBranchCountable } from '../../../shared/ui/currency-count/useBranchCountable';
 import type { StaffCtx } from '../cards';
 import { can } from '../parts/can';
 import { command } from '../parts/command';
@@ -171,6 +173,9 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     }
   };
 
+  const api = new ApiClient();
+  const countable = useBranchCountable(api, () => props.ctx.me.branchId);
+
   const [transfers, setTransfers] = createSignal<CashTransferRow[]>([]);
   const [denominations, setDenominations] = createSignal<DenominationRow[]>([]);
   const [transferBranches, setTransferBranches] = createSignal<TransferBranchRow[]>([]);
@@ -189,7 +194,6 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
   const [toBranchError, setToBranchError] = createSignal<string | null>(null);
   const [toShiftError, setToShiftError] = createSignal<string | null>(null);
   const [submitting, setSubmitting] = createSignal(false);
-  const [selectedCurrency, setSelectedCurrency] = createSignal('');
 
   const currencies = () => {
     const seen = new Set<string>();
@@ -204,13 +208,6 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       return ['THB', ...list.filter((c) => c !== 'THB')];
     }
     return list;
-  };
-
-  const activeCurrency = () => {
-    const list = currencies();
-    if (list.length === 0) return '';
-    const cur = selectedCurrency();
-    return list.includes(cur) ? cur : list[0]!;
   };
 
   const sendTotal = () => {
@@ -367,7 +364,6 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
     setCreateLineErrors({});
     setToBranchError(null);
     setToShiftError(null);
-    setSelectedCurrency('');
     setNotice(null);
     setError(null);
   };
@@ -483,7 +479,6 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
       setToBranchId('');
       setToShiftId('');
       setKind('BRANCH');
-      setSelectedCurrency('');
       setError(null);
       setNotice(t('saved'));
       await props.ctx.refresh();
@@ -790,52 +785,22 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
             />
           </div>
 
-          <Show when={currencies().length > 0}>
-            <div class="xc-transfers-form-field">
-              <label>{t('currency')}</label>
-              <select
-                name="transferCurrency"
-                data-testid="transfer-currency"
-                value={activeCurrency()}
-                onChange={(e) => setSelectedCurrency(e.currentTarget.value)}
-              >
-                <For each={currencies()}>
-                  {(c) => <option value={c}>{c}</option>}
-                </For>
-              </select>
-            </div>
-          </Show>
-
-          <div class="xc-transfers-denoms">
-            <label>{t('lines')}</label>
-            <For each={denominations()}>
-              {(d) => (
-                <div
-                  data-denomination-row
-                  class="xc-transfer-denom-row"
-                  hidden={d.currency !== activeCurrency()}
-                  style={{ display: d.currency === activeCurrency() ? '' : 'none' }}
-                >
-                  <span>
-                    {d.currency} {d.faceValue}
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    data-denomination-id={String(d.id)}
-                    value={quantities()[d.id] ?? ''}
-                    onInput={(e) => {
-                      const val = e.currentTarget.value;
-                      setQuantities((prev) => ({ ...prev, [d.id]: val }));
-                    }}
-                  />
-                  <Show when={createLineErrors()[d.id]}>
-                    {(msg) => <span data-field-error={`lines.${d.id}.qty`}>{msg()}</span>}
-                  </Show>
-                </div>
-              )}
-            </For>
-          </div>
+          <CurrencyCount
+            denominations={denominations()}
+            countable={countable()}
+            locked={['THB']}
+            quantities={quantities()}
+            setQuantity={(id, value) => {
+              setQuantities((prev) => ({ ...prev, [id]: value }));
+              setCreateLineErrors((prev) => {
+                if (!(id in prev)) return prev;
+                const next = { ...prev };
+                delete next[id];
+                return next;
+              });
+            }}
+            lineErrors={createLineErrors()}
+          />
 
           <div data-testid="transfer-total" class="xc-transfers-total">
             {sendTotal()}
@@ -865,7 +830,6 @@ export function TransfersCard(props: TransfersCardProps): JSX.Element {
                 setToBranchId('');
                 setToShiftId('');
                 setKind('BRANCH');
-                setSelectedCurrency('');
                 setError(null);
               }}
             >

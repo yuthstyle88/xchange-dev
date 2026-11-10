@@ -301,16 +301,17 @@ describe('#4910 admin cash flows: destination and server refusals at the field',
   }
 
   function adminRow(form: Element, denominationId: number): Element {
-    const input = must<HTMLInputElement>(`input[data-denomination="${denominationId}"]`, form);
-    expect(input.parentElement, `wrapper of denomination ${denominationId}`).not.toBeNull();
-    return input.parentElement!;
+    const input = must<HTMLInputElement>(`input[data-denomination-id="${denominationId}"]`, form);
+    const row = input.closest('[data-denomination-row]');
+    expect(row, `row of denomination ${denominationId}`).not.toBeNull();
+    return row!;
   }
 
   it('Q4: a BRANCH transfer with no destination shows a worded line at the destination and sends nothing', async () => {
     const form = await mountFlows();
     choose(must<HTMLSelectElement>('#transfer-kind', form), 'BRANCH');
     await settle();
-    type(must<HTMLInputElement>('input[data-denomination="11"]', form), '5');
+    type(must<HTMLInputElement>('input[data-denomination-id="11"]', form), '5');
     await settle();
     must<HTMLButtonElement>('button[data-action="create"]', form).click();
     await settle();
@@ -329,8 +330,8 @@ describe('#4910 admin cash flows: destination and server refusals at the field',
     const form = await mountFlows();
     choose(must<HTMLSelectElement>('#transfer-kind', form), 'EXTERNAL_OUT');
     await settle();
-    type(must<HTMLInputElement>('input[data-denomination="11"]', form), '2');
-    type(must<HTMLInputElement>('input[data-denomination="12"]', form), '4');
+    type(must<HTMLInputElement>('input[data-denomination-id="11"]', form), '2');
+    type(must<HTMLInputElement>('input[data-denomination-id="12"]', form), '4');
     await settle();
     must<HTMLButtonElement>('button[data-action="create"]', form).click();
     await settle();
