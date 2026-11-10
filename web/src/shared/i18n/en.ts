@@ -11,6 +11,7 @@ export const en: Record<Key, string> = {
   'shell.nav.backdated': 'Backdated',
   'shell.nav.vault': 'Safe',
   'shell.nav.reports': 'Reports',
+  'shell.nav.settings': 'Settings',
   'shell.account.branch': 'Branch {branch}',
   'shell.account.signOut': 'Sign out',
   'shell.account.switchBranch': 'Switch branch',

@@ -1,0 +1,31 @@
+export const th = {
+  title: 'ตั้งค่า',
+  cash: 'เงินสด',
+  alerts: 'การแจ้งเตือน',
+  cashLimits: 'เกณฑ์ยอดนับต่าง',
+  cashLimitsDesc: 'ยอดต่างเกินเกณฑ์นี้ต้องให้ฝ่ายการเงินอนุมัติ',
+  cashPolicy: 'วงเงินโอนเงินสด',
+  cashPolicyDesc: 'วงเงินต่อสกุลที่การโอนเงินสดเกินแล้วต้องได้รับอนุมัติ',
+  alertSettings: 'เกณฑ์แจ้งเตือน',
+  alertSettingsDesc: 'กำหนดเกณฑ์แจ้งเตือนข้อมูลค้างและสต็อกขั้นต่ำ',
+  rateAlertSettings: 'ตั้งค่าแจ้งเตือนเรท',
+  rateAlertSettingsDesc: 'กำหนดค่าจำกัดการแจ้งเตือนเรทสำหรับลูกค้าและนโยบายการเฝ้าดูเรท',
+  loading: 'กำลังโหลด…',
+  noAccess: 'บัญชีนี้ไม่มีสิทธิ์เข้าถึงเมนูตั้งค่า',
+};
+
+export const en: Record<keyof typeof th, string> = {
+  title: 'Settings',
+  cash: 'Cash',
+  alerts: 'Alerts',
+  cashLimits: 'Count difference limit',
+  cashLimitsDesc: 'A difference over this limit goes to finance for approval',
+  cashPolicy: 'Cash transfer limits',
+  cashPolicyDesc: 'The limit per currency above which a cash transfer needs approval',
+  alertSettings: 'Alert Settings',
+  alertSettingsDesc: 'Configure stale data alert threshold and currency stock floors',
+  rateAlertSettings: 'Rate Alert Settings',
+  rateAlertSettingsDesc: 'Configure rate alert limits for customers and rate observation policy',
+  loading: 'Loading…',
+  noAccess: 'This account does not have access to settings',
+};

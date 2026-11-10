@@ -11,6 +11,7 @@ export const zh: Record<Key, string> = {
   'shell.nav.backdated': '补录',
   'shell.nav.vault': '保险柜',
   'shell.nav.reports': '报表',
+  'shell.nav.settings': '设置',
   'shell.account.branch': '分店 {branch}',
   'shell.account.signOut': '退出登录',
   'shell.account.switchBranch': '切换分行',
