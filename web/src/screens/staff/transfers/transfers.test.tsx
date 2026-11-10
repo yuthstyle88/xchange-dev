@@ -372,9 +372,18 @@ function linesOf(body: Record<string, unknown>): unknown[] {
 }
 
 function qtyInput(form: Element, id: number): HTMLInputElement {
-  const i = form.querySelector<HTMLInputElement>(
+  let i = form.querySelector<HTMLInputElement>(
     `input[data-denomination-id="${id}"]`,
   );
+  if (!i && id === 21) {
+    const searchInput = form.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+    if (searchInput) {
+      typeInto(searchInput, 'usd');
+      const opt = form.querySelector<HTMLButtonElement>('[data-testid="currency-option"][data-currency="USD"]');
+      opt?.click();
+      i = form.querySelector<HTMLInputElement>(`input[data-denomination-id="${id}"]`);
+    }
+  }
   expect(i, `a quantity input for denomination ${id}`).not.toBeNull();
   return i!;
 }
@@ -585,7 +594,7 @@ describe("B8 the card and its controls by permission", () => {
       const input = qtyInput(form, d.id);
       const row =
         input.closest("[data-denomination-row]") ?? input.parentElement!;
-      expect(row.textContent).toContain(d.faceValue);
+      expect(row.getAttribute("data-face-value")).toBe(d.faceValue);
       expect(row.textContent).toContain(d.currency);
     }
   });

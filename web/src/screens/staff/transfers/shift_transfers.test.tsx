@@ -159,6 +159,16 @@ async function click(el: Element) {
   await settle();
 }
 
+async function addBySearch(code: string) {
+  const searchInput = host.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  if (!searchInput) return;
+  typeInto(searchInput, code.toLowerCase());
+  await settle();
+  const opt = host.querySelector<HTMLButtonElement>(`[data-testid="currency-option"][data-currency="${code}"]`);
+  opt?.click();
+  await settle();
+}
+
 function typeInto(
   input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
   value: string
@@ -241,6 +251,7 @@ describe('Lane controller rulings for drawer moves and card robustness', () => {
     await settle();
 
     typeInto(must<HTMLInputElement>(tid('transfer-note')), 'morning float from safe');
+    await addBySearch('USD');
     const qtyInput = must<HTMLInputElement>('input[data-denomination-id="21"]');
     typeInto(qtyInput, '10');
     await settle();

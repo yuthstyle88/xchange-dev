@@ -144,6 +144,16 @@ async function click(el: Element) {
   await settle();
 }
 
+async function addBySearch(code: string) {
+  const searchInput = host.querySelector<HTMLInputElement>('[data-testid="currency-search"]');
+  if (!searchInput) return;
+  typeInto(searchInput, code.toLowerCase());
+  await settle();
+  const opt = host.querySelector<HTMLButtonElement>(`[data-testid="currency-option"][data-currency="${code}"]`);
+  opt?.click();
+  await settle();
+}
+
 function typeInto(
   input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
   value: string,
@@ -206,6 +216,7 @@ describe('F37a (#6344): branch manager tops up a teller drawer from /staff', () 
 
     typeInto(shiftSelect, 'S1');
     typeInto(must<HTMLInputElement>(tid('transfer-note')), 'top up T1 drawer');
+    await addBySearch('USD');
     typeInto(must<HTMLInputElement>('input[data-denomination-id="21"]'), '12');
     await settle();
 
@@ -260,6 +271,7 @@ describe('F37a (#6344): branch manager tops up a teller drawer from /staff', () 
     await settle();
 
     expect(must<HTMLSelectElement>(tid('transfer-to-shift')).value).toBe('');
+    await addBySearch('USD');
     typeInto(must<HTMLInputElement>('input[data-denomination-id="21"]'), '12');
     await settle();
 
@@ -289,6 +301,7 @@ describe('F37a (#6344): branch manager tops up a teller drawer from /staff', () 
     await vi.waitFor(() => expect(q(tid('transfer-form'))).not.toBeNull());
     typeInto(must<HTMLSelectElement>(tid('transfer-kind')), 'SAFE_TO_DRAWER');
     await settle();
+    await addBySearch('USD');
     typeInto(must<HTMLInputElement>('input[data-denomination-id="21"]'), '12');
     await settle();
     await click(must(tid('transfer-save')));

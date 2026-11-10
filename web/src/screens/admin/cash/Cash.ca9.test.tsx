@@ -536,12 +536,22 @@ describe('transfer actions', () => {
 // ── new transfer (transferCreate) ───────────────────────────────────────────────────────────────────────────────
 
 describe('new transfer (transferCreate)', () => {
+  async function addBySearch(within: ParentNode, code: string) {
+    const searchInput = control<HTMLInputElement>(within, '[data-testid="currency-search"]');
+    type(searchInput, code.toLowerCase());
+    await settle();
+    const opt = control<HTMLButtonElement>(within, `[data-testid="currency-option"][data-currency="${code}"]`);
+    await click(opt);
+  }
+
   it('offers the five kinds and one quantity per denomination row of the server', async () => {
     const el = await mount([MANAGE]);
     const s = section(el, 'new-transfer')!;
     const kinds = [...control<HTMLSelectElement>(s, 'select[name="kind"]').options].map((o) => o.value).filter(Boolean);
     expect(kinds.sort()).toEqual(['BRANCH', 'DRAWER_TO_SAFE', 'EXTERNAL_IN', 'EXTERNAL_OUT', 'SAFE_TO_DRAWER']);
-    expect([...s.querySelectorAll<HTMLInputElement>('input[data-denomination]')].map((i) => i.dataset.denomination)).toEqual(['11', '12', '21']);
+    await addBySearch(s, 'USD');
+    await addBySearch(s, 'EUR');
+    expect([...s.querySelectorAll<HTMLInputElement>('input[data-denomination-id]')].map((i) => i.dataset.denominationId)).toEqual(['11', '12', '21']);
     expect(server.reads('denominations')).toHaveLength(1);
   });
 
@@ -550,8 +560,10 @@ describe('new transfer (transferCreate)', () => {
     const s = section(el, 'new-transfer')!;
     choose(control<HTMLSelectElement>(s, 'select[name="kind"]'), 'EXTERNAL_OUT');
     await settle();
-    type(control<HTMLInputElement>(s, 'input[data-denomination="12"]'), '4');
-    type(control<HTMLInputElement>(s, 'input[data-denomination="21"]'), '10');
+    await addBySearch(s, 'USD');
+    await addBySearch(s, 'EUR');
+    type(control<HTMLInputElement>(s, 'input[data-denomination-id="12"]'), '4');
+    type(control<HTMLInputElement>(s, 'input[data-denomination-id="21"]'), '10');
     type(control<HTMLInputElement>(s, 'input[name="note"]'), 'ส่งธนาคาร');
     await click(action(s, 'create'));
     const w = server.writes();
@@ -581,7 +593,8 @@ describe('new transfer (transferCreate)', () => {
     const to = control<HTMLSelectElement>(s, 'select[name="toBranch"]');
     expect([...to.options].map((o) => o.value).filter(Boolean)).toEqual(['B9', 'B2']);
     choose(to, 'B2');
-    type(control<HTMLInputElement>(s, 'input[data-denomination="11"]'), '1');
+    await addBySearch(s, 'USD');
+    type(control<HTMLInputElement>(s, 'input[data-denomination-id="11"]'), '1');
     type(control<HTMLInputElement>(s, 'input[name="note"]'), 'n');
     await click(action(s, 'create'));
     const b = bodyOf(server.writes()[0]!);
@@ -596,7 +609,8 @@ describe('new transfer (transferCreate)', () => {
     const from = control<HTMLSelectElement>(s, 'select[name="fromShift"]');
     expect([...from.options].map((o) => o.value).filter(Boolean), 'only the OPEN shift').toEqual(['S-0001']);
     choose(from, 'S-0001');
-    type(control<HTMLInputElement>(s, 'input[data-denomination="11"]'), '2');
+    await addBySearch(s, 'USD');
+    type(control<HTMLInputElement>(s, 'input[data-denomination-id="11"]'), '2');
     type(control<HTMLInputElement>(s, 'input[name="note"]'), 'n');
     await click(action(s, 'create'));
     let b = bodyOf(server.writes()[0]!);
@@ -605,7 +619,7 @@ describe('new transfer (transferCreate)', () => {
     choose(control<HTMLSelectElement>(s, 'select[name="kind"]'), 'SAFE_TO_DRAWER');
     await settle();
     choose(control<HTMLSelectElement>(s, 'select[name="toShift"]'), 'S-0001');
-    type(control<HTMLInputElement>(s, 'input[data-denomination="11"]'), '2');
+    type(control<HTMLInputElement>(s, 'input[data-denomination-id="11"]'), '2');
     type(control<HTMLInputElement>(s, 'input[name="note"]'), 'n');
     await click(action(s, 'create'));
     b = bodyOf(server.writes()[1]!);

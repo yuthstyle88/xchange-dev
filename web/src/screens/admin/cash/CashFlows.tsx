@@ -468,7 +468,7 @@ export function CashFlows(props: CashFlowsProps): JSX.Element {
   // ── new transfer ────────────────────────────────────────────────────────────
 
   const countable = useBranchCountable(api, () =>
-    props.shown() && (can(MANAGE) || meError() !== null) ? props.branch() : null,
+    can(MANAGE) || meError() !== null ? props.branch() : null,
   );
   const [kind, setKind] = createSignal('');
   const [toBranch, setToBranch] = createSignal('');

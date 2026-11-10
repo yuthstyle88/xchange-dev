@@ -286,7 +286,7 @@ describe('CashFlows: write in flight at a branch switch (#2515)', () => {
     await vi.waitFor(() => expect(verifyIds()).toEqual(['cc-A']));
 
     choose('#transfer-kind', 'EXTERNAL_IN');
-    typeInput('input[data-denomination="1"]', '5');
+    typeInput('input[data-denomination-id="1"]', '5');
     typeInput('#transfer-note', 'note-on-A');
     root.querySelector<HTMLButtonElement>('[data-action="create"]')!.click();
     await vi.waitFor(() => expect(server.pendingPosts.length).toBe(1));
@@ -294,7 +294,7 @@ describe('CashFlows: write in flight at a branch switch (#2515)', () => {
     setBranch('B');
     await vi.waitFor(() => expect(verifyIds()).toEqual(['cc-B']));
 
-    typeInput('input[data-denomination="1"]', '12');
+    typeInput('input[data-denomination-id="1"]', '12');
     typeInput('#transfer-note', 'draft-note-on-B');
 
     server.pendingPosts[0]!.resolve({
@@ -303,7 +303,7 @@ describe('CashFlows: write in flight at a branch switch (#2515)', () => {
     });
     await settle();
 
-    expect(root.querySelector<HTMLInputElement>('input[data-denomination="1"]')!.value).toBe('12');
+    expect(root.querySelector<HTMLInputElement>('input[data-denomination-id="1"]')!.value).toBe('12');
     expect(root.querySelector<HTMLInputElement>('#transfer-note')!.value).toBe('draft-note-on-B');
     expect(root.querySelector('.toast')?.textContent ?? '').toBe('');
     expect(root.querySelector<HTMLButtonElement>('[data-action="create"]')!.disabled).toBe(false);
