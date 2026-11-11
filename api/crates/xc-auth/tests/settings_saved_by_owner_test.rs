@@ -357,7 +357,8 @@ fn v2_the_seed_gives_the_saves_to_executive_and_the_read_to_every_staff_group() 
 #[test]
 fn v3_seed_version_10_records_the_removals_and_additions() {
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
     for &(p, holders) in SAVE_PERMISSIONS {
         if holders.is_empty() {
             continue;

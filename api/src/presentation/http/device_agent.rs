@@ -1,5 +1,5 @@
-//! `/api/device-agent/*` (pair, claim, report), filled by row AG-2 (design §5.4c); `info` and `desk-binding`
-//! for XC Counter (`docs/design/xc-counter-app.md` §8.2).
+//! `/api/device-agent/*` (pair, claim, report), filled by row AG-2 (design §5.4c); `info`, `desk-binding` and
+//! `kiosk-exit` for XC Counter (`docs/design/xc-counter-app.md` §8.2, §8.8).
 
 use std::sync::Arc;
 
@@ -22,6 +22,7 @@ use crate::infrastructure::device_agents::counter_policy::Capabilities;
 use crate::infrastructure::device_agents::desk_binding::DeskNonce;
 use crate::infrastructure::device_agents::pg_agent_repository::PgAgentRepository;
 use crate::infrastructure::device_agents::report::{ReportOutcome, ReportParams};
+use crate::infrastructure::device_agents::unlock_tokens::PgUnlockTokens;
 use crate::infrastructure::devices::pg_device_repository::PgDeviceRepository;
 use crate::infrastructure::devices::printer_models::PrinterModels;
 use crate::presentation::dto::device_agent::{
@@ -73,8 +74,16 @@ pub fn configure(cfg: &mut web::ServiceConfig, state: &AppState) {
     cfg.service(
         web::resource("/api/device-agent/desk-binding")
             .app_data(web::PayloadConfig::new(1 << 10))
-            .app_data(web::Data::new(service))
+            .app_data(web::Data::new(service.clone()))
             .route(web::post().to(desk_binding_handler))
+            .default_service(web::to(pages::fallback)),
+    );
+    cfg.service(
+        web::resource("/api/device-agent/kiosk-exit")
+            .app_data(web::PayloadConfig::new(1 << 10))
+            .app_data(web::Data::new(service))
+            .app_data(web::Data::new(PgUnlockTokens::new(state.db.clone())))
+            .route(web::post().to(kiosk_exit_handler))
             .default_service(web::to(pages::fallback)),
     );
 }
@@ -172,6 +181,72 @@ async fn desk_binding_handler(
             nonce: issued.seal(&keys),
             expires_at: exp.to_rfc3339(),
         })
+}
+
+#[derive(serde::Deserialize)]
+struct KioskExitRequest {
+    code: String,
+}
+
+/// `POST /api/device-agent/kiosk-exit` (§8.8, xchange#6569), body `{ "code" }`: 204 when the code was issued for the
+/// token's counter by `counterUnlockIssue`, is unexpired and unused, and is now used up; 403 `UNLOCK_REFUSED`
+/// otherwise; 401 as `claim`. The app unlocks only on 204.
+async fn kiosk_exit_handler(
+    req: HttpRequest,
+    body: web::Bytes,
+    service: web::Data<AgentService>,
+    tokens: web::Data<PgUnlockTokens>,
+) -> HttpResponse {
+    if let Some(refusal) = check_browser(&req) {
+        return refusal;
+    }
+
+    let clock = req.app_data::<web::Data<dyn RpcClock>>().cloned();
+    let now = clock.as_ref().map_or_else(Utc::now, |c| c.now());
+    let address = client_address(&req);
+
+    let token_str = extract_bearer_token(&req);
+    let agent = match service.authenticate(token_str, address, now).await {
+        Ok(AuthOutcome::Ok(agent)) => *agent,
+        Ok(AuthOutcome::RateLimited) => {
+            return HttpResponse::build(StatusCode::TOO_MANY_REQUESTS)
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .json(serde_json::json!({ "error": "RATE_LIMITED" }));
+        }
+        Ok(AuthOutcome::InvalidToken) => {
+            return HttpResponse::Unauthorized()
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .json(serde_json::json!({ "error": "AGENT_TOKEN_INVALID" }));
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "kiosk-exit auth failed");
+            return server_error();
+        }
+    };
+
+    let Ok(request) = serde_json::from_slice::<KioskExitRequest>(&body) else {
+        return bad_request();
+    };
+
+    match tokens.redeem(&agent.id, &request.code, now).await {
+        Ok(true) => {
+            tracing::info!(agent_id = %agent.id, "kiosk exit: unlock code used");
+            HttpResponse::NoContent()
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .finish()
+        }
+        Ok(false) => {
+            // The code is never logged.
+            tracing::warn!(agent_id = %agent.id, "kiosk exit: unlock code refused");
+            HttpResponse::Forbidden()
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .json(serde_json::json!({ "error": "UNLOCK_REFUSED" }))
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "kiosk exit failed");
+            server_error()
+        }
+    }
 }
 
 fn bad_request() -> HttpResponse {

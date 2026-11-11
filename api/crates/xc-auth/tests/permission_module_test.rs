@@ -265,10 +265,10 @@ fn c2_role_permission_seed_counts_per_section_11_2() {
     assert_eq!(
         counts,
         vec![
-            ("EXECUTIVE", 58), // #6004: +SettingsRead, +BranchSettingsSave; backdated keying: +ExchangeBackdate
+            ("EXECUTIVE", 59), // #6004: +SettingsRead, +BranchSettingsSave; backdated keying: +ExchangeBackdate; #6569: +CounterUnlock
             ("ADMIN", 11),     // #6004: -SystemSettings, +SettingsRead
             ("RATE_MANAGER", 27), // #6004: -ConsentPolicyManage, -RateAlertSettingsSave, -OrgStartingPricesManage, +SettingsRead
-            ("BRANCH_MANAGER", 37), // #6004: -ConsentPolicyManage, +SettingsRead; backdated keying: +ExchangeBackdate
+            ("BRANCH_MANAGER", 38), // #6004: -ConsentPolicyManage, +SettingsRead; backdated keying: +ExchangeBackdate; #6569: +CounterUnlock
             ("TELLER", 22),         // #6004: +SettingsRead
             ("FINANCE", 21), // #6004: -CashTargetSet, -CashLimitsManage, -CashTransferPolicySet, +SettingsRead
             ("MARKETING", 6), // #6004: +SettingsRead

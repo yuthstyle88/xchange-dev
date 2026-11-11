@@ -69,7 +69,8 @@ fn f2_it_enters_the_seed_at_version_9_once_and_is_never_removed() {
     );
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10; (9, PricingFormulaSave) is unchanged.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, q)| q != P),
         "it is never removed"

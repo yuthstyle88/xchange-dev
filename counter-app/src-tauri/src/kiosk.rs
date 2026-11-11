@@ -15,15 +15,19 @@
 //! with a hard power-off can still leave. The lock keeps staff on the desk; it does not defend
 //! against someone at the machine with admin rights.
 //!
-//! **Exit needs a manager PIN checked by the server, and the server has no route for it.** A
-//! search of `api/src` and `api/crates` at `4897292` finds no manager-PIN verify endpoint, so
-//! [`exit_with_pin`] names no route until one exists. Do not invent it here.
+//! **Exit needs a one-time code from a manager, checked by the server** (design §8.8, xchange#6569).
+//! A manager or the owner issues it at the desk (`counterUnlockIssue`); staff type it on
+//! `ui/exit.html`; [`exit_with_pin`] sends it to `POST /api/device-agent/kiosk-exit` under this
+//! counter's agent token and unlocks only on 204. The app never judges the code itself: a refusal,
+//! or no answer at all, leaves the lock on. (The command keeps its `pin` name from before the
+//! route existed; the value is the code.)
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
 use url::Url;
-use xc_device_agent::client::ApiError;
+use xc_device_agent::client::{ApiError, HttpAgentApi};
 
 use crate::keychain::TokenStore;
 
@@ -85,8 +89,8 @@ pub fn intercepts(shortcut: Shortcut, locked: bool) -> bool {
 /// Why the app did not leave kiosk mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExitError {
-    /// The server refused the PIN.
-    WrongPin,
+    /// The server refused the code: wrong, expired, used, or issued for another counter.
+    Refused,
     /// The server could not be asked. The lock stays on.
     Server(ApiError),
     /// The window could not be unlocked.
@@ -96,7 +100,7 @@ pub enum ExitError {
 impl std::fmt::Display for ExitError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::WrongPin => write!(f, "wrong PIN"),
+            Self::Refused => write!(f, "รหัสไม่ถูกต้อง หมดอายุ หรือใช้ไปแล้ว"),
             Self::Server(err) => write!(f, "server: {err}"),
             Self::Window(err) => write!(f, "window: {err}"),
         }
@@ -182,12 +186,145 @@ pub fn unlock(window: &WebviewWindow) -> Result<(), ExitError> {
     Ok(())
 }
 
-/// Asks the server to check `pin`, then unlocks `window`. See the module doc: the route is missing.
+/// Asks the server to use up the manager's code `pin`, then unlocks `window`. See the module doc.
 pub async fn exit_with_pin(
-    _window: &WebviewWindow,
-    _server: &Url,
-    _tokens: &dyn TokenStore,
-    _pin: &str,
+    window: &WebviewWindow,
+    server: &Url,
+    tokens: &dyn TokenStore,
+    pin: &str,
 ) -> Result<(), ExitError> {
-    todo!("CA-3b: needs a server route that does not exist yet")
+    redeem(server, tokens, pin).await?;
+    unlock(window)
+}
+
+/// `POST /api/device-agent/kiosk-exit` with `{ code }`: `Ok` only on 204.
+pub async fn redeem(server: &Url, tokens: &dyn TokenStore, code: &str) -> Result<(), ExitError> {
+    let token = match tokens.load() {
+        Ok(Some(t)) if !t.is_empty() => t,
+        Ok(_) => return Err(ExitError::Server(ApiError::Unauthorized)),
+        Err(e) => return Err(ExitError::Server(ApiError::Connection(e.to_string()))),
+    };
+    HttpAgentApi::validate_url(server.as_str()).map_err(ExitError::Server)?;
+    let client = reqwest::Client::builder()
+        .use_rustls_tls()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| ExitError::Server(ApiError::Connection(e.to_string())))?;
+    let url = format!(
+        "{}/api/device-agent/kiosk-exit",
+        server.as_str().trim_end_matches('/')
+    );
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&serde_json::json!({ "code": code }))
+        .send()
+        .await
+        // The error text can carry the request; keep the token out of it.
+        .map_err(|e| {
+            ExitError::Server(ApiError::Connection(
+                e.to_string().replace(&token, "<redacted>"),
+            ))
+        })?;
+    match response.status().as_u16() {
+        204 => Ok(()),
+        403 => Err(ExitError::Refused),
+        401 => Err(ExitError::Server(ApiError::Unauthorized)),
+        status => Err(ExitError::Server(ApiError::Rejected {
+            status,
+            error: response.text().await.unwrap_or_default(),
+        })),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::keychain::TokenError;
+    use std::sync::Mutex;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    struct TestStore(Mutex<Option<String>>);
+
+    impl TokenStore for TestStore {
+        fn load(&self) -> Result<Option<String>, TokenError> {
+            Ok(self.0.lock().unwrap().clone())
+        }
+        fn save(&self, token: &str) -> Result<(), TokenError> {
+            *self.0.lock().unwrap() = Some(token.to_owned());
+            Ok(())
+        }
+        fn clear(&self) -> Result<(), TokenError> {
+            *self.0.lock().unwrap() = None;
+            Ok(())
+        }
+    }
+
+    fn store() -> TestStore {
+        TestStore(Mutex::new(Some("secret-tok".to_owned())))
+    }
+
+    /// Answers one request with `status` and gives back what was asked.
+    async fn mock_server(status: u16) -> (Url, tokio::task::JoinHandle<String>) {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+        let handle = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 2048];
+            let n = stream.read(&mut buf).await.unwrap();
+            let resp =
+                format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            stream.write_all(resp.as_bytes()).await.unwrap();
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+        (url, handle)
+    }
+
+    #[tokio::test]
+    async fn a_204_lets_the_counter_out_and_sends_the_code_under_the_agent_token() {
+        let (url, handle) = mock_server(204).await;
+        assert_eq!(redeem(&url, &store(), "ABCDE-FGHJK").await, Ok(()));
+        let req = handle.await.unwrap();
+        assert!(
+            req.starts_with("POST /api/device-agent/kiosk-exit "),
+            "{req}"
+        );
+        assert!(req.contains("Bearer secret-tok"), "{req}");
+        assert!(req.contains(r#"{"code":"ABCDE-FGHJK"}"#), "{req}");
+    }
+
+    #[tokio::test]
+    async fn a_403_is_refused_and_the_lock_stays() {
+        let (url, _) = mock_server(403).await;
+        assert_eq!(
+            redeem(&url, &store(), "ABCDE-FGHJK").await,
+            Err(ExitError::Refused)
+        );
+    }
+
+    #[tokio::test]
+    async fn no_answer_keeps_the_lock() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let url = Url::parse(&format!("http://127.0.0.1:{port}")).unwrap();
+        assert!(matches!(
+            redeem(&url, &store(), "ABCDE-FGHJK").await,
+            Err(ExitError::Server(ApiError::Connection(_)))
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_unpaired_counter_asks_nothing() {
+        let url = Url::parse("http://127.0.0.1:9").unwrap();
+        let empty = TestStore(Mutex::new(None));
+        assert_eq!(
+            redeem(&url, &empty, "ABCDE-FGHJK").await,
+            Err(ExitError::Server(ApiError::Unauthorized))
+        );
+    }
 }

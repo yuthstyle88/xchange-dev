@@ -175,7 +175,8 @@ fn la_t3_it_enters_the_seed_in_version_8() {
     // #5733 (PricingFormulaSave) raised it to 9 after LA-1 set 8; (8, ApproveLedgerAdjustment) is unchanged.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11, "SEED_VERSION is 11");
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12, "SEED_VERSION is 12");
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, p)| p != KIND),
         "it is never removed"
@@ -213,10 +214,11 @@ async fn la_t3_a_version_7_database_grants_it_to_finance_and_its_custom_groups_o
         );
         // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
         // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11.
+        // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12.
         assert_eq!(
             seed_version(&db, role.as_str()).await,
-            11,
-            "{role:?} ends at seed version 11 (#5733 raised it to 9, #6004 to 10, backdated keying to 11)"
+            12,
+            "{role:?} ends at seed version 12 (#5733 raised it to 9, #6004 to 10, backdated keying to 11, #6569 to 12)"
         );
     }
     assert_eq!(
@@ -279,7 +281,8 @@ async fn la_t3_a_fresh_database_seeds_it_on_finance_at_version_8() {
     // #5733 raised the seed version to 9 after LA-1's 8.
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11.
-    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12.
+    assert_eq!(seed_version(&db, Role::Finance.as_str()).await, 12);
     db.drop_schema().await;
 }
 
