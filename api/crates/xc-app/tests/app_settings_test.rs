@@ -10,7 +10,7 @@
 //! non-ADMIN → `outOfScope`).
 //!
 //! Signatures this test assumes (the scaffold commit before this one):
-//! - `AppSettings { organization_id: Uuid, planner_draft_ttl_seconds: Option<NonZeroU32> }`,
+//! - `AppSettings { organization_id: Uuid, planner_draft_ttl_seconds: Option<NonZeroU32>, otp_channels: Option<Vec<OtpChannel>> }` (`otp_channels` added by #6286),
 //!   `draft_expires_at(&self, created_at) -> Result<DateTime<Utc>, CustomerAppError>`.
 //! - `AppSettingsService::new(pool)`; `save_in(&self, tx, actor: &xc_auth access Actor,
 //!   ttl_seconds: u32, now) -> Result<AppSettings, CustomerAppError>` (async), which writes the
@@ -28,6 +28,7 @@ fn draft_expires_at_is_created_at_plus_the_lifetime() {
     let settings = AppSettings {
         organization_id: org(),
         planner_draft_ttl_seconds: NonZeroU32::new(604_800),
+        otp_channels: None,
     };
 
     assert_eq!(settings.draft_expires_at(at(0)), Ok(at(604_800)));
@@ -39,6 +40,7 @@ fn draft_expires_at_without_a_lifetime_is_app_settings_missing() {
     let settings = AppSettings {
         organization_id: org(),
         planner_draft_ttl_seconds: None,
+        otp_channels: None,
     };
 
     assert_eq!(

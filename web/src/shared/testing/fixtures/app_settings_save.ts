@@ -7,7 +7,6 @@ export type { AppSettingsSaveInput, AppSettingsSaveOutput } from '../../api/gene
 
 export function makeAppSettingsSaveInput(o: Partial<AppSettingsSaveInput> = {}): AppSettingsSaveInput {
   return {
-    plannerDraftTtlSeconds: 0,
     ...o,
   };
 }

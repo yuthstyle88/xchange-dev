@@ -37,6 +37,7 @@ const ICONS: Record<string, string> = {
   users: '♖',
   reconciliation: '=',
   'starting-prices': '◈',
+  'customer-app': '☏',
 };
 
 /** The sidebar's fixed links (AdminShell.tsx; pinned by AdminShell.test.tsx "the tool links"). */

@@ -1,5 +1,5 @@
 //! `appSettingsSave` (APP-4 #994, design `customer-app.md` §4.4, owner C4): `PUT /api/app-settings`
-//! upserts the organisation's planner-draft lifetime. The policy row (`SystemSettings`) admits ADMIN
+//! upserts the organisation's planner-draft lifetime and, #6286, its customer OTP channels. The policy row (`SystemSettings`) admits ADMIN
 //! and EXECUTIVE; `AppSettingsService` checks the permission again.
 
 use std::path::Path;
@@ -42,7 +42,13 @@ impl CommandAction for AppSettingsSaveCommand {
     ) -> Result<Self::Output, V3Error> {
         let saved = self
             .service
-            .save_in(tx, who, input.planner_draft_ttl_seconds, chrono::Utc::now())
+            .save_patch_in(
+                tx,
+                who,
+                input.planner_draft_ttl_seconds,
+                input.otp_channels,
+                chrono::Utc::now(),
+            )
             .await
             .map_err(customer_app_error)?;
         Ok(AppSettingsSaveOutput {

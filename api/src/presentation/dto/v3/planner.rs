@@ -176,7 +176,22 @@ pub struct PlannerDraftDeleteOutput {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "app_settings_save.ts")]
 pub struct AppSettingsSaveInput {
-    pub planner_draft_ttl_seconds: u32,
+    /// Left out ⇒ the stored lifetime stays.
+    #[serde(default)]
+    #[ts(optional)]
+    pub planner_draft_ttl_seconds: Option<u32>,
+    /// #6286: 1–2 distinct of `email`/`sms`, first = preselected; `null` ⇒ back to the default; left out ⇒ kept.
+    #[serde(default, deserialize_with = "some_or_null")]
+    #[ts(optional, type = "Array<string> | null")]
+    pub otp_channels: Option<Option<Vec<String>>>,
+}
+
+/// `Some(None)` for an explicit `null`, `None` (via `default`) when the key is absent.
+fn some_or_null<'de, D>(d: D) -> Result<Option<Option<Vec<String>>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Vec<String>>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, TS)]
