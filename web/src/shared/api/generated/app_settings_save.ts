@@ -3,6 +3,14 @@
 /**
  * `PUT /api/app-settings` (C4).
  */
-export type AppSettingsSaveInput = { plannerDraftTtlSeconds: number, };
+export type AppSettingsSaveInput = { 
+/**
+ * Left out ⇒ the stored lifetime stays.
+ */
+plannerDraftTtlSeconds?: number, 
+/**
+ * #6286: 1–2 distinct of `email`/`sms`, first = preselected; `null` ⇒ back to the default; left out ⇒ kept.
+ */
+otpChannels?: Array<string> | null, };
 
 export type AppSettingsSaveOutput = { plannerDraftTtlSeconds: number, };

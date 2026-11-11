@@ -1,11 +1,15 @@
 //! #6268 — Customer chooses OTP channel (email or SMS) on the sign-in screen.
 //! Pins O1 (default `["email", "sms"]`), O4 (owner allows only email -> SMS refused with 400
 //! `invalidRequest`), and O5 (invalid channel -> 400 `invalidRequest`).
+//! #6286 (decision A): O1 and O4 run on a migrated schema and set `customer_app_settings.otp_channels`;
+//! the constant and the injected seam are gone.
 
+mod auth_http_common;
 mod common;
 mod identity_signin_common;
 
-use actix_web::{App as ActixApp, http::header, test, web};
+use actix_web::{App as ActixApp, http::header, test};
+use auth_http_common::Desk;
 use identity_signin_common::{
     BROWSER_ADDRESS, FakeIdentity, HOST, ORIGIN, identity_env, state_with,
 };
@@ -14,7 +18,6 @@ use sqlx::PgPool;
 use xc_auth::domain::identity::identity_client::IdentityLoginResponse;
 use xchange::application::customer_otp_sign_in::proven_contacts;
 use xchange::application::otp_challenge_seal::{OTP_COOKIE, OtpChallengeSeal, OtpChannel};
-use xchange::presentation::http::auth::{AllowedOtpChannels, DEFAULT_OTP_CHANNELS};
 
 const CHALLENGE: &str = "c0ffee00-0000-4000-8000-000000006268";
 
@@ -22,12 +25,25 @@ fn lazy_pool() -> PgPool {
     PgPool::connect_lazy("postgres://localhost/xchange_test").expect("lazy pool")
 }
 
+/// Sets the seeded organisation's `otp_channels` (`None` = not set).
+async fn store_channels(pool: &PgPool, channels: Option<&[&str]>) {
+    let channels = channels.map(|c| c.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>());
+    sqlx::query(
+        "UPDATE customer_app_settings SET otp_channels = $1 \
+         WHERE organization_id = (SELECT id FROM organizations WHERE code = 'XC')",
+    )
+    .bind(channels)
+    .execute(pool)
+    .await
+    .expect("store otp_channels");
+}
+
 #[actix_web::test]
 async fn o1_default_offers_email_and_sms() {
     common::install_test_pii_keys();
-    assert_eq!(DEFAULT_OTP_CHANNELS, &["email", "sms"]);
-
-    let pool = lazy_pool();
+    let desk = Desk::start().await;
+    store_channels(&desk.pool, None).await;
+    let pool = desk.pool.clone();
     let identity = FakeIdentity::start();
     identity.answer(
         "/auth/otp/request",
@@ -74,12 +90,15 @@ async fn o1_default_offers_email_and_sms() {
         );
     }
     assert_eq!(identity.received("/auth/otp/request").len(), 2);
+    desk.drop_schema().await;
 }
 
 #[actix_web::test]
 async fn o4_owner_allows_only_email_refuses_sms_with_400_invalid_request() {
     common::install_test_pii_keys();
-    let pool = lazy_pool();
+    let desk = Desk::start().await;
+    store_channels(&desk.pool, Some(&["email"])).await;
+    let pool = desk.pool.clone();
     let identity = FakeIdentity::start();
     identity.answer(
         "/auth/otp/request",
@@ -87,14 +106,8 @@ async fn o4_owner_allows_only_email_refuses_sms_with_400_invalid_request() {
         &json!({ "challengeId": CHALLENGE, "expiresAt": 4102444800u64 }).to_string(),
     );
     let state = state_with(&pool, &identity_env(&identity.url()));
-    let only_email = web::Data::new(AllowedOtpChannels {
-        channels: vec!["email".to_owned()],
-        source: "set",
-    });
     let app = test::init_service(
-        ActixApp::new()
-            .app_data(only_email)
-            .configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
+        ActixApp::new().configure(move |cfg| xchange::bootstrap::configure(cfg, state)),
     )
     .await;
 
@@ -147,6 +160,7 @@ async fn o4_owner_allows_only_email_refuses_sms_with_400_invalid_request() {
     let email_resp = test::call_service(&app, email_req).await;
     assert_eq!(email_resp.status().as_u16(), 200);
     assert_eq!(identity.received("/auth/otp/request").len(), 1);
+    desk.drop_schema().await;
 }
 
 #[actix_web::test]
@@ -191,7 +205,8 @@ async fn o5_invalid_channel_refused_with_400_invalid_request() {
 async fn sms_issued_challenge_cannot_verify_email_destination() {
     common::install_test_pii_keys();
     let keys = xc_customer::get_pii_keys().expect("test pii keys");
-    let pool = lazy_pool();
+    let desk = Desk::start().await;
+    let pool = desk.pool.clone();
     let identity = FakeIdentity::start();
     identity.answer(
         "/auth/otp/request",
@@ -262,4 +277,5 @@ async fn sms_issued_challenge_cannot_verify_email_destination() {
         )),
         "SMS seal must never prove an email destination: {contacts:?}"
     );
+    desk.drop_schema().await;
 }

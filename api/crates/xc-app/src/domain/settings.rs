@@ -10,11 +10,65 @@ use uuid::Uuid;
 
 use crate::domain::app_error::CustomerAppError;
 
+/// A channel a customer may receive a sign-in code on (#6286), stored as `email` / `sms`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OtpChannel {
+    Email,
+    Sms,
+}
+
+impl OtpChannel {
+    /// The not-set fallback: email, then SMS, until the owner saves a list (#6286).
+    pub const DEFAULT: [OtpChannel; 2] = [OtpChannel::Email, OtpChannel::Sms];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            OtpChannel::Email => "email",
+            OtpChannel::Sms => "sms",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "email" => Some(OtpChannel::Email),
+            "sms" => Some(OtpChannel::Sms),
+            _ => None,
+        }
+    }
+
+    /// An owner's list: 1–2 distinct known channels, order kept; else `validationFailed` on `otpChannels`.
+    pub fn parse_list(list: &[String]) -> Result<Vec<Self>, CustomerAppError> {
+        let invalid = CustomerAppError::ValidationFailed {
+            field: "otpChannels",
+        };
+        let channels = list
+            .iter()
+            .map(|s| Self::parse(s))
+            .collect::<Option<Vec<_>>>()
+            .ok_or(invalid.clone())?;
+        match channels.as_slice() {
+            [_] => Ok(channels),
+            [a, b] if a != b => Ok(channels),
+            _ => Err(invalid),
+        }
+    }
+
+    /// The stored list, or [`Self::DEFAULT`] when not set; `true` when the owner set it.
+    pub fn offered(stored: Option<Vec<Self>>) -> (Vec<Self>, bool) {
+        match stored {
+            Some(set) => (set, true),
+            None => (Self::DEFAULT.to_vec(), false),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppSettings {
     pub organization_id: Uuid,
     /// `planner_draft_ttl_seconds`; `None` = not set, no draft can be created.
     pub planner_draft_ttl_seconds: Option<NonZeroU32>,
+    /// `otp_channels`, in the order the owner saved; `None` = not set, the default applies.
+    pub otp_channels: Option<Vec<OtpChannel>>,
 }
 
 impl AppSettings {

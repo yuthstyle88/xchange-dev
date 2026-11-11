@@ -7,6 +7,9 @@ use actix_web::{HttpRequest, HttpResponse, web};
 use chrono::Utc;
 use pos_infra::transactions::Transactor;
 use serde_json::{Value, json};
+use xc_app::application::settings::app_settings_service::AppSettingsService;
+use xc_app::domain::app_error::CustomerAppError;
+use xc_app::domain::settings::OtpChannel as StoredOtpChannel;
 use xc_auth::application::session::session_service::SwitchBranchError;
 use xc_auth::application::session::{SESSION_COOKIE, SessionError, SessionService, sha256_hex};
 use xc_auth::domain::identity::identity_client::{
@@ -20,6 +23,7 @@ use xc_kernel::branch_tx::BranchTx;
 
 use crate::application::customer_binder::BindError;
 use crate::application::customer_otp_sign_in::{CustomerOtpSignIn, OtpRegister, OtpSignInError};
+use crate::application::customer_signup::signup_organization;
 use crate::application::otp_challenge_seal::{OTP_COOKIE, OtpChallengeSeal, OtpChannel};
 use crate::bootstrap::AppState;
 use crate::infrastructure::branch_tablets::TABLET_COOKIE;
@@ -204,31 +208,44 @@ async fn v3_login(
     }
 }
 
-// owner-set: pending settings migration
-pub const DEFAULT_OTP_CHANNELS: &[&str] = &["email", "sms"];
-
-#[derive(Debug, Clone)]
-pub struct AllowedOtpChannels {
-    pub channels: Vec<String>,
-    pub source: &'static str,
-}
-
-impl Default for AllowedOtpChannels {
-    fn default() -> Self {
-        Self {
-            channels: DEFAULT_OTP_CHANNELS.iter().map(|&s| s.to_owned()).collect(),
-            source: "default",
+/// The channels the owner set for the customer organisation (#6286), or the domain's default when not set,
+/// and whether they were set. `None` when the read fails: the caller answers 503, never the default.
+async fn offered_otp_channels(pool: &sqlx::PgPool) -> Option<(Vec<StoredOtpChannel>, bool)> {
+    let read = async {
+        let org = signup_organization(pool).await.map_err(|e| e.to_string())?;
+        let org = uuid::Uuid::parse_str(&org).map_err(|e| e.to_string())?;
+        AppSettingsService::new(pool.clone())
+            .otp_channels(org)
+            .await
+            // `CustomerAppError` has no `Display`; log its message or code, never `Debug`.
+            .map_err(|e| match e {
+                CustomerAppError::Server(why) => why,
+                other => other.code().to_owned(),
+            })
+    };
+    match read.await {
+        Ok(offered) => Some(offered),
+        Err(error) => {
+            tracing::error!(%error, "the customer OTP channels could not be read");
+            None
         }
     }
 }
 
-async fn v3_otp_channels(allowed: Option<web::Data<AllowedOtpChannels>>) -> HttpResponse {
-    let cfg = allowed.map(|d| d.get_ref().clone()).unwrap_or_default();
+fn otp_channels_unavailable() -> HttpResponse {
+    refusal_response(503, "identityUnavailable", UNAVAILABLE_MESSAGE)
+}
+
+async fn v3_otp_channels(state: web::Data<AppState>) -> HttpResponse {
+    let Some((channels, set)) = offered_otp_channels(&state.db).await else {
+        return otp_channels_unavailable();
+    };
+    let channels: Vec<&str> = channels.iter().map(|c| c.as_str()).collect();
     HttpResponse::Ok()
         .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
         .json(json!({
-            "channels": cfg.channels,
-            "source": cfg.source,
+            "channels": channels,
+            "source": if set { "set" } else { "default" },
         }))
 }
 
@@ -236,7 +253,7 @@ async fn v3_otp_request(
     req: HttpRequest,
     bytes: web::Bytes,
     session: web::Data<SessionService>,
-    allowed: Option<web::Data<AllowedOtpChannels>>,
+    state: web::Data<AppState>,
 ) -> HttpResponse {
     if !same_origin(&req) {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
@@ -262,11 +279,10 @@ async fn v3_otp_request(
     let Some(otp_channel) = OtpChannel::parse(channel) else {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     };
-    let is_allowed = match &allowed {
-        Some(d) => d.channels.iter().any(|c| c == channel),
-        None => DEFAULT_OTP_CHANNELS.contains(&channel),
+    let Some((allowed, _)) = offered_otp_channels(&state.db).await else {
+        return otp_channels_unavailable();
     };
-    if !is_allowed {
+    if !allowed.iter().any(|c| c.as_str() == channel) {
         return refusal_response(400, "invalidRequest", "คำขอไม่ถูกต้อง");
     }
     if destination.is_empty() {
