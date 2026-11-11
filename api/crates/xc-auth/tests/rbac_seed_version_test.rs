@@ -350,10 +350,12 @@ async fn a_custom_group_gains_only_its_base_s_version_4_kinds_and_stays_at_seed_
                     Permission::BranchSettingsSave,
                     // Backdated keying (version 11): the same sync gives EXECUTIVE-based groups ExchangeBackdate.
                     Permission::ExchangeBackdate,
+                    // Restated for XC Counter kiosk exit (version 12, #6569): the same sync gives EXECUTIVE-based groups CounterUnlock.
+                    Permission::CounterUnlock,
                 ])
                 .collect::<Vec<_>>()
         ),
-        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor, PricingFormulaSave, SettingsRead, BranchSettingsSave and ExchangeBackdate"
+        "the custom group gains EXECUTIVE's four version-4 kinds, AttendanceCloseFor, PricingFormulaSave, SettingsRead, BranchSettingsSave, ExchangeBackdate and CounterUnlock"
     );
     assert_eq!(
         seed_version(&db, &custom.code).await,

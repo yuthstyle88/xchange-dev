@@ -110,8 +110,8 @@ impl RoleGrants {
     /// Current seed version (#3976, #4155, #5108; RBAC §11.9: 4, the nine approval kinds; 5, ShiftCloseCertify on EXECUTIVE and ADMIN;
     /// 6, BindingQuoteIssue (binding quote); 7, AttendanceCloseFor (staff corrections SC-D2); 8, ApproveLedgerAdjustment (ledger adjustment);
     /// 9, PricingFormulaSave (organisation pricing formula, #5733); 10, business settings EXECUTIVE-only and SettingsRead (#6004, §11.11);
-    /// 11, ExchangeBackdate (backdated keying)).
-    pub const SEED_VERSION: i32 = 11;
+    /// 11, ExchangeBackdate (backdated keying); 12, CounterUnlock (XC Counter kiosk exit, #6569)).
+    pub const SEED_VERSION: i32 = 12;
 
     /// Permissions that entered [`Self::seed`] after version 1, with the seed version in which they entered (#3976).
     pub const SEED_ADDITIONS: &[(i32, Permission)] = &[
@@ -134,6 +134,7 @@ impl RoleGrants {
         (10, Permission::SettingsRead),
         (10, Permission::BranchSettingsSave),
         (11, Permission::ExchangeBackdate),
+        (12, Permission::CounterUnlock),
     ];
 
     /// Existing permissions seeded on one more built-in role after version 1 (#5108).
@@ -258,6 +259,7 @@ impl RoleGrants {
                 P::BranchSettingsSave,
                 P::SettingsRead,
                 P::ExchangeBackdate,
+                P::CounterUnlock,
             ],
             Role::Admin => &[
                 P::ShiftCloseCertify,
@@ -297,6 +299,7 @@ impl RoleGrants {
                 P::BindingQuoteIssue,
                 P::SettingsRead,
                 P::ExchangeBackdate,
+                P::CounterUnlock,
             ],
             Role::Teller => &[
                 P::ShiftOperate,

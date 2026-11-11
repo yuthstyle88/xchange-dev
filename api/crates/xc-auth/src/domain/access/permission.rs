@@ -115,11 +115,16 @@ pub enum Permission {
     /// EXECUTIVE (which the Owner holds) and BRANCH_MANAGER only, at seed v11.
     #[serde(rename = "exchangeBackdate")]
     ExchangeBackdate,
+    /// XC Counter kiosk exit (`docs/design/xc-counter-app.md` §8.8; owner decision on xchange#6569, 2026-11-09):
+    /// issue the one-time code that unlocks a locked counter (`counterUnlockIssue`). No module; seeded on EXECUTIVE
+    /// (which the Owner holds) and BRANCH_MANAGER only, at seed v12.
+    #[serde(rename = "counterUnlock")]
+    CounterUnlock,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 68] = [
+    pub const ALL: [Permission; 69] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -188,5 +193,6 @@ impl Permission {
         Permission::SettingsRead,
         Permission::BranchSettingsSave,
         Permission::ExchangeBackdate,
+        Permission::CounterUnlock,
     ];
 }

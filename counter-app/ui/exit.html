@@ -8,17 +8,20 @@
   form { display: grid; gap: 12px; width: 320px; }
   input, button { min-height: 44px; padding: 10px 12px; border-radius: 8px; border: 1px solid #e7e2e6; font: inherit; }
   button { background: #a5003c; border-color: #a5003c; color: #fff; font-weight: 600; }
+  button.secondary { background: #fff; color: #251e22; border-color: #e7e2e6; }
   output { color: #a4371f; min-height: 1.5em; }
 </style>
 </head>
 <body>
 <form id="f">
-  <label for="pin">PIN ผู้จัดการ</label>
-  <input id="pin" type="password" inputmode="numeric" autocomplete="off" autofocus required>
+  <label for="pin">รหัสปลดล็อกจากผู้จัดการ</label>
+  <input id="pin" type="text" placeholder="XXXXX-XXXXX" autocapitalize="characters" spellcheck="false" autocomplete="off" maxlength="11" autofocus required>
   <button type="submit">ออก</button>
+  <button type="button" id="back" class="secondary">กลับ</button>
   <output id="o"></output>
 </form>
 <script>
+  document.getElementById('back').addEventListener('click', () => history.back());
   document.getElementById('f').addEventListener('submit', async (e) => {
     e.preventDefault();
     document.getElementById('o').textContent = '';

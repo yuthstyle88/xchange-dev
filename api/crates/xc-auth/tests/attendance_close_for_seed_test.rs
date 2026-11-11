@@ -108,7 +108,8 @@ fn s2_attendance_close_for_enters_the_seed_at_version_7() {
     // LA-1 (ledger adjustment, ledger-inventory.md §13.3) raised it to 8 after SC-D2 set 7, #5733 (PricingFormulaSave) to 9;
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10; (7, AttendanceCloseFor) is unchanged.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
 }
 
 #[tokio::test]

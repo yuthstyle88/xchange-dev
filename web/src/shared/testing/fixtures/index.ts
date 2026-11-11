@@ -66,6 +66,7 @@ export * from './complete';
 export * from './consent_text_publish';
 export * from './consent_texts';
 export * from './copy_by_email';
+export * from './counter_unlock_issue';
 export * from './coupon_issue';
 export * from './customer_tier';
 export * from './denomination_groups';

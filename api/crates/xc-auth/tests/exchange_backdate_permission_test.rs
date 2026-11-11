@@ -72,7 +72,8 @@ fn bp2_it_enters_the_seed_at_version_11_once_and_is_never_removed() {
         vec![11],
         "SEED_ADDITIONS has (11, ExchangeBackdate) once"
     );
-    assert_eq!(RoleGrants::SEED_VERSION, 11);
+    // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock); (11, ExchangeBackdate) is unchanged.
+    assert_eq!(RoleGrants::SEED_VERSION, 12);
     assert!(
         RoleGrants::SEED_REMOVALS.iter().all(|&(_, q)| q != P),
         "it is never removed"
