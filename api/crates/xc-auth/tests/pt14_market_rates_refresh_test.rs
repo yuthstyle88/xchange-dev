@@ -22,6 +22,8 @@ use xc_auth::domain::access::permission_module::{
 use xc_auth::domain::access::role::Role;
 use xc_auth::domain::access::role_grants::RoleGrants;
 
+use crate::rbac_c6a_role_grants_test::at_seed;
+
 use Permission as P;
 
 /// Every built-in group and whether its seed holds `MarketRatesRefresh`, with its `RATES_STOCK` level in
@@ -117,6 +119,7 @@ fn pt14_its_holders_are_the_holders_of_rates_draft() {
 /// Adding the permission moves no role's `RATES_STOCK` level: the matrix row is still what the seed's modules say.
 #[test]
 fn pt14_no_rates_stock_level_moves() {
+    let _seed = at_seed();
     for (role, rates_stock, _) in HOLDERS {
         if !PermissionMatrix::ROLES.contains(&role) {
             continue;

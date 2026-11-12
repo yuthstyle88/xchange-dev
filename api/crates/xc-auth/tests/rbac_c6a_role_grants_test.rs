@@ -10,10 +10,8 @@
 //! §11.2 **and** the five desk device and document permissions as no-module (claude/65357afb's proposal A,
 //! #564 issuecomment-6261275325). If the BE controller rules otherwise, the sub-controller restates this file.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
-
 use chrono::{Duration, Utc};
+use std::collections::{BTreeMap, BTreeSet};
 use xc_auth::domain::access::permission_module::{
     Level, Module, PermissionMatrix, PermissionModule,
 };
@@ -25,10 +23,20 @@ use xc_kernel::ids::BranchId;
 
 use Permission as P;
 
-static LOCK: Mutex<()> = Mutex::new(());
+/// The one lock for the process snapshot in the `all` binary: every xc-auth test that installs it, reloads it (a
+/// session read) or reads it takes this lock through `crate::` (a helper `mod` would be one static per file).
+/// A tokio mutex so the async session tests hold it across `.await`; sync tests take it with [`locked`].
+pub(crate) static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-fn locked() -> std::sync::MutexGuard<'static, ()> {
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+pub(crate) fn locked() -> tokio::sync::MutexGuard<'static, ()> {
+    LOCK.blocking_lock()
+}
+
+/// [`locked`] with the seeded snapshot installed: for a test that reads the snapshot and installs nothing.
+pub(crate) fn at_seed() -> tokio::sync::MutexGuard<'static, ()> {
+    let guard = locked();
+    RoleGrants::install(RoleGrantsSnapshot::seeded());
+    guard
 }
 
 /// Puts the seeded snapshot back when a test passes. A failing test leaves it (installing while unwinding would

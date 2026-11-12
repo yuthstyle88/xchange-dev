@@ -142,6 +142,7 @@ fn expected(said: Said) -> Result<(), (String, u16)> {
 
 #[test]
 fn every_kiosk_action_by_every_caller_is_answered_from_the_one_table() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     let mut wrong = Vec::new();
     for (name, row) in table() {
         for (who, said) in CALLERS.iter().zip(row) {
@@ -161,6 +162,7 @@ fn every_kiosk_action_by_every_caller_is_answered_from_the_one_table() {
 
 #[test]
 fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     // server.mjs:8026 of the 10-06 bundle: `if (name === "list" && user) return queueWork.list(…)`
     assert_eq!(ask(Some(&owner()), EntryPath::Kiosk, "list"), Ok(()));
     for r in BLUEPRINT {
@@ -196,6 +198,7 @@ fn the_queue_is_listed_to_anybody_signed_in_since_the_10_06_bundle() {
 
 #[test]
 fn a_name_v2_does_not_answer_is_refused_by_what_the_caller_is() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     // nobody signed in: the staff sentence, never the unknown-action one
     for name in UNKNOWN_NAMES {
         assert_eq!(
@@ -251,6 +254,7 @@ fn a_name_v2_does_not_answer_is_refused_by_what_the_caller_is() {
 
 #[test]
 fn the_table_is_what_the_mapping_records() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     let f = mapped_fixture();
     let rows: Vec<_> = f.cases.iter().filter(|c| c.path == "Kiosk").collect();
     // 11 callers × the 13 names of `action2` and "nope"
@@ -277,6 +281,7 @@ fn the_table_is_what_the_mapping_records() {
 
 #[test]
 fn a_custom_group_holding_queue_operate_hears_kiosk_unknown_on_an_unknown_name() {
+    let _lock = crate::rbac_c6a_role_grants_test::locked();
     struct ResetSnapshot;
     impl Drop for ResetSnapshot {
         fn drop(&mut self) {

@@ -7,11 +7,10 @@
 //! - `holds_on(who, p, branch)` is the same, and also requires `r.covers(branch)` **on that same row**;
 //! - the base role (`r.role`) is not read.
 //!
-//! No database. `RoleGrants::install` is process-global, so every test here holds `LOCK` and puts the seeded
-//! snapshot back before it ends. Every installed snapshot keeps the nine built-in groups (CI runs each test in its
-//! own process under nextest; a plain `cargo test` shares the binary with other files that install snapshots too).
-
-use std::sync::Mutex;
+//! No database. `RoleGrants::install` is process-global, so every test here holds the shared lock
+//! (`rbac_c6a_role_grants_test::LOCK`) and puts the seeded snapshot back before it ends. Every installed snapshot
+//! keeps the nine built-in groups (CI runs each test in its own process under nextest; a plain `cargo test` shares
+//! the binary with other files that install snapshots too).
 
 use chrono::{Duration, Utc};
 use xc_auth::domain::access::permission_module::APPROVAL_KINDS;
@@ -22,11 +21,7 @@ use xc_kernel::ids::BranchId;
 
 use Permission as P;
 
-static LOCK: Mutex<()> = Mutex::new(());
-
-fn locked() -> std::sync::MutexGuard<'static, ()> {
-    LOCK.lock().unwrap_or_else(|e| e.into_inner())
-}
+use crate::rbac_c6a_role_grants_test::locked;
 
 /// Puts the seeded snapshot back when a test passes. A failing test leaves it (installing while unwinding would
 /// abort the binary); every test here installs what it needs first.

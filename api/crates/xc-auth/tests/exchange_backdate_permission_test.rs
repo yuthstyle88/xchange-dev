@@ -4,7 +4,8 @@
 //! Written before the implementation by the sub-controller claude/6bb512ce. Do not edit, delete or weaken;
 //! add tests in a file of your own.
 //!
-//! Pure: no database, the seeded snapshot only (nothing here calls `RoleGrants::install`). The time is passed in.
+//! Pure: no database, the seeded snapshot only; a test that reads it holds the shared lock with the seed installed
+//! (`rbac_c6a_role_grants_test::at_seed`). The time is passed in.
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use xc_auth::domain::access::actor::Actor;
@@ -110,6 +111,7 @@ fn bp4_the_transaction_backdate_row_needs_it() {
 /// EXECUTIVE pass.
 #[test]
 fn bp5_a_teller_is_refused_and_a_branch_manager_and_an_executive_pass() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     assert_eq!(
         backdate_as(&caller(Role::Teller, Some("MAIN"))),
         Err(PolicyError::RoleNotAllowedHere)
@@ -129,6 +131,7 @@ fn bp5_a_teller_is_refused_and_a_branch_manager_and_an_executive_pass() {
 /// BP-6: the other staff groups (ADMIN alone, RATE_MANAGER, FINANCE, MARKETING, VERIFICATION_REVIEWER) are refused.
 #[test]
 fn bp6_the_other_staff_groups_are_refused() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     for role in [
         Role::Admin,
         Role::RateManager,
