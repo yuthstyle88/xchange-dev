@@ -369,16 +369,18 @@ async fn confirm_in_accepts_the_customers_own_passport_and_refuses_another() {
 #[tokio::test]
 async fn the_passport_is_stored_only_encrypted_and_hashed() {
     let db = Db::start().await;
+    // Non-hex letters in the last 4 and last 7: they can never occur in a random UUID,
+    // ciphertext hex or timestamp, so a hit means the passport itself is stored in plain.
     db.service()
         .reserve(
             &BranchId::new("MAIN"),
-            person("AA1234567", "THA", "LIVE"),
+            person("AA12K4M7P", "THA", "LIVE"),
             at(0),
         )
         .await
         .expect("reserve");
     let stored = db.stored_plain_text().await;
-    for plain in ["AA1234567", "1234567", "4567", "1990-01-02", "2031-06-11"] {
+    for plain in ["AA12K4M7P", "12K4M7P", "4M7P", "1990-01-02", "2031-06-11"] {
         assert!(
             !stored.contains(plain),
             "{plain} is not stored in plain: {stored}"
@@ -387,7 +389,7 @@ async fn the_passport_is_stored_only_encrypted_and_hashed() {
     let ciphers = db.stored_cipher_bytes().await;
     assert!(!ciphers.is_empty(), "expected stored cipher bytes");
     for cipher in &ciphers {
-        for full_val in ["AA1234567", "1990-01-02", "2031-06-11"] {
+        for full_val in ["AA12K4M7P", "1990-01-02", "2031-06-11"] {
             let needle = full_val.as_bytes();
             assert!(
                 !cipher.windows(needle.len()).any(|w| w == needle),
