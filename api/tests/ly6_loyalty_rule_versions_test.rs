@@ -1392,7 +1392,8 @@ async fn current_is_never_written_by_v3() {
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT table_name::text FROM information_schema.tables \
          WHERE table_schema = current_schema() \
-           AND (table_name ILIKE '%rule_version%' OR table_name ILIKE '%loyalty_rule%')",
+           AND ((table_name ILIKE '%rule_version%' AND table_name <> 'pricing_rule_versions') \
+                OR table_name ILIKE '%loyalty_rule%')",
     )
     .fetch_all(&room.pool)
     .await

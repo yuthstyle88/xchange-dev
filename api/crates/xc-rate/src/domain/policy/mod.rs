@@ -3,5 +3,6 @@
 pub mod anchor_source;
 pub mod currency_tier_override;
 pub mod policy_tiers;
+pub mod pricing_rules;
 pub mod rate_policy;
 pub mod stale_policy;

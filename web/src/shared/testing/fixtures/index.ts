@@ -130,6 +130,8 @@ export * from './pricing_formula';
 export * from './pricing_formula_preview';
 export * from './pricing_formula_save';
 export * from './pricing_mode_save';
+export * from './pricing_rules';
+export * from './pricing_rules_save';
 export * from './pricing_suggestion_settings_save';
 export * from './profit_summary';
 export * from './published_rates';

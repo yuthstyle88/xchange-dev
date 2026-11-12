@@ -109,7 +109,8 @@ fn s2_attendance_close_for_enters_the_seed_at_version_7() {
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10; (7, AttendanceCloseFor) is unchanged.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
     // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
-    assert_eq!(RoleGrants::SEED_VERSION, 12);
+    // Restated for the Owner's pricing rules (#6555): SEED_VERSION is 13 (PricingRulesSave).
+    assert_eq!(RoleGrants::SEED_VERSION, 13);
 }
 
 #[tokio::test]

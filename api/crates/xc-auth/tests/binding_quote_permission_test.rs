@@ -163,8 +163,8 @@ fn p3_it_enters_the_seed_in_version_6() {
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     assert_eq!(
         RoleGrants::SEED_VERSION,
-        12,
-        "SEED_VERSION is 12 (D-18 set 6; SC-D2 7; LA-1 8; #5733 PricingFormulaSave 9; #6004 §11.11 10; backdated keying ExchangeBackdate 11; #6569 CounterUnlock 12)"
+        13,
+        "SEED_VERSION is 13 (D-18 set 6; SC-D2 7; LA-1 8; #5733 PricingFormulaSave 9; #6004 §11.11 10; backdated keying ExchangeBackdate 11; #6569 CounterUnlock 12; #6555 PricingRulesSave 13)"
     );
 }
 

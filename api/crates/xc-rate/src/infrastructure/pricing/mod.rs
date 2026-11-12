@@ -4,5 +4,6 @@ pub mod branch_policy_store;
 pub mod display_settings_store;
 pub mod follow_result_store;
 pub mod pricing_mode_store;
+pub mod pricing_rules_store;
 pub mod suggestion_settings_store;
 pub mod tier_set_store;

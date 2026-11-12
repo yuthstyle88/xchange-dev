@@ -108,6 +108,7 @@ const SEED: [(Role, &[Permission]); 9] = [
             P::BranchSettingsSave, // #6004 (§11.11)
             P::ExchangeBackdate,   // backdated keying (backdated-keying.md §3)
             P::CounterUnlock,      // XC Counter kiosk exit (#6569)
+            P::PricingRulesSave,   // the Owner's pricing rules (#6555)
         ],
     ),
     (
@@ -304,7 +305,7 @@ const SEED: [(Role, &[Permission]); 9] = [
 /// The no-module permissions: §11.2's desk basics, "Branch cash basics" (`CashManage`, `ApprovalsDecide`),
 /// `SignedIn` and the rest of §11.3 rule 5, proposal A's five, and §11.9's nine approval kinds (AP-0).
 // Restated for #6004 (user-management-rbac.md §11.11): the settings saves and SettingsRead have no module.
-const NO_MODULE: [Permission; 41] = [
+const NO_MODULE: [Permission; 42] = [
     P::SignedIn,
     P::AttendanceClock,
     P::CompatRead,
@@ -353,6 +354,8 @@ const NO_MODULE: [Permission; 41] = [
     P::ExchangeBackdate,
     // xc-counter-app.md §8.7 (#6569): seeded on EXECUTIVE and BRANCH_MANAGER only.
     P::CounterUnlock,
+    // owner-set-values.md §2 (#6555): seeded on EXECUTIVE only.
+    P::PricingRulesSave,
 ];
 
 fn in_all_order(set: &[Permission]) -> Vec<Permission> {

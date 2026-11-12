@@ -168,7 +168,9 @@ impl PermissionModule {
             // backdated-keying.md §3: seeded on EXECUTIVE and BRANCH_MANAGER only, so no module implies it.
             | P::ExchangeBackdate
             // xc-counter-app.md §8.8: seeded on EXECUTIVE and BRANCH_MANAGER only, so no module implies it.
-            | P::CounterUnlock => None,
+            | P::CounterUnlock
+            // owner-set-values.md §2: seeded on EXECUTIVE only, so no module implies it.
+            | P::PricingRulesSave => None,
         }
     }
 }

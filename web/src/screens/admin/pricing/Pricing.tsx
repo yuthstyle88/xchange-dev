@@ -37,6 +37,7 @@ import { PricingGrid } from './PricingGrid';
 import { CardLines } from './PricingRow';
 import { PricingMode } from './PricingMode';
 import { PricingPolicy } from './PricingPolicy';
+import { PricingRules } from './PricingRules';
 import { Recommendations } from './Recommendations';
 import { TierEditor } from './TierEditor';
 import './pricing.css';
@@ -187,6 +188,10 @@ export function Pricing(props: PricingProps): JSX.Element {
     api,
     'POST',
     ROUTE_PRICING_MARKET_REFRESH,
+  );
+
+  const mayEditRules = createMemo(() =>
+    Boolean((me()?.permissions as readonly string[] | undefined)?.includes('pricingRulesSave')),
   );
 
   const disabledReason = () => (meError() !== null ? permissionsUnavailableText(meError()) : undefined);
@@ -386,6 +391,14 @@ export function Pricing(props: PricingProps): JSX.Element {
                   mayEdit={mayEditPolicy()}
                   disabledReason={disabledReason()}
                   onSaved={() => void loadBoard()}
+                />
+              </div>
+              <div class="pricing-panel">
+                <PricingRules
+                  api={api}
+                  branch={props.branch()}
+                  mayEdit={mayEditRules()}
+                  disabledReason={disabledReason()}
                 />
               </div>
               <div class="pricing-panel">

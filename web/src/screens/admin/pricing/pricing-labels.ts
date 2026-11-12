@@ -44,6 +44,9 @@ export const ROUTE_PRICING_BRANCH_POLICY = '/api/pricing/branch-policy';
 export const ROUTE_PRICING_DISPLAY = '/api/pricing/display';
 /** PV-g: fetches TT and SR (rateReferenceFetch stays BoT-only); MarketRatesRefresh permission. */
 export const ROUTE_PRICING_MARKET_REFRESH = '/api/pricing/market-refresh';
+/** The Owner's pricing rules (owner-set-values.md §2, #6555): the view and its EXECUTIVE-only save. */
+export const VIEW_PRICING_RULES = 'pricing_rules';
+export const ROUTE_PRICING_RULES = '/api/pricing/rules';
 
 /** pricingBranchPolicySave refuses basis points outside this range (400 validationFailed). */
 export const BRANCH_BP_MIN = -300;
