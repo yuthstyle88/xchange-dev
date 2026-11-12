@@ -120,11 +120,15 @@ pub enum Permission {
     /// (which the Owner holds) and BRANCH_MANAGER only, at seed v12.
     #[serde(rename = "counterUnlock")]
     CounterUnlock,
+    /// The Owner's pricing rules (`docs/design/blueprint/owner-set-values.md` §2; xchange#6555): save a new version
+    /// of the organisation's pricing rules (`pricingRulesSave`). No module; seeded on EXECUTIVE only, at seed v13.
+    #[serde(rename = "pricingRulesSave")]
+    PricingRulesSave,
 }
 
 impl Permission {
     /// Every permission, in declaration order (RBAC §11: the seed, the guardrails and the matrix view walk it).
-    pub const ALL: [Permission; 69] = [
+    pub const ALL: [Permission; 70] = [
         Permission::OverviewRead,
         Permission::RatesDraft,
         Permission::RatesHistoryRead,
@@ -194,5 +198,6 @@ impl Permission {
         Permission::BranchSettingsSave,
         Permission::ExchangeBackdate,
         Permission::CounterUnlock,
+        Permission::PricingRulesSave,
     ];
 }

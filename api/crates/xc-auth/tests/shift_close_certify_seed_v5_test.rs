@@ -150,7 +150,8 @@ async fn v1_a_version_4_database_gains_shift_close_certify_for_executive_and_adm
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
     // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
-    assert_eq!(RoleGrants::SEED_VERSION, 12);
+    // Restated for the Owner's pricing rules (#6555): SEED_VERSION is 13 (PricingRulesSave).
+    assert_eq!(RoleGrants::SEED_VERSION, 13);
     for role in RoleGrants::BUILT_IN {
         assert_eq!(
             stored_set(&db, role.as_str()).await,

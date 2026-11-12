@@ -132,7 +132,8 @@ fn seed_removals_holds_exactly_the_two_dashboard_permissions_at_version_3() {
     // Restated for #6004 (user-management-rbac.md §11.11): SEED_VERSION is 10 and SEED_REMOVALS adds the seven settings saves at version 10.
     // Restated for backdated keying (backdated-keying.md §3): SEED_VERSION is 11 (ExchangeBackdate).
     // Restated for XC Counter kiosk exit (#6569): SEED_VERSION is 12 (CounterUnlock).
-    assert_eq!(RoleGrants::SEED_VERSION, 12);
+    // Restated for the Owner's pricing rules (#6555): SEED_VERSION is 13 (PricingRulesSave).
+    assert_eq!(RoleGrants::SEED_VERSION, 13);
     assert_eq!(
         RoleGrants::SEED_REMOVALS,
         &[
