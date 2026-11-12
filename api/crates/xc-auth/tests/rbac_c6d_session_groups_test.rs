@@ -9,8 +9,9 @@
 //! Users, `user_roles` rows and sessions are written in SQL, as `rbac_f11a_session_test.rs` writes users; a session
 //! row is `user_sessions.hash = sha256_hex(token)` at the user's version, so `active_session(token, now)` reads it.
 //!
-//! `RoleGrants::install` is process-global, so every test holds `LOCK` from start to end and first installs
-//! `RoleGrantsSnapshot::seeded()` (version 0), so no test sees another's snapshot.
+//! `RoleGrants::install` is process-global, so every test holds the shared lock (`rbac_c6a_role_grants_test::LOCK`)
+//! from start to end and first installs `RoleGrantsSnapshot::seeded()` (version 0), so no test sees another's
+//! snapshot.
 //!
 //! Needs a real PostgreSQL: `TEST_DATABASE_URL` naming a database whose name ends in `_test`. Without it these
 //! tests FAIL; none skips.
@@ -34,7 +35,6 @@ use std::collections::BTreeSet;
 
 use account_common::{TestDb, at, unique};
 use chrono::Utc;
-use tokio::sync::Mutex;
 use xc_auth::application::session::{SessionService, sha256_hex};
 use xc_auth::domain::access::{
     Group, Permission, Role, RoleGrantStore, RoleGrants, RoleGrantsSnapshot, ScopedRole,
@@ -44,8 +44,8 @@ use xc_auth::infrastructure::access::PgRoleGrantStore;
 use xc_auth::infrastructure::user::PgUserRepository;
 use xc_kernel::ids::BranchId;
 
-/// Held for the whole of every test in this file: `RoleGrants::install` is process-global.
-static LOCK: Mutex<()> = Mutex::const_new(());
+// Held for the whole of every test in this file: `RoleGrants::install` is process-global.
+use crate::rbac_c6a_role_grants_test::LOCK;
 
 const NIGHT_TELLER: &str = "NIGHT_TELLER";
 

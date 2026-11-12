@@ -15,6 +15,8 @@ use xc_auth::domain::access::permission_module::{
 use xc_auth::domain::access::role::Role;
 use xc_auth::domain::access::role_grants::RoleGrants;
 
+use crate::rbac_c6a_role_grants_test::at_seed;
+
 use Level::{Create, Full, View};
 use Module::*;
 
@@ -192,6 +194,7 @@ fn c2_exactly_the_cross_cutting_six_map_to_no_module() {
 
 #[test]
 fn c2_each_staff_role_row_is_the_highest_level_per_module() {
+    let _seed = at_seed();
     for role in PermissionMatrix::ROLES {
         assert_eq!(
             PermissionMatrix::of(role),
@@ -204,6 +207,7 @@ fn c2_each_staff_role_row_is_the_highest_level_per_module() {
 
 #[test]
 fn c2_the_rows_are_the_eight_staff_roles_and_customer_has_none() {
+    let _seed = at_seed();
     assert_eq!(
         PermissionMatrix::ROLES.map(Role::as_str),
         [
@@ -235,6 +239,7 @@ fn c2_audit_logs_read_holders_per_section_11_2() {
 
 #[test]
 fn c2_no_role_goes_above_view_on_audit_logs_and_risk_is_empty() {
+    let _seed = at_seed();
     for role in PermissionMatrix::ROLES {
         let row = PermissionMatrix::of(role);
         assert!(
@@ -292,6 +297,7 @@ fn c2_levels_order_view_create_full() {
 /// entry named by `Role::as_str`, each cell `Level::as_str` or `—`. It must equal the code.
 #[test]
 fn c2_the_design_docs_section_5_table_equals_the_code() {
+    let _seed = at_seed();
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../../../docs/design/blueprint/user-management-rbac.md"

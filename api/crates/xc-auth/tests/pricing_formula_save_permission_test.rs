@@ -4,7 +4,8 @@
 //! Written before the implementation by the sub-controller claude/studio-claude-3. Do not edit, delete or weaken;
 //! add tests in a file of your own.
 //!
-//! Pure: no database, the seeded snapshot only (nothing here calls `RoleGrants::install`). The time is passed in.
+//! Pure: no database, the seeded snapshot only; a test that reads it holds the shared lock with the seed installed
+//! (`rbac_c6a_role_grants_test::at_seed`). The time is passed in.
 
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use xc_auth::domain::access::actor::Actor;
@@ -107,6 +108,7 @@ fn f4_the_pricing_formula_save_row_needs_it_and_stays_organisation() {
 /// organisation-wide EXECUTIVE passes.
 #[test]
 fn f5_an_org_wide_rate_manager_is_refused_and_an_org_wide_executive_passes() {
+    let _seed = crate::rbac_c6a_role_grants_test::at_seed();
     assert!(
         RoleGrants::seed(Role::RateManager).contains(&Permission::RatePolicySave),
         "precondition: RATE_MANAGER holds RatePolicySave"
