@@ -8,6 +8,8 @@ use rust_decimal::{Decimal, RoundingStrategy};
 use sqlx::PgConnection;
 use xc_kernel::money::Rate;
 
+use crate::domain::draft::rate_engine_error::RateEngineError;
+use crate::domain::policy::pricing_rules::{RuleNotSet, require};
 use crate::domain::pricing::market_quote::MarketQuote;
 use crate::domain::pricing::pricing_suggestion::{SuggestionConfig, TierPrice};
 use crate::domain::pricing::tier_check::{TierCheck, TierError};
@@ -62,9 +64,6 @@ pub struct BranchPricingPolicy {
 }
 
 impl BranchPricingPolicy {
-    /// The bp limit either side (`H:` §7; the table's CHECK).
-    pub const MAX_BP: i32 = 300;
-
     /// Each of `buyBp`/`sellBp`: the currency row's if not NULL, else the `'*'` row's, else 0. `own` and `follow` are
     /// the currency row's only.
     pub fn resolve(&self, currency: &str) -> ResolvedPolicy {
@@ -99,15 +98,15 @@ impl BranchPricingPolicy {
 
     /// `buy[i] = floor_d(mainBuy[i] × (1 + buyBp/10000))`, `sell[i] = ceil_d(mainSell[i] × (1 + sellBp/10000))`, where
     /// `d` is the decimals of the base tiers (the largest scale among the 8 values), at most 5. Then monotonic:
-    /// `buy[i] = max(buy[i], buy[i−1])`, `sell[i] = min(sell[i], sell[i−1])`. Then `TierCheck::validate` against
-    /// `anchor` (per one unit; `None` skips the anchor check). `Err` holds every `TierError` found.
-    pub fn adjust(
+    /// `buy[i] = max(buy[i], buy[i−1])`, `sell[i] = min(sell[i], sell[i−1])`. Then `TierCheck::validate_with` against
+    /// `anchor` (per one unit; `None` skips the anchor check) using `far_from_anchor_limit_pct` (`None` ⇒ `RuleNotSet`).
+    pub fn adjust_with(
         base: &[TierRate; 4],
         policy: &ResolvedPolicy,
         unit_size: Decimal,
         anchor: Option<&MarketQuote>,
-        config: &SuggestionConfig,
-    ) -> Result<[TierRate; 4], Vec<TierError>> {
+        far_from_anchor_limit_pct: Option<Decimal>,
+    ) -> Result<Result<[TierRate; 4], Vec<TierError>>, RuleNotSet> {
         let d = base
             .iter()
             .flat_map(|t| {
@@ -140,27 +139,58 @@ impl BranchPricingPolicy {
             }
         });
 
-        let errors = TierCheck::validate(&check_tiers, unit_size, anchor, config);
+        let errors =
+            TierCheck::validate_with(&check_tiers, unit_size, anchor, far_from_anchor_limit_pct)?;
         if !errors.is_empty() {
-            return Err(errors);
+            return Ok(Err(errors));
         }
-        Ok(check_tiers.map(|t| TierRate {
+        Ok(Ok(check_tiers.map(|t| TierRate {
             buy: t.buy.expect("validated"),
             sell: t.sell.expect("validated"),
-        }))
+        })))
     }
 
-    /// `Err` with the reason when `bp` is outside −300..=300 (`validationFailed`).
-    pub fn check_bp(bp: i32) -> Result<i32, String> {
-        if (-Self::MAX_BP..=Self::MAX_BP).contains(&bp) {
+    /// GA-3 deletes this.
+    pub fn adjust(
+        base: &[TierRate; 4],
+        policy: &ResolvedPolicy,
+        unit_size: Decimal,
+        anchor: Option<&MarketQuote>,
+        config: &SuggestionConfig,
+    ) -> Result<[TierRate; 4], Vec<TierError>> {
+        Self::adjust_with(
+            base,
+            policy,
+            unit_size,
+            anchor,
+            config.far_from_anchor_limit_pct,
+        )
+        .expect("v9 default sets the limit")
+    }
+
+    /// Checks `bp` against the Owner's symmetric `branch_bp_cap` (`None` ⇒ `pricingRuleNotSet`, field `"branchBpCap"`).
+    pub fn check_bp_with(bp: i32, cap: Option<i32>) -> Result<i32, RateEngineError> {
+        let cap = require(&cap, "branchBpCap").map_err(|e| RateEngineError::Refused {
+            code: "pricingRuleNotSet",
+            message: e.field.to_owned(),
+        })?;
+        if (-cap..=cap).contains(&bp) {
             Ok(bp)
         } else {
-            Err(format!(
-                "bp must be between -{} and {}",
-                Self::MAX_BP,
-                Self::MAX_BP
-            ))
+            Err(RateEngineError::ValidationFailed(format!(
+                "bp must be between -{cap} and {cap}"
+            )))
         }
+    }
+
+    /// GA-3 deletes this.
+    pub fn check_bp(bp: i32) -> Result<i32, String> {
+        Self::check_bp_with(bp, SuggestionConfig::v9_default().rules.branch_bp_cap).map_err(|e| {
+            match e {
+                RateEngineError::ValidationFailed(msg) => msg,
+                other => other.to_string(),
+            }
+        })
     }
 }
 

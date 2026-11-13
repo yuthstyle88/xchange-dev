@@ -596,3 +596,52 @@ async fn an_inactive_branch_is_never_pushed() {
     assert_eq!(publication_of(&db, E).await, e_before, "E unchanged");
     db.finish().await;
 }
+
+/// G-3 (owner-set-values.md §2 row 2): `BranchPush::push_with` loads `PricingRules` inside its transaction, refuses
+/// with `error = Some("pricingRuleNotSet")` when `far_from_anchor_limit_pct` is `None`, and publishes when set.
+#[tokio::test]
+async fn g3_push_with_refuses_when_far_from_anchor_limit_not_set_and_publishes_when_set() {
+    use xc_rate::domain::policy::pricing_rules::PricingRules;
+    use xc_rate::infrastructure::pricing::pricing_rules_store::PricingRulesStore;
+
+    let db = TestDb::start().await;
+    let tt = push_room(&db, &[B]).await;
+    save_policy(&db, B, "*", bp(5, -5)).await;
+    let main = main_set(&db, TierSetSource::Manual, tt).await;
+
+    let refused = pusher(&db)
+        .push_with(&owner_user(), &main, PushKind::Manual)
+        .await;
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].branch, B);
+    assert_eq!(refused[0].state, BranchPushState::Failed);
+    assert_eq!(refused[0].error.as_deref(), Some("pricingRuleNotSet"));
+    assert!(rows_of(&db, B).await.is_empty());
+
+    let org_id: Uuid = sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+        .bind(B)
+        .fetch_one(&db.pool)
+        .await
+        .expect("org_id");
+    let mut conn = db.pool.acquire().await.expect("conn");
+    PricingRulesStore::save_in(
+        &mut conn,
+        org_id,
+        &PricingRules {
+            far_from_anchor_limit_pct: Some(dec("3")),
+            ..PricingRules::not_set()
+        },
+        "owner-1",
+        whole_second_now(),
+    )
+    .await
+    .expect("save pricing rules");
+    drop(conn);
+
+    let ok = pusher(&db)
+        .push_with(&owner_user(), &main, PushKind::Manual)
+        .await;
+    assert_eq!(ok.len(), 1);
+    assert_pushed(&db, B, &main, "MAIN_PUSH", B_TIERS, &ok[0]).await;
+    db.finish().await;
+}

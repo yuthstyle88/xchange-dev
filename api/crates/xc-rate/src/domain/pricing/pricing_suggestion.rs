@@ -3,14 +3,19 @@
 //! SKELETON (PT-0, then XC-PRICING PX-0): `PricingSuggestion::of` is PX-6's. `SuggestionInput` and
 //! `SuggestionConfig` are fixed by §5.1/§5.2 from V.9's `src/pricing/engine.mjs` (`suggestTiers`, `:40-65`).
 
+use chrono::Duration;
 use rust_decimal::{Decimal, RoundingStrategy};
 use xc_kernel::money::{CurrencyCode, Rate, RatePercent};
 
 use crate::domain::formula::input::FormulaInputs;
 use crate::domain::formula::price_formula::PriceFormula;
 use crate::domain::policy::currency_tier_override::TierMargin;
+use crate::domain::policy::pricing_rules::{
+    AdviceThresholds, MAX_RATE_DECIMALS, PctRange, PricingRules, RateDecimals,
+};
 use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use crate::domain::pricing::pricing_flag::PricingFlag;
+use crate::domain::pricing::suggestion_settings::SuggestionSettings;
 
 /// One suggested tier price (buy and sell), per the currency's unit size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,17 +41,51 @@ impl Suggestion {
 }
 
 /// V.9's `DEFAULT_CONFIG` (`engine.mjs:13`): `better` is the % better for the customer than the anchor, per tier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuggestionConfig {
     pub better: [Decimal; 4],
     pub min_spread_pct: Decimal,
     pub far_from_anchor_pct: Decimal,
     pub large_move_pct: Decimal,
+    pub better_set: bool,
+    pub min_spread_set: bool,
+    pub large_move_set: bool,
+    pub far_from_anchor_limit_pct: Option<Decimal>,
+    pub rate_decimals: Option<RateDecimals>,
+    pub rules: PricingRules,
 }
 
 impl SuggestionConfig {
-    /// `{better: [0.1, 0.14, 0.2, 0.3], minSpreadPct: 0.3, farFromAnchorPct: 1, largeMovePct: 1}`.
+    /// GA-3 deletes this.
     pub fn v9_default() -> Self {
+        let rules = PricingRules {
+            far_from_anchor_limit_pct: Some(Decimal::new(3, 0)),
+            large_move_pct: Some(Decimal::ONE),
+            rate_decimals: Some(RateDecimals {
+                bands: vec![
+                    (Decimal::ZERO, 4),
+                    (Decimal::ONE, 3),
+                    (Decimal::from(10), 2),
+                ],
+            }),
+            thb_cash_step: None,
+            branch_bp_cap: Some(300),
+            better_pct_range: Some(PctRange {
+                min: Decimal::from(-2),
+                max: Decimal::from(2),
+            }),
+            min_spread_pct_range: Some(PctRange {
+                min: Decimal::ZERO,
+                max: Decimal::from(5),
+            }),
+            market_stale_after: Some(Duration::minutes(30)),
+            advice: Some(AdviceThresholds {
+                far_pct: Decimal::ONE,
+                spread_ratio: Decimal::new(15, 1),
+                spread_gap_pt: Decimal::new(5, 1),
+                market_moved_pct: Decimal::new(2, 1),
+            }),
+        };
         Self {
             better: [
                 Decimal::new(10, 2),
@@ -57,7 +96,44 @@ impl SuggestionConfig {
             min_spread_pct: Decimal::new(3, 1),
             far_from_anchor_pct: Decimal::ONE,
             large_move_pct: Decimal::ONE,
+            better_set: true,
+            min_spread_set: true,
+            large_move_set: true,
+            far_from_anchor_limit_pct: rules.far_from_anchor_limit_pct,
+            rate_decimals: rules.rate_decimals.clone(),
+            rules,
         }
+    }
+
+    /// Builds a config from the Owner's `PricingRules` and optional branch/currency margins (`None` = not set).
+    pub fn from_rules(
+        rules: &PricingRules,
+        better: Option<[Decimal; 4]>,
+        min_spread_pct: Option<Decimal>,
+    ) -> Self {
+        Self {
+            better: better.unwrap_or_default(),
+            min_spread_pct: min_spread_pct.unwrap_or_default(),
+            far_from_anchor_pct: Decimal::ZERO,
+            large_move_pct: rules.large_move_pct.unwrap_or_default(),
+            better_set: better.is_some(),
+            min_spread_set: min_spread_pct.is_some(),
+            large_move_set: rules.large_move_pct.is_some(),
+            far_from_anchor_limit_pct: rules.far_from_anchor_limit_pct,
+            rate_decimals: rules.rate_decimals.clone(),
+            rules: rules.clone(),
+        }
+    }
+
+    /// Resolves `better` for `currency` from `settings` and combines with `rules` and `min_spread_pct`.
+    pub fn of(
+        rules: &PricingRules,
+        settings: &SuggestionSettings,
+        currency: &str,
+        min_spread_pct: Option<Decimal>,
+    ) -> Self {
+        let better = settings.better_for_with(currency).map(|(b, _)| b);
+        Self::from_rules(rules, better, min_spread_pct)
     }
 }
 
@@ -116,14 +192,32 @@ impl PricingSuggestion {
                 flags: vec![PricingFlag::NoAnchor],
             };
         };
+        let Some(rate_decimals) = &input.config.rate_decimals else {
+            if !flags.contains(&PricingFlag::RuleNotSet) {
+                flags.push(PricingFlag::RuleNotSet);
+            }
+            return Suggestion {
+                tiers: None,
+                margins: None,
+                flags,
+            };
+        };
+        if !input.config.better_set || !input.config.min_spread_set {
+            if !flags.contains(&PricingFlag::RuleNotSet) {
+                flags.push(PricingFlag::RuleNotSet);
+            }
+            return Suggestion {
+                tiers: None,
+                margins: None,
+                flags,
+            };
+        }
         let anchor_buy = anchor_buy_rate.value();
         let anchor_sell = anchor_sell_rate.value();
 
         let d = match (anchor.source, input.tt_decimals) {
-            (MarketSource::Tt, Some(hint)) if hint >= 2 => hint.min(4),
-            _ if anchor_buy >= Decimal::from(10) => 2,
-            _ if anchor_buy >= Decimal::ONE => 3,
-            _ => 4,
+            (MarketSource::Tt, Some(hint)) if hint >= 2 => hint.min(MAX_RATE_DECIMALS),
+            _ => rate_decimals.decimals_for(anchor_buy),
         };
 
         let floor_d =
@@ -273,7 +367,11 @@ impl PricingSuggestion {
             flags.push(PricingFlag::BelowCost);
         }
 
-        if let Some(published) = input.published_tier1_buy {
+        if !input.config.large_move_set {
+            if !flags.contains(&PricingFlag::RuleNotSet) {
+                flags.push(PricingFlag::RuleNotSet);
+            }
+        } else if let Some(published) = input.published_tier1_buy {
             let pub_val = published.value();
             if pub_val > Decimal::ZERO {
                 let tier1_buy_at_unit = unit_tiers[0].0 * input.unit_size;

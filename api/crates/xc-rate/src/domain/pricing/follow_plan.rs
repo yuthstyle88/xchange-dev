@@ -12,9 +12,10 @@ use uuid::Uuid;
 use xc_kernel::money::{CurrencyCode, Rate};
 
 use crate::domain::pricing::market_quote::MarketQuote;
-use crate::domain::pricing::market_snapshot::MarketStaleness;
 use crate::domain::pricing::pricing_flag::PricingFlag;
-use crate::domain::pricing::pricing_suggestion::{PricingSuggestion, SuggestionInput};
+use crate::domain::pricing::pricing_suggestion::{
+    PricingSuggestion, SuggestionConfig, SuggestionInput,
+};
 use crate::domain::pricing::tier_check::TierCheck;
 use crate::domain::pricing::tier_set::{MarketAnchor, StoreFuture, TierRate};
 
@@ -56,8 +57,11 @@ impl SourceFreshness {
     }
 
     /// `H:` §6: the last fetch succeeded — no error, `fetched_at == last_attempt_at`, not in the future, and at most
-    /// `MarketStaleness::STALE_AFTER_MINUTES` (30) old at `now`. Shared with `FollowVisibility` (§15.7 `STALE`).
-    pub fn is_current(&self, now: DateTime<Utc>) -> bool {
+    /// `stale_after` old at `now` (`None` ⇒ `false`, owner-set-values.md §2 row 16). Shared with `FollowVisibility`.
+    pub fn is_current_with(&self, now: DateTime<Utc>, stale_after: Option<Duration>) -> bool {
+        let Some(window) = stale_after else {
+            return false;
+        };
         let (Some(fetched_at), Some(last_attempt_at)) = (self.fetched_at, self.last_attempt_at)
         else {
             return false;
@@ -65,7 +69,12 @@ impl SourceFreshness {
         self.error.is_none()
             && fetched_at == last_attempt_at
             && fetched_at <= now
-            && now - fetched_at <= Duration::minutes(MarketStaleness::STALE_AFTER_MINUTES)
+            && now - fetched_at <= window
+    }
+
+    /// GA-3 deletes this.
+    pub fn is_current(&self, now: DateTime<Utc>) -> bool {
+        self.is_current_with(now, SuggestionConfig::v9_default().rules.market_stale_after)
     }
 }
 
@@ -79,10 +88,12 @@ pub enum FollowReason {
     LargeMove,
     /// `TierCheck` refused the tiers, or they are not at most 4 decimals.
     InvalidTiers,
+    /// An Owner pricing rule or branch margin needed by FOLLOW is not set (owner-set-values.md §2, §3).
+    RuleNotSet,
 }
 
 impl FollowReason {
-    /// `"NO_ANCHOR"` · `"STALE_SOURCE"` · `"PRECISION"` · `"BELOW_COST"` · `"LARGE_MOVE"` · `"INVALID_TIERS"`.
+    /// `"NO_ANCHOR"` · `"STALE_SOURCE"` · `"PRECISION"` · `"BELOW_COST"` · `"LARGE_MOVE"` · `"INVALID_TIERS"` · `"RULE_NOT_SET"`.
     pub fn as_str(self) -> &'static str {
         match self {
             FollowReason::NoAnchor => "NO_ANCHOR",
@@ -91,6 +102,7 @@ impl FollowReason {
             FollowReason::BelowCost => "BELOW_COST",
             FollowReason::LargeMove => "LARGE_MOVE",
             FollowReason::InvalidTiers => "INVALID_TIERS",
+            FollowReason::RuleNotSet => "RULE_NOT_SET",
         }
     }
 
@@ -102,6 +114,7 @@ impl FollowReason {
             FollowReason::BelowCost,
             FollowReason::LargeMove,
             FollowReason::InvalidTiers,
+            FollowReason::RuleNotSet,
         ]
         .into_iter()
         .find(|r| r.as_str() == text)
@@ -148,7 +161,10 @@ impl FollowPlan {
         if anchor_quote.is_none() {
             reasons.push(FollowReason::NoAnchor);
         }
-        if !input.source.is_current(now) {
+        if !input
+            .source
+            .is_current_with(now, input.suggestion.config.rules.market_stale_after)
+        {
             reasons.push(FollowReason::StaleSource);
         }
         if suggestion.flags.contains(&PricingFlag::Precision) {
@@ -158,24 +174,33 @@ impl FollowPlan {
             reasons.push(FollowReason::BelowCost);
         }
 
-        let moved = |cur: Rate, prev: Rate| {
-            prev.value() > Decimal::ZERO
-                && ((cur.value() - prev.value()) / prev.value() * Decimal::from(100)).abs()
-                    > input.suggestion.config.large_move_pct
-        };
-        let large_move = suggestion.flags.contains(&PricingFlag::LargeMove)
-            || suggestion
-                .tiers
-                .as_ref()
-                .and_then(|t| t[0].buy.zip(t[0].sell))
-                .is_some_and(|(t1_buy, t1_sell)| {
-                    [input.last_tier1, input.published_tier1]
-                        .into_iter()
-                        .flatten()
-                        .any(|prev| moved(t1_buy, prev.buy) || moved(t1_sell, prev.sell))
-                });
-        if large_move {
-            reasons.push(FollowReason::LargeMove);
+        let mut rule_not_set = suggestion.flags.contains(&PricingFlag::RuleNotSet)
+            || !input.suggestion.config.large_move_set
+            || input.suggestion.config.far_from_anchor_limit_pct.is_none()
+            || input.suggestion.config.rate_decimals.is_none()
+            || !input.suggestion.config.better_set
+            || !input.suggestion.config.min_spread_set;
+
+        if input.suggestion.config.large_move_set {
+            let moved = |cur: Rate, prev: Rate| {
+                prev.value() > Decimal::ZERO
+                    && ((cur.value() - prev.value()) / prev.value() * Decimal::from(100)).abs()
+                        > input.suggestion.config.large_move_pct
+            };
+            let large_move = suggestion.flags.contains(&PricingFlag::LargeMove)
+                || suggestion
+                    .tiers
+                    .as_ref()
+                    .and_then(|t| t[0].buy.zip(t[0].sell))
+                    .is_some_and(|(t1_buy, t1_sell)| {
+                        [input.last_tier1, input.published_tier1]
+                            .into_iter()
+                            .flatten()
+                            .any(|prev| moved(t1_buy, prev.buy) || moved(t1_sell, prev.sell))
+                    });
+            if large_move {
+                reasons.push(FollowReason::LargeMove);
+            }
         }
 
         if let Some(tiers) = &suggestion.tiers {
@@ -183,17 +208,28 @@ impl FollowPlan {
                 t.buy.is_some_and(|r| r.value().normalize().scale() <= 4)
                     && t.sell.is_some_and(|r| r.value().normalize().scale() <= 4)
             });
-            if !TierCheck::validate(
+            match TierCheck::validate_with(
                 tiers,
                 input.suggestion.unit_size,
                 anchor_quote,
-                &input.suggestion.config,
-            )
-            .is_empty()
-                || !valid_decimals
-            {
-                reasons.push(FollowReason::InvalidTiers);
+                input.suggestion.config.far_from_anchor_limit_pct,
+            ) {
+                Ok(errs) => {
+                    if !errs.is_empty() || !valid_decimals {
+                        reasons.push(FollowReason::InvalidTiers);
+                    }
+                }
+                Err(_) => {
+                    rule_not_set = true;
+                    if !valid_decimals {
+                        reasons.push(FollowReason::InvalidTiers);
+                    }
+                }
             }
+        }
+
+        if rule_not_set {
+            reasons.push(FollowReason::RuleNotSet);
         }
 
         if !reasons.is_empty() {

@@ -17,6 +17,7 @@ use crate::domain::pricing::branch_policy::{BranchPolicyStore, BranchPricingPoli
 use crate::domain::pricing::market_quote::MarketQuote;
 use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 use crate::domain::pricing::tier_set::{PricingTierSet, TierSetSource, TierSetStore};
+use crate::infrastructure::pricing::pricing_rules_store::PricingRulesStore;
 
 /// Which branches a push reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,17 +92,39 @@ impl BranchPush {
     }
 
     /// Runs after MAIN's own publication of `base` committed. For each active branch other than MAIN, in branch id
-    /// order, **each in its own transaction from the pool**: skip (`SkippedOwn`) when the branch is `own` for the
-    /// currency (and, for `Follow`, when it is not enrolled — those are left out of the answer); skip
-    /// (`AlreadyDone`) when `<base.request_id>:<branch>` already exists; else `BranchPricingPolicy::adjust` against
-    /// the currency's anchor, write a row (`kind.row_source()`, `base_tier_set_id = base.id`,
-    /// `request_id = <base.request_id>:<branch>`) and `TierSetPublisher::publish_in`. A failure rolls back only that
-    /// branch and is reported as `Failed` with its error (`H:` §5).
+    /// order, **each in its own transaction from the pool**: loads `PricingRulesStore::current_in` and adjusts
+    /// against `far_from_anchor_limit_pct` (`None` fails the branch with `pricingRuleNotSet`).
+    pub async fn push_with(
+        &self,
+        who: &Actor,
+        base: &PricingTierSet,
+        kind: PushKind,
+    ) -> Vec<BranchResult> {
+        self.push_inner(who, base, kind, None).await
+    }
+
+    /// GA-3 deletes this.
     pub async fn push(
         &self,
         who: &Actor,
         base: &PricingTierSet,
         kind: PushKind,
+    ) -> Vec<BranchResult> {
+        self.push_inner(
+            who,
+            base,
+            kind,
+            Some(SuggestionConfig::v9_default().far_from_anchor_limit_pct),
+        )
+        .await
+    }
+
+    async fn push_inner(
+        &self,
+        who: &Actor,
+        base: &PricingTierSet,
+        kind: PushKind,
+        override_limit_pct: Option<Option<Decimal>>,
     ) -> Vec<BranchResult> {
         let branches: Vec<String> = sqlx::query_scalar(
             "SELECT id FROM branches WHERE id <> 'MAIN' AND status = 'ACTIVE' ORDER BY id ASC",
@@ -118,7 +141,6 @@ impl BranchPush {
             fetched_at: a.fetched_at,
             stale: false,
         });
-        let config = SuggestionConfig::v9_default();
 
         let mut results = Vec::with_capacity(branches.len());
         for branch in branches {
@@ -143,7 +165,7 @@ impl BranchPush {
                     base,
                     kind,
                     anchor_quote.as_ref(),
-                    &config,
+                    override_limit_pct,
                 )
                 .await
             {
@@ -183,7 +205,7 @@ impl BranchPush {
         base: &PricingTierSet,
         kind: PushKind,
         anchor: Option<&MarketQuote>,
-        config: &SuggestionConfig,
+        override_limit_pct: Option<Option<Decimal>>,
     ) -> Result<Option<BranchResult>, &'static str> {
         let policy = self
             .policies
@@ -219,6 +241,28 @@ impl BranchPush {
             }));
         }
 
+        let far_from_anchor_limit_pct = match override_limit_pct {
+            Some(limit) => limit,
+            None => {
+                let org_id: Option<Uuid> =
+                    sqlx::query_scalar("SELECT organization_id FROM branches WHERE id = $1")
+                        .bind(branch)
+                        .fetch_optional(&mut **tx)
+                        .await
+                        .map_err(|e| map_err_code(RateEngineError::Database(e.to_string())))?;
+                match org_id {
+                    Some(org) => {
+                        PricingRulesStore::current_in(tx, org)
+                            .await
+                            .map_err(map_err_code)?
+                            .rules
+                            .far_from_anchor_limit_pct
+                    }
+                    None => None,
+                }
+            }
+        };
+
         let unit_size: Decimal =
             sqlx::query_scalar("SELECT unit_size FROM currencies WHERE code = $1")
                 .bind(base.currency.as_str())
@@ -227,8 +271,15 @@ impl BranchPush {
                 .map_err(|e| map_err_code(RateEngineError::Database(e.to_string())))?
                 .unwrap_or(Decimal::ONE);
 
-        let tiers = BranchPricingPolicy::adjust(&base.tiers, &resolved, unit_size, anchor, config)
-            .map_err(|_| "validationFailed")?;
+        let tiers = BranchPricingPolicy::adjust_with(
+            &base.tiers,
+            &resolved,
+            unit_size,
+            anchor,
+            far_from_anchor_limit_pct,
+        )
+        .map_err(|_| "pricingRuleNotSet")?
+        .map_err(|_| "validationFailed")?;
 
         let set = PricingTierSet {
             id: Uuid::new_v4(),

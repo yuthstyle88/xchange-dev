@@ -147,3 +147,33 @@ fn the_anchor_is_compared_per_unit() {
         vec![]
     );
 }
+
+#[test]
+fn g2_validate_with_uses_direct_limit_without_times_three_and_refuses_not_set() {
+    let err = TierCheck::validate_with(&usd(), Decimal::ONE, Some(&tt()), None).unwrap_err();
+    assert_eq!(err.field, "farFromAnchorLimitPct");
+
+    // TT is 33.20 / 33.90; +2.4 % on buy is 33.9968 <= 2.5 %, +2.6 % on buy is 34.0632 > 2.5 %.
+    let mut within = usd();
+    within[0] = tier(1, "33.99", "34.50");
+    within[1] = tier(2, "34.00", "34.49");
+    within[2] = tier(3, "34.01", "34.48");
+    within[3] = tier(4, "34.02", "34.47");
+    assert_eq!(
+        TierCheck::validate_with(&within, Decimal::ONE, Some(&tt()), Some(d("2.5"))).unwrap(),
+        vec![]
+    );
+
+    let mut beyond = within;
+    beyond[0] = tier(1, "34.07", "34.50");
+    beyond[1] = tier(2, "34.08", "34.49");
+    beyond[2] = tier(3, "34.09", "34.48");
+    beyond[3] = tier(4, "34.10", "34.47");
+    assert_eq!(
+        TierCheck::validate_with(&beyond, Decimal::ONE, Some(&tt()), Some(d("2.5"))).unwrap(),
+        vec![TierError::FarFromAnchor {
+            source: MarketSource::Tt,
+            limit_pct: d("2.5"),
+        }]
+    );
+}

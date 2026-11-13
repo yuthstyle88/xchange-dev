@@ -357,5 +357,51 @@ fn a_bp_is_between_minus_and_plus_three_hundred() {
     assert_eq!(BranchPricingPolicy::check_bp(300), Ok(300));
     assert!(BranchPricingPolicy::check_bp(301).is_err());
     assert!(BranchPricingPolicy::check_bp(-301).is_err());
-    assert_eq!(BranchPricingPolicy::MAX_BP, 300);
+}
+
+/// G-11 (owner-set-values.md §2 row 8): `check_bp_with` uses the Owner's `branch_bp_cap` and refuses `None` with
+/// `pricingRuleNotSet` naming `branchBpCap`.
+#[test]
+fn g11_check_bp_with_uses_owner_cap_and_refuses_not_set() {
+    assert_eq!(
+        BranchPricingPolicy::check_bp_with(-150, Some(150)).unwrap(),
+        -150
+    );
+    assert_eq!(BranchPricingPolicy::check_bp_with(0, Some(150)).unwrap(), 0);
+    assert_eq!(
+        BranchPricingPolicy::check_bp_with(150, Some(150)).unwrap(),
+        150
+    );
+    assert_eq!(
+        BranchPricingPolicy::check_bp_with(151, Some(150))
+            .unwrap_err()
+            .code(),
+        "validationFailed"
+    );
+    assert_eq!(
+        BranchPricingPolicy::check_bp_with(-151, Some(150))
+            .unwrap_err()
+            .code(),
+        "validationFailed"
+    );
+    let err = BranchPricingPolicy::check_bp_with(5, None).unwrap_err();
+    assert_eq!(err.code(), "pricingRuleNotSet");
+    assert_eq!(err.to_string(), "branchBpCap");
+    assert_eq!(
+        BranchPricingPolicy::check_bp(301),
+        Err("bp must be between -300 and 300".to_string())
+    );
+}
+
+#[test]
+fn adjust_with_refuses_when_far_from_anchor_limit_is_not_set() {
+    let err = BranchPricingPolicy::adjust_with(
+        &main_usd(),
+        &bp(5, -5),
+        d("1"),
+        Some(&tt("33.20", "33.90")),
+        None,
+    )
+    .unwrap_err();
+    assert_eq!(err.field, "farFromAnchorLimitPct");
 }

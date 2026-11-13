@@ -99,3 +99,24 @@ fn stale_with_no_snapshot_or_after_thirty_minutes() {
         now
     ));
 }
+
+#[test]
+fn g15_is_stale_with_uses_owner_window_and_treats_none_as_stale() {
+    let now = Utc.with_ymd_and_hms(2026, 10, 18, 3, 31, 0).unwrap();
+    assert!(MarketStaleness::is_stale_with(Some(now), now, None));
+    assert!(MarketStaleness::is_stale_with(
+        None,
+        now,
+        Some(Duration::minutes(15))
+    ));
+    assert!(!MarketStaleness::is_stale_with(
+        Some(now - Duration::minutes(15)),
+        now,
+        Some(Duration::minutes(15))
+    ));
+    assert!(MarketStaleness::is_stale_with(
+        Some(now - Duration::minutes(16)),
+        now,
+        Some(Duration::minutes(15))
+    ));
+}

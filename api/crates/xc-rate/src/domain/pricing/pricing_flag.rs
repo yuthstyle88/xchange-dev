@@ -19,15 +19,21 @@ pub enum PricingFlag {
     LargeMove,
     /// The margin cannot reproduce the tier price at the board's display scale.
     Precision,
+    /// An Owner pricing rule or branch margin needed by the row is not set (owner-set-values.md §2, §3).
+    RuleNotSet,
 }
 
 impl PricingFlag {
-    /// True for the flags that keep a row out of bulk approve (V.9: `BelowCost`, `StaleSource`, `Precision`; and
-    /// `NoAnchor`, whose row has no suggestion to approve, §11).
+    /// True for the flags that keep a row out of bulk approve (V.9: `BelowCost`, `StaleSource`, `Precision`;
+    /// `NoAnchor`, whose row has no suggestion to approve, §11; and `RuleNotSet`, owner-set-values.md §2).
     pub fn blocking(self) -> bool {
         matches!(
             self,
-            Self::NoAnchor | Self::StaleSource | Self::BelowCost | Self::Precision
+            Self::NoAnchor
+                | Self::StaleSource
+                | Self::BelowCost
+                | Self::Precision
+                | Self::RuleNotSet
         )
     }
 }

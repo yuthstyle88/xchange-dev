@@ -7,7 +7,9 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use rust_decimal::{Decimal, RoundingStrategy};
 
+use crate::domain::policy::pricing_rules::AdviceThresholds;
 use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
+use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 
 /// Sorted in this order (`engine.mjs:196`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -87,8 +89,15 @@ fn volume_of(input: &RecommendationInput, code: &str) -> Decimal {
 }
 
 impl Recommendation {
-    /// Every recommendation, highest severity first, then the largest 7-day volume (`engine.mjs:196-197`).
-    pub fn list(input: &RecommendationInput) -> Vec<Recommendation> {
+    /// Every recommendation using the Owner's `advice` thresholds (`None` ⇒ empty list, owner-set-values.md §2 row 17),
+    /// highest severity first, then the largest 7-day volume (`engine.mjs:196-197`).
+    pub fn list_with(
+        input: &RecommendationInput,
+        advice: Option<AdviceThresholds>,
+    ) -> Vec<Recommendation> {
+        let Some(advice) = advice else {
+            return Vec::new();
+        };
         let mut out = Vec::new();
         let plain = |severity, code, currency: Option<String>, volume_thb| Recommendation {
             severity,
@@ -116,11 +125,7 @@ impl Recommendation {
             ));
         }
 
-        let far = Decimal::ONE;
         let two = Decimal::from(2);
-        let one_half = Decimal::new(15, 1);
-        let half = Decimal::new(5, 1);
-        let point_two = Decimal::new(2, 1);
 
         for c in &input.counters {
             if !input.enabled.contains(&c.currency)
@@ -147,7 +152,7 @@ impl Recommendation {
             let round2 =
                 |d: Decimal| d.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
 
-            if sell_gap > far {
+            if sell_gap > advice.far_pct {
                 out.push(Recommendation {
                     severity: Severity::High,
                     code: RecommendationCode::SellAboveMarket,
@@ -157,7 +162,7 @@ impl Recommendation {
                     value: Some(a_sell),
                     volume_thb: vol,
                 });
-            } else if sell_gap < -far {
+            } else if sell_gap < -advice.far_pct {
                 out.push(Recommendation {
                     severity: Severity::Medium,
                     code: RecommendationCode::SellBelowMarket,
@@ -169,7 +174,7 @@ impl Recommendation {
                 });
             }
 
-            if buy_gap < -far {
+            if buy_gap < -advice.far_pct {
                 out.push(Recommendation {
                     severity: Severity::High,
                     code: RecommendationCode::BuyBelowMarket,
@@ -179,7 +184,7 @@ impl Recommendation {
                     value: Some(a_buy),
                     volume_thb: vol,
                 });
-            } else if buy_gap > far {
+            } else if buy_gap > advice.far_pct {
                 out.push(Recommendation {
                     severity: Severity::Medium,
                     code: RecommendationCode::BuyAboveMarket,
@@ -193,7 +198,9 @@ impl Recommendation {
 
             let shop_spread = (c.sell - c.buy) / ((c.sell + c.buy) / two) * Decimal::ONE_HUNDRED;
             let anchor_spread = (a_sell - a_buy) / ((a_sell + a_buy) / two) * Decimal::ONE_HUNDRED;
-            if shop_spread > one_half * anchor_spread && shop_spread - anchor_spread > half {
+            if shop_spread > advice.spread_ratio * anchor_spread
+                && shop_spread - anchor_spread > advice.spread_gap_pt
+            {
                 out.push(plain(
                     Severity::Medium,
                     RecommendationCode::SpreadWide,
@@ -217,7 +224,8 @@ impl Recommendation {
             if anchor.source == MarketSource::Tt
                 && let (Some(tt_at), Some(pub_at)) = (input.tt_source_updated_at, c.published_at)
                 && tt_at > pub_at
-                && (sell_gap.abs() > point_two || buy_gap.abs() > point_two)
+                && (sell_gap.abs() > advice.market_moved_pct
+                    || buy_gap.abs() > advice.market_moved_pct)
             {
                 out.push(plain(
                     Severity::Low,
@@ -246,5 +254,10 @@ impl Recommendation {
                 .then_with(|| b.volume_thb.cmp(&a.volume_thb))
         });
         out
+    }
+
+    /// GA-3 deletes this.
+    pub fn list(input: &RecommendationInput) -> Vec<Recommendation> {
+        Self::list_with(input, SuggestionConfig::v9_default().rules.advice)
     }
 }

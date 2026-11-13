@@ -8,6 +8,7 @@ use chrono::{DateTime, Duration, Utc};
 use rust_decimal::Decimal;
 
 use crate::domain::pricing::market_quote::MarketSource;
+use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 
 /// One row of a source's answer, per one unit of the currency (V.9 quotes are per unit).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,17 +64,25 @@ impl MarketSnapshot {
 pub struct MarketStaleness;
 
 impl MarketStaleness {
-    /// V.9 `STALE_AFTER_MS` (`market.mjs:10`).
-    pub const STALE_AFTER_MINUTES: i64 = 30;
-    /// V.9 `REFRESH_AFTER_MS` (`market.mjs:10`).
-    pub const REFRESH_AFTER_MINUTES: i64 = 5;
-
-    pub fn stale_after() -> Duration {
-        Duration::minutes(Self::STALE_AFTER_MINUTES)
+    /// True when `stale_after` is `None` (not set), there is no good snapshot, or the newest one is older than
+    /// `stale_after` at `now` (owner-set-values.md §2 row 16).
+    pub fn is_stale_with(
+        fetched_at: Option<DateTime<Utc>>,
+        now: DateTime<Utc>,
+        stale_after: Option<Duration>,
+    ) -> bool {
+        let Some(window) = stale_after else {
+            return true;
+        };
+        fetched_at.is_none_or(|t| now - t > window)
     }
 
-    /// True when there is no good snapshot, or the newest one is older than 30 minutes (`market.mjs:133`).
+    /// GA-3 deletes this.
     pub fn is_stale(fetched_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {
-        fetched_at.is_none_or(|t| now - t > Self::stale_after())
+        Self::is_stale_with(
+            fetched_at,
+            now,
+            SuggestionConfig::v9_default().rules.market_stale_after,
+        )
     }
 }

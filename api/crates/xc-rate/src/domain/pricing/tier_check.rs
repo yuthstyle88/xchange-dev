@@ -4,6 +4,7 @@
 
 use rust_decimal::Decimal;
 
+use crate::domain::policy::pricing_rules::{RuleNotSet, require};
 use crate::domain::pricing::market_quote::{MarketQuote, MarketSource};
 use crate::domain::pricing::pricing_suggestion::{SuggestionConfig, TierPrice};
 
@@ -20,7 +21,7 @@ pub enum TierError {
     BuyBelowPrevious { tier: u8 },
     /// Equal-or-better: this tier's sell is above the previous tier's.
     SellAbovePrevious { tier: u8 },
-    /// Tier 1 is more than `limit_pct` (3 × `far_from_anchor_pct`) from the anchor on a side.
+    /// Tier 1 is more than `limit_pct` from the anchor on a side.
     FarFromAnchor {
         source: MarketSource,
         limit_pct: Decimal,
@@ -30,16 +31,17 @@ pub enum TierError {
 pub struct TierCheck;
 
 impl TierCheck {
-    /// `tiers` are at the currency's `unit_size`; `anchor` is per one unit (a market quote). Every error found, in
-    /// tier order; the anchor check runs only when no other error was found (`engine.mjs:78`).
-    pub fn validate(
+    /// `tiers` are at the currency's `unit_size`; `anchor` is per one unit (a market quote). `far_from_anchor_limit_pct`
+    /// is the direct limit in % (`None` ⇒ `Err(RuleNotSet { field: "farFromAnchorLimitPct" })`).
+    pub fn validate_with(
         tiers: &[TierPrice],
         unit_size: Decimal,
         anchor: Option<&MarketQuote>,
-        config: &SuggestionConfig,
-    ) -> Vec<TierError> {
+        far_from_anchor_limit_pct: Option<Decimal>,
+    ) -> Result<Vec<TierError>, RuleNotSet> {
+        let limit = require(&far_from_anchor_limit_pct, "farFromAnchorLimitPct")?;
         if tiers.len() != 4 {
-            return vec![TierError::Count];
+            return Ok(vec![TierError::Count]);
         }
 
         let mut errors = Vec::new();
@@ -83,7 +85,6 @@ impl TierCheck {
             && a_buy.value() > Decimal::ZERO
             && a_sell.value() > Decimal::ZERO
         {
-            let limit = config.far_from_anchor_pct * Decimal::from(3);
             let hundred = Decimal::from(100);
             let u_buy = t1_buy.value() / unit_size;
             let u_sell = t1_sell.value() / unit_size;
@@ -97,6 +98,17 @@ impl TierCheck {
             }
         }
 
-        errors
+        Ok(errors)
+    }
+
+    /// GA-3 deletes this.
+    pub fn validate(
+        tiers: &[TierPrice],
+        unit_size: Decimal,
+        anchor: Option<&MarketQuote>,
+        config: &SuggestionConfig,
+    ) -> Vec<TierError> {
+        Self::validate_with(tiers, unit_size, anchor, config.far_from_anchor_limit_pct)
+            .expect("v9 default sets the limit")
     }
 }
