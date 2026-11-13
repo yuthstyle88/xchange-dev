@@ -207,3 +207,22 @@ fn a_counter_without_an_anchor_gives_no_market_rows() {
     let recs = Recommendation::list(&i);
     assert!(recs.iter().all(|r| r.currency.as_deref() != Some("USD")));
 }
+
+#[test]
+fn g16_list_with_none_returns_empty_and_some_uses_owner_thresholds() {
+    use xc_rate::domain::policy::pricing_rules::AdviceThresholds;
+
+    assert!(Recommendation::list_with(&fixture(), None).is_empty());
+
+    let strict = AdviceThresholds {
+        far_pct: d("5"),
+        spread_ratio: d("10"),
+        spread_gap_pt: d("10"),
+        market_moved_pct: d("10"),
+    };
+    let recs = Recommendation::list_with(&fixture(), Some(strict));
+    assert!(find(&recs, C::SellAboveMarket, "USD").is_none());
+    assert!(find(&recs, C::BuyBelowMarket, "USD").is_none());
+    assert!(find(&recs, C::SpreadWide, "USD").is_none());
+    assert!(find(&recs, C::MarketMovedSinceUpdate, "USD").is_none());
+}

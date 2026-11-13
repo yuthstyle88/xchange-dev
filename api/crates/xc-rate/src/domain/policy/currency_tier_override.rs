@@ -1,11 +1,12 @@
 //! One currency's override of a policy version's tier margins (pricing-tiers.md §3, owner P-1: per currency, default
 //! from the branch). Bands (THB bounds) are never overridden: only margins, the minimum spread and the anchor.
 
-use rust_decimal::Decimal;
 use xc_kernel::money::{CurrencyCode, RatePercent};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
 use crate::domain::policy::anchor_source::AnchorSource;
+use crate::domain::policy::pricing_rules::{PctRange, require};
+use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 
 /// One tier's margins for one currency: `rate_policy_currency_tiers` (`tier_no` 1..=4, signed, scale 4).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,12 +31,14 @@ pub struct CurrencyTierOverride {
 impl CurrencyTierOverride {
     /// Builds one currency's override. `margins` must be empty (no margin override) or hold exactly the four tiers
     /// 1..=4, each once (§3 "all four or none"); anything else is `ValidationFailed`. `min_spread_pct`, when set,
-    /// lies in 0..=5 (the column's CHECK).
-    pub fn new(
+    /// requires `min_spread_pct_range` (`None` ⇒ `pricingRuleNotSet`, field `"minSpreadPctRange"`) and lies in
+    /// `[range.min, range.max]`.
+    pub fn new_with(
         currency: CurrencyCode,
         mut margins: Vec<TierMargin>,
         min_spread_pct: Option<RatePercent>,
         anchor_source: Option<AnchorSource>,
+        min_spread_pct_range: Option<PctRange>,
     ) -> Result<CurrencyTierOverride, RateEngineError> {
         let tiers = if margins.is_empty() {
             None
@@ -59,10 +62,17 @@ impl CurrencyTierOverride {
         };
 
         if let Some(spread) = min_spread_pct {
+            let r = require(&min_spread_pct_range, "minSpreadPctRange").map_err(|e| {
+                RateEngineError::Refused {
+                    code: "pricingRuleNotSet",
+                    message: e.field.to_owned(),
+                }
+            })?;
             let v = spread.value();
-            if v < Decimal::ZERO || v > Decimal::from(5) {
+            if v < r.min || v > r.max {
                 return Err(RateEngineError::ValidationFailed(format!(
-                    "min_spread_pct must lie in 0..=5, got {spread}"
+                    "min_spread_pct must lie in {}..={}, got {spread}",
+                    r.min, r.max
                 )));
             }
         }
@@ -73,6 +83,22 @@ impl CurrencyTierOverride {
             min_spread_pct,
             anchor_source,
         })
+    }
+
+    /// GA-3 deletes this.
+    pub fn new(
+        currency: CurrencyCode,
+        margins: Vec<TierMargin>,
+        min_spread_pct: Option<RatePercent>,
+        anchor_source: Option<AnchorSource>,
+    ) -> Result<CurrencyTierOverride, RateEngineError> {
+        Self::new_with(
+            currency,
+            margins,
+            min_spread_pct,
+            anchor_source,
+            SuggestionConfig::v9_default().rules.min_spread_pct_range,
+        )
     }
 
     /// The margin of tier `n` (1..=4) for `side`, if this currency overrides margins.

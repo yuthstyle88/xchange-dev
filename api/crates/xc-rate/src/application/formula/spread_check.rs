@@ -342,7 +342,9 @@ impl SpreadCheck {
                     let ref_sell = anchor
                         .sell
                         .map(|s| s.value() * unit_size / anchor.unit_size);
-                    let (better, _) = main_settings.better_for(currency.as_str());
+                    let Some((better, _)) = main_settings.better_for_with(currency.as_str()) else {
+                        continue;
+                    };
                     for (idx, &b) in better.iter().enumerate() {
                         let inputs = FormulaInputs {
                             ref_buy,

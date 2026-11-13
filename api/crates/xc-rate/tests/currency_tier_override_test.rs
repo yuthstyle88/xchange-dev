@@ -196,3 +196,31 @@ fn for_currency_with_an_override_without_margins_is_the_branch_tiers() {
     .expect("valid");
     assert_eq!(branch.for_currency(Some(&o)), branch);
 }
+
+#[test]
+fn g14_new_with_uses_owner_min_spread_range_and_refuses_not_set_when_value_given() {
+    use xc_rate::domain::policy::pricing_rules::PctRange;
+
+    let err =
+        CurrencyTierOverride::new_with(usd(), four(), Some(pct("0.5000")), None, None).unwrap_err();
+    assert_eq!(err.code(), "pricingRuleNotSet");
+    assert_eq!(err.to_string(), "minSpreadPctRange");
+
+    CurrencyTierOverride::new_with(usd(), four(), None, None, None)
+        .expect("no min_spread_pct does not need minSpreadPctRange");
+
+    let r = Some(PctRange {
+        min: "0.2".parse().unwrap(),
+        max: "2.0".parse().unwrap(),
+    });
+    CurrencyTierOverride::new_with(usd(), four(), Some(pct("2.0000")), None, r)
+        .expect("within range");
+    is_validation(
+        CurrencyTierOverride::new_with(usd(), four(), Some(pct("2.0001")), None, r),
+        "above owner max 2.0",
+    );
+    is_validation(
+        CurrencyTierOverride::new_with(usd(), four(), Some(pct("0.1999")), None, r),
+        "below owner min 0.2",
+    );
+}

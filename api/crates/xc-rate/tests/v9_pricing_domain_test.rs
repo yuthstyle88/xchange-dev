@@ -98,8 +98,10 @@ fn follow_reasons_are_v9s_flag_names() {
         (FollowReason::BelowCost, "BELOW_COST"),
         (FollowReason::LargeMove, "LARGE_MOVE"),
         (FollowReason::InvalidTiers, "INVALID_TIERS"),
+        (FollowReason::RuleNotSet, "RULE_NOT_SET"),
     ] {
         assert_eq!(reason.as_str(), text);
+        assert_eq!(FollowReason::parse(text), Some(reason));
     }
 }
 

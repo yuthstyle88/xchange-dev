@@ -301,6 +301,18 @@ async fn b25_a_follow_currency_is_checked_with_the_follow_binding() {
     market_line(&db, "USD", "MARKET_TT", "33.2", "33.9").await;
     policy(&db, "MAIN", "0", "0", wide_guards()).await;
     follow(&db, "USD").await;
+    let mut conn = db.pool.acquire().await.expect("conn");
+    xc_rate::infrastructure::pricing::suggestion_settings_store::PricingSuggestionSettingsStore::save(
+        &mut conn,
+        "MAIN",
+        "*",
+        Some([d("0.1"), d("0.14"), d("0.2"), d("0.3")]),
+        "exec-1",
+        chrono::Utc::now(),
+    )
+    .await
+    .expect("save MAIN better");
+    drop(conn);
     // FOLLOW USD: mid 33.55, tier n gets b = better[n] = 0.1, 0.14, 0.2, 0.3; sell − buy = 0.015 − 0.0671 × b,
     // negative only at tier 4. AUTO rows (EUR) have tier_* = 0 and pass.
     let f = formula(
@@ -330,6 +342,26 @@ async fn b25_a_follow_currency_is_checked_with_the_follow_binding() {
         fail.describe().starts_with("MAIN USD tier 4 FOLLOW buy "),
         "{}",
         fail.describe()
+    );
+}
+
+#[tokio::test]
+async fn a_follow_currency_with_no_better_settings_has_no_candidate() {
+    let db = TestDb::start().await;
+    bot_usd_eur(&db).await;
+    market_line(&db, "USD", "MARKET_TT", "33.2", "33.9").await;
+    policy(&db, "MAIN", "0", "0", wide_guards()).await;
+    follow(&db, "USD").await;
+    let f = formula(
+        "ref_mid * (1 + tier_buy_pct / 1000)",
+        "ref_mid * (1 + tier_sell_pct / 1000) + 0.015",
+    );
+    let r = run(&db, &organisation(f)).await;
+    assert!(r.is_ok(), "{:?}", described(&r));
+    assert!(
+        r.priced.iter().all(|p| p.currency.as_str() != "USD"),
+        "FOLLOW USD with no better settings is not priced: {:?}",
+        r.priced
     );
 }
 

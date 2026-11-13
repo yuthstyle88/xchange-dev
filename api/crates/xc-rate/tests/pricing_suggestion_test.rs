@@ -315,3 +315,82 @@ fn no_base_means_no_margins_and_no_anchor() {
     assert!(s.flags.contains(&PricingFlag::NoAnchor));
     assert!(s.tiers.is_some(), "the prices are still suggested");
 }
+
+#[test]
+fn g6_rate_decimals_none_produces_no_prices_and_blocking_rule_not_set() {
+    use xc_rate::domain::policy::pricing_rules::{PricingRules, RateDecimals};
+
+    let mut i = usd();
+    i.tt_decimals = None;
+    let rules = PricingRules::not_set();
+    i.config = SuggestionConfig::from_rules(
+        &rules,
+        Some([d("0.10"), d("0.14"), d("0.20"), d("0.30")]),
+        Some(d("0.3")),
+    );
+    let s = PricingSuggestion::of(&i);
+    assert_eq!(s.tiers, None);
+    assert_eq!(s.margins, None);
+    assert!(s.flags.contains(&PricingFlag::RuleNotSet));
+    assert!(s.blocked());
+
+    let custom_rules = PricingRules {
+        rate_decimals: Some(RateDecimals {
+            bands: vec![(d("0"), 3)],
+        }),
+        large_move_pct: Some(d("1")),
+        ..PricingRules::not_set()
+    };
+    i.config = SuggestionConfig::from_rules(
+        &custom_rules,
+        Some([d("0.10"), d("0.14"), d("0.20"), d("0.30")]),
+        Some(d("0.3")),
+    );
+    let s3 = PricingSuggestion::of(&i);
+    assert_eq!(prices(&s3)[0], (d("33.233"), d("33.867")));
+}
+
+#[test]
+fn d1_and_g4_missing_margins_or_large_move_pct_flags_rule_not_set() {
+    use xc_rate::domain::policy::pricing_rules::{PricingRules, RateDecimals};
+
+    let rules = PricingRules {
+        rate_decimals: Some(RateDecimals {
+            bands: vec![(d("0"), 4), (d("1"), 3), (d("10"), 2)],
+        }),
+        large_move_pct: Some(d("1")),
+        ..PricingRules::not_set()
+    };
+
+    let mut no_better = usd();
+    no_better.config = SuggestionConfig::from_rules(&rules, None, Some(d("0.3")));
+    let s1 = PricingSuggestion::of(&no_better);
+    assert_eq!(s1.tiers, None);
+    assert!(s1.flags.contains(&PricingFlag::RuleNotSet));
+    assert!(s1.blocked());
+
+    let mut no_spread = usd();
+    no_spread.config = SuggestionConfig::from_rules(
+        &rules,
+        Some([d("0.10"), d("0.14"), d("0.20"), d("0.30")]),
+        None,
+    );
+    let s2 = PricingSuggestion::of(&no_spread);
+    assert_eq!(s2.tiers, None);
+    assert!(s2.flags.contains(&PricingFlag::RuleNotSet));
+    assert!(s2.blocked());
+
+    let mut no_large_move = usd();
+    let rules_no_lm = PricingRules {
+        large_move_pct: None,
+        ..rules
+    };
+    no_large_move.config = SuggestionConfig::from_rules(
+        &rules_no_lm,
+        Some([d("0.10"), d("0.14"), d("0.20"), d("0.30")]),
+        Some(d("0.3")),
+    );
+    let s3 = PricingSuggestion::of(&no_large_move);
+    assert!(s3.tiers.is_some());
+    assert!(s3.flags.contains(&PricingFlag::RuleNotSet));
+}

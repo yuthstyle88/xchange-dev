@@ -352,3 +352,75 @@ fn precision_blocks() {
     let r = reasons(plan(&input));
     assert!(r.contains(&FollowReason::Precision), "{r:?}");
 }
+
+#[test]
+fn g5_follow_reason_rule_not_set_round_trips() {
+    assert_eq!(FollowReason::RuleNotSet.as_str(), "RULE_NOT_SET");
+    assert_eq!(
+        FollowReason::parse("RULE_NOT_SET"),
+        Some(FollowReason::RuleNotSet)
+    );
+}
+
+#[test]
+fn g4_and_d1_plan_with_stops_with_rule_not_set_when_any_required_rule_or_margin_is_missing() {
+    use xc_rate::domain::policy::pricing_rules::{PricingRules, RateDecimals};
+
+    let full_rules = PricingRules {
+        far_from_anchor_limit_pct: Some(d("3")),
+        large_move_pct: Some(d("1")),
+        rate_decimals: Some(RateDecimals {
+            bands: vec![(d("0"), 4), (d("1"), 3), (d("10"), 2)],
+        }),
+        market_stale_after: Some(Duration::minutes(30)),
+        ..PricingRules::not_set()
+    };
+    let better = Some([d("0.10"), d("0.14"), d("0.20"), d("0.30")]);
+    let spread = Some(d("0.3"));
+
+    for (rules, b, ms) in [
+        (
+            PricingRules {
+                large_move_pct: None,
+                ..full_rules.clone()
+            },
+            better,
+            spread,
+        ),
+        (
+            PricingRules {
+                far_from_anchor_limit_pct: None,
+                ..full_rules.clone()
+            },
+            better,
+            spread,
+        ),
+        (
+            PricingRules {
+                rate_decimals: None,
+                ..full_rules.clone()
+            },
+            better,
+            spread,
+        ),
+        (full_rules.clone(), None, spread),
+        (full_rules, better, None),
+    ] {
+        let mut input = usd_fetched(5);
+        input.suggestion.config = SuggestionConfig::from_rules(&rules, b, ms);
+        let r = reasons(plan(&input));
+        assert!(r.contains(&FollowReason::RuleNotSet), "{r:?}");
+    }
+}
+
+#[test]
+fn g15_source_freshness_is_current_with_uses_stale_after_and_treats_none_as_stale() {
+    let f = SourceFreshness {
+        fetched_at: Some(minutes_ago(15)),
+        last_attempt_at: Some(minutes_ago(15)),
+        error: None,
+    };
+    assert!(!f.is_current_with(now(), None));
+    assert!(f.is_current_with(now(), Some(Duration::minutes(20))));
+    assert!(!f.is_current_with(now(), Some(Duration::minutes(10))));
+}
