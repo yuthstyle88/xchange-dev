@@ -195,3 +195,58 @@ async fn b16_a_narrowed_reference_is_still_refused_when_the_draft_is_priced() {
         "{refused}"
     );
 }
+
+#[tokio::test]
+async fn g10_draft_guard_reads_unit_size_from_currencies_column() {
+    let db = TestDb::start().await;
+    sqlx::query("UPDATE currencies SET unit_size = 10 WHERE code = 'USD'")
+        .execute(&db.pool)
+        .await
+        .expect("update USD unit_size to 10");
+    policy(&db, "MAIN", "0", "0", guards("-2.0000", "0.5000")).await;
+    db.seed_batch(
+        chrono::Utc::now() - chrono::Duration::minutes(5),
+        &[
+            ("JPY", "1", Some("0.2350"), Some("0.2350")),
+            ("USD", "1", Some("4.0000"), Some("4.0000")),
+        ],
+    )
+    .await;
+
+    let e = db.engine();
+    let mut tx = db.begin().await;
+    let created = e
+        .drafts
+        .create(
+            &mut tx,
+            &main_branch(),
+            &rate_engine_common::rates_user(),
+            vec![
+                manual("JPY", "23.20", "23.60"),
+                manual("USD", "39.50", "40.10"),
+            ],
+        )
+        .await
+        .expect("create");
+    let evaluated = e
+        .drafts
+        .evaluate(&mut tx, &main_branch(), &created.id)
+        .await
+        .expect("evaluate");
+    assert!(evaluated.evaluation.is_in_bound());
+    assert!(evaluated.evaluation.out_of_bound().is_empty());
+    let submitted = e
+        .drafts
+        .submit(
+            &mut tx,
+            &main_branch(),
+            &rate_engine_common::rates_user(),
+            &created.id,
+            &key(),
+        )
+        .await
+        .expect("submit");
+    tx.commit().await.expect("commit");
+    assert_eq!(submitted.status, DraftStatus::Approved);
+    db.finish().await;
+}

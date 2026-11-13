@@ -334,15 +334,12 @@ async fn display_settings_fall_back_from_the_branch_to_main_to_the_default() {
     let store = PgDisplaySettingsStore;
     let mut conn = db.pool.acquire().await.expect("a connection");
 
+    // Restated for GD-1 (owner-set-values.md §3, row 23, D-6): no row for the branch or MAIN is "not set":
+    // every published tier and currency, nothing featured, no highlight.
     let default = DisplaySettings {
         tiers: vec![1, 2, 3, 4],
-        featured: [
-            "MYR", "CNY", "INR", "RUB", "KRW", "JPY", "GBP", "USD", "TWD", "EUR",
-        ]
-        .iter()
-        .map(|c| c.to_string())
-        .collect(),
-        highlight: true,
+        featured: Vec::new(),
+        highlight: false,
         all_market: true,
     };
     assert_eq!(

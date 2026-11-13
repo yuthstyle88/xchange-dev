@@ -15,6 +15,7 @@ use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_status::BookingStatus;
 use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
+use xc_booking::infrastructure::grace_sql::GRACE_UNTIL_SQL;
 use xc_kernel::ids::BranchId;
 use xc_verification::application::readiness::Readiness;
 
@@ -51,7 +52,7 @@ struct DeskDbRow {
     start_at: DateTime<Utc>,
     end_at: DateTime<Utc>,
     confirm_expires_at: Option<DateTime<Utc>>,
-    grace_until: DateTime<Utc>,
+    grace_until: Option<DateTime<Utc>>,
     service_date: NaiveDate,
     branch_today: NaiveDate,
     has_active_ticket: bool,
@@ -83,7 +84,7 @@ impl BranchView for DeskBookingsView {
             let cipher = pii_keys.map(xc_kernel::pii::PiiCipher::new);
             let now = Utc::now();
 
-            let rows: Vec<DeskDbRow> = sqlx::query_as(
+            let query = format!(
                 "SELECT b.id, b.booking_no, b.status, b.customer_id, \
                         c.display_name, ci.key_id, ci.encrypted_value, \
                         (SELECT qt.display_number FROM queue_tickets qt \
@@ -92,7 +93,7 @@ impl BranchView for DeskBookingsView {
                         b.shop_side, b.requested_currency, b.requested_quantity::text, \
                         b.slot_id, s.start_at, s.end_at, \
                         b.confirm_expires_at, \
-                        (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                        {GRACE_UNTIL_SQL} AS grace_until, \
                         s.service_date, \
                         ($3 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
                         EXISTS ( \
@@ -108,14 +109,15 @@ impl BranchView for DeskBookingsView {
                  LEFT JOIN customer_identities ci ON ci.customer_id = b.customer_id AND ci.type = 'PHONE' AND ci.status = 'ACTIVE' \
                  WHERE b.branch_id = $1 \
                    AND ($2::bytea IS NULL OR b.qr_token_hash = $2) \
-                 ORDER BY s.start_at ASC, b.booking_no ASC",
-            )
-            .bind(branch.as_str())
-            .bind(qr_hash)
-            .bind(now)
-            .fetch_all(&pool)
-            .await
-            .map_err(pos_error::AppError::Database)?;
+                 ORDER BY s.start_at ASC, b.booking_no ASC"
+            );
+            let rows: Vec<DeskDbRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+                .bind(branch.as_str())
+                .bind(qr_hash)
+                .bind(now)
+                .fetch_all(&pool)
+                .await
+                .map_err(pos_error::AppError::Database)?;
 
             let mut readiness_by_customer: HashMap<String, &'static str> = HashMap::new();
             for row in &rows {

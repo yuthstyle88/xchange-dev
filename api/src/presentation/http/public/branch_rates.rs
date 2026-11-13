@@ -77,7 +77,7 @@ async fn handle(
 }
 
 fn compute_etag(data: &PublishedRatesData) -> String {
-    let default = DisplaySettings::v9_default();
+    let default = DisplaySettings::not_set();
     let mut priced = Vec::new();
     for line in &data.lines {
         if !priced.contains(&line.currency) {

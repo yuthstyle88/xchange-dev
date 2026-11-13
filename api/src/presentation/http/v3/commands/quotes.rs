@@ -278,6 +278,13 @@ impl CommandAction for QuotesCommand {
                         msg,
                         StatusCode::CONFLICT,
                     ));
+                } else if msg.starts_with("settingNotSet") {
+                    return Err(V3Error::new(
+                        "settingNotSet",
+                        Some("quoteTtlSeconds"),
+                        msg,
+                        StatusCode::CONFLICT,
+                    ));
                 } else if msg.starts_with("couponInvalid") {
                     tracing::info!(reason = %msg, "coupon invalid on quote");
                     return Err(V3Error::new(

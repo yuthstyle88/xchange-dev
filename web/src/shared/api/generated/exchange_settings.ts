@@ -31,4 +31,4 @@ quoteTtlSeconds: number, };
  * `GET /api/v3/views/exchange_settings`: the organisation's quote lifetime and the branch's
  * approval limit (`null` = no limit).
  */
-export type ExchangeSettingsViewData = { quoteTtlSeconds: number, approvalLimitThb: string | null, };
+export type ExchangeSettingsViewData = { quoteTtlSeconds: number | null, approvalLimitThb: string | null, };

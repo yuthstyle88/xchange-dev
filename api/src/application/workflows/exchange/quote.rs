@@ -300,7 +300,16 @@ impl QuoteService {
 
         let expires_at = match terms {
             QuoteTerms::Indicative => {
-                let ttl_seconds = self.settings_repo.get_ttl_in(tx, org_id).await?;
+                let ttl_seconds = self
+                    .settings_repo
+                    .get_ttl_in(tx, org_id)
+                    .await?
+                    .ok_or_else(|| {
+                        AppError::Domain(
+                            "settingNotSet: quoteTtlSeconds: the Owner has not set the quote lifetime"
+                                .to_string(),
+                        )
+                    })?;
                 now + Duration::seconds(ttl_seconds as i64)
             }
             QuoteTerms::Binding { ttl } => now + ttl,

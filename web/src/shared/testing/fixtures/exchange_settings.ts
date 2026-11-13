@@ -37,7 +37,7 @@ export function makeExchangeSettingsInput(o: Partial<ExchangeSettingsInput> = {}
 
 export function makeExchangeSettingsViewData(o: Partial<ExchangeSettingsViewData> = {}): ExchangeSettingsViewData {
   return {
-    quoteTtlSeconds: 0,
+    quoteTtlSeconds: null,
     approvalLimitThb: null,
     ...o,
   };

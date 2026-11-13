@@ -794,3 +794,34 @@ fn quote_dto_exports_to_quote_ts_with_every_field_and_money_as_strings() {
         );
     }
 }
+
+// ------------------------------------------------------------ GD-1: the quote lifetime not set
+
+/// GD-1 (owner-set-values.md §3 row 15, D-2), added by the ticket author (claude/b091f5e0) before the
+/// implementation: with no `exchange_settings` row the quote lifetime is not set. `quoteCreate` answers
+/// `409 settingNotSet`, field `quoteTtlSeconds`, and stores nothing (today it quotes with 300 s).
+#[actix_web::test]
+async fn with_no_quote_lifetime_set_the_quote_is_refused_setting_not_set() {
+    let db = TestDb::start().await;
+    db.publish("MAIN", &[USD]).await;
+    db.exec(&format!(
+        "DELETE FROM exchange_settings WHERE organization_id = '{ORG_1}'"
+    ))
+    .await;
+
+    let a = ask(&db, FRONT, &body("USD", "BUY", "10", None)).await;
+    refused(
+        &db,
+        &a,
+        "settingNotSet",
+        StatusCode::CONFLICT,
+        "no quote lifetime",
+    )
+    .await;
+    assert_eq!(
+        a.body["error"]["field"], "quoteTtlSeconds",
+        "body {}",
+        a.text
+    );
+    db.finish().await;
+}

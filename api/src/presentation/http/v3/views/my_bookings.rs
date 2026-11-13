@@ -18,6 +18,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_status::BookingStatus;
 use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
 use xc_booking::domain::booking::qr_token::QrToken;
+use xc_booking::infrastructure::grace_sql::GRACE_UNTIL_SQL;
 use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CustomerSide, Side};
@@ -64,7 +65,7 @@ struct MyBookingDbRow {
     ticket_status: Option<String>,
     cutoff_mins: i32,
     confirm_expires_at: Option<DateTime<Utc>>,
-    grace_until: DateTime<Utc>,
+    grace_until: Option<DateTime<Utc>>,
     service_date: NaiveDate,
     branch_today: NaiveDate,
     has_active_ticket: bool,
@@ -140,14 +141,14 @@ impl BranchView for MyBookingsView {
                 })?
                 .as_str();
 
-            let rows: Vec<MyBookingDbRow> = sqlx::query_as(
+            let query = format!(
                 "SELECT b.id, b.booking_no, b.status, b.branch_id, \
                         b.slot_id, b.qr_version, s.start_at, s.end_at, \
                         qt.ticket_id, qt.ticket_no, qt.ticket_service_type, \
                         qt.ticket_sequence, qt.ticket_status, \
                         COALESCE(p.cancel_cutoff_minutes, 60) AS cutoff_mins, \
                         b.confirm_expires_at, \
-                        (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                        {GRACE_UNTIL_SQL} AS grace_until, \
                         s.service_date, \
                         ($4 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
                         EXISTS ( \
@@ -174,15 +175,16 @@ impl BranchView for MyBookingsView {
                  WHERE b.customer_id = $1 \
                    AND ($2 = '' OR b.branch_id = $2) \
                    AND ($3::text IS NULL OR b.id = $3) \
-                 ORDER BY s.start_at DESC, b.booking_no DESC",
-            )
-            .bind(&customer_id)
-            .bind(branch.as_str())
-            .bind(&requested_booking_id)
-            .bind(now)
-            .fetch_all(&pool)
-            .await
-            .map_err(AppError::Database)?;
+                 ORDER BY s.start_at DESC, b.booking_no DESC"
+            );
+            let rows: Vec<MyBookingDbRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+                .bind(&customer_id)
+                .bind(branch.as_str())
+                .bind(&requested_booking_id)
+                .bind(now)
+                .fetch_all(&pool)
+                .await
+                .map_err(AppError::Database)?;
 
             let repo: Arc<dyn QueueRepository> = Arc::new(PgQueueRepository::new(pool.clone()));
             let status_service =

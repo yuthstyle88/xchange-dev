@@ -20,6 +20,7 @@ pub mod application {
 
 pub mod infrastructure {
     pub mod booking_repository;
+    pub mod grace_sql;
     pub mod lifecycle_factory;
     pub mod slot_repository;
 }

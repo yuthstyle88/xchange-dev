@@ -186,7 +186,9 @@ impl Shop {
         got
     }
 
-    async fn ttl(&self, organization: &str) -> i32 {
+    // Restated for GD-1 (owner-set-values.md §3, row 15, D-2): `get_ttl_in` answers `None` when the
+    // organisation has no `exchange_settings` row.
+    async fn ttl(&self, organization: &str) -> Option<i32> {
         let mut tx = self.db.pool.begin().await.unwrap();
         let got = self
             .settings
@@ -385,14 +387,18 @@ async fn a_zero_limit_or_another_organisations_branch_is_refused_and_writes_noth
 async fn the_quote_lifetime_is_set_per_organisation_within_30_to_3600_seconds() {
     let shop = Shop::start().await;
     shop.db.second_organisation(ORG_2, "ORG2", "X1").await;
-    assert_eq!(shop.ttl(ORG_1).await, 300, "T1: no row ⇒ 300 s");
+    assert_eq!(
+        shop.ttl(ORG_1).await,
+        Some(300),
+        "ORG_1 has the row the migration backfilled (20261014100000_quotes.sql:61-62)"
+    );
 
     shop.set_ttl(ORG_1, 120).await.expect("set");
-    assert_eq!(shop.ttl(ORG_1).await, 120);
-    assert_eq!(shop.ttl(ORG_2).await, 300, "per organisation");
+    assert_eq!(shop.ttl(ORG_1).await, Some(120));
+    assert_eq!(shop.ttl(ORG_2).await, None, "per organisation");
     shop.set_ttl(ORG_1, 30).await.expect("the lower bound");
     shop.set_ttl(ORG_1, 3600).await.expect("the upper bound");
-    assert_eq!(shop.ttl(ORG_1).await, 3600);
+    assert_eq!(shop.ttl(ORG_1).await, Some(3600));
 
     for seconds in [29, 3601, 0, -1] {
         assert_eq!(
@@ -401,7 +407,11 @@ async fn the_quote_lifetime_is_set_per_organisation_within_30_to_3600_seconds() 
             "{seconds} s"
         );
     }
-    assert_eq!(shop.ttl(ORG_1).await, 3600, "a refusal changes nothing");
+    assert_eq!(
+        shop.ttl(ORG_1).await,
+        Some(3600),
+        "a refusal changes nothing"
+    );
     assert_eq!(
         shop.db
             .count("SELECT count(*) FROM exchange_settings")

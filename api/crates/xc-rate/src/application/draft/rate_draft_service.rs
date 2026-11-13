@@ -516,13 +516,20 @@ impl RateDraftService {
                 .await
                 .map_err(|e| RateEngineError::Database(e.to_string()))?;
 
-        let mut currencies_by_code: std::collections::HashMap<String, (Decimal, u8)> =
+        let mut units_by_code: std::collections::HashMap<CurrencyCode, CurrencyUnits> =
             std::collections::HashMap::with_capacity(currency_rows.len());
         for r in currency_rows {
             let code_str: String = r.get(0);
+            let Ok(c) = CurrencyCode::parse(code_str.trim()) else {
+                continue;
+            };
             let unit_val: Decimal = r.get(1);
             let minor_val = r.get::<i16, _>(2) as u8;
-            currencies_by_code.insert(code_str.trim().to_owned(), (unit_val, minor_val));
+            let u = UnitSize::parse(&unit_val.to_string())
+                .map_err(|e| RateEngineError::Internal(format!("invalid unit: {e}")))?;
+            let m = MinorUnit::new(minor_val)
+                .map_err(|e| RateEngineError::Internal(format!("invalid minor unit: {e}")))?;
+            units_by_code.insert(c, CurrencyUnits::new(c, u, m));
         }
 
         // Calculate proposals and tiers
@@ -535,20 +542,18 @@ impl RateDraftService {
         > = std::collections::HashMap::new();
 
         for (i, line) in lines.iter().enumerate() {
-            // Read currency units
-            let (unit_val, minor_val) = currencies_by_code
-                .get(line.currency.as_str())
-                .copied()
-                .unwrap_or((Decimal::ONE, 2u8));
-
-            let units = CurrencyUnits::new(
-                line.currency,
-                UnitSize::parse(&unit_val.to_string()).unwrap(),
-                MinorUnit::new(minor_val).unwrap(),
-            );
+            let Some(units) = units_by_code.get(&line.currency) else {
+                proposals.push(crate::domain::draft::rate_proposal::ProposedLine {
+                    buy: None,
+                    sell: None,
+                });
+                tier_lines_vec.push(None);
+                tiers.push(None);
+                continue;
+            };
 
             let ref_line = references.iter().find(|r| r.currency == line.currency);
-            let prop = RateProposal::of_with(line, ref_line, policy.as_ref(), &units, &formula)?;
+            let prop = RateProposal::of_with(line, ref_line, policy.as_ref(), units, &formula)?;
             proposals.push(prop.clone());
 
             if line.tiers.is_some() {
@@ -586,7 +591,7 @@ impl RateDraftService {
                     ref_line,
                     policy.as_ref(),
                     pt,
-                    &units,
+                    units,
                     &formula,
                 )?;
                 tier_lines_vec.push(Some(tlines));
@@ -604,6 +609,7 @@ impl RateDraftService {
             policy.as_ref(),
             &tiers,
             &formulas,
+            &units_by_code,
         );
 
         Ok(DraftEvaluationOutcome {

@@ -9,7 +9,7 @@ use super::booking_status::BookingStatus;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct OverdueFacts {
     pub confirm_expires_at: Option<DateTime<Utc>>,
-    pub grace_until: DateTime<Utc>,
+    pub grace_until: Option<DateTime<Utc>>,
     pub service_date: NaiveDate,
     pub branch_today: NaiveDate,
     pub has_active_ticket: bool,
@@ -30,7 +30,7 @@ pub fn effective_status(
             }
         }
         BookingStatus::Confirmed => {
-            if now > facts.grace_until {
+            if facts.grace_until.is_some_and(|g| now > g) {
                 BookingStatus::NoShow
             } else {
                 BookingStatus::Confirmed

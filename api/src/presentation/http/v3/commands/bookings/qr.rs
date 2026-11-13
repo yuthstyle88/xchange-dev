@@ -13,6 +13,7 @@ use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::domain::booking::booking_error::BookingError;
 use xc_booking::domain::booking::booking_status::BookingStatus;
 use xc_booking::domain::booking::effective_status::{OverdueFacts, effective_status};
+use xc_booking::infrastructure::grace_sql::GRACE_UNTIL_SQL;
 use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
@@ -52,7 +53,7 @@ struct BookingQrRow {
     branch_id: String,
     status: String,
     confirm_expires_at: Option<DateTime<Utc>>,
-    grace_until: DateTime<Utc>,
+    grace_until: Option<DateTime<Utc>>,
     service_date: NaiveDate,
     branch_today: NaiveDate,
     has_active_ticket: bool,
@@ -83,10 +84,10 @@ impl CommandAction for BookingQrReissue {
         let services = self.services.services()?;
         let now = Utc::now();
 
-        let row: Option<BookingQrRow> = sqlx::query_as(
+        let query = format!(
             "SELECT b.customer_id, b.branch_id, b.status, \
                     b.confirm_expires_at, \
-                    (s.start_at + (COALESCE(p.no_show_grace_minutes, 15) * interval '1 minute')) AS grace_until, \
+                    {GRACE_UNTIL_SQL} AS grace_until, \
                     s.service_date, \
                     ($2 AT TIME ZONE COALESCE(NULLIF(br.timezone, ''), 'Asia/Bangkok'))::date AS branch_today, \
                     EXISTS ( \
@@ -98,20 +99,21 @@ impl CommandAction for BookingQrReissue {
              JOIN booking_slots s ON s.id = b.slot_id \
              JOIN branches br ON br.id = b.branch_id \
              LEFT JOIN booking_policies p ON p.organization_id = br.organization_id \
-             WHERE b.id = $1",
-        )
-        .bind(&input.id)
-        .bind(now)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| {
-            V3Error::new(
-                "serverError",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-        })?;
+             WHERE b.id = $1"
+        );
+        let row: Option<BookingQrRow> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+            .bind(&input.id)
+            .bind(now)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| {
+                V3Error::new(
+                    "serverError",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
 
         let Some(row) = row else {
             return Err(V3Error::new(

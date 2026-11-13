@@ -11,7 +11,7 @@ pub trait SettingsRepository: Send + Sync {
         &'a self,
         tx: &'a mut sqlx::Transaction<'_, sqlx::Postgres>,
         organization_id: Uuid,
-    ) -> impl std::future::Future<Output = AppResult<i32>> + Send + 'a;
+    ) -> impl std::future::Future<Output = AppResult<Option<i32>>> + Send + 'a;
 
     fn approval_limit_in<'a>(
         &'a self,

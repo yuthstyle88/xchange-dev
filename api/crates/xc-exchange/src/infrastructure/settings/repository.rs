@@ -29,7 +29,7 @@ impl SettingsRepository for PgSettingsRepository {
         &'a self,
         tx: &'a mut Transaction<'_, Postgres>,
         organization_id: Uuid,
-    ) -> AppResult<i32> {
+    ) -> AppResult<Option<i32>> {
         let row = sqlx::query_scalar::<_, i32>(
             "SELECT quote_ttl_seconds FROM exchange_settings WHERE organization_id = $1",
         )
@@ -38,7 +38,7 @@ impl SettingsRepository for PgSettingsRepository {
         .await
         .map_err(pos_error::AppError::Database)?;
 
-        Ok(row.unwrap_or(300))
+        Ok(row)
     }
 
     async fn approval_limit_in<'a>(

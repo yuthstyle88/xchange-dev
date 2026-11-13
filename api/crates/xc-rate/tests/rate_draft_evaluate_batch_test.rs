@@ -262,17 +262,15 @@ async fn jpy_unit_size_100_next_to_usd_unit_size_1_uses_each_currencys_own_units
     db.finish().await;
 }
 
-/// Row 4: A line whose currency has no `currencies` row -> falls back to `unit_size 1`, `minor_unit 2`.
-/// Red under: dropping the fallback.
+/// Row 4 (#6921): A line whose currency has no `currencies` row -> proposals are `None` and both
+/// sides are out-of-bound (`(CHF, Buy)` and `(CHF, Sell)`).
+/// Red under: falling back to a guessed `unit_size` / `minor_unit` or leaving a missing-row currency in-bound.
 #[tokio::test]
-async fn line_without_currencies_row_falls_back_to_unit_size_1_and_minor_unit_2() {
+async fn line_without_currencies_row_has_no_proposals_and_is_out_of_bound_on_both_sides() {
     let db = TestDb::start().await;
     let e = db.engine();
 
     let fetched_at = Utc::now() - Duration::minutes(15);
-    // Seed CHF reference with unit_size = 100, buy = 3800.00, sell = 3900.00.
-    // When CHF has no row in `currencies` and falls back to unit_size = 1, minor_unit = 2:
-    // proposed buy = 3800.00 * 1 / 100 = 38.00, sell = 3900.00 * 1 / 100 = 39.00.
     db.seed_batch(
         fetched_at,
         &[("CHF", "100", Some("3800.00"), Some("3900.00"))],
@@ -324,8 +322,18 @@ async fn line_without_currencies_row_falls_back_to_unit_size_1_and_minor_unit_2(
 
     let outcome = evaluate_draft(&db, &e, &draft).await;
     assert_eq!(outcome.proposals.len(), 1);
-    assert_eq!(outcome.proposals[0].buy, Some(rate("38.00")));
-    assert_eq!(outcome.proposals[0].sell, Some(rate("39.00")));
+    assert_eq!(outcome.proposals[0].buy, None);
+    assert_eq!(outcome.proposals[0].sell, None);
+    assert!(!outcome.evaluation.is_in_bound());
+    let out = outcome.evaluation.out_of_bound();
+    assert!(
+        out.contains(&(code("CHF"), xc_kernel::money::Side::Buy)),
+        "{out:?}"
+    );
+    assert!(
+        out.contains(&(code("CHF"), xc_kernel::money::Side::Sell)),
+        "{out:?}"
+    );
 
     db.finish().await;
 }
