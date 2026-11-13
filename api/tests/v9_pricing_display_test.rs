@@ -26,11 +26,6 @@ use xchange::presentation::http::v3::error::V3Error;
 
 const BR_B: &str = "BR-B";
 
-/// `H:` §8 / V9:display `DEFAULT_DISPLAY`: featured is a code default, not a statistic.
-const DEFAULT_FEATURED: [&str; 10] = [
-    "MYR", "CNY", "INR", "RUB", "KRW", "JPY", "GBP", "USD", "TWD", "EUR",
-];
-
 async fn board_display(room: &Room, branch: &str) -> Value {
     let a = view(room, &owner(), "pricing_board", branch, None).await;
     a.ok("pricing_board")["data"]["display"].clone()
@@ -182,22 +177,23 @@ async fn clear_at_a_branch_returns_it_to_mains_display() {
     room.finish().await;
 }
 
-/// PV-17: no display row anywhere ⇒ `H:` §8's defaults: tiers `[1,2,3,4]`, featured
-/// `MYR, CNY, INR, RUB, KRW, JPY, GBP, USD, TWD, EUR`, highlight on, `allMarket` on, `from: "default"`.
+/// PV-17, restated for GD-1 (owner-set-values.md §3, row 23, D-6): no display row anywhere is "not set": every
+/// published tier and currency, nothing featured, no highlight, `allMarket` on, `from: "default"` (the screen says
+/// "not set: showing everything"). V.9's featured list and highlight are business choices, so code no longer holds them.
 #[tokio::test]
-async fn with_no_display_row_anywhere_the_v9_defaults_apply() {
+async fn with_no_display_row_anywhere_the_display_is_not_set() {
     let room = Room::start().await;
     room.policy(MAIN).await;
     branch_b(&room).await;
 
     assert_eq!(
         board_display(&room, BR_B).await,
-        json!({ "tiers": [1, 2, 3, 4], "featured": DEFAULT_FEATURED, "highlight": true, "allMarket": true, "from": "default" })
+        json!({ "tiers": [1, 2, 3, 4], "featured": [], "highlight": false, "allMarket": true, "from": "default" })
     );
     let display = projection(&room, BR_B).await["display"].clone();
     assert_eq!(display["tiers"], json!([1, 2, 3, 4]), "{display}");
-    assert_eq!(display["featured"], json!(DEFAULT_FEATURED), "{display}");
-    assert_eq!(display["highlight"], json!(true), "{display}");
+    assert_eq!(display["featured"], json!([]), "{display}");
+    assert_eq!(display["highlight"], json!(false), "{display}");
     room.finish().await;
 }
 

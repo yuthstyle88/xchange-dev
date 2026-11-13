@@ -52,18 +52,12 @@ impl DisplaySettings {
     /// The most `featured` codes (`H:` §8).
     pub const MAX_FEATURED: usize = 10;
 
-    /// V.9's `DEFAULT_DISPLAY`: tiers `[1,2,3,4]`; featured `MYR, CNY, INR, RUB, KRW, JPY, GBP, USD, TWD, EUR`;
-    /// highlight on; `all_market` on.
-    pub fn v9_default() -> Self {
+    /// Every published tier and currency, nothing featured, no highlight (owner-set-values.md §3 row 23).
+    pub fn not_set() -> Self {
         Self {
             tiers: vec![1, 2, 3, 4],
-            featured: [
-                "MYR", "CNY", "INR", "RUB", "KRW", "JPY", "GBP", "USD", "TWD", "EUR",
-            ]
-            .iter()
-            .map(|c| c.to_string())
-            .collect(),
-            highlight: true,
+            featured: Vec::new(),
+            highlight: false,
             all_market: true,
         }
     }
@@ -137,7 +131,7 @@ impl DisplaySettings {
 
 /// `rate_display_settings` (§15.2a). The Pg impl is `infrastructure::pricing::display_settings_store`.
 pub trait DisplaySettingsStore: Send + Sync {
-    /// The branch's row, else MAIN's (branch id `"MAIN"`), else `DisplaySettings::v9_default()`, and which.
+    /// The branch's row, else MAIN's (branch id `"MAIN"`), else `DisplaySettings::not_set()`, and which.
     fn effective_in<'a>(
         &'a self,
         conn: &'a mut PgConnection,

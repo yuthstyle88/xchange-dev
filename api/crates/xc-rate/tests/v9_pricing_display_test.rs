@@ -17,15 +17,17 @@ const V9_FEATURED: [&str; 10] = [
 
 // ── default ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// PV-a (§15.8 defaults; `H:` §8): tiers 1–4, featured MYR … EUR in that order, highlight on, `allMarket` on.
+// Restated for GD-1 (owner-set-values.md §3, row 23, D-6): `DisplaySettings::v9_default()` is replaced by
+// `DisplaySettings::not_set()`. What "not set" reads is pinned through the store
+// (`v9_pricing_stores_test.rs`) and the board (`api/tests/v9_pricing_display_test.rs` PV-17).
 #[test]
-fn the_default_is_v9s() {
+fn the_default_is_not_set() {
     assert_eq!(
-        DisplaySettings::v9_default(),
+        DisplaySettings::not_set(),
         DisplaySettings {
             tiers: vec![1, 2, 3, 4],
-            featured: codes(&V9_FEATURED),
-            highlight: true,
+            featured: Vec::new(),
+            highlight: false,
             all_market: true,
         }
     );

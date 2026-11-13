@@ -14,6 +14,8 @@ use crate::domain::booking::booking::Booking;
 use crate::domain::booking::booking_event::BookingEventKind;
 use crate::domain::booking::booking_status::BookingStatus;
 use crate::domain::booking::repository::BookingRepository;
+use crate::domain::policy::booking_policy::BookingPolicy;
+use crate::domain::slot::booking_slot::{BookingSlot, SlotStatus};
 use crate::domain::slot::repository::SlotRepository;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +36,8 @@ pub enum CheckInError {
     StaleVersion,
     #[error("notFound")]
     NotFound,
+    #[error("bookingsClosed")]
+    BookingsClosed,
     #[error(transparent)]
     Store(#[from] AppError),
 }
@@ -168,17 +172,33 @@ impl CheckInService {
             return Err(CheckInError::CheckInWindow);
         }
 
-        let grace_minutes: i32 = sqlx::query_scalar(
-            "SELECT no_show_grace_minutes FROM booking_policies WHERE organization_id = $1",
+        let (cutoff, grace, expiry): (i32, i32, i32) = sqlx::query_as(
+            "SELECT cancel_cutoff_minutes, no_show_grace_minutes, confirm_expiry_minutes \
+             FROM booking_policies WHERE organization_id = $1",
         )
         .bind(booking.organization_id)
         .fetch_optional(&mut **tx)
         .await
         .map_err(pos_error::AppError::Database)?
-        .unwrap_or(15);
+        .ok_or(CheckInError::BookingsClosed)?;
 
-        let grace_until = slot.start_at + chrono::Duration::minutes(grace_minutes as i64);
-        if now > grace_until {
+        let policy = BookingPolicy {
+            cancel_cutoff_minutes: cutoff,
+            no_show_grace_minutes: grace,
+            confirm_expiry_minutes: expiry,
+        };
+        let booking_slot = BookingSlot {
+            id: booking.slot_id,
+            organization_id: booking.organization_id,
+            branch_id: booking.branch_id.clone(),
+            service_date: slot.service_date,
+            start_at: slot.start_at,
+            end_at: slot.start_at,
+            capacity: 0,
+            reserved: 0,
+            status: SlotStatus::Open,
+        };
+        if now > policy.grace_until(&booking_slot) {
             return Err(CheckInError::CheckInWindow);
         }
 

@@ -29,6 +29,6 @@ pub struct BranchExchangeLimitDto {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "exchange_settings.ts")]
 pub struct ExchangeSettingsViewData {
-    pub quote_ttl_seconds: i32,
+    pub quote_ttl_seconds: Option<i32>,
     pub approval_limit_thb: Option<String>,
 }

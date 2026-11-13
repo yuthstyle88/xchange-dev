@@ -103,6 +103,15 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
         .await
         .expect("insert branch B2");
 
+    sqlx::query(
+        "INSERT INTO exchange_settings (organization_id, quote_ttl_seconds, updated_by, updated_at) \
+         VALUES ($1, 300, 'test', now())",
+    )
+    .bind(org2_uuid)
+    .execute(&shop.pool)
+    .await
+    .expect("insert org 2 exchange_settings");
+
     // Automatically keep organization_id in sync with branch_id for multi-org test setup
     sqlx::query(
         "CREATE OR REPLACE FUNCTION t_set_org_from_branch() RETURNS trigger AS $$ \

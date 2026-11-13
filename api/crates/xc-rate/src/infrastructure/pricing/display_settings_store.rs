@@ -68,7 +68,7 @@ impl DisplaySettingsStore for PgDisplaySettingsStore {
             {
                 return Ok((settings, DisplayFrom::Main));
             }
-            Ok((DisplaySettings::v9_default(), DisplayFrom::Default))
+            Ok((DisplaySettings::not_set(), DisplayFrom::Default))
         })
     }
 

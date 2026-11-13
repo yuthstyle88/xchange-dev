@@ -52,8 +52,8 @@
 //!   `stale_limit_thb` (rates §4.8, *"of the policy version it was published under"*; ticket
 //!   author's ruling 6 on #669, 2026-10-09). A policy saved after the publication does not change
 //!   how its lines are quoted. A MANUAL line with no reference is never stale.
-//! - An organisation with no `exchange_settings` row is quoted with 300 s, the migration's default,
-//!   and the quote is stored as usual (ruling 7).
+//! - An organisation with no `exchange_settings` row: restated for GD-1 (owner-set-values.md §3 row 15), the
+//!   quote is refused `settingNotSet: quoteTtlSeconds` and nothing is stored (ruling 7's 300 s is gone).
 
 mod quote_common;
 
@@ -916,27 +916,33 @@ async fn the_policy_the_line_was_published_under_governs_not_a_later_one() {
     db.finish().await;
 }
 
+// Restated for GD-1 (owner-set-values.md §3, row 15, D-2): ruling 7's 300 s fallback is a business value fixed in
+// code. With no `exchange_settings` row the quote lifetime is not set, so the quote is refused with
+// `settingNotSet: quoteTtlSeconds` and nothing is stored.
 #[tokio::test]
-async fn no_settings_row_for_the_organisation_means_300_seconds() {
+async fn no_settings_row_for_the_organisation_refuses_the_quote_as_not_set() {
     let db = TestDb::start().await;
     db.publish("MAIN", &[USD]).await;
     db.exec(&format!(
         "DELETE FROM exchange_settings WHERE organization_id = '{ORG_1}'"
     ))
     .await;
-    let now = whole_second_now();
-    let q = quoted(
+    let answer = quote(
         &db,
         request("MAIN", vec![line("USD", Side::Buy, "10", None)]),
-        now,
+        whole_second_now(),
     )
     .await;
-    let s = stored_quote(&db, &q).await;
-    assert_eq!(
-        (s.5.as_str(), s.7),
-        ("ACTIVE", now + Duration::seconds(300)),
-        "stored, expiring at now + 300 s"
-    );
-    assert_eq!(db.quote_rows().await, (1, 1));
+    match answer {
+        Err(pos_error::AppError::Domain(m)) => assert!(
+            m.starts_with("settingNotSet: quoteTtlSeconds"),
+            "refused as not set, got {m}"
+        ),
+        other => panic!(
+            "expected AppError::Domain(\"settingNotSet: quoteTtlSeconds …\"), got {:?}",
+            other.map(|q| q.id.to_string())
+        ),
+    }
+    assert_eq!(db.quote_rows().await, (0, 0), "nothing stored");
     db.finish().await;
 }

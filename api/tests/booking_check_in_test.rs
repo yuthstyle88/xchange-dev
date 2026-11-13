@@ -1259,3 +1259,167 @@ async fn booking_cancel_by_teller_cancels_checked_in_booking_and_active_ticket()
 
     h.finish().await;
 }
+
+// ------------------------------------------------------------------------------------------------
+// GD-1 (owner-set-values.md §3 row 19, D-3): with no booking_policies row there is no grace, so
+// CheckInService refuses with `bookingsClosed` (today it falls back to 15 minutes). Added by the
+// ticket author (claude/b091f5e0) before the implementation.
+// ------------------------------------------------------------------------------------------------
+#[tokio::test]
+async fn check_in_with_no_booking_policy_is_bookings_closed() {
+    let h = TestHarness::start().await;
+    sqlx::query("DELETE FROM booking_policies WHERE organization_id = $1")
+        .bind(h.org_id)
+        .execute(&h.pool)
+        .await
+        .expect("delete the organisation's booking policy");
+    let now = noon_today_bangkok();
+    let service_date = now.with_timezone(&Bangkok).date_naive();
+    let slot_id = Uuid::new_v4();
+    let customer_id = format!("CUST-{}", unique("c"));
+    let booking_id = format!("BK-{}", unique("b"));
+    let (token, token_hash) = make_qr_token();
+
+    h.seed_customer(&customer_id, "No policy").await;
+    // Five minutes after the start: inside the old 15-minute fallback.
+    let start_at = now - Duration::minutes(5);
+    h.seed_slot(
+        slot_id,
+        service_date,
+        start_at,
+        start_at + Duration::minutes(30),
+        5,
+        1,
+    )
+    .await;
+    h.seed_booking(
+        &booking_id,
+        "B261103-0301",
+        &customer_id,
+        slot_id,
+        "CONFIRMED",
+        &token_hash,
+    )
+    .await;
+
+    let err = h
+        .check_in_service
+        .check_in(
+            &h.branch_id,
+            &booking_id,
+            CheckInBy::QrToken(token),
+            TELLER_ID,
+            now,
+        )
+        .await
+        .expect_err("no booking policy: check-in is refused");
+    assert_eq!(err.to_string(), "bookingsClosed", "got {err:?}");
+
+    let (status, _, _) = h.get_booking_status(&booking_id).await;
+    assert_eq!(status, "CONFIRMED");
+    assert!(h.get_ticket_for_booking(&booking_id).await.is_none());
+
+    h.finish().await;
+}
+
+// ------------------------------------------------------------------------------------------------
+// GD-1 (owner-set-values.md §3 row 19, D-4): CheckInService reads the row's no_show_grace_minutes
+// (20 minutes here, not 15), admitting check-in at 18m after start and refusing at 25m after start.
+// ------------------------------------------------------------------------------------------------
+#[tokio::test]
+async fn check_in_with_20_minute_grace_admits_18m_and_refuses_25m_after_start() {
+    let h = TestHarness::start().await;
+    sqlx::query(
+        "INSERT INTO booking_policies (organization_id, cancel_cutoff_minutes, no_show_grace_minutes, \
+             confirm_expiry_minutes) VALUES ($1, 60, 20, 60) \
+         ON CONFLICT (organization_id) DO UPDATE SET no_show_grace_minutes = 20",
+    )
+    .bind(h.org_id)
+    .execute(&h.pool)
+    .await
+    .expect("set 20-minute grace");
+
+    let now = noon_today_bangkok();
+    let service_date = now.with_timezone(&Bangkok).date_naive();
+    let customer_id = format!("CUST-{}", unique("c"));
+    h.seed_customer(&customer_id, "Twenty Grace").await;
+
+    // 18 minutes after start: inside the 20-minute grace (would fail under the old 15-minute constant).
+    let slot_in = Uuid::new_v4();
+    let start_in = now - Duration::minutes(18);
+    h.seed_slot(
+        slot_in,
+        service_date,
+        start_in,
+        start_in + Duration::minutes(60),
+        5,
+        1,
+    )
+    .await;
+    let booking_in = format!("BK-{}", unique("b-in"));
+    let (token_in, hash_in) = make_qr_token();
+    h.seed_booking(
+        &booking_in,
+        "B261103-0302",
+        &customer_id,
+        slot_in,
+        "CONFIRMED",
+        &hash_in,
+    )
+    .await;
+
+    let (checked, _) = h
+        .check_in_service
+        .check_in(
+            &h.branch_id,
+            &booking_in,
+            CheckInBy::QrToken(token_in),
+            TELLER_ID,
+            now,
+        )
+        .await
+        .expect("18m after start is inside 20m grace");
+    assert_eq!(checked.status, BookingStatus::CheckedIn);
+
+    // 25 minutes after start: outside the 20-minute grace.
+    let slot_out = Uuid::new_v4();
+    let start_out = now - Duration::minutes(25);
+    h.seed_slot(
+        slot_out,
+        service_date,
+        start_out,
+        start_out + Duration::minutes(60),
+        5,
+        1,
+    )
+    .await;
+    let booking_out = format!("BK-{}", unique("b-out"));
+    let (token_out, hash_out) = make_qr_token();
+    h.seed_booking(
+        &booking_out,
+        "B261103-0303",
+        &customer_id,
+        slot_out,
+        "CONFIRMED",
+        &hash_out,
+    )
+    .await;
+
+    let err = h
+        .check_in_service
+        .check_in(
+            &h.branch_id,
+            &booking_out,
+            CheckInBy::QrToken(token_out),
+            TELLER_ID,
+            now,
+        )
+        .await
+        .expect_err("25m after start is outside 20m grace");
+    assert!(
+        matches!(err, CheckInError::CheckInWindow),
+        "expected CheckInWindow, got {err:?}"
+    );
+
+    h.finish().await;
+}

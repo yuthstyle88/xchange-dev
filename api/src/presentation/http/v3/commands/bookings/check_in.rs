@@ -3,15 +3,18 @@
 use std::sync::Arc;
 
 use actix_web::http::{Method, StatusCode};
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use ts_rs::TS;
+use uuid::Uuid;
 
 use xc_auth::domain::access::Actor;
 use xc_auth::domain::policy::value_objects::entry_path::EntryPath;
 use xc_booking::application::check_in::{CheckInBy, CheckInError};
+use xc_booking::domain::policy::booking_policy::BookingPolicy;
+use xc_booking::domain::slot::booking_slot::{BookingSlot, SlotStatus};
 use xc_kernel::ids::BranchId;
 
 use super::BookingServices;
@@ -138,9 +141,32 @@ impl CommandAction for BookingCheckIn {
         let now = Utc::now();
         let tz: Tz = timezone_str.parse().unwrap_or(chrono_tz::Asia::Bangkok);
         let today = now.with_timezone(&tz).date_naive();
-        let grace = no_show_grace.unwrap_or(15);
+        let Some(grace) = no_show_grace else {
+            return Err(V3Error::new(
+                "bookingsClosed",
+                None,
+                "BOOKINGS_CLOSED",
+                StatusCode::BAD_REQUEST,
+            ));
+        };
+        let policy = BookingPolicy {
+            cancel_cutoff_minutes: 0,
+            no_show_grace_minutes: grace,
+            confirm_expiry_minutes: 0,
+        };
+        let slot = BookingSlot {
+            id: Uuid::nil(),
+            organization_id: Uuid::nil(),
+            branch_id: branch.clone(),
+            service_date,
+            start_at,
+            end_at: start_at,
+            capacity: 0,
+            reserved: 0,
+            status: SlotStatus::Open,
+        };
 
-        if service_date != today || now > start_at + Duration::minutes(grace as i64) {
+        if service_date != today || now > policy.grace_until(&slot) {
             return Err(V3Error::new(
                 "checkInWindow",
                 None,

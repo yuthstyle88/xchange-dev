@@ -131,8 +131,9 @@ async fn r1_organisation_with_stored_ttl_120_answers_quote_ttl_seconds_120() {
     assert_eq!(a.body["data"]["quoteTtlSeconds"], json!(120));
 }
 
+// Restated for GD-1 (owner-set-values.md §3, row 15, D-2): no row is "not set", answered as `null`, not 300.
 #[actix_web::test]
-async fn r2_organisation_with_no_exchange_settings_row_answers_quote_ttl_seconds_300() {
+async fn r2_organisation_with_no_exchange_settings_row_answers_quote_ttl_seconds_null() {
     let desk = Desk::start().await;
     desk.db
         .exec(&format!(
@@ -141,7 +142,7 @@ async fn r2_organisation_with_no_exchange_settings_row_answers_quote_ttl_seconds
         .await;
     let a = get(&desk, VIEW, "owner").await;
     assert_eq!(a.status, StatusCode::OK, "body {}", a.text);
-    assert_eq!(a.body["data"]["quoteTtlSeconds"], json!(300));
+    assert_eq!(a.body["data"]["quoteTtlSeconds"], Value::Null);
 }
 
 #[actix_web::test]

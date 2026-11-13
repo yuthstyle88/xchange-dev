@@ -149,7 +149,12 @@ impl CommandAction for ExchangeSettingsSaveCommand {
             .set_ttl_in(tx, org, input.quote_ttl_seconds, &who.user_id, now)
             .await
             .map_err(refusal)?;
-        let after = self.settings.get_ttl_in(tx, org).await.map_err(refusal)?;
+        let after = self
+            .settings
+            .get_ttl_in(tx, org)
+            .await
+            .map_err(refusal)?
+            .ok_or_else(server_error)?;
         audit(
             &self.audit,
             tx,

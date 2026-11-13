@@ -98,6 +98,12 @@ impl From<CheckInError> for V3Error {
             CheckInError::StaleVersion => {
                 V3Error::new("staleVersion", None, "STALE_VERSION", StatusCode::CONFLICT)
             }
+            CheckInError::BookingsClosed => V3Error::new(
+                "bookingsClosed",
+                None,
+                "BOOKINGS_CLOSED",
+                StatusCode::BAD_REQUEST,
+            ),
             CheckInError::NotFound => {
                 V3Error::new("notFound", None, "NOT_FOUND", StatusCode::NOT_FOUND)
             }

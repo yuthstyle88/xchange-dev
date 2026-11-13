@@ -24,7 +24,9 @@ fn day(d: u32) -> NaiveDate {
 fn facts() -> OverdueFacts {
     OverdueFacts {
         confirm_expires_at: Some(at(9, 0)),
-        grace_until: at(10, 15),
+        // Restated for GD-1 (owner-set-values.md §3, row 19): `grace_until` becomes `Option<DateTime<Utc>>`;
+        // `.into()` compiles against both shapes.
+        grace_until: at(10, 15).into(),
         service_date: day(16),
         branch_today: day(16),
         has_active_ticket: false,
