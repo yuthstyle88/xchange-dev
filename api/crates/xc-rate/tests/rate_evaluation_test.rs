@@ -24,9 +24,15 @@
 //! - A fresh draft (these tests have no current publication) changes every side it prices, so
 //!   "changes and has no guard" (§4.5) holds for each priced side of a currency with no guard.
 
-use std::collections::HashSet;
+mod rate_engine_common;
 
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
+
+use rate_engine_common::TestDb;
+use rust_decimal::Decimal;
 use serde_json::{Value, json};
+use sqlx::Row;
 use xc_kernel::money::{CurrencyCode, CurrencyUnits, MinorUnit, Rate, RatePercent, Side, UnitSize};
 use xc_rate::domain::draft::draft_evaluation::{DraftEvaluation, Evaluation};
 use xc_rate::domain::draft::rate_draft::{DraftLine, LineSide};
@@ -67,13 +73,40 @@ fn policy() -> RatePolicy {
     policy_with("0", "0")
 }
 
+async fn load_units(db: &TestDb) -> HashMap<CurrencyCode, CurrencyUnits> {
+    sqlx::query("SELECT code, unit_size, minor_unit FROM currencies")
+        .fetch_all(&db.pool)
+        .await
+        .expect("read currencies")
+        .into_iter()
+        .map(|r| {
+            let c = code(r.get::<String, _>(0).trim());
+            let u = unit(&r.get::<Decimal, _>(1).to_string());
+            let m = MinorUnit::new(r.get::<i16, _>(2) as u8).expect("valid minor unit");
+            (c, CurrencyUnits::new(c, u, m))
+        })
+        .collect()
+}
+
 fn units_of(currency: &str) -> CurrencyUnits {
-    let size = match currency {
-        "JPY" => "100",
-        "KRW" => "1000",
-        _ => "1",
-    };
-    CurrencyUnits::new(code(currency), unit(size), MinorUnit::TWO)
+    static UNITS: OnceLock<HashMap<CurrencyCode, CurrencyUnits>> = OnceLock::new();
+    let map = UNITS.get_or_init(|| {
+        std::thread::spawn(|| {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime")
+                .block_on(async {
+                    let db = TestDb::start().await;
+                    let units = load_units(&db).await;
+                    db.finish().await;
+                    units
+                })
+        })
+        .join()
+        .expect("load currencies")
+    });
+    *map.get(&code(currency)).expect("seeded currency")
 }
 
 fn manual(text: &str) -> LineSide {
@@ -108,18 +141,33 @@ fn case(
 
 /// Propose every line against its own reference under `policy`, then evaluate the draft.
 fn evaluate(cases: &[Case], policy: Option<&RatePolicy>) -> Evaluation {
+    let units: HashMap<CurrencyCode, CurrencyUnits> = cases
+        .iter()
+        .map(|c| (code(c.currency), units_of(c.currency)))
+        .collect();
+    evaluate_with_units(cases, policy, &units)
+}
+
+fn evaluate_with_units(
+    cases: &[Case],
+    policy: Option<&RatePolicy>,
+    units: &HashMap<CurrencyCode, CurrencyUnits>,
+) -> Evaluation {
     let lines: Vec<DraftLine> = cases.iter().map(|c| c.line.clone()).collect();
     let proposals: Vec<ProposedLine> = cases
         .iter()
         .map(|c| {
-            RateProposal::of(&c.line, c.reference.as_ref(), policy, &units_of(c.currency))
-                .unwrap_or_else(|e| {
-                    panic!("{}: the test's line is valid ({})", c.currency, e.code())
-                })
+            let u = units
+                .get(&code(c.currency))
+                .copied()
+                .unwrap_or_else(|| units_of(c.currency));
+            RateProposal::of(&c.line, c.reference.as_ref(), policy, &u).unwrap_or_else(|e| {
+                panic!("{}: the test's line is valid ({})", c.currency, e.code())
+            })
         })
         .collect();
     let references: Vec<ReferenceLine> = cases.iter().filter_map(|c| c.reference.clone()).collect();
-    DraftEvaluation::of(&lines, &proposals, &references, policy)
+    DraftEvaluation::of(&lines, &proposals, &references, policy, units)
 }
 
 fn out(e: &Evaluation) -> HashSet<(&'static str, Side)> {
@@ -311,4 +359,75 @@ fn evaluating_twice_gives_the_same_answer() {
         a,
         set(&[("USD", Side::Sell), ("EUR", Side::Buy), ("EUR", Side::Sell)])
     );
+}
+
+#[tokio::test]
+async fn g10_a_fixture_currency_with_a_different_unit_size_follows_the_column() {
+    let db = TestDb::start().await;
+    sqlx::query("UPDATE currencies SET unit_size = 10 WHERE code = 'USD'")
+        .execute(&db.pool)
+        .await
+        .expect("update USD unit_size to 10");
+    let units = load_units(&db).await;
+    db.finish().await;
+
+    // Reference per 1 is 4.0 -> 40.0 per 10 (from currencies.unit_size = 10).
+    // 39.5 (-1.25%) and 40.1 (+0.25%) are inside [-2, 0.5]; against per-1 4.0 they would be ~+900% out.
+    let in_bound = evaluate_with_units(
+        &[case(
+            "USD",
+            manual("39.5"),
+            manual("40.1"),
+            Some(("1", "4.0", "4.0")),
+        )],
+        Some(&policy()),
+        &units,
+    );
+    assert_eq!(out(&in_bound), set(&[]));
+
+    // 40.4 is +1.0% of 40.0 per 10 -> out on the sell side.
+    let sell_out = evaluate_with_units(
+        &[case(
+            "USD",
+            manual("39.5"),
+            manual("40.4"),
+            Some(("1", "4.0", "4.0")),
+        )],
+        Some(&policy()),
+        &units,
+    );
+    assert_eq!(out(&sell_out), set(&[("USD", Side::Sell)]));
+}
+
+#[test]
+fn a_line_whose_currency_has_no_currencies_row_is_out_of_bound_on_both_sides() {
+    let e = evaluate_with_units(
+        &[case("USD", manual("39.5"), manual("40.1"), Some(USD_REF))],
+        Some(&policy()),
+        &HashMap::new(),
+    );
+    assert_eq!(out(&e), set(&[("USD", Side::Buy), ("USD", Side::Sell)]));
+}
+
+#[test]
+fn a_tiered_line_whose_currency_has_no_currencies_row_is_out_of_bound_on_both_sides() {
+    let mut line = DraftLine::new(code("USD"), LineSide::Auto, LineSide::Auto, None);
+    line.tiers = Some(
+        [xc_rate::domain::pricing::tier_set::TierRate {
+            buy: rate("39.5"),
+            sell: rate("40.1"),
+        }; 4],
+    );
+    let e = DraftEvaluation::of(
+        &[line],
+        &[ProposedLine {
+            buy: None,
+            sell: None,
+        }],
+        &[],
+        Some(&policy()),
+        &HashMap::new(),
+    );
+    assert!(!e.is_in_bound());
+    assert_eq!(out(&e), set(&[("USD", Side::Buy), ("USD", Side::Sell)]));
 }

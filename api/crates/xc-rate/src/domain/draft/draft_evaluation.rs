@@ -1,7 +1,9 @@
 //! Draft evaluation logic: checks guard boundaries and references.
 
+use std::collections::HashMap;
+
 use rust_decimal::Decimal;
-use xc_kernel::money::{CurrencyCode, Side};
+use xc_kernel::money::{CurrencyCode, CurrencyUnits, Side};
 
 use crate::domain::draft::rate_draft::{DraftLine, LineSide};
 use crate::domain::draft::rate_proposal::ProposedLine;
@@ -32,19 +34,11 @@ impl Evaluation {
 
 pub struct DraftEvaluation;
 
-fn currency_unit_size(code: CurrencyCode) -> Decimal {
-    match code.as_str() {
-        "JPY" => Decimal::from(100),
-        "KRW" => Decimal::from(1000),
-        _ => Decimal::ONE,
-    }
-}
-
 impl DraftEvaluation {
     /// Evaluates draft lines with per-currency resolved policy value tiers (`tiers[i]` for `lines[i]`) against policy guards.
     /// As `of_tiered`, with line `i`'s tiers re-proposed through `formulas[i]` (`TierProposal::of_with`) instead of
     /// the default, so the guard check sees the prices the draft will publish. `formulas.len() == lines.len()`.
-    /// `of_tiered` becomes `of_tiered_with(.., &[PriceFormula::default(); n])`.
+    /// `of_tiered` becomes `of_tiered_with(.., &[PriceFormula::default(); n], units)`.
     pub fn of_tiered_with(
         lines: &[DraftLine],
         proposals: &[ProposedLine],
@@ -52,6 +46,7 @@ impl DraftEvaluation {
         policy: Option<&RatePolicy>,
         tiers: &[Option<PolicyTiers>],
         formulas: &[PriceFormula],
+        units: &HashMap<CurrencyCode, CurrencyUnits>,
     ) -> Evaluation {
         let mut out_of_bound = Vec::new();
         if policy.is_none() {
@@ -68,9 +63,19 @@ impl DraftEvaluation {
         let default_formula = PriceFormula::default();
 
         for (i, line) in lines.iter().enumerate() {
+            let Some(line_units) = units.get(&line.currency) else {
+                if !out_of_bound.contains(&(line.currency, Side::Buy)) {
+                    out_of_bound.push((line.currency, Side::Buy));
+                }
+                if !out_of_bound.contains(&(line.currency, Side::Sell)) {
+                    out_of_bound.push((line.currency, Side::Sell));
+                }
+                continue;
+            };
             if line.tiers.is_some() {
                 continue;
             }
+            let unit_size = line_units.unit_size().value();
             let proposal = match proposals.get(i) {
                 Some(p) => p,
                 None => continue,
@@ -91,9 +96,7 @@ impl DraftEvaluation {
                             match pol.guard_for(line.currency.as_str(), Side::Buy) {
                                 None => true,
                                 Some(guard) => {
-                                    let norm_ref = ref_buy.value()
-                                        * currency_unit_size(line.currency)
-                                        / ref_unit.value();
+                                    let norm_ref = ref_buy.value() * unit_size / ref_unit.value();
                                     if norm_ref.is_zero() {
                                         true
                                     } else {
@@ -124,9 +127,7 @@ impl DraftEvaluation {
                             match pol.guard_for(line.currency.as_str(), Side::Sell) {
                                 None => true,
                                 Some(guard) => {
-                                    let norm_ref = ref_sell.value()
-                                        * currency_unit_size(line.currency)
-                                        / ref_unit.value();
+                                    let norm_ref = ref_sell.value() * unit_size / ref_unit.value();
                                     if norm_ref.is_zero() {
                                         true
                                     } else {
@@ -147,12 +148,6 @@ impl DraftEvaluation {
             // Tiered check (when value tiers are active for this line)
             if let Some(Some(pt)) = tiers.get(i) {
                 if let Some(pol) = policy {
-                    let unit_val = currency_unit_size(line.currency);
-                    let u_size = xc_kernel::money::UnitSize::parse(&unit_val.to_string())
-                        .unwrap_or(xc_kernel::money::UnitSize::ONE);
-                    let m_unit = xc_kernel::money::MinorUnit::new(2)
-                        .unwrap_or(xc_kernel::money::MinorUnit::ZERO);
-                    let units = xc_kernel::money::CurrencyUnits::new(line.currency, u_size, m_unit);
                     let formula = formulas.get(i).unwrap_or(&default_formula);
 
                     match TierProposal::of_with(
@@ -161,7 +156,7 @@ impl DraftEvaluation {
                         ref_line,
                         Some(pol),
                         pt,
-                        &units,
+                        line_units,
                         formula,
                     ) {
                         Ok(tier_lines) => {
@@ -179,8 +174,7 @@ impl DraftEvaluation {
                                                 {
                                                     None => true,
                                                     Some(guard) => {
-                                                        let norm_ref = ref_buy.value()
-                                                            * currency_unit_size(line.currency)
+                                                        let norm_ref = ref_buy.value() * unit_size
                                                             / ref_unit.value();
                                                         if norm_ref.is_zero() {
                                                             true
@@ -215,8 +209,7 @@ impl DraftEvaluation {
                                                 {
                                                     None => true,
                                                     Some(guard) => {
-                                                        let norm_ref = ref_sell.value()
-                                                            * currency_unit_size(line.currency)
+                                                        let norm_ref = ref_sell.value() * unit_size
                                                             / ref_unit.value();
                                                         if norm_ref.is_zero() {
                                                             true
@@ -261,6 +254,7 @@ impl DraftEvaluation {
         references: &[ReferenceLine],
         policy: Option<&RatePolicy>,
         tiers: &[Option<PolicyTiers>],
+        units: &HashMap<CurrencyCode, CurrencyUnits>,
     ) -> Evaluation {
         Self::of_tiered_with(
             lines,
@@ -269,6 +263,7 @@ impl DraftEvaluation {
             policy,
             tiers,
             &vec![PriceFormula::default(); lines.len()],
+            units,
         )
     }
 
@@ -277,8 +272,9 @@ impl DraftEvaluation {
         proposals: &[ProposedLine],
         references: &[ReferenceLine],
         policy: Option<&RatePolicy>,
+        units: &HashMap<CurrencyCode, CurrencyUnits>,
     ) -> Evaluation {
         let empty_tiers: Vec<Option<PolicyTiers>> = vec![None; lines.len()];
-        Self::of_tiered(lines, proposals, references, policy, &empty_tiers)
+        Self::of_tiered(lines, proposals, references, policy, &empty_tiers, units)
     }
 }
