@@ -37,6 +37,11 @@ struct Room {
 impl Room {
     async fn open() -> Room {
         let desk = Desk::open().await;
+        // "not set" starts empty: remove the fixture rule `snapshot_common` saves (#6928), as G-9 does.
+        sqlx::query("DELETE FROM pricing_rule_versions WHERE organization_id = '00000000-0000-0000-0000-000000000001'")
+            .execute(&desk.db.pool)
+            .await
+            .expect("delete the fixture rule");
         let app = rpc_app!(desk);
         let people = one_of_each_role();
         desk.employ(&people).await;

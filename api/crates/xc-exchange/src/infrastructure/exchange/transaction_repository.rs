@@ -238,17 +238,19 @@ impl TransactionRepository for PgTransactionRepository {
         };
 
         let line_id = uuid::Uuid::new_v4();
+        // `settle_thb` is exactly principal ∓ fee (`TransactionForm`), so there is no cash rounding and no
+        // step: `cash_step_thb` is NULL (GA-4, #6928).
         sqlx::query(
             "INSERT INTO transaction_lines ( \
                 id, organization_id, transaction_id, quote_line_id, shop_side, currency, \
                 denomination_id, quantity, unit_size, rate_snapshot, reference_rate, \
                 thb_amount, fee_thb, settle_thb, cost_basis_thb, realized_margin_thb, \
-                line_no, created_at, updated_at \
+                line_no, created_at, updated_at, cash_step_thb \
             ) VALUES ( \
                 $1, $2, $3, NULL, $4, $5, \
                 NULL, $6::numeric, $7::numeric, $8::numeric, $9::numeric, \
                 $10::numeric, $11::numeric, $12::numeric, NULL, NULL, \
-                1, $13, $13 \
+                1, $13, $13, NULL \
             )",
         )
         .bind(line_id)

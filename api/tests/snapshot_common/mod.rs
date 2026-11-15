@@ -534,6 +534,8 @@ impl TestDb {
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
+        // GA-4 (#6928): the Owner's THB cash step, a fixture row; a cash quote is refused without it.
+        quote_common::save_cash_step_rule(&pool, quote_common::ORG_1, "0.25").await;
 
         for opener in ["owner-1", "test"] {
             seed_opener(&pool, opener).await;
@@ -1862,6 +1864,10 @@ pub async fn seed_passport_identity(
 
 #[path = "../lg4_fund/mod.rs"]
 mod lg4_fund;
+
+// GA-4 (xchange#6928): the Owner's THB cash step fixture (`quote_common::save_cash_step_rule`).
+#[path = "../quote_common/mod.rs"]
+mod quote_common;
 pub use lg4_fund::lg4_fund_safe;
 
 /// A recorded v2 admin write on a shift (CA-10: replayed by SQL, its v2 command is deleted).

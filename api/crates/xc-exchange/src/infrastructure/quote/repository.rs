@@ -87,8 +87,8 @@ impl QuoteRepository for PgQuoteRepository {
             sqlx::query(
                 "INSERT INTO quote_lines (id, organization_id, quote_id, published_rate_line_id, \
                  shop_side, currency, denomination_group, quantity, unit_size, base_rate, final_rate, \
-                 thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)",
+                 thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at, cash_step_thb) \
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)",
             )
             .bind(line.id)
             .bind(line.organization_id)
@@ -107,6 +107,7 @@ impl QuoteRepository for PgQuoteRepository {
             .bind(line.line_no)
             .bind(line.created_at)
             .bind(line.updated_at)
+            .bind(line.cash_step_thb)
             .execute(&mut **tx)
             .await
             .map_err(pos_error::AppError::Database)?;
@@ -164,7 +165,7 @@ impl QuoteRepository for PgQuoteRepository {
         let line_rows = sqlx::query(
             "SELECT id, organization_id, quote_id, published_rate_line_id, shop_side, currency, \
              denomination_group, quantity, unit_size, base_rate, final_rate, thb_amount, fee_thb, \
-             settle_thb, line_no, created_at, updated_at \
+             settle_thb, line_no, created_at, updated_at, cash_step_thb \
              FROM quote_lines WHERE quote_id = $1 ORDER BY line_no",
         )
         .bind(id)
@@ -191,6 +192,7 @@ impl QuoteRepository for PgQuoteRepository {
             let line_no: i32 = r.get(14);
             let l_created: DateTime<Utc> = r.get(15);
             let l_updated: DateTime<Utc> = r.get(16);
+            let cash_step_thb: Option<Decimal> = r.get(17);
 
             let shop_side = match shop_side_str.as_str() {
                 "BUY" => Side::Buy,
@@ -224,6 +226,7 @@ impl QuoteRepository for PgQuoteRepository {
                 thb_amount,
                 fee_thb,
                 settle_thb,
+                cash_step_thb,
                 line_no,
                 created_at: l_created,
                 updated_at: l_updated,

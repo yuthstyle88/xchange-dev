@@ -2,6 +2,9 @@
 //! min spread through `pricingSuggestionSettingsSave.minSpreadPct`. Written before the implementation by the
 //! sub-controller claude/451f0116 (XC-V9-PRICING skeleton). Do not edit, delete or weaken; add tests in a file of your
 //! own.
+//!
+//! Restated for GA-4 (#6928, owner-set-values.md row 6): a branch with no `'*'` row gets one with `better_pct` NULL,
+//! "not set", instead of V.9's default margins. Every other assertion is unchanged.
 
 mod pricing_common;
 
@@ -10,10 +13,13 @@ use serde_json::{Value, json};
 
 const ROUTE: &str = "/api/pricing/suggestion-settings";
 
-async fn star_row(
-    room: &Room,
-) -> Option<(Vec<rust_decimal::Decimal>, Option<rust_decimal::Decimal>)> {
-    sqlx::query_as::<_, (Vec<rust_decimal::Decimal>, Option<rust_decimal::Decimal>)>(
+type StarRow = (
+    Option<Vec<rust_decimal::Decimal>>,
+    Option<rust_decimal::Decimal>,
+);
+
+async fn star_row(room: &Room) -> Option<StarRow> {
+    sqlx::query_as::<_, StarRow>(
         "SELECT better_pct, min_spread_pct FROM pricing_suggestion_settings \
          WHERE branch_id = $1 AND scope = '*'",
     )
@@ -27,7 +33,7 @@ fn min_spread(currency: &str, value: Value) -> Value {
     json!({ "currency": currency, "minSpreadPct": value })
 }
 
-/// PV-l1: the owner sets the `'*'` min spread; a branch with no `'*'` row gets one with V.9's default `better`; a
+/// PV-l1: the owner sets the `'*'` min spread; a branch with no `'*'` row gets one with `better` not set (GA-4); a
 /// later `minSpreadPct` request keeps the stored `better`; `null` clears only the min spread.
 #[tokio::test]
 async fn the_owner_sets_and_clears_the_branch_min_spread() {
@@ -46,10 +52,8 @@ async fn the_owner_sets_and_clears_the_branch_min_spread() {
     .ok("set 0.5");
     assert_eq!(
         star_row(&room).await,
-        Some((
-            vec![dec("0.1"), dec("0.14"), dec("0.2"), dec("0.3")],
-            Some(dec("0.5"))
-        ))
+        Some((None, Some(dec("0.5")))),
+        "a new '*' row has better_pct NULL: not set (GA-4)"
     );
 
     command(
@@ -74,7 +78,10 @@ async fn the_owner_sets_and_clears_the_branch_min_spread() {
     .ok("clear");
     assert_eq!(
         star_row(&room).await,
-        Some((vec![dec("0.05"), dec("0.1"), dec("0.1"), dec("0.2")], None)),
+        Some((
+            Some(vec![dec("0.05"), dec("0.1"), dec("0.1"), dec("0.2")]),
+            None
+        )),
         "clearing the min spread keeps the stored better"
     );
     room.finish().await;

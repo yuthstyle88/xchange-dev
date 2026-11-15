@@ -112,6 +112,16 @@ async fn two_organisations_saving_on_the_same_day_keep_their_own_unit_size_and_p
     .await
     .expect("insert org 2 exchange_settings");
 
+    // GA-4 (#6928): org 2's THB cash step, a fixture row; its cash sale is refused without it.
+    sqlx::query(
+        "INSERT INTO pricing_rule_versions (version, organization_id, thb_cash_step, set_by, created_at) \
+         VALUES (gen_random_uuid()::text, $1, 0.25, 'test-fixture', clock_timestamp())",
+    )
+    .bind(org2_uuid)
+    .execute(&shop.pool)
+    .await
+    .expect("insert org 2 cash step rule");
+
     // Automatically keep organization_id in sync with branch_id for multi-org test setup
     sqlx::query(
         "CREATE OR REPLACE FUNCTION t_set_org_from_branch() RETURNS trigger AS $$ \

@@ -7,7 +7,6 @@ use rust_decimal::Decimal;
 use sqlx::{PgConnection, Row};
 
 use crate::domain::draft::rate_engine_error::RateEngineError;
-use crate::domain::pricing::pricing_suggestion::SuggestionConfig;
 use crate::domain::pricing::suggestion_settings::SuggestionSettings;
 
 pub struct PricingSuggestionSettingsStore;
@@ -29,7 +28,10 @@ impl PricingSuggestionSettingsStore {
         let mut settings = SuggestionSettings::default();
         for row in rows {
             let scope: String = row.get("scope");
-            let better_vec: Vec<Decimal> = row.get("better_pct");
+            // GA-4 (#6928, owner-set-values.md row 6): a NULL `better_pct` is "not set", so the row sets nothing.
+            let Some(better_vec) = row.get::<Option<Vec<Decimal>>, _>("better_pct") else {
+                continue;
+            };
             let better: [Decimal; 4] = better_vec.try_into().map_err(|v: Vec<Decimal>| {
                 RateEngineError::Internal(format!(
                     "pricing_suggestion_settings({branch}, {scope}) has {} elements, expected 4",
@@ -105,8 +107,8 @@ impl PricingSuggestionSettingsStore {
         Ok(row.and_then(|r| r.get("min_spread_pct")))
     }
 
-    /// Sets (or with `None` clears) the branch `'*'` row's `min_spread_pct` (0..=5). A `'*'` row that does not exist
-    /// yet is created with V.9's default `better`.
+    /// Sets (or with `None` clears) the branch `'*'` row's `min_spread_pct`. A `'*'` row that does not exist yet is
+    /// created with `better_pct` NULL, "not set" (GA-4, #6928): no margin is invented for it.
     ///
     /// SKELETON (XC-V9-PRICING): PV-l1's.
     pub async fn save_branch_min_spread(
@@ -116,17 +118,15 @@ impl PricingSuggestionSettingsStore {
         by: &str,
         at: DateTime<Utc>,
     ) -> Result<(), RateEngineError> {
-        let default_better = SuggestionConfig::v9_default().better;
         sqlx::query(
             "INSERT INTO pricing_suggestion_settings (branch_id, scope, better_pct, min_spread_pct, updated_by, updated_at) \
-             VALUES ($1, '*', $2, $3, $4, $5) \
+             VALUES ($1, '*', NULL, $2, $3, $4) \
              ON CONFLICT (branch_id, scope) DO UPDATE \
              SET min_spread_pct = EXCLUDED.min_spread_pct, \
                  updated_by = EXCLUDED.updated_by, \
                  updated_at = EXCLUDED.updated_at",
         )
         .bind(branch)
-        .bind(default_better.as_slice())
         .bind(min_spread_pct)
         .bind(by)
         .bind(at)

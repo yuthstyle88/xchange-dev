@@ -548,6 +548,10 @@ async fn a_mode_save_bumps_the_revision_and_following_lists_follow_codes() {
 
 /// PV-l1 (gap 10): the branch `'*'` min spread reads back; `None` clears it and keeps the `'*'` row's `better`; a
 /// branch with no `'*'` row gets one with V.9's default `better`.
+///
+/// Restated for GA-4 (#6928, owner-set-values.md row 6): the new `'*'` row's `better_pct` is NULL, "not set", so
+/// `branch_default` is `None` (no V.9 margin is invented), and clearing the min spread keeps that row and its unset
+/// `better`.
 #[tokio::test]
 async fn the_branch_min_spread_is_saved_on_the_star_row() {
     let db = db_with_branch().await;
@@ -578,9 +582,8 @@ async fn the_branch_min_spread_is_saved_on_the_star_row() {
         .await
         .expect("settings");
     assert_eq!(
-        settings.branch_default,
-        Some([dec("0.1"), dec("0.14"), dec("0.2"), dec("0.3")]),
-        "a new '*' row carries V.9's default better"
+        settings.branch_default, None,
+        "a new '*' row has better_pct NULL: not set (GA-4)"
     );
 
     PricingSuggestionSettingsStore::save_branch_min_spread(&mut conn, B, None, "owner-1", at(1))
@@ -597,9 +600,17 @@ async fn the_branch_min_spread_is_saved_on_the_star_row() {
             .await
             .expect("settings")
             .branch_default
-            .is_some(),
-        "clearing the min spread keeps the '*' row's better"
+            .is_none(),
+        "clearing the min spread keeps the '*' row's better, still not set (GA-4)"
     );
+    let star_rows: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM pricing_suggestion_settings WHERE branch_id = $1 AND scope = '*'",
+    )
+    .bind(B)
+    .fetch_one(&mut *conn)
+    .await
+    .expect("count");
+    assert_eq!(star_rows, 1, "clearing keeps the '*' row");
 }
 
 /// PV-a4a: `set_draft_in` records the publishing draft on the row (§15.3 step 4; `PublishService` reads it back).

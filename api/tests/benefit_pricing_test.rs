@@ -562,7 +562,8 @@ async fn be1_row15_price_in_writes_what_it_wrote_before_the_extraction() {
     db.finish().await;
 }
 
-/// Recorded before BE-1 (see the module comment).
+/// Recorded before BE-1 (see the module comment). GA-4 (#6928): each stored line gains `cash_step_thb`, `null` for
+/// these quotes, which record no cash step.
 fn row15_expected() -> Value {
     json!({
         "App coupon": {
@@ -570,6 +571,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -625,6 +627,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -664,6 +667,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -718,6 +722,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -774,6 +779,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -820,6 +826,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -868,6 +875,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -914,6 +922,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -962,6 +971,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1017,6 +1027,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1056,6 +1067,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1110,6 +1122,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1166,6 +1179,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1221,6 +1235,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1260,6 +1275,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 32.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
@@ -1314,6 +1330,7 @@ fn row15_expected() -> Value {
                 "lines": [
                     {
                         "base_rate": 33.0,
+                        "cash_step_thb": null,
                         "currency": "USD",
                         "denomination_group": "ALL",
                         "fee_thb": 0.0,
