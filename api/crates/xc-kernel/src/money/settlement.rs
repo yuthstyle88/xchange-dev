@@ -1,7 +1,9 @@
-//! Cash THB rounding at the counter (`docs/design/blueprint/quote-transaction.md` §13.2).
+//! Cash THB rounding at the counter (`docs/design/blueprint/quote-transaction.md` §13.2). The step is
+//! the Owner's `thb_cash_step` (`docs/design/blueprint/owner-set-values.md` row 5), passed in by the caller.
 
 use rust_decimal::Decimal;
 
+use super::cash_step::CashStep;
 use super::money::Money;
 use super::side::Side;
 
@@ -17,6 +19,9 @@ pub enum SettlementError {
     /// The settlement or rounding addition overflowed `Decimal` (§13.2).
     #[error("settlement overflow")]
     Overflow,
+    /// A cash settlement with no cash step: the Owner has not set `thb_cash_step` (row 5, G-9).
+    #[error("the THB cash step is not set")]
+    CashStepNotSet,
 }
 
 /// The settled THB and cash rounding of one exchange line (§13.2).
@@ -24,19 +29,25 @@ pub enum SettlementError {
 pub struct Settlement {
     settle: Money,
     rounding: Decimal,
+    cash_step: Option<CashStep>,
 }
 
 impl Settlement {
-    /// The smallest THB coin at the counter, 0.25 baht (§13.2).
-    pub const THB_CASH_STEP: Decimal = Decimal::from_parts(25, 0, 0, false, 2);
-
-    /// Computes `settle` and `rounding = settle − u` at scale 2, rounding cash in the customer's favour (§13.2).
+    /// Computes `settle` and `rounding = settle − u` at scale 2, rounding cash in the customer's favour to a
+    /// multiple of `step` (§13.2). Cash needs a step (`CashStepNotSet` without one); a non-cash settlement
+    /// ignores `step` and never rounds.
     pub fn of(
         side: Side,
         thb: Money,
         fee: Money,
         cash: bool,
+        step: Option<CashStep>,
     ) -> Result<Settlement, SettlementError> {
+        let step = if cash {
+            Some(step.ok_or(SettlementError::CashStepNotSet)?)
+        } else {
+            None
+        };
         let mut u = match side {
             Side::Buy => {
                 if fee > thb {
@@ -54,19 +65,17 @@ impl Settlement {
             return Err(SettlementError::Overflow);
         }
 
-        let rem = if cash {
-            u % Self::THB_CASH_STEP
-        } else {
-            Decimal::ZERO
+        let rem = match step {
+            Some(step) => u % step.value(),
+            None => Decimal::ZERO,
         };
 
-        let mut rounding = if !cash || rem.is_zero() {
-            Decimal::ZERO
-        } else {
-            match side {
-                Side::Buy => Self::THB_CASH_STEP - rem,
+        let mut rounding = match step {
+            Some(step) if !rem.is_zero() => match side {
+                Side::Buy => step.value() - rem,
                 Side::Sell => -rem,
-            }
+            },
+            _ => Decimal::ZERO,
         };
         rounding.rescale(2);
 
@@ -82,6 +91,7 @@ impl Settlement {
         Ok(Settlement {
             settle: Money::from_decimal(settle_dec),
             rounding,
+            cash_step: step,
         })
     }
 
@@ -93,5 +103,10 @@ impl Settlement {
     /// The signed rounding adjustment `settle − u` at scale 2 (§13.2).
     pub fn rounding(&self) -> Decimal {
         self.rounding
+    }
+
+    /// The step a cash settlement was rounded to; `None` for a non-cash one (row 5: every line records it).
+    pub fn cash_step(&self) -> Option<CashStep> {
+        self.cash_step
     }
 }

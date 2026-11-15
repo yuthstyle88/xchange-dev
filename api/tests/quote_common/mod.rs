@@ -133,7 +133,8 @@ impl TestDb {
         Self { pool, schema }
     }
 
-    /// Apply `api/migrations/` up to and including `last` (every one when `None`).
+    /// Apply `api/migrations/` up to and including `last` (every one when `None`). Fully migrated, it also saves the
+    /// Owner's THB cash step 0.25 for `ORG_1` (GA-4, [`save_cash_step_rule`]).
     pub async fn migrate_through(&self, last: Option<i64>) {
         let _slot = STARTING.acquire().await.expect("never closed");
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
@@ -157,9 +158,13 @@ impl TestDb {
             .run(&self.pool)
             .await
             .unwrap_or_else(|e| panic!("apply api/migrations through {last:?}: {e}"));
+        if last.is_none() {
+            // Fully migrated: the Owner's THB cash step, a fixture row (GA-4, [`save_cash_step_rule`]).
+            save_cash_step_rule(&self.pool, ORG_1, "0.25").await;
+        }
     }
 
-    /// Every migration applied.
+    /// Every migration applied (with the Owner's THB cash step 0.25 saved for `ORG_1`, see [`Self::migrate_through`]).
     pub async fn start() -> Self {
         let db = Self::empty().await;
         db.migrate_through(None).await;
@@ -357,6 +362,24 @@ impl TestDb {
         ))
         .await;
     }
+}
+
+/// GA-4 (xchange#6928, `owner-set-values.md` row 5): the Owner's `thb_cash_step` is a pricing rule, never a constant
+/// in code, and a cash quote is refused while it is not set. The test setups save it as a fixture row: one
+/// `pricing_rule_versions` row with `thb_cash_step = step` for `org`, written only when `org` has no rule yet, so a
+/// setup may call it more than once and a test's own newer rule still wins. A test that needs "not set" deletes
+/// the organisation's rule rows first.
+pub async fn save_cash_step_rule(pool: &PgPool, org: &str, step: &str) {
+    sqlx::query(
+        "INSERT INTO pricing_rule_versions (version, organization_id, thb_cash_step, set_by, created_at) \
+         SELECT gen_random_uuid()::text, $1::uuid, $2::numeric, 'test-fixture', clock_timestamp() \
+         WHERE NOT EXISTS (SELECT 1 FROM pricing_rule_versions WHERE organization_id = $1::uuid)",
+    )
+    .bind(org)
+    .bind(step)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("save the THB cash step rule for {org}: {e}"));
 }
 
 /// `now` cut to whole seconds, so it round-trips through `timestamptz` unchanged.

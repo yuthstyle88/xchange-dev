@@ -65,6 +65,19 @@ pub async fn publish(
     branch: &str,
     lines: &[(&str, &str, &str)],
 ) -> Published {
+    // GA-4 (xchange#6928): the Owner's THB cash step for the branch's organisation, a fixture row written only when
+    // the organisation has none (the statement of `quote_common::save_cash_step_rule`, written out here because this
+    // file is `include!`d where `quote_common` is not declared). A cash quote is refused without it.
+    ::sqlx::query(
+        "INSERT INTO pricing_rule_versions (version, organization_id, thb_cash_step, set_by, created_at) \
+         SELECT gen_random_uuid()::text, b.organization_id, 0.25, 'test-fixture', clock_timestamp() \
+         FROM branches b WHERE b.id = $1 \
+           AND NOT EXISTS (SELECT 1 FROM pricing_rule_versions r WHERE r.organization_id = b.organization_id)",
+    )
+    .bind(branch)
+    .execute(pool)
+    .await
+    .unwrap_or_else(|e| panic!("save the THB cash step rule for {branch}'s organisation: {e}"));
     ensure_branch_currencies(pool, branch, lines).await;
     // OR-7.2 #1021: `create`, `submit` and `publish` take the owner's B1-mapped user, EXECUTIVE + ADMIN organisation-wide.
     let owner_user = ::xc_auth::domain::access::Actor::new(

@@ -25,7 +25,7 @@ use xc_rate::domain::currency::denomination_groups::GroupCode;
 
 use crate::application::workflows::exchange::drawer_check;
 use crate::application::workflows::exchange::quote::{
-    QuoteRequest, QuoteRequestLine, QuoteService,
+    QuoteRequest, QuoteRequestLine, QuoteService, cash_step_in,
 };
 use crate::application::workflows::save_step::SaveActor;
 use crate::bootstrap::AppState;
@@ -285,6 +285,8 @@ impl CommandAction for QuotesCommand {
                         msg,
                         StatusCode::CONFLICT,
                     ));
+                } else if let Some(refusal) = pricing_rule_not_set(&msg) {
+                    return Err(refusal);
                 } else if msg.starts_with("couponInvalid") {
                     tracing::info!(reason = %msg, "coupon invalid on quote");
                     return Err(V3Error::new(
@@ -348,14 +350,41 @@ impl CommandAction for QuotesCommand {
             None => drawer_check::Payout::Undecided,
         };
         let has_buy = quote.lines.iter().any(|l| l.shop_side == Side::Buy);
-        let quote_needs = drawer_check::quote_needs(&quote.lines, payout).map_err(|e| {
-            V3Error::new(
-                "serverError",
-                None,
-                e.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
+        // GA-4 (#6928, row 5): an undecided payout estimates a cash payout, so it needs the Owner's THB cash step.
+        let cash_step = if payout == drawer_check::Payout::Undecided && has_buy {
+            Some(
+                cash_step_in(tx, quote.organization_id)
+                    .await
+                    .map_err(|e| match e {
+                        pos_error::AppError::Domain(msg) => pricing_rule_not_set(&msg)
+                            .unwrap_or_else(|| {
+                                V3Error::new(
+                                    "serverError",
+                                    None,
+                                    msg,
+                                    StatusCode::INTERNAL_SERVER_ERROR,
+                                )
+                            }),
+                        e => V3Error::new(
+                            "serverError",
+                            None,
+                            e.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        ),
+                    })?,
             )
-        })?;
+        } else {
+            None
+        };
+        let quote_needs =
+            drawer_check::quote_needs(&quote.lines, payout, cash_step).map_err(|e| {
+                V3Error::new(
+                    "serverError",
+                    None,
+                    e.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            })?;
 
         let mut dto = QuoteDto::from_domain(quote, pub_version).map_err(|e| {
             V3Error::new(
@@ -492,4 +521,21 @@ pub fn export_types(dir: &Path) -> Result<(), ts_rs::ExportError> {
     QuotesCommandInputLine::export_all(&cfg)?;
     QuoteDto::export_all(&cfg)?;
     Ok(())
+}
+
+/// The pricing rules a quote can find not set (GA-4, #6928): the API's camelCase field names.
+const RULE_FIELDS: &[&str] = &["thbCashStep"];
+
+/// GA-4 (#6928, `owner-set-values.md` G-9): a rule the Owner has not set, `pricingRuleNotSet:<field>: …`, answers
+/// 409 `pricingRuleNotSet` naming the field, as `settingNotSet` does.
+fn pricing_rule_not_set(msg: &str) -> Option<V3Error> {
+    let rest = msg.strip_prefix("pricingRuleNotSet:")?;
+    let named = rest.split(':').next().unwrap_or_default().trim();
+    let field = RULE_FIELDS.iter().copied().find(|f| *f == named);
+    Some(V3Error::new(
+        "pricingRuleNotSet",
+        field,
+        msg.to_owned(),
+        StatusCode::CONFLICT,
+    ))
 }

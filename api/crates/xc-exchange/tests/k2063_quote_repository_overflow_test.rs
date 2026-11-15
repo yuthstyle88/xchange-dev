@@ -85,6 +85,7 @@ fn test_line(quote_id: Uuid, thb_amount: Money, fee_thb: Money, settle_thb: Mone
         thb_amount,
         fee_thb,
         settle_thb,
+        cash_step_thb: None,
         line_no: 1,
         created_at: Utc::now(),
         updated_at: Utc::now(),

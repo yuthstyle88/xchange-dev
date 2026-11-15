@@ -34,6 +34,10 @@ use xchange::bootstrap::{self, AppState};
 use xchange::presentation::pages::{Callers, SessionReader};
 use xchange::presentation::test_callers;
 
+// GA-4 (xchange#6928): the Owner's THB cash step fixture (`quote_common::save_cash_step_rule`).
+#[path = "../quote_common/mod.rs"]
+mod quote_common;
+
 #[path = "../common/mod.rs"]
 mod common;
 
@@ -183,6 +187,8 @@ impl Room {
             .run(&pool)
             .await
             .expect("apply api/migrations");
+        // GA-4 (#6928): the Owner's THB cash step, a fixture row; a cash quote is refused without it.
+        quote_common::save_cash_step_rule(&pool, quote_common::ORG_1, "0.25").await;
         Self { pool, schema }
     }
 

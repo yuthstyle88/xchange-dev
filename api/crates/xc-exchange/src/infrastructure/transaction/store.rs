@@ -607,12 +607,13 @@ async fn insert_draft_with(
             id, organization_id, transaction_id, quote_line_id, shop_side, currency, \
             denomination_id, quantity, unit_size, rate_snapshot, reference_rate, \
             thb_amount, fee_thb, settle_thb, cost_basis_thb, realized_margin_thb, \
-            line_no, created_at, updated_at \
+            line_no, created_at, updated_at, cash_step_thb \
         ) VALUES ( \
             $1, $2, $3, $4, $5, $6, \
             $7, $8::numeric, $9::numeric, $10::numeric, $11::numeric, \
             $12::numeric, $13::numeric, $14::numeric, $15::numeric, $16::numeric, \
-            $17, $18, $19 \
+            $17, $18, $19, \
+            (SELECT ql.cash_step_thb FROM quote_lines ql WHERE ql.id = $4) \
         )",
     )
     .bind(line.id)

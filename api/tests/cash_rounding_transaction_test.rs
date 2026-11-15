@@ -17,6 +17,11 @@
 //!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here
 //! skips.
+//!
+//! Restated for GA-4 (#6928, `docs/design/blueprint/owner-set-values.md` row 5, G-7): the cash step is the Owner's
+//! `thb_cash_step`, never a constant. `Room::start` saves a `PricingRules` version with `thb_cash_step` 0.25 for the
+//! organisation, so every case keeps today's meaning. Added to CR9: the quote line and the saved transaction line
+//! both record `cash_step_thb` 0.25, the transaction line copied from the quote line.
 
 mod common;
 mod quote_common;
@@ -126,6 +131,13 @@ impl Room {
             let _ = xc_customer::install_pii_keys(keys);
         });
         let db = TestDb::start().await;
+        // GA-4: the Owner's cash step, a fixture row (never a constant in code).
+        db.exec(&format!(
+            "INSERT INTO pricing_rule_versions (version, organization_id, thb_cash_step, set_by, created_at) \
+             VALUES ('{}', '{ORG_1}', 0.25, 'owner-1', clock_timestamp())",
+            Uuid::new_v4()
+        ))
+        .await;
         let now_utc = Utc::now();
         let open_hhmm = (now_utc - chrono::Duration::hours(2))
             .format("%H:%M")
@@ -455,6 +467,22 @@ async fn run_cr9_cash_exchange(room: &Room) -> String {
         Money::parse("32.25").expect("money")
     );
     assert_eq!(stored.lines[0].rounding_thb(), d("0.15"));
+
+    // GA-4 (G-7): the quote line records the step, and the saved transaction line copies it from the quote line.
+    let steps: (Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT ql.cash_step_thb::text, tl.cash_step_thb::text \
+         FROM transaction_lines tl JOIN quote_lines ql ON ql.id = tl.quote_line_id \
+         WHERE tl.transaction_id = $1",
+    )
+    .bind(Uuid::parse_str(&tx_id).expect("tx uuid"))
+    .fetch_one(&room.db.pool)
+    .await
+    .expect("the line's steps");
+    assert_eq!(
+        steps,
+        (Some("0.25".to_owned()), Some("0.25".to_owned())),
+        "quote line and transaction line record 0.25"
+    );
 
     // Quote and transaction answers carry settleThb "32.25" and roundingThb "0.15".
     assert_eq!(quote.body["cashSettlement"], json!(true));

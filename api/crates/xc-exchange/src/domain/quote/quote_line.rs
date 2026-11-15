@@ -21,6 +21,9 @@ pub struct QuoteLine {
     pub thb_amount: Money,
     pub fee_thb: Money,
     pub settle_thb: Money,
+    /// The THB cash step the line was settled with (GA-4, `owner-set-values.md` row 5); `None` when the
+    /// line was not cash-rounded.
+    pub cash_step_thb: Option<Decimal>,
     pub line_no: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

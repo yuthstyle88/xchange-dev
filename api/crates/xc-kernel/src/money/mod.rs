@@ -1,6 +1,7 @@
 //! Money, rate, quote, delta and currency types.
 
 mod bounded;
+mod cash_step;
 mod compat_rate;
 mod currency_code;
 mod currency_units;
@@ -22,6 +23,7 @@ mod typed;
 mod unit_size;
 
 pub use bounded::{Bound, BoundError, IntBound, Sign};
+pub use cash_step::{CashStep, CashStepError};
 pub use compat_rate::{CompatRate, CompatRateError};
 pub use currency_code::{CurrencyCode, UnknownCurrency};
 pub use currency_units::CurrencyUnits;

@@ -37,6 +37,10 @@ use xc_kernel::branch_tx::BranchTx;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{CurrencyCode, Money};
 
+// GA-4 (xchange#6928): the Owner's THB cash step fixture (`quote_common::save_cash_step_rule`).
+#[path = "../quote_common/mod.rs"]
+mod quote_common;
+
 pub use xc_customer::application::customer::service::CustomerService;
 pub use xc_customer::domain::customer::commands::reserve_customer::ReserveCustomer;
 pub use xc_exchange::application::exchange::service::TransactionService;
@@ -248,6 +252,8 @@ impl Shop {
             .run(&pool)
             .await
             .expect("apply api/migrations to the test schema");
+        // GA-4 (#6928): the Owner's THB cash step, a fixture row; a cash quote is refused without it.
+        quote_common::save_cash_step_rule(&pool, quote_common::ORG_1, "0.25").await;
 
         for opener in ["test"] {
             seed_opener(&pool, opener).await;

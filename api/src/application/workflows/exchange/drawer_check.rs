@@ -11,7 +11,9 @@ use xc_cash::domain::posting::{CashPlace, CashPostings};
 use xc_cash::domain::shortfall::{ShortPlace, Shortfall, StockShortfall};
 use xc_cash::infrastructure::ledger_postings::LedgerCashPostings;
 use xc_exchange::domain::quote::quote_line::QuoteLine;
-use xc_kernel::money::{CurrencyCode, Settlement, Side};
+use xc_kernel::money::{CashStep, CurrencyCode, Settlement, SettlementError, Side};
+
+use super::quote::CASH_STEP_NOT_SET;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Payout {
@@ -20,7 +22,13 @@ pub enum Payout {
     Undecided,
 }
 
-pub fn quote_needs(lines: &[QuoteLine], payout: Payout) -> AppResult<Vec<(CurrencyCode, Decimal)>> {
+/// What a quote's lines would take out of the drawer. `Payout::Undecided` estimates a cash payout, so it needs the
+/// organisation's `thb_cash_step` (GA-4, row 5): `None` there is the `pricingRuleNotSet` / `thbCashStep` refusal.
+pub fn quote_needs(
+    lines: &[QuoteLine],
+    payout: Payout,
+    cash_step: Option<CashStep>,
+) -> AppResult<Vec<(CurrencyCode, Decimal)>> {
     let mut out = Vec::new();
     for line in lines {
         match (line.shop_side, payout) {
@@ -30,9 +38,15 @@ pub fn quote_needs(lines: &[QuoteLine], payout: Payout) -> AppResult<Vec<(Curren
             }
             (Side::Buy, Payout::NonCash) => {}
             (Side::Buy, Payout::Undecided) => {
-                let settle = Settlement::of(Side::Buy, line.thb_amount, line.fee_thb, true)
-                    .map_err(|e| AppError::Domain(e.to_string()))?
-                    .settle();
+                let settle =
+                    Settlement::of(Side::Buy, line.thb_amount, line.fee_thb, true, cash_step)
+                        .map_err(|e| match e {
+                            SettlementError::CashStepNotSet => {
+                                AppError::Domain(CASH_STEP_NOT_SET.to_string())
+                            }
+                            other => AppError::Domain(other.to_string()),
+                        })?
+                        .settle();
                 out.push((
                     CurrencyCode::THB,
                     Decimal::from_i128_with_scale(settle.minor_i128(), 2),

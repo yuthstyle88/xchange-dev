@@ -19,8 +19,8 @@ use xc_exchange::infrastructure::quote::repository::PgQuoteRepository;
 use xc_exchange::infrastructure::settings::repository::PgSettingsRepository;
 use xc_kernel::ids::BranchId;
 use xc_kernel::money::{
-    CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Settlement, SettlementError,
-    Side, UnitSize,
+    CashStep, CurrencyCode, ExchangeArithmetic, ForeignAmount, Money, Rate, Settlement,
+    SettlementError, Side, UnitSize,
 };
 use xc_marketing::domain::benefit::registry::CalculatorRegistry;
 use xc_marketing::domain::coupon::benefit_error::BenefitError;
@@ -36,6 +36,7 @@ use xc_rate::domain::currency::branch_currencies::{BranchCurrencies, Display};
 use xc_rate::domain::currency::denomination_groups::GroupCode;
 use xc_rate::domain::publication::published_rates::{LineSelector, PublishedRates};
 use xc_rate::infrastructure::currency::branch_currencies::PgBranchCurrencies;
+use xc_rate::infrastructure::pricing::pricing_rules_store::PricingRulesStore;
 use xc_rate::infrastructure::publication::published_rates::PgPublishedRates;
 
 use super::benefit_pricing::{
@@ -47,6 +48,38 @@ fn thb_or_refuse(q: ForeignAmount, r: Rate, u: UnitSize) -> AppResult<Money> {
     ExchangeArithmetic::try_thb(q, r, u).map_err(|_| {
         AppError::Domain("validationFailed: quantity overflows thb amount".to_string())
     })
+}
+
+/// The refusal when the Owner has not set `thb_cash_step` (GA-4, `owner-set-values.md` row 5, G-9): code
+/// `pricingRuleNotSet`, field `thbCashStep`.
+pub const CASH_STEP_NOT_SET: &str =
+    "pricingRuleNotSet:thbCashStep: the Owner has not set the THB cash step";
+
+/// The organisation's THB cash step from its current pricing rules (GA-4, row 5). Not set ⇒ [`CASH_STEP_NOT_SET`];
+/// never a constant in code. Read only for a cash settlement.
+pub async fn cash_step_in(tx: &mut Transaction<'_, Postgres>, org: Uuid) -> AppResult<CashStep> {
+    let current = PricingRulesStore::current_in(tx, org)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let step = current
+        .rules
+        .thb_cash_step
+        .ok_or_else(|| AppError::Domain(CASH_STEP_NOT_SET.to_string()))?;
+    CashStep::new(step)
+        .map_err(|e| AppError::Internal(format!("stored thb_cash_step {step} is invalid: {e}")))
+}
+
+/// How a settlement refusal reaches the caller (§13.2; GA-4 adds `CashStepNotSet`).
+fn settlement_refusal(e: SettlementError) -> AppError {
+    match e {
+        SettlementError::BelowSmallestCoin => AppError::Domain(
+            "validationFailed:quantity: amount is below the smallest coin".to_string(),
+        ),
+        SettlementError::CashStepNotSet => AppError::Domain(CASH_STEP_NOT_SET.to_string()),
+        SettlementError::FeeAbovePrincipal | SettlementError::Overflow => {
+            AppError::Domain("invalid settle amount".to_string())
+        }
+    }
 }
 
 fn reserved_amount(applied: &AppliedBenefit) -> AppResult<Decimal> {
@@ -388,6 +421,12 @@ impl QuoteService {
             .await?;
 
         let cash_settlement = req.payment_method.is_some_and(|m| m.is_cash());
+        // GA-4 (row 5, G-9): a cash quote rounds to the Owner's step, read once here; a non-cash quote reads no rule.
+        let cash_step = if cash_settlement {
+            Some(cash_step_in(tx, org_id).await?)
+        } else {
+            None
+        };
 
         let mut final_rate = priced.evaluation.lines[0].final_rate;
         let mut final_fee_thb = priced.evaluation.lines[0].fee_thb;
@@ -413,15 +452,9 @@ impl QuoteService {
                 final_thb_amount,
                 final_fee_thb,
                 cash_settlement,
+                cash_step,
             )
-            .map_err(|e| match e {
-                SettlementError::BelowSmallestCoin => AppError::Domain(
-                    "validationFailed:quantity: amount is below the smallest coin".to_string(),
-                ),
-                SettlementError::FeeAbovePrincipal | SettlementError::Overflow => {
-                    AppError::Domain("invalid settle amount".to_string())
-                }
-            })?;
+            .map_err(settlement_refusal)?;
             let settle = settlement.settle();
             settle
                 .try_minor()
@@ -444,6 +477,7 @@ impl QuoteService {
             thb_amount: final_thb_amount,
             fee_thb: final_fee_thb,
             settle_thb: final_settle_thb,
+            cash_step_thb: cash_step.map(CashStep::value),
             line_no: 1,
             created_at: now,
             updated_at: now,
@@ -568,16 +602,9 @@ impl QuoteService {
                         final_thb_amount,
                         final_fee_thb,
                         cash_settlement,
+                        cash_step,
                     )
-                    .map_err(|e| match e {
-                        SettlementError::BelowSmallestCoin => AppError::Domain(
-                            "validationFailed:quantity: amount is below the smallest coin"
-                                .to_string(),
-                        ),
-                        SettlementError::FeeAbovePrincipal | SettlementError::Overflow => {
-                            AppError::Domain("invalid settle amount".to_string())
-                        }
-                    })?;
+                    .map_err(settlement_refusal)?;
                     settlement.settle()
                 };
 

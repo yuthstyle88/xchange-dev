@@ -8,6 +8,13 @@
 //!
 //! Needs `TEST_DATABASE_URL` naming an existing database whose name ends in `_test`; nothing here
 //! skips.
+//!
+//! Restated for GA-4 (#6928, `docs/design/blueprint/owner-set-values.md` row 5, G-7 to G-9): the cash step is the
+//! Owner's `thb_cash_step`, never a constant. Every cash case first saves a `PricingRules` version with
+//! `thb_cash_step` 0.25 (`cash_step_rule`), and keeps today's meaning; the CHK rows that carry a rounding record the
+//! step 0.25 they were rounded with (the GA-4 line CHECK bounds a rounding by the line's own step). Added: each
+//! stored line holds `cash_step_thb` (G-7), a 0.50 step stores 0.50 (G-8), and with no rule a cash quote is
+//! refused `pricingRuleNotSet` / `thbCashStep` while a PromptPay quote is not (G-9).
 
 mod common;
 mod quote_common;
@@ -130,12 +137,25 @@ fn d(s: &str) -> Decimal {
     Decimal::from_str(s).expect("a decimal")
 }
 
+/// GA-4: the Owner saves a pricing rule version for `ORG_1` with `thb_cash_step = step` (a fixture row, never a
+/// constant in code).
+async fn cash_step_rule(db: &TestDb, step: &str) {
+    db.exec(&format!(
+        "INSERT INTO pricing_rule_versions (version, organization_id, thb_cash_step, set_by, created_at) \
+         VALUES ('{}', '{ORG_1}', {step}, 'owner-1', clock_timestamp())",
+        Uuid::new_v4()
+    ))
+    .await;
+}
+
 // ============================================================ CR7
 
 #[actix_web::test]
 async fn cr7_omitted_payment_method_defaults_to_non_cash_and_unknown_method_is_refused() {
     let db = TestDb::start().await;
     db.publish("MAIN", &[USD_32_10]).await;
+    // GA-4: no payment method is an undecided payout, whose drawer estimate assumes cash and so needs the step.
+    cash_step_rule(&db, "0.25").await;
 
     let ok = post_quotes(
         &db,
@@ -192,6 +212,7 @@ async fn cr7_omitted_payment_method_defaults_to_non_cash_and_unknown_method_is_r
 async fn cr7b_cash_rounds_buy_and_sell_to_quarter_baht_while_promptpay_does_not() {
     let db = TestDb::start().await;
     db.publish("MAIN", &[USD_32_10]).await;
+    cash_step_rule(&db, "0.25").await;
 
     // 1. Cash BUY USD 1 at 32.10 -> settleThb "32.25", roundingThb "0.15", cashSettlement true.
     let buy_cash = post_quotes(
@@ -216,6 +237,11 @@ async fn cr7b_cash_rounds_buy_and_sell_to_quarter_baht_while_promptpay_does_not(
     assert!(q_buy.cash_settlement);
     assert_eq!(q_buy.lines[0].settle_thb.to_string(), "32.25");
     assert_eq!(q_buy.lines[0].rounding_thb(), d("0.15"));
+    assert_eq!(
+        q_buy.lines[0].cash_step_thb,
+        Some(d("0.25")),
+        "G-7: the line records the step"
+    );
 
     // 2. Cash SELL USD 1 at 32.10 -> settleThb "32.00", roundingThb "-0.10", cashSettlement true.
     let sell_cash = post_quotes(
@@ -240,6 +266,11 @@ async fn cr7b_cash_rounds_buy_and_sell_to_quarter_baht_while_promptpay_does_not(
     assert!(q_sell.cash_settlement);
     assert_eq!(q_sell.lines[0].settle_thb.to_string(), "32.00");
     assert_eq!(q_sell.lines[0].rounding_thb(), d("-0.10"));
+    assert_eq!(
+        q_sell.lines[0].cash_step_thb,
+        Some(d("0.25")),
+        "G-7: the line records the step"
+    );
 
     // 3. PromptPay BUY USD 1 at 32.10 -> cashSettlement false, settleThb "32.10", roundingThb "0.00".
     let promptpay = post_quotes(
@@ -262,6 +293,10 @@ async fn cr7b_cash_rounds_buy_and_sell_to_quarter_baht_while_promptpay_does_not(
     assert!(!q_pp.cash_settlement);
     assert_eq!(q_pp.lines[0].settle_thb.to_string(), "32.10");
     assert_eq!(q_pp.lines[0].rounding_thb(), d("0.00"));
+    assert_eq!(
+        q_pp.lines[0].cash_step_thb, None,
+        "a non-cash line records no step"
+    );
 
     db.finish().await;
 }
@@ -273,6 +308,7 @@ async fn cr5v_cash_sell_whose_settle_rounds_to_zero_is_refused_on_quantity_and_s
     let db = TestDb::start().await;
     // JPY sell rate 24.0 per 100 -> 1 JPY has thb_amount = 0.24, which cash SELL rounds down to 0.00.
     db.publish("MAIN", &[JPY]).await;
+    cash_step_rule(&db, "0.25").await;
 
     let refused = post_quotes(
         &db,
@@ -316,15 +352,16 @@ async fn chk_quote_and_transaction_lines_refuse_rounding_at_or_above_one_quarter
     ))
     .await;
 
-    // quote_lines: |settle_thb - (thb_amount ∓ fee_thb)| < 0.25
+    // quote_lines: |settle_thb - (thb_amount ∓ fee_thb)| < 0.25, the step these rows record (GA-4)
     let ql_insert = |side: &str, thb: &str, fee: &str, settle: &str, line_no: i32| {
         let id = Uuid::new_v4();
         format!(
             "INSERT INTO quote_lines (id, organization_id, quote_id, published_rate_line_id, \
                  shop_side, currency, denomination_group, quantity, unit_size, base_rate, \
-                 final_rate, thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at) \
+                 final_rate, thb_amount, fee_thb, settle_thb, line_no, created_at, updated_at, \
+                 cash_step_thb) \
              VALUES ('{id}', '{ORG_1}', '{q_id}', '{line_id}', '{side}', 'USD', 'ALL', 1, 1, \
-                 32.10, 32.10, {thb}, {fee}, {settle}, {line_no}, now(), now())"
+                 32.10, 32.10, {thb}, {fee}, {settle}, {line_no}, now(), now(), 0.25)"
         )
     };
 
@@ -368,7 +405,7 @@ async fn chk_quote_and_transaction_lines_refuse_rounding_at_or_above_one_quarter
         "quote_lines SELL with +0.25 rounding is refused by CHECK (23514)"
     );
 
-    // transaction_lines: |settle_thb - (thb_amount ∓ fee_thb)| < 0.25
+    // transaction_lines: |settle_thb - (thb_amount ∓ fee_thb)| < 0.25, the step these rows record (GA-4)
     let tx_id = Uuid::new_v4();
     db.exec(&format!(
         "INSERT INTO transactions (id, organization_id, branch_id, mode, status, document_ref, \
@@ -385,9 +422,9 @@ async fn chk_quote_and_transaction_lines_refuse_rounding_at_or_above_one_quarter
         format!(
             "INSERT INTO transaction_lines (id, organization_id, transaction_id, shop_side, \
                  currency, quantity, unit_size, rate_snapshot, thb_amount, fee_thb, settle_thb, \
-                 line_no, created_at, updated_at) \
+                 line_no, created_at, updated_at, cash_step_thb) \
              VALUES ('{id}', '{ORG_1}', '{tx_id}', '{side}', 'USD', 1, 1, 32.10, \
-                 {thb}, {fee}, {settle}, {line_no}, now(), now())"
+                 {thb}, {fee}, {settle}, {line_no}, now(), now(), 0.25)"
         )
     };
 
@@ -416,5 +453,86 @@ async fn chk_quote_and_transaction_lines_refuse_rounding_at_or_above_one_quarter
         "transaction_lines SELL with -0.25 rounding is refused by CHECK (23514)"
     );
 
+    db.finish().await;
+}
+
+// ============================================================ GA-4 (#6928): the step is the Owner's rule
+
+/// G-8: with the Owner's `thb_cash_step` 0.50, a cash BUY of USD 1 at 32.10 settles to 32.50 and its line records
+/// 0.50.
+#[actix_web::test]
+async fn g8_a_half_baht_step_from_the_rules_settles_and_is_recorded() {
+    let db = TestDb::start().await;
+    db.publish("MAIN", &[USD_32_10]).await;
+    cash_step_rule(&db, "0.50").await;
+
+    let buy = post_quotes(
+        &db,
+        ME,
+        Some("g8-buy-cash"),
+        json!({
+            "branch": "MAIN",
+            "paymentMethod": "Cash",
+            "lines": [{ "shopSide": "BUY", "currency": "USD", "quantity": "1" }]
+        }),
+    )
+    .await;
+    assert_eq!(buy.status, StatusCode::OK, "{}", buy.text);
+    assert_eq!(buy.body["lines"][0]["settleThb"], json!("32.50"));
+    assert_eq!(buy.body["lines"][0]["roundingThb"], json!("0.40"));
+    let q = stored_quote(&db, buy.body["id"].as_str().expect("id")).await;
+    assert_eq!(q.lines[0].cash_step_thb, Some(d("0.50")));
+    assert_eq!(
+        db.text("SELECT cash_step_thb::text FROM quote_lines").await,
+        Some("0.50".to_owned()),
+        "the stored row holds the step"
+    );
+    db.finish().await;
+}
+
+/// G-9: with no `thb_cash_step` saved, a cash quote is refused `pricingRuleNotSet` naming `thbCashStep` and stores
+/// nothing; a PromptPay quote never reads the rule and succeeds.
+#[actix_web::test]
+async fn g9_with_no_cash_step_a_cash_quote_is_refused_and_promptpay_is_not() {
+    let db = TestDb::start().await;
+    db.publish("MAIN", &[USD_32_10]).await;
+    // "not set": remove the fixture rule `TestDb::start` saves (`quote_common::save_cash_step_rule`).
+    db.exec(&format!(
+        "DELETE FROM pricing_rule_versions WHERE organization_id = '{ORG_1}'"
+    ))
+    .await;
+
+    let cash = post_quotes(
+        &db,
+        ME,
+        Some("g9-cash"),
+        json!({
+            "branch": "MAIN",
+            "paymentMethod": "Cash",
+            "lines": [{ "shopSide": "BUY", "currency": "USD", "quantity": "1" }]
+        }),
+    )
+    .await;
+    assert_eq!(cash.code(), "pricingRuleNotSet", "{}", cash.text);
+    assert_eq!(cash.field(), Some("thbCashStep"), "{}", cash.text);
+    assert_eq!(
+        db.quote_rows().await,
+        (0, 0),
+        "a refused cash quote stores nothing"
+    );
+
+    let promptpay = post_quotes(
+        &db,
+        ME,
+        Some("g9-promptpay"),
+        json!({
+            "branch": "MAIN",
+            "paymentMethod": "PromptPay",
+            "lines": [{ "shopSide": "BUY", "currency": "USD", "quantity": "1" }]
+        }),
+    )
+    .await;
+    assert_eq!(promptpay.status, StatusCode::OK, "{}", promptpay.text);
+    assert_eq!(promptpay.body["lines"][0]["settleThb"], json!("32.10"));
     db.finish().await;
 }
