@@ -140,7 +140,7 @@
 }
 
 .executive-drill-link {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   cursor: pointer;
   text-decoration: none;
 }

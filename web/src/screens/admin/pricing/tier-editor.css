@@ -18,7 +18,7 @@
   border: 1px solid var(--xc-brand-200);
   border-radius: 10px;
   background: var(--soft);
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -117,7 +117,7 @@
 .xc-admin .xc-content.xc-content .tier-editor-error {
   font-size: 12px;
   font-weight: 600;
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .tier-editor-hints {

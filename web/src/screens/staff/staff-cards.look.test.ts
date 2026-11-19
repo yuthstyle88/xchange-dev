@@ -86,7 +86,7 @@ describe('staff-cards look', () => {
       expect(d?.get('font-size'), sel).toBe('15px');
       expect(d?.get('font-weight'), sel).toBe('600');
     }
-    expect(decls(css, '.xc-holds-btn')?.get('color')).toBe('var(--xc-brand)');
+    expect(decls(css, '.xc-holds-btn')?.get('color')).toBe('var(--xc-brand-text)');
     expect(decls(css, '.xc-holds-save-btn')?.get('border')).toBe('1px solid var(--xc-brand)');
     expect(decls(css, '.xc-holds-save-btn:disabled')?.has('opacity') ?? false).toBe(false);
   });
@@ -103,6 +103,6 @@ describe('staff-cards look', () => {
       expect(d?.get('font-weight'), sel).toBe('600');
       expect(d?.get('box-sizing'), sel).toBe('border-box');
     }
-    expect(decls(css, '.xc-staff-refresh-btn')?.get('color')).toBe('var(--xc-brand)');
+    expect(decls(css, '.xc-staff-refresh-btn')?.get('color')).toBe('var(--xc-brand-text)');
   });
 });

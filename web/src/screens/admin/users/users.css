@@ -44,7 +44,7 @@
   border: 1px solid var(--xc-line);
   border-radius: 6px;
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font: inherit;
   font-size: 14px;
   font-weight: 600;

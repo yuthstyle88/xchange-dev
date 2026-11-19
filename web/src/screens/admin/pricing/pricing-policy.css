@@ -31,7 +31,7 @@
   padding: 2px 6px;
   border-radius: 4px;
   background-color: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-size: 12px;
 }
 
@@ -139,7 +139,7 @@
   border-color: var(--xc-brand-200);
   border-radius: 10px;
   background: var(--soft);
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
 }
 

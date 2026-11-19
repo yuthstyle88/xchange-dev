@@ -109,6 +109,43 @@ The file is `docs/design/one-look-mock/index.html`. It uses only the kiosk token
 If OL-1 cannot ship a woff2 through the web build, the font is the one place the product may differ from the mock-up, and the PR says so.
 **This mock-up is the visual reference for every OL ticket.** Where the mock-up and a table cell above disagree, the mock-up wins, and the ticket says so.
 
+### 2.6 Light and dark mode (staff pages)
+
+**Decision.** Staff pages have two modes, light and dark, switched by one button. Light is §2.3 unchanged. Dark follows the
+screens of the shop's own XCHANGE manual (Nov 2026 edition, the system at rate.xc888.cc): a near-black page, dark grey cards,
+a wine fill under white text, and pink for brand-coloured text and typed amounts.
+
+**Owner's words** (2026-11-19, in a Claude session, after the manual PDF was compared with this product):
+*"ปรับ สี ให้ layout ให้คล้ายกัน"*, then *"ปรับให้ มี สอง โหมด สว่าง กับ ดาร์ท โหมด"*.
+
+**Reason.** The shop's staff already work on the manual's dark screens. The owner asked for both modes rather than a switch
+to dark, so the §2.3 look approved on 2026-11-06 stays as the light mode, and nothing about it changes.
+
+**How it is built** (checked against the code at `f764777b2`):
+- `web/src/shared/ui/theme-mode.ts` keeps the mode on `<html data-theme>`. A saved choice (`localStorage` key `xc-theme-mode`)
+  wins; with none, the device's `prefers-color-scheme` decides. `ThemeSwitch.tsx` is the button: in `AuthLayout` beside the
+  language switch, and in `AppShell`'s staff panel (inline in the header on a desktop, inside the menu on a phone). The header
+  row on a phone is unchanged, as `AppShell.phone.test.tsx` row 1 pins.
+- `web/src/shared/ui/xc-theme-dark.css` mirrors the value ramps (`--xc-gray-*`, `--xc-brand-*`, green, amber, red, teal) for
+  `:root[data-theme="dark"] .xc-theme:not(.xc-customer):not(.xc-customer *)`, inside `@media screen`. Every rule that names a
+  token follows without edits. The dark hex values sit in `xc-theme.css` as `--xc-dk-*` tokens on plain `.xc-theme`, so G1
+  (no literal colour outside `xc-theme.css`) and A1-a (custom properties only on plain `.xc-theme`) both still hold.
+- **Two brand roles.** One value cannot be both a fill under white text and text on a near-black page at 4.5:1. So brand-coloured
+  *text* now reads `--xc-brand-text`, which equals `--xc-brand` in light mode. In dark mode, `--xc-brand` is the wine fill
+  `#a8324c` (white text on it is 6.5:1) and `--xc-brand-text` is the pink `#e2637d` (5.9:1 on the page). The staff CSS
+  `color: var(--xc-brand)` declarations moved to `--xc-brand-text`. `xc-theme-dark.test.ts` pins the contrast pairs.
+- **Not in dark mode:** customer pages (their own look, §2.3 customer rows), print (`@media screen` only), the staff guide
+  (`print.test.tsx` pins its v2 rules, so its headings keep `--xc-brand`), and `api/static/kiosk/**`.
+
+**Tests restated for the text role** (each expected `color: var(--xc-brand)` or `var(--brand)`, and now expects
+`var(--xc-brand-text)`; the light value is the same): `FileField.test.tsx`, `QueueCard.place.test.tsx`,
+`xc-theme.controls.test.ts`, and the look tests for admin-css-ol7, documents, kiosk-queue, kiosk-currencies back link,
+staff-cards, alert-settings, link-button, rate-alert-settings, users, desk-bookings, DeskShiftGate and staff-floor.
+
+The mock-up of both modes is `docs/design/dark-look-mock/index.html`.
+**Layout is not part of this decision.** The manual's keypad-and-flag-grid buy screen differs from the 5-step desk (§1), and
+a change there is a separate proposal for the owner.
+
 ## 3. What does not change
 
 - No text, i18n key, handler, href, data flow, selector, role or id that a test pins. Tests pass unedited, except the ones this

@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show, type JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
 import { t } from '../i18n';
+import { ThemeSwitch } from './ThemeSwitch';
 import type { Key } from '../i18n/th';
 import { sharedSession } from '../session/session';
 import { AccountBar, roleLabel } from './AccountBar';
@@ -9,6 +10,7 @@ import { visibleStaffNav } from './staff-nav';
 import { VersionFooter } from './VersionFooter';
 import '@fontsource-variable/noto-sans-thai/wght.css';
 import './xc-theme.css';
+import './xc-theme-dark.css';
 import './shell.css';
 
 export type AppShellLook = 'devices' | 'kiosk' | 'admin';
@@ -137,6 +139,7 @@ export function AppShell(props: {
             </div>
           ) : null}
           <Show when={user()}>
+            <ThemeSwitch />
             <div class="xc-shell-panel-footer">
               <button type="button" class="xc-shell-panel-signout" disabled={pending()} onClick={handleSignOut}>
                 {t('shell.account.signOut')}

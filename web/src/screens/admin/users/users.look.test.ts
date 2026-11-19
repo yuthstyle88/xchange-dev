@@ -68,7 +68,7 @@ describe('users look', () => {
   });
 
   it('U-2 .users-btn names its text colour, so the submit button is not white on white', () => {
-    expect(decls(readHere('users.css'), '.users-btn')?.get('color')).toBe('var(--xc-brand)');
+    expect(decls(readHere('users.css'), '.users-btn')?.get('color')).toBe('var(--xc-brand-text)');
   });
 
   it('U-3 toolbar: search 280px wide, 16px above the table card, action groups wrap', () => {

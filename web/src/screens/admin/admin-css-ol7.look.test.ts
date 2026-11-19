@@ -62,7 +62,7 @@ describe('row 38: the footer link reads like the header link', () => {
   it('AC-1 .admin-footer a: brand colour, 600, no underline', () => {
     const d = decls('.xc-admin .xc-content .admin-footer a');
     expect(d, 'rule `.xc-admin .xc-content .admin-footer a`').toBeDefined();
-    expect(d!.get('color')).toBe('var(--xc-brand)');
+    expect(d!.get('color')).toBe('var(--xc-brand-text)');
     expect(d!.get('font-weight')).toBe('600');
     expect(d!.get('text-decoration')).toBe('none');
   });

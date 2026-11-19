@@ -80,7 +80,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-card .pricing-btn-code:hover {
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-card-name {
@@ -205,7 +205,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-gap-warn {
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-weight: 700;
 }
 
@@ -241,7 +241,7 @@
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Pending'],
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Unpriced'] {
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-chip-status[data-status='Current'] {
@@ -261,7 +261,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-pill-follow {
   background: var(--soft);
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-dot {
@@ -298,7 +298,7 @@
   margin: 2px 0 0;
   font-size: 12px;
   font-weight: 700;
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 /* Hooks kept from the table layout (tests and other screens read them); the card rules above do the look. */

@@ -156,7 +156,7 @@ describe('OL-6 B the desk shift gate', () => {
     expect(d?.get('display')).toBe('inline-flex');
     expect(d?.get('align-items')).toBe('center');
     expect(d?.get('min-height')).toBe('44px');
-    expect(d?.get('color')).toBe('var(--xc-brand)');
+    expect(d?.get('color')).toBe('var(--xc-brand-text)');
     expect(d?.get('font-weight')).toBe('600');
   });
 });

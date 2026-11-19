@@ -6,6 +6,7 @@ export const en: Record<Key, string> = {
   'field.file.choose': 'Choose file',
   'field.file.none': 'No file chosen',
   'shell.langSwitch': 'Switch language to {language}',
+  'shell.themeSwitch': 'Switch light / dark mode',
   'shell.menu': 'Menu',
   'shell.nav.counter': 'Desk',
   'shell.nav.backdated': 'Backdated',

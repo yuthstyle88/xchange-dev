@@ -5,6 +5,6 @@
 .documents-screen .documents-list { margin: 0; list-style: none; }
 .documents-screen .documents-list [data-kind] { margin: 0; padding: 12px 0; border-top: 1px solid var(--xc-line); }
 .documents-screen .documents-list [data-kind]:first-child { padding-top: 0; border-top: 0; }
-.documents-screen a { color: var(--xc-brand); font-weight: 600; text-decoration: none; }
+.documents-screen a { color: var(--xc-brand-text); font-weight: 600; text-decoration: none; }
 .documents-screen .documents-refusal { margin: 0; color: var(--xc-danger); }
 .documents-screen .documents-back { justify-self: start; }

@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>xchange — dark look (mock)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Mock of the staff dark look, after the shop manual's screens (XCHANGE manual, Nov 2026).
+     Every colour is a token here; the product change only redefines the semantic tokens in xc-theme.css. */
+  /* Light mode = the approved one look (docs/design/xchange-one-look.md, owner ok 2026-11-06). */
+  :root {
+    --xc-bg: #f4f4f6; --xc-surface: #ffffff; --xc-raised: #f7f5f6; --xc-line: #e7e2e6;
+    --xc-ink: #251e22; --xc-muted: #6c6268;
+    --xc-brand: #a5003c; --xc-brand-strong: #85002f; --xc-accent: #a5003c; --xc-brand-soft: #fdf1f5;
+    --xc-on-brand: #ffffff; --xc-ok: #1d7450; --xc-ok-soft: #eff8f2; --xc-warn: #986814; --xc-warn-soft: #fff6e0;
+    --xc-danger: #a4371f; --xc-zero: #dcd8dd; --xc-cta-shadow: #a5003c33;
+    --xc-radius-md: 10px; --xc-radius-lg: 14px; --xc-radius-xl: 16px; --xc-radius-pill: 999px;
+    --xc-font-sans: 'Noto Sans Thai', Arial, Tahoma, sans-serif;
+    color-scheme: light;
+  }
+  /* Dark mode = after the shop manual's screens. */
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --xc-zero: #3a3638; --xc-cta-shadow: #93283f55;
+    --xc-dk-bg: #0b0b0c;        /* page */
+    --xc-dk-surface: #1a1919;   /* cards, keys */
+    --xc-dk-raised: #242224;    /* inputs, hovered keys */
+    --xc-dk-line: #2e2b2d;
+    --xc-dk-ink: #f2eef0;
+    --xc-dk-muted: #a49aa0;
+    --xc-dk-brand: #93283f;     /* primary button (manual: wine) */
+    --xc-dk-brand-strong: #a8324c;
+    --xc-dk-accent: #e2637d;    /* typed amount, selected outline, links */
+    --xc-dk-brand-soft: #3a1520;
+    --xc-dk-ok: #3fb47a;
+    --xc-dk-ok-soft: #15301f;
+    --xc-dk-warn: #e0a83a;
+    --xc-dk-warn-soft: #3a2a0c;
+    --xc-dk-danger: #ef6b5a;
+
+    --xc-bg: var(--xc-dk-bg);
+    --xc-surface: var(--xc-dk-surface);
+    --xc-raised: var(--xc-dk-raised);
+    --xc-line: var(--xc-dk-line);
+    --xc-ink: var(--xc-dk-ink);
+    --xc-muted: var(--xc-dk-muted);
+    --xc-brand: var(--xc-dk-brand);
+    --xc-brand-strong: var(--xc-dk-brand-strong);
+    --xc-accent: var(--xc-dk-accent);
+    --xc-brand-soft: var(--xc-dk-brand-soft);
+    --xc-on-brand: #ffffff;
+    --xc-ok: var(--xc-dk-ok);
+    --xc-ok-soft: var(--xc-dk-ok-soft);
+    --xc-warn: var(--xc-dk-warn);
+    --xc-warn-soft: var(--xc-dk-warn-soft);
+    --xc-danger: var(--xc-dk-danger);
+  }
+  .mode { margin-left: auto; flex: none; }
+  .hdr .mode-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-ink); font-size: 17px; cursor: pointer; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--xc-bg); color: var(--xc-ink); font: 15px/1.55 var(--xc-font-sans); }
+  .tabs { display: flex; gap: 8px; padding: 10px 16px; background: var(--xc-bg); border-bottom: 1px solid var(--xc-line); position: sticky; top: 0; z-index: 3; overflow-x: auto; }
+  .tabs button { flex: none; min-height: 34px; padding: 6px 14px; border-radius: var(--xc-radius-pill); border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-muted); font: 600 13px/1 var(--xc-font-sans); cursor: pointer; }
+  .tabs button[aria-pressed="true"] { background: var(--xc-brand); border-color: var(--xc-brand); color: var(--xc-on-brand); }
+  .view { display: none; } .view.on { display: block; }
+  .phone { max-width: 420px; margin: 0 auto; padding: 12px 16px 32px; }
+
+  /* Header (manual: ✕ menu · brand · user pill · clock-in pill) */
+  .hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .icon-btn { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--xc-brand-soft); color: var(--xc-accent); font-size: 18px; display: grid; place-items: center; cursor: pointer; }
+  .logo { font-weight: 800; letter-spacing: .04em; font-size: 13px; color: var(--xc-ink); display: flex; align-items: center; gap: 6px; }
+  .logo .m { color: var(--xc-accent); font-size: 16px; }
+  .who { flex: 1; min-width: 0; padding: 7px 12px; border-radius: var(--xc-radius-pill); background: var(--xc-surface); color: var(--xc-muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pill { border: 0; border-radius: var(--xc-radius-pill); padding: 8px 14px; background: var(--xc-brand); color: var(--xc-on-brand); font: 700 13px/1 var(--xc-font-sans); cursor: pointer; white-space: nowrap; }
+
+  .step { font-size: 13px; color: var(--xc-muted); margin: 6px 0 8px; }
+  .muted { color: var(--xc-muted); } .small { font-size: 12px; }
+
+  /* Currency grid */
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .cur { border: 1.5px solid transparent; border-radius: var(--xc-radius-lg); background: var(--xc-surface); color: var(--xc-ink); padding: 8px 4px 6px; text-align: center; cursor: pointer; font-family: inherit; }
+  .cur .f { font-size: 20px; line-height: 1.1; }
+  .cur b { display: block; font-size: 14px; }
+  .cur span { display: block; font-size: 11px; color: var(--xc-muted); }
+  .cur[aria-pressed="true"] { border-color: var(--xc-accent); background: var(--xc-brand-soft); }
+  .more { margin-top: 8px; width: 100%; padding: 10px; border-radius: var(--xc-radius-lg); border: 1px dashed var(--xc-line); background: transparent; color: var(--xc-accent); font: 700 14px/1 var(--xc-font-sans); }
+
+  .card { background: var(--xc-surface); border-radius: var(--xc-radius-xl); padding: 14px 16px; }
+  .rate { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+  .rate .flag { width: 40px; height: 40px; border-radius: 50%; background: var(--xc-raised); display: grid; place-items: center; font-size: 22px; }
+  .rate .v { font-size: 22px; font-weight: 800; }
+  .rate .v small { font-size: 12px; color: var(--xc-muted); font-weight: 500; margin-right: 6px; }
+
+  select, .input { width: 100%; height: 46px; padding: 10px 12px; border-radius: var(--xc-radius-md); border: 1px solid var(--xc-line); background: var(--xc-raised); color: var(--xc-ink); font: 15px/1.3 var(--xc-font-sans); }
+  label.l { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
+
+  .amt { margin-top: 12px; border-radius: var(--xc-radius-xl); background: var(--xc-surface); padding: 10px 16px 12px; border: 1.5px solid transparent; }
+  .amt.focus { border-color: var(--xc-accent); }
+  .amt .k { font-size: 12px; color: var(--xc-muted); }
+  .amt .n { text-align: right; font-size: 38px; font-weight: 800; line-height: 1.15; }
+  .amt.focus .n { color: var(--xc-accent); }
+  .amt .n.zero { color: var(--xc-zero); }
+
+  .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+  .keys button { height: 50px; border-radius: var(--xc-radius-md); border: 0; background: var(--xc-surface); color: var(--xc-ink); font: 700 20px/1 var(--xc-font-sans); cursor: pointer; }
+  .keys button:active { background: var(--xc-raised); }
+  .cta { margin-top: 14px; width: 100%; height: 54px; border: 0; border-radius: var(--xc-radius-pill); background: var(--xc-brand); color: var(--xc-on-brand); font: 800 17px/1 var(--xc-font-sans); box-shadow: 0 8px 22px var(--xc-cta-shadow); cursor: pointer; }
+  .ghost { margin-top: 10px; width: 100%; height: 48px; border-radius: var(--xc-radius-pill); border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-ink); font: 700 15px/1 var(--xc-font-sans); }
+
+  /* Review */
+  .big { text-align: right; } .big .k { font-size: 12px; color: var(--xc-muted); } .big .n { font-size: 34px; font-weight: 800; }
+  .big .n.accent { color: var(--xc-accent); }
+  .warnbox { margin-top: 12px; padding: 12px 14px; border-radius: var(--xc-radius-lg); background: var(--xc-warn-soft); color: var(--xc-warn); font-size: 13px; font-weight: 600; }
+  .done { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; }
+  .done .tick { width: 32px; height: 32px; border-radius: 50%; background: var(--xc-ok); color: var(--xc-on-brand); display: grid; place-items: center; font-size: 18px; }
+  .row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  .two button { height: 46px; border-radius: var(--xc-radius-pill); border: 1px solid var(--xc-line); background: var(--xc-raised); color: var(--xc-ink); font: 700 13px/1.2 var(--xc-font-sans); }
+
+  /* Shift steps */
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0 12px; }
+  .seg button { padding: 10px; border-radius: var(--xc-radius-lg); border: 1px solid var(--xc-line); background: var(--xc-surface); color: var(--xc-ink); font: 700 14px/1.3 var(--xc-font-sans); }
+  .seg button[aria-pressed="true"] { background: var(--xc-brand); border-color: var(--xc-brand); }
+  .stp { display: flex; gap: 12px; align-items: flex-start; padding: 14px; border-radius: var(--xc-radius-xl); background: var(--xc-surface); border: 1.5px solid var(--xc-ok); margin-bottom: 10px; }
+  .stp.todo { border-color: var(--xc-accent); }
+  .stp .b { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--xc-ok); color: var(--xc-on-brand); display: grid; place-items: center; font-weight: 800; font-size: 14px; }
+  .stp.todo .b { background: var(--xc-brand); }
+  .stp h4 { margin: 0 0 2px; font-size: 16px; }
+  .stp p { margin: 0; font-size: 13px; color: var(--xc-muted); }
+  .chip { margin-left: auto; align-self: center; padding: 6px 10px; border-radius: var(--xc-radius-pill); background: var(--xc-ok-soft); color: var(--xc-ok); font-size: 12px; font-weight: 700; white-space: nowrap; }
+
+  /* Sign-in */
+  .auth { min-height: calc(100vh - 56px); display: grid; place-items: center; padding: 24px 16px; }
+  .auth .card { width: 100%; max-width: 400px; padding: 28px 22px; }
+  .auth h1 { font-size: 22px; margin: 18px 0 4px; }
+  .seglang { display: inline-flex; border-radius: var(--xc-radius-pill); background: var(--xc-raised); padding: 3px; }
+  .seglang button { border: 0; padding: 5px 12px; border-radius: var(--xc-radius-pill); background: transparent; color: var(--xc-muted); font: 700 12px/1 var(--xc-font-sans); }
+  .seglang button[aria-pressed="true"] { background: var(--xc-brand-soft); color: var(--xc-accent); }
+  .tg { margin-top: 10px; width: 100%; height: 48px; border-radius: var(--xc-radius-pill); border: 1px solid var(--xc-line); background: transparent; color: var(--xc-ink); font: 700 15px/1 var(--xc-font-sans); }
+  .note { max-width: 420px; margin: 0 auto; padding: 0 16px 24px; font-size: 12px; color: var(--xc-muted); }
+</style>
+</head>
+<body>
+<nav class="tabs" aria-label="mock views">
+  <button aria-pressed="true" data-v="buy">รับซื้อ · แป้นตัวเลข</button>
+  <button aria-pressed="false" data-v="review">ตรวจยอด / ใบเสร็จ</button>
+  <button aria-pressed="false" data-v="shift">ขั้นตอนกะ</button>
+  <button aria-pressed="false" data-v="signin">เข้าสู่ระบบ</button>
+  <button class="mode" id="mode" aria-label="สลับโหมดสว่าง/มืด">🌙 โหมดมืด</button>
+</nav>
+
+<section class="view on" id="buy"><div class="phone">
+  <div class="hdr"><button class="icon-btn" aria-label="เมนู">☰</button><span class="logo"><span class="m">∞</span>XCHANGE</span><span class="who">สมชาย (ทดสอบ) · สาขา MAIN</span><button class="pill">⏱ เข้างาน</button></div>
+  <div class="step">1 · เลือกสกุลเงิน</div>
+  <div class="grid">
+    <button class="cur" aria-pressed="true"><div class="f">🇺🇸</div><b>USD</b><span>33.00–33.50</span></button>
+    <button class="cur"><div class="f">🇪🇺</div><b>EUR</b><span>37.30</span></button>
+    <button class="cur"><div class="f">🇮🇳</div><b>INR</b><span>0.327</span></button>
+    <button class="cur"><div class="f">🇬🇧</div><b>GBP</b><span>44.80</span></button>
+    <button class="cur"><div class="f">🇦🇺</div><b>AUD</b><span>23.35</span></button>
+    <button class="cur"><div class="f">🇨🇳</div><b>CNY</b><span>5.02</span></button>
+    <button class="cur"><div class="f">🇯🇵</div><b>JPY</b><span>0.2113</span></button>
+    <button class="cur"><div class="f">🇨🇭</div><b>CHF</b><span>40.55</span></button>
+  </div>
+  <button class="more">สกุลอื่น ๆ (26)</button>
+  <div class="card rate"><div class="flag">🇺🇸</div><div><div class="small muted">USD ดอลลาร์สหรัฐ</div><div class="v"><small>เรท</small>33.50 ฿ / USD</div></div></div>
+  <div class="small muted" style="margin-top:6px">เรทจากบอร์ดสาขา MAIN · อัปเดต 10:12 ICT</div>
+  <label class="l">ชนิดธนบัตร (เรทตามชนิด)</label>
+  <select><option>USDL · 33.50</option><option>USDS · 33.00</option><option>USD1 · 32.50</option></select>
+  <div class="amt focus"><div class="k">2 · ลูกค้าให้มา (USD)</div><div class="n">500</div></div>
+  <div class="amt"><div class="k">จ่ายเงินบาท (THB)</div><div class="n">16,750.00</div></div>
+  <div class="keys"><button>1</button><button>2</button><button>3</button><button>4</button><button>5</button><button>6</button><button>7</button><button>8</button><button>9</button><button>.</button><button>0</button><button aria-label="ลบ">⌫</button></div>
+  <button class="cta">ยืนยัน</button>
+</div></section>
+
+<section class="view" id="review"><div class="phone">
+  <div class="hdr"><button class="icon-btn" aria-label="เมนู">☰</button><span class="logo"><span class="m">∞</span>XCHANGE</span><span class="who">สมชาย (ทดสอบ)</span><button class="pill">⏱ เข้างาน</button></div>
+  <h3 style="margin:4px 0 10px">ตรวจยอดก่อนยืนยัน</h3>
+  <div class="card big"><div class="k">รับจากลูกค้า</div><div class="n">500.00 USD</div></div>
+  <div class="card big" style="margin-top:8px"><div class="k">จ่ายเงินบาทให้ลูกค้า</div><div class="n accent">฿16,750.00</div></div>
+  <div class="row muted"><span>เรท</span><span>33.50 / 1 USD</span></div>
+  <div class="warnbox">กดยืนยันเมื่อได้รับเงินจากลูกค้าและจ่ายเงินสดครบแล้วเท่านั้น</div>
+  <button class="cta">ยืนยันว่าได้รับ/จ่ายเงินสดจริง</button>
+  <button class="ghost">แก้ยอด</button>
+  <hr style="border:0;border-top:1px solid var(--xc-line);margin:24px 0">
+  <div class="done"><span class="tick">✓</span>บันทึกรายการแล้ว</div>
+  <div style="font-weight:800;margin:8px 0 10px">XC-20261117-000001</div>
+  <div class="card big"><div class="k">จ่ายเงินสด</div><div class="n accent">฿16,750.00</div></div>
+  <div class="row"><span class="muted">รับจากลูกค้า</span><b>500.00 USD</b></div>
+  <div class="two"><button>QR ใบเสร็จออนไลน์</button><button>พิมพ์ใบเสร็จ 80mm</button></div>
+  <button class="cta">รายการใหม่ (ลูกค้าคนถัดไป)</button>
+</div></section>
+
+<section class="view" id="shift"><div class="phone">
+  <div class="hdr"><button class="icon-btn" aria-label="เมนู">☰</button><span class="logo"><span class="m">∞</span>XCHANGE</span><span class="who">สมชาย (ทดสอบ)</span></div>
+  <h3 style="margin:4px 0">กะเช้า / กะค่ำ</h3>
+  <div class="seg"><button>☀️ กะเช้า 10:00–19:00</button><button aria-pressed="true">🌙 กะค่ำ 19:00–04:00</button></div>
+  <div class="small muted" style="margin-bottom:10px">ขั้นตอนต้องทำตามลำดับ ① → ④</div>
+  <div class="stp"><span class="b">✓</span><div><h4>ตั้งต้น</h4><p>฿18,645.00 · CNY 3,000.00 · EUR 200.00 · USD 1,800.00</p></div></div>
+  <div class="stp"><span class="b">✓</span><div><h4>เติมเงิน</h4><p>1 รายการ · ฿10,000.00 · มาจาก ตู้เซฟ</p></div></div>
+  <div class="stp"><span class="b">✓</span><div><h4>รายการในกะ</h4><p>รับซื้อ 12 · ขายให้ลูกค้า 3</p></div><span class="chip">กำลังทำ</span></div>
+  <div class="stp todo"><span class="b">4</span><div><h4>ปิดกะ</h4><p>ยังไม่ปิด · นับเงินในลิ้นชักก่อนออกงาน</p></div></div>
+  <div class="card" style="margin-top:6px"><div class="small muted">เงินที่ควรมี (THB)</div><div style="font-size:26px;font-weight:800">฿38,445.00</div><div class="small muted">ตั้งต้น + เติมเงิน + ขายให้ลูกค้า − รับซื้อ</div></div>
+  <label class="l">เงินบาทที่นับได้ (THB) *</label>
+  <input class="input" inputmode="decimal" value="38,445.00">
+  <div class="row"><span class="muted">ผล</span><b style="color:var(--xc-ok)">ตรง ✓</b></div>
+  <button class="cta">📷 เปิดกล้อง · ออกงาน</button>
+</div></section>
+
+<section class="view" id="signin">
+  <div class="auth"><div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><span class="logo"><span class="m">∞</span>XCHANGE</span><span class="seglang"><button aria-pressed="true">ไทย</button><button aria-pressed="false">EN</button></span></div>
+    <h1>เข้าสู่ระบบ</h1><div class="small muted">ระบบหน้าร้านแลกเปลี่ยนเงินตรา</div>
+    <label class="l">ชื่อผู้ใช้</label><input class="input" placeholder="username">
+    <label class="l">รหัสผ่าน</label><input class="input" type="password" value="password12">
+    <button class="cta">เข้าสู่ระบบ</button>
+    <button class="tg">เข้าสู่ระบบด้วย Telegram ↗</button>
+    <div class="small muted" style="text-align:center;margin-top:16px">1.x.y · build · staging</div>
+  </div></div>
+</section>
+<p class="note">Mock only — fictional numbers. Colours come from the tokens at the top of this file; the product change redefines the same semantic tokens in <code>web/src/shared/ui/xc-theme.css</code> for staff pages.</p>
+<script>
+  const root = document.documentElement, mode = document.getElementById("mode");
+  const setMode = m => { root.dataset.theme = m; mode.textContent = m === "dark" ? "☀️ โหมดสว่าง" : "🌙 โหมดมืด"; try { localStorage.setItem("xc-theme", m); } catch (e) {} };
+  let saved = null; try { saved = localStorage.getItem("xc-theme"); } catch (e) {}
+  setMode(saved || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  mode.addEventListener("click", () => setMode(root.dataset.theme === "dark" ? "light" : "dark"));
+  document.querySelectorAll('.tabs button[data-v]').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button[data-v]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === b.dataset.v));
+  }));
+  document.querySelectorAll('.grid .cur').forEach(c => c.addEventListener('click', () => {
+    document.querySelectorAll('.grid .cur').forEach(x => x.setAttribute('aria-pressed', String(x === c)));
+  }));
+</script>
+</body>
+</html>

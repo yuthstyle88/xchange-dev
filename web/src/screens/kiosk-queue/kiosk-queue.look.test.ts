@@ -46,7 +46,7 @@ describe('kiosk-queue look (OL-6 wave B)', () => {
   it('KQ-2: .kq-back is brand coloured, not underlined, weight 600', () => {
     const r = rule(rules, '.xc-shell-main .queue-page .kq-back');
     expect(r, 'rule exists').toBeDefined();
-    expect(r?.decls.get('color')).toBe('var(--xc-brand)');
+    expect(r?.decls.get('color')).toBe('var(--xc-brand-text)');
     expect(r?.decls.get('text-decoration')).toBe('none');
     expect(r?.decls.get('font-weight')).toBe('600');
   });

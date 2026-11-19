@@ -55,7 +55,7 @@
 .xc-admin .xc-content.xc-content .pricing-grid-caret {
   width: 14px;
   font-size: 12px;
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-grid-toggle-title {

@@ -65,6 +65,6 @@ describe('rate-alert-settings look', () => {
   it('RA-4 "ใช้ค่าแนะนำ" is a secondary: white with brand text', () => {
     const d = decls(readHere('rate-alert-settings.css'), '.rate-alert-suggest-btn');
     expect(d?.get('background-color')).toBe('var(--xc-surface)');
-    expect(d?.get('color')).toBe('var(--xc-brand)');
+    expect(d?.get('color')).toBe('var(--xc-brand-text)');
   });
 });

@@ -66,7 +66,7 @@ describe('desk-bookings look', () => {
 
   it('DB-5 secondary buttons use the brand text colour; primary keeps a brand border', async () => {
     const css = await readHere('desk-bookings.css');
-    expect(decls(css, '.xc-btn-secondary')?.get('color')).toBe('var(--xc-brand)');
+    expect(decls(css, '.xc-btn-secondary')?.get('color')).toBe('var(--xc-brand-text)');
     expect(decls(css, '.xc-btn-primary')?.get('border')).toBe('1px solid var(--xc-brand)');
   });
 

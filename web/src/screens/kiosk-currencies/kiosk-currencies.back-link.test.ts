@@ -50,7 +50,7 @@ describe('kiosk-currencies back link (OL-6 L3 #6533)', () => {
   it('.xc-kiosk .xc-shell-main .kc-back has brand color, no underline, and font-weight 600', () => {
     const rule = rules.find((r) => r.selector === '.xc-kiosk .xc-shell-main .kc-back');
     expect(rule, '.xc-kiosk .xc-shell-main .kc-back rule exists').toBeDefined();
-    expect(rule?.decls.get('color')).toBe('var(--xc-brand)');
+    expect(rule?.decls.get('color')).toBe('var(--xc-brand-text)');
     expect(rule?.decls.get('text-decoration')).toBe('none');
     expect(rule?.decls.get('font-weight')).toBe('600');
   });

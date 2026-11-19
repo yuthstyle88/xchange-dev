@@ -131,7 +131,7 @@
 /* v2 admin-html.ts:3 .ref + base button border */
 .xc-admin .xc-content.xc-content .link-button {
   font-family: Arial, sans-serif;
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
   font-size: 13px;
   padding: 0;

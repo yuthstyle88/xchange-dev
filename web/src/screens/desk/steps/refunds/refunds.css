@@ -3,7 +3,7 @@
   border: 1px solid var(--xc-brand);
   border-radius: 4px;
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 500;
   cursor: pointer;
 }
@@ -138,7 +138,7 @@
 }
 
 .desk-refund-link {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   text-decoration: underline;
 }
 

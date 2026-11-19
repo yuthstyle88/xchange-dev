@@ -185,7 +185,7 @@
 
 .xc-status-simulated {
   background-color: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-status-paused {

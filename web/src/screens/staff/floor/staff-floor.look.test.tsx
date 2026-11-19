@@ -159,7 +159,7 @@ describe('staff-floor controls', () => {
     expect(d?.get('font-size')).toBe('15px');
     expect(d?.get('font-weight')).toBe('600');
     expect(d?.get('border-radius')).toBe('var(--xc-radius-md)');
-    expect(d?.get('color')).toBe('var(--xc-brand)');
+    expect(d?.get('color')).toBe('var(--xc-brand-text)');
   });
 
   it('SF-6 the target input leaves height, radius and border to the theme', async () => {
@@ -177,7 +177,7 @@ describe('staff-floor controls', () => {
     expect(btn?.get('min-height')).toBe('44px');
     expect(btn?.get('padding')).toBe('10px 18px');
     expect(btn?.get('border-radius')).toBe('var(--xc-radius-md)');
-    expect(btn?.get('color')).toBe('var(--xc-brand)');
+    expect(btn?.get('color')).toBe('var(--xc-brand-text)');
     const input = decls(css, '.xc-shift-denom-input');
     expect(input?.get('width')).toBe('6rem');
     expect(input?.get('text-align')).toBe('right');

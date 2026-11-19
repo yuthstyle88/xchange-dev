@@ -89,7 +89,7 @@
   padding: 6px 10px;
   border: 1px solid var(--xc-line);
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   border-radius: var(--xc-radius-md);
   font: 12px var(--xc-font-sans);
   cursor: pointer;

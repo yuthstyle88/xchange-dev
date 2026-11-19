@@ -91,6 +91,6 @@
 }
 
 .xc-admin .xc-content.xc-content .bulk-approve-error {
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
 }

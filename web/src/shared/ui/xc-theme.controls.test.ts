@@ -72,7 +72,7 @@ describe('A2 staff controls in xc-theme.css', () => {
     expect(d.get('border')).toBe('1px solid var(--xc-line)');
     expect(d.get('border-radius')).toBe('var(--xc-radius-md)');
     expect(d.get('background')).toBe('var(--xc-surface)');
-    expect(d.get('color')).toBe('var(--xc-brand)');
+    expect(d.get('color')).toBe('var(--xc-brand-text)');
   });
 
   it('A2-4 <summary> reads as a control', () => {

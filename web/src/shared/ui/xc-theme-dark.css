@@ -1,0 +1,115 @@
+/* xc-theme-dark.css — light / dark mode for staff pages (design §2.6).
+   Kept apart from xc-theme.css, whose rules stay on plain .xc-theme (A1-a, issue 6517). */
+
+/* Light / dark switch (design §2.6). */
+.xc-theme-switch {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  margin-left: var(--xc-space-2);
+  padding: 0;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-pill);
+  background: var(--xc-surface);
+  color: var(--xc-ink);
+  font: 600 var(--xc-text-xl)/1 var(--xc-font-sans);
+  cursor: pointer;
+}
+
+.xc-auth .xc-auth-header-top > button.xc-theme-switch,
+.xc-shell .xc-shell-panel > button.xc-theme-switch {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  margin-left: var(--xc-space-2);
+  padding: 0;
+  border: 1px solid var(--xc-line);
+  border-radius: var(--xc-radius-pill);
+  background: var(--xc-gray-50);
+  color: var(--xc-ink);
+  font: 600 var(--xc-text-xl)/1 var(--xc-font-sans);
+}
+
+.xc-auth .xc-auth-header-top > [role="group"] {
+  margin-left: auto;
+}
+
+.xc-theme-switch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--xc-focus-ring);
+}
+
+/* Dark mode for staff pages, after the shop manual's screens (design §2.6).
+   Only the value scale changes: the light ramps are mirrored, so every rule that names a token follows.
+   Customer pages and print keep the light values. */
+@media screen {
+  :root[data-theme="dark"] .xc-theme:not(.xc-customer):not(.xc-customer *) {
+    color-scheme: dark;
+
+    --xc-gray-1000: var(--xc-dk-gray-1000);
+    --xc-gray-950: var(--xc-dk-gray-950);
+    --xc-gray-900: var(--xc-dk-gray-900);
+    --xc-gray-800: var(--xc-dk-gray-800);
+    --xc-gray-700: var(--xc-dk-gray-700);
+    --xc-gray-600: var(--xc-dk-gray-600);
+    --xc-gray-500: var(--xc-dk-gray-500);
+    --xc-gray-400: var(--xc-dk-gray-400);
+    --xc-gray-300: var(--xc-dk-gray-300);
+    --xc-gray-200: var(--xc-dk-gray-200);
+    --xc-gray-150: var(--xc-dk-gray-150);
+    --xc-gray-100: var(--xc-dk-gray-100);
+    --xc-gray-75: var(--xc-dk-gray-75);
+    --xc-gray-50: var(--xc-dk-gray-50);
+    --xc-gray-25: var(--xc-dk-gray-25);
+    --xc-gray-0: var(--xc-dk-gray-0);
+
+    --xc-brand-950: var(--xc-dk-brand-950);
+    --xc-brand-900: var(--xc-dk-brand-900);
+    --xc-brand-800: var(--xc-dk-brand-800);
+    --xc-brand-700: var(--xc-dk-brand-700);
+    --xc-brand-500: var(--xc-dk-brand-500);
+    --xc-brand-300: var(--xc-dk-brand-300);
+    --xc-brand-200: var(--xc-dk-brand-200);
+    --xc-brand-100: var(--xc-dk-brand-100);
+    --xc-brand-50: var(--xc-dk-brand-50);
+
+    --xc-green-900: var(--xc-dk-green-900);
+    --xc-green-800: var(--xc-dk-green-800);
+    --xc-green-700: var(--xc-dk-green-700);
+    --xc-green-500: var(--xc-dk-green-500);
+    --xc-green-200: var(--xc-dk-green-200);
+    --xc-green-100: var(--xc-dk-green-100);
+    --xc-green-50: var(--xc-dk-green-50);
+    --xc-amber-900: var(--xc-dk-amber-900);
+    --xc-amber-800: var(--xc-dk-amber-800);
+    --xc-amber-700: var(--xc-dk-amber-700);
+    --xc-amber-500: var(--xc-dk-amber-500);
+    --xc-amber-300: var(--xc-dk-amber-300);
+    --xc-amber-200: var(--xc-dk-amber-200);
+    --xc-amber-50: var(--xc-dk-amber-50);
+    --xc-red-700: var(--xc-dk-red-700);
+    --xc-red-50: var(--xc-dk-red-50);
+    --xc-teal-900: var(--xc-dk-teal-900);
+    --xc-scrim: var(--xc-dk-scrim);
+
+    /* Two brand roles: a wine fill under white text (6.5:1), and a pink for brand text (5.9:1 on the page). */
+    --xc-brand-text: var(--xc-dk-brand-text);
+    --xc-on-brand: var(--xc-dk-on-brand);
+    --xc-brand-ink: var(--xc-dk-brand-ink);
+    --xc-focus: var(--xc-dk-focus);
+
+    --xc-shadow-sm: 0 1px 4px var(--xc-dk-shadow-a);
+    --xc-shadow-md: 0 8px 24px var(--xc-dk-shadow-b);
+    --xc-shadow-lg: 0 24px 80px var(--xc-dk-shadow-c);
+    --xc-shadow-brand: 0 8px 22px var(--xc-dk-shadow-brand);
+  }
+
+  /* The page behind a staff surface follows the mode too. */
+  :root[data-theme="dark"] body:has(.xc-theme:not(.xc-customer):not(.xc-customer *)) {
+    background: Canvas;
+    color-scheme: dark;
+  }
+}

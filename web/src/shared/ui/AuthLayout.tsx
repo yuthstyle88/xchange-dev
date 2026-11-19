@@ -1,8 +1,11 @@
 import type { JSX } from 'solid-js';
 import { LangSwitch } from '../i18n/LangSwitch';
+import { audience } from '../i18n';
+import { ThemeSwitch } from './ThemeSwitch';
 import { VersionFooter } from './VersionFooter';
 import '@fontsource-variable/noto-sans-thai/wght.css';
 import './xc-theme.css';
+import './xc-theme-dark.css';
 import './auth.css';
 
 export function AuthLayout(props: {
@@ -18,6 +21,7 @@ export function AuthLayout(props: {
           <div class="xc-auth-header-top">
             <span class="xc-auth-brand">XCHANGE × T.K.</span>
             <LangSwitch />
+            {audience() !== 'customer' ? <ThemeSwitch /> : null}
           </div>
           <h1>{props.title}</h1>
           {props.subtitle && <p class="xc-auth-subtitle">{props.subtitle}</p>}

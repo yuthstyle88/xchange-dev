@@ -58,7 +58,7 @@ body:has(.xc-shell) {
 }
 
 .xc-shell-brand span {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-shell-brand small {
@@ -140,7 +140,7 @@ body:has(.xc-shell) {
 .xc-shell-nav a[aria-current="page"],
 .xc-shell-nav a.on {
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-shell-nav a:focus-visible {
@@ -157,7 +157,7 @@ body:has(.xc-shell) {
   font: inherit;
   border: 1px solid var(--xc-line);
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   padding: 8px 14px;
   border-radius: var(--xc-radius-md);
   font-weight: 600;
@@ -205,7 +205,7 @@ body:has(.xc-shell) {
 .xc-shell-menu-btn[aria-expanded="true"] {
   background: var(--xc-brand-soft);
   border-color: var(--xc-brand-200);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 /* Main container */
@@ -269,7 +269,7 @@ body:has(.xc-shell) {
   border-radius: var(--xc-radius-md);
   border: 1px solid var(--xc-line);
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font: 600 14px/1.2 var(--xc-font-sans);
   white-space: nowrap;
 }

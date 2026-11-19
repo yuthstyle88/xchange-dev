@@ -176,7 +176,7 @@
 
 .xc-admin .xc-content.xc-content nav a.active {
   background:var(--soft);
-  color:var(--brand);
+  color:var(--xc-brand-text);
   font-weight:bold;
   box-shadow:inset 3px 0 var(--brand);
 }
@@ -204,7 +204,7 @@
 
 .xc-admin .xc-content.xc-content .desk-link {
   font-size:14px;
-  color:var(--brand);
+  color:var(--xc-brand-text);
 }
 
 .xc-admin .xc-shell-header {
@@ -275,7 +275,7 @@
 }
 
 .xc-admin .xc-content.xc-content .heading .eyebrow {
-  color:var(--brand);
+  color:var(--xc-brand-text);
   margin-bottom:6px;
 }
 
@@ -307,7 +307,7 @@
 }
 
 .xc-admin .xc-content.xc-content .text-link {
-  color:var(--brand);
+  color:var(--xc-brand-text);
   font-size:14px;
 }
 
@@ -484,7 +484,7 @@
 
 .xc-admin .xc-content.xc-content .ref {
   font-family:Arial,sans-serif;
-  color:var(--brand);
+  color:var(--xc-brand-text);
   font-weight:600;
   font-size:13px;
   padding:0;
@@ -515,7 +515,7 @@
 
 .xc-admin .xc-content.xc-content .pill.buy {
   background:var(--xc-brand-soft);
-  color:var(--brand);
+  color:var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pill.sell, .xc-admin .xc-content.xc-content .pill.neutral {
@@ -568,7 +568,7 @@
   border-radius:50%;
   font:18px Georgia;
   margin-right:12px;
-  color:var(--brand);
+  color:var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .rate-number {
@@ -670,7 +670,7 @@
 .xc-admin .xc-content.xc-content .quote strong {
   display:block;
   font-size:28px;
-  color:var(--brand);
+  color:var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .error {
@@ -1010,7 +1010,7 @@
 }
 
 .xc-admin .xc-content.xc-content .negative {
-  color:var(--xc-brand);
+  color:var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .wide-dialog {
@@ -1320,7 +1320,7 @@
 .xc-admin .xc-content .admin-nav a[aria-current="page"],
 .xc-admin .xc-content .admin-nav a.active,
 .xc-admin .xc-content .xc-workspace nav a.active {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   background: var(--xc-brand-soft);
   box-shadow: inset 3px 0 var(--xc-brand);
 }
@@ -1480,7 +1480,7 @@
 
 .xc-admin .xc-content .period-toolbar #export,
 .xc-admin .xc-content .xc-workspace .toolbar #export {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content #workspace-status,
@@ -1524,7 +1524,7 @@
 .xc-admin .xc-content .status-strip > a {
   font-size: 13px;
   font-weight: bold;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content #workspace-status button,
@@ -1598,7 +1598,7 @@
 .xc-admin .xc-content .workspace-tabs button[aria-selected="true"],
 .xc-admin .xc-content .admin-tabs button[aria-selected="true"] {
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   box-shadow: var(--xc-shadow-sm);
 }
 
@@ -1680,7 +1680,7 @@
 
 .xc-admin .xc-content .workspace-rate-tools a,
 .xc-admin .xc-content .rate-tools a {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: bold;
   white-space: nowrap;
 }
@@ -1858,7 +1858,7 @@
   width: 46px;
   height: 46px;
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-size: 23px;
   border-radius: 8px;
 }
@@ -1869,7 +1869,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content .payment-card input[type="checkbox"],
@@ -2004,7 +2004,7 @@
 .xc-admin .xc-content .desk-link {
   background: transparent;
   border: 0;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-size: 13px;
   cursor: pointer;
   padding: 0;
@@ -2030,7 +2030,7 @@
 }
 
 .xc-admin .xc-content .admin-footer a {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
   text-decoration: none;
 }

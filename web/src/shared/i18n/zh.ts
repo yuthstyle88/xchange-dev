@@ -6,6 +6,7 @@ export const zh: Record<Key, string> = {
   'field.file.choose': '选择文件',
   'field.file.none': '未选择文件',
   'shell.langSwitch': '切换语言为 {language}',
+  'shell.themeSwitch': '切换浅色 / 深色模式',
   'shell.menu': '菜单',
   'shell.nav.counter': '柜台',
   'shell.nav.backdated': '补录',

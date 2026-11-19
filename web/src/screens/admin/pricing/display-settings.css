@@ -24,7 +24,7 @@
   padding: 1px 8px;
   border-radius: 999px;
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-size: 12px;
   font-weight: 600;
 }
@@ -109,7 +109,7 @@
 }
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings li button:hover {
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings select {
@@ -138,7 +138,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-screen .display-settings p[role='alert'] {
   margin: 0;
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-size: 13px;
   font-weight: 600;
 }

@@ -35,7 +35,7 @@
 .xc-admin .xc-content .btn-export {
   background: var(--xc-surface);
   border: 1px solid var(--xc-line);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-size: 12px;
   font-weight: 600;
   padding: 9px 16px;

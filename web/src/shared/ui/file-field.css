@@ -23,7 +23,7 @@
   border: 1px solid var(--xc-line);
   border-radius: var(--xc-radius-md);
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font: 600 14px/1.4 var(--xc-font-sans);
   cursor: pointer;
   flex: none;

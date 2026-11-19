@@ -156,7 +156,7 @@
   border-radius: 0.375rem;
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   cursor: pointer;
 }
 

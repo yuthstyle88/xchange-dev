@@ -165,7 +165,7 @@ describe('FileField', () => {
     expect(pick?.get('border')).toBe('1px solid var(--xc-line)');
     expect(pick?.get('border-radius')).toBe('var(--xc-radius-md)');
     expect(pick?.get('background')).toBe('var(--xc-surface)');
-    expect(pick?.get('color')).toBe('var(--xc-brand)');
+    expect(pick?.get('color')).toBe('var(--xc-brand-text)');
     expect(pick?.get('min-height')).toBe('40px');
     expect(pick?.get('cursor')).toBe('pointer');
     expect(pick?.get('flex')).toBe('none');
