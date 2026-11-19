@@ -220,7 +220,7 @@ describe('OL-6 B the sound buttons are the theme secondary (002)', () => {
     const s = '.queue-card .queue-sound-controls button';
     expect(decl(css, s, 'background')).toBe('var(--xc-surface)');
     expect(decl(css, s, 'border')).toBe('1px solid var(--xc-line)');
-    expect(decl(css, s, 'color')).toBe('var(--xc-brand)');
+    expect(decl(css, s, 'color')).toBe('var(--xc-brand-text)');
     expect(decl(css, s, 'border-radius')).toBe('var(--xc-radius-md)');
   });
 });

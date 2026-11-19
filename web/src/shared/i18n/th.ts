@@ -4,6 +4,7 @@ export const th = {
   'field.file.choose': 'เลือกไฟล์',
   'field.file.none': 'ยังไม่ได้เลือกไฟล์',
   'shell.langSwitch': 'เปลี่ยนภาษาเป็น {language}',
+  'shell.themeSwitch': 'สลับโหมดสว่าง / มืด',
   'shell.menu': 'เมนู',
   'shell.nav.counter': 'เคาน์เตอร์',
   'shell.nav.backdated': 'คีย์ย้อนหลัง',

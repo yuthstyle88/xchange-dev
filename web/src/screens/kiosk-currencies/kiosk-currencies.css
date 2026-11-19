@@ -27,7 +27,7 @@
 }
 
 .xc-kiosk .xc-shell-main .kc-back {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   text-decoration: none;
   font-weight: 600;
 }
@@ -351,7 +351,7 @@
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--soft);
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-kiosk .kiosk-screen-actions {
@@ -427,6 +427,6 @@
   border: 1px solid var(--xc-line);
   border-radius: var(--xc-radius-md);
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
 }

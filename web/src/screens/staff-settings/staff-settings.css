@@ -56,7 +56,7 @@
 .xc-staff-settings-link-title {
   font-size: var(--xc-text-base);
   font-weight: 600;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-staff-settings-link-desc {

@@ -171,7 +171,7 @@
 .xc-admin .xc-content .draft-status-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 /* admin-html.ts:1 .secondary */
@@ -220,7 +220,7 @@
 .xc-admin .xc-content .out-of-bound {
   display: inline-block;
   font-size: 12px;
-  color: var(--brand);
+  color: var(--xc-brand-text);
   background: var(--xc-brand-soft);
   padding: 3px 9px;
   border-radius: 5px;

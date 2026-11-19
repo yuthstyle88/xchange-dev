@@ -59,7 +59,7 @@ describe('alert-settings look', () => {
   it('AS-3 "เพิ่มเกณฑ์" is a secondary: white with brand text', () => {
     const d = decls(readHere('alert-settings.css'), '.add-floor-button');
     expect(d?.get('background')).toBe('var(--xc-surface)');
-    expect(d?.get('color')).toBe('var(--xc-brand)');
+    expect(d?.get('color')).toBe('var(--xc-brand-text)');
   });
 
   it('AS-4 no floors is an empty-state box', () => {

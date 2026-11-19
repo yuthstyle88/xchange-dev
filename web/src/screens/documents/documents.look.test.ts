@@ -63,7 +63,7 @@ describe('documents look', () => {
 
   it('DC-4 links are not underlined', async () => {
     const d = decls(await readHere('documents.css'), '.documents-screen a');
-    expect(d?.get('color')).toBe('var(--xc-brand)');
+    expect(d?.get('color')).toBe('var(--xc-brand-text)');
     expect(d?.get('text-decoration')).toBe('none');
     expect(d?.get('font-weight')).toBe('600');
   });

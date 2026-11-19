@@ -41,7 +41,7 @@
 
 .xc-admin .xc-content .transactions-screen .actions-group button.secondary {
   font-size: 12px;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   background-color: var(--xc-surface);
   border-color: var(--xc-line);
 }

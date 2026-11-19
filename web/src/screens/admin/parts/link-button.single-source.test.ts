@@ -82,7 +82,7 @@ describe('.link-button has one source: parts.css', () => {
     const d = decls(shared[0]!.body);
     expect(d.get('border')).toBe('1px solid transparent');
     expect(d.get('background')).toBe('transparent');
-    expect(d.get('color')).toBe('var(--brand)');
+    expect(d.get('color')).toBe('var(--xc-brand-text)');
     expect(d.get('font-weight')).toBe('600');
     expect(d.get('font-size')).toBe('13px');
     expect(d.get('padding')).toBe('0');

@@ -331,7 +331,7 @@
 .branches-shifts-bar-segment {
   padding: 4px 10px;
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   border-radius: 4px;
   font-size: 13px;
   font-weight: 500;

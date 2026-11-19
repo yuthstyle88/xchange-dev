@@ -14,7 +14,7 @@
 }
 
 .xc-receipt-preview-back {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 600;
   text-decoration: none;
 }

@@ -88,7 +88,7 @@ body:has(.xc-auth) {
 
 .xc-auth .xc-auth-header-top button[aria-pressed="true"] {
   background: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   box-shadow: var(--xc-shadow-sm);
 }
 

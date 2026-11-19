@@ -85,7 +85,7 @@
 
 .xc-admin .xc-content.xc-content .pricing-toolbar .pricing-reload:hover {
   border-color: var(--brand);
-  color: var(--brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-admin .xc-content.xc-content .pricing-error {
@@ -94,7 +94,7 @@
   border: 1px solid var(--xc-brand-200);
   border-radius: 12px;
   background: var(--soft);
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-size: 14px;
   font-weight: 600;
 }
@@ -148,7 +148,7 @@
   border: 1px solid var(--xc-brand-200);
   border-radius: 10px;
   background: var(--xc-surface);
-  color: var(--brand);
+  color: var(--xc-brand-text);
   font-size: 14px;
   font-weight: 700;
   box-shadow: var(--xc-shadow-sm);
