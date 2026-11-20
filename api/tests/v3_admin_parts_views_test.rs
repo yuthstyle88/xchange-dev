@@ -84,7 +84,7 @@ const JPEG: &[u8] = &[
 const PDF: &[u8] = b"%PDF-1.7 a slip\n";
 
 /// `TransactionRow`'s fields (ticket §7, design §12.2).
-const ROW_FIELDS: [&str; 27] = [
+const ROW_FIELDS: [&str; 29] = [
     "id",
     "date",
     "created",
@@ -113,9 +113,16 @@ const ROW_FIELDS: [&str; 27] = [
     "slipUrl",
     // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
     "backdated",
+    // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): who served by name, and when a
+    // POSTED reversal undid the exchange.
+    "staffName",
+    "reversedAt",
 ];
 /// The fields v2 shows as `—` or not at all when the exchange has none: `null` on the wire.
-const ROW_NULLABLE: [&str; 9] = [
+const ROW_NULLABLE: [&str; 11] = [
+    // Admin dialog fix (2026-11-20): both are null when unknown / not reversed.
+    "staffName",
+    "reversedAt",
     "notes",
     "cancelReason",
     "shiftId",

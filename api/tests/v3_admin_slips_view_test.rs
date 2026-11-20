@@ -69,7 +69,7 @@ const JPEG: &[u8] = &[
 const PDF: &[u8] = b"%PDF-1.7 a slip\n";
 
 /// `TransactionRow`'s fields (design §12.2), the shape every row of this view has.
-const ROW_FIELDS: [&str; 27] = [
+const ROW_FIELDS: [&str; 29] = [
     "id",
     "date",
     "created",
@@ -98,6 +98,10 @@ const ROW_FIELDS: [&str; 27] = [
     "slipUrl",
     // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
     "backdated",
+    // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): who served by name, and when a
+    // POSTED reversal undid the exchange.
+    "staffName",
+    "reversedAt",
 ];
 
 /// Thai `ำ` (SARA AM, U+0E33) composed, and the two code points NFKC turns it into.

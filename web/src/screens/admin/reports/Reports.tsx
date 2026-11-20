@@ -26,7 +26,7 @@ import { DataTable } from '../parts/DataTable';
 import { closeDialog, openDialog } from '../parts/Dialog';
 import { refreshTick } from '../parts/refresh';
 import { toast } from '../parts/toast';
-import { methodName, statusName, typeName } from '../parts/transaction';
+import { methodName, rowStatusName, typeName } from '../parts/transaction';
 import { TransactionDetail } from '../parts/TransactionDetail';
 import { formatBangkokTime } from '../parts/TransactionTable';
 import { LIVE_CSV_HEADERS, liveCsvRow } from '../parts/live-csv';
@@ -770,7 +770,7 @@ export function Reports(props: AdminMenuProps): JSX.Element {
                                   {row.date} {formatBangkokTime(row.created)}
                                 </div>
                               </td>
-                              <td>{statusName(row.status)}</td>
+                              <td>{rowStatusName(row)}</td>
                               <td>{employeeMethodName(row.method)}</td>
                               <td>{typeName(row.type)}</td>
                               <td class="num">

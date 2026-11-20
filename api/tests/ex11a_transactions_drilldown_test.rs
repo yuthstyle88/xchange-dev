@@ -923,6 +923,9 @@ async fn no_new_key_lists_every_exchange_with_the_same_row_fields() {
         "slipUrl",
         // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
         "backdated",
+        // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): name of who served, reversal time.
+        "staffName",
+        "reversedAt",
     ]
     .into_iter()
     .collect();

@@ -1097,7 +1097,10 @@ async fn compat_saved_completed_row_json_matches_snapshot() {
         "paymentRef": null,
         "slipUrl": h.ids.compat_slip_url,
         // Backdated keying (backdated-keying.md §9, BK-12 #6148): a desk sale is not backdated.
-        "backdated": false
+        "backdated": false,
+        // Admin dialog fix (2026-11-20): `EMP-001` is no `users` row, so no name; nothing reversed it.
+        "staffName": null,
+        "reversedAt": null
     });
 
     // (a) in admin_transactions

@@ -40,3 +40,15 @@ export function statusName(status: string): string {
       return t('statusPending');
   }
 }
+
+/** A row's status as shown: a COMPLETED exchange undone by a POSTED reversal stays `COMPLETED`
+ *  (reversal design V-2), so the server sends `reversedAt` and the screen adds "Reversed". */
+export function rowStatusName(row: { status: string; reversedAt: string | null }): string {
+  const base = statusName(row.status);
+  return row.reversedAt ? `${base} · ${t('statusReversed')}` : base;
+}
+
+/** Who served, by name; the user id only when the server knows no name for it. */
+export function staffLabel(row: { staff: string; staffName: string | null }): string {
+  return row.staffName ?? row.staff;
+}

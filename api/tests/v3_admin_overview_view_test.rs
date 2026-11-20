@@ -87,7 +87,7 @@ const JPEG: &[u8] = &[
 ];
 
 /// `TransactionRow`'s fields (V2-parts #476, design §12.2).
-const ROW_FIELDS: [&str; 27] = [
+const ROW_FIELDS: [&str; 29] = [
     "id",
     "date",
     "created",
@@ -116,6 +116,10 @@ const ROW_FIELDS: [&str; 27] = [
     "slipUrl",
     // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
     "backdated",
+    // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): who served by name, and when a
+    // POSTED reversal undid the exchange.
+    "staffName",
+    "reversedAt",
 ];
 
 const DATA_FIELDS: [&str; 4] = ["period", "totals", "latest", "status"];
