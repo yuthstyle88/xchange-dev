@@ -223,15 +223,24 @@ q "UPDATE branches SET booking_enabled = true, timezone = 'Asia/Bangkok', openin
    WHERE organization_id = '$ORG_ID' AND id = '$BRANCH';" >/dev/null
 
 say "2b. branch $BRANCH2: booking off, Asia/Bangkok, 00:00–23:59 daily" >&2
-q "INSERT INTO branches (id, organization_id, name, created_at, created_by, request_id, code, timezone, opening_hours, booking_enabled)
-   VALUES ('$BRANCH2', '$ORG_ID', 'Test branch 2', now(), '$OWNER_ID', 'seed_test_branch_$BRANCH2', '$BRANCH2', 'Asia/Bangkok', '$HOURS'::jsonb, false)
-   ON CONFLICT (id) DO UPDATE SET
-     organization_id = EXCLUDED.organization_id,
-     name = EXCLUDED.name,
-     code = EXCLUDED.code,
-     timezone = EXCLUDED.timezone,
-     opening_hours = EXCLUDED.opening_hours,
-     booking_enabled = EXCLUDED.booking_enabled;" >/dev/null
+# A TEST2 made through the admin UI has a generated id, not its code (seen on do-sgp1 2026-11-20:
+# id B9082fb6…, code TEST2), so look it up by code first and use that id from here on.
+EXISTING2="$(q "SELECT id FROM branches WHERE organization_id = '$ORG_ID' AND code = '$BRANCH2';")"
+if [ -n "$EXISTING2" ]; then
+  BRANCH2="$EXISTING2"
+  q "UPDATE branches SET timezone = 'Asia/Bangkok', opening_hours = '$HOURS'::jsonb, booking_enabled = false
+     WHERE organization_id = '$ORG_ID' AND id = '$BRANCH2';" >/dev/null
+else
+  q "INSERT INTO branches (id, organization_id, name, created_at, created_by, request_id, code, timezone, opening_hours, booking_enabled)
+     VALUES ('$BRANCH2', '$ORG_ID', 'Test branch 2', now(), '$OWNER_ID', 'seed_test_branch_$BRANCH2', '$BRANCH2', 'Asia/Bangkok', '$HOURS'::jsonb, false)
+     ON CONFLICT (id) DO UPDATE SET
+       organization_id = EXCLUDED.organization_id,
+       name = EXCLUDED.name,
+       code = EXCLUDED.code,
+       timezone = EXCLUDED.timezone,
+       opening_hours = EXCLUDED.opening_hours,
+       booking_enabled = EXCLUDED.booking_enabled;" >/dev/null
+fi
 
 say "3. slot rule for $BRANCH (30 min, capacity 4, 14 days)" >&2
 q "INSERT INTO booking_slot_rules (organization_id, branch_id, slot_minutes, capacity, horizon_days, updated_by)
