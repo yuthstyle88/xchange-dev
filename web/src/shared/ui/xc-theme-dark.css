@@ -97,6 +97,11 @@
 
     /* Two brand roles: a wine fill under white text (6.5:1), and a pink for brand text (5.9:1 on the page). */
     --xc-brand-text: var(--xc-dk-brand-text);
+    --xc-inverse: var(--xc-dk-brand-50);
+    --xc-inverse-accent: var(--xc-dk-brand-text);
+    --xc-inverse-muted: var(--xc-dk-gray-800);
+    --xc-inverse-faint: var(--xc-dk-gray-600);
+    --xc-inverse-line: var(--xc-dk-brand-200);
     --xc-on-brand: var(--xc-dk-on-brand);
     --xc-brand-ink: var(--xc-dk-brand-ink);
     --xc-focus: var(--xc-dk-focus);

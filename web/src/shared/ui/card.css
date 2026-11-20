@@ -32,7 +32,7 @@
 /* v2 admin-html.ts:1 .dark-card, admin-workspace.css:24 .dark-card */
 .xc-admin .xc-content .card.dark-card,
 .xc-admin .xc-content .dark-card {
-  background: var(--xc-gray-900);
+  background: var(--xc-inverse);
   color: var(--xc-on-brand);
   padding: 23px 25px;
   border: 0;
@@ -40,7 +40,7 @@
 
 /* v2 admin-html.ts:1 .dark-card .eyebrow */
 .xc-admin .xc-content .dark-card .eyebrow {
-  color: var(--xc-brand-300);
+  color: var(--xc-inverse-accent);
 }
 
 /* v2 admin-html.ts:1 .dark-card h2 */

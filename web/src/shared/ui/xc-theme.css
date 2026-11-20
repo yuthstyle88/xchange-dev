@@ -61,6 +61,11 @@
   --xc-canvas: var(--xc-gray-75);
   --xc-brand: var(--xc-brand-700);
   --xc-brand-text: var(--xc-brand); /* brand-coloured text; splits from the fill in dark mode */
+  --xc-inverse: var(--xc-gray-900); /* a surface that stays dark in both modes, under --xc-on-brand text */
+  --xc-inverse-accent: var(--xc-brand-300); /* eyebrow/accent text on --xc-inverse */
+  --xc-inverse-muted: var(--xc-gray-200); /* secondary text on --xc-inverse */
+  --xc-inverse-faint: var(--xc-gray-400); /* notes on --xc-inverse */
+  --xc-inverse-line: var(--xc-gray-800); /* rules on --xc-inverse */
   --xc-brand-strong: var(--xc-brand-900);
   --xc-brand-soft: var(--xc-brand-50);
   --xc-brand-ink: var(--xc-gray-0);
