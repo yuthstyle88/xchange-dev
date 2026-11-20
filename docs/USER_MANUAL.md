@@ -5,7 +5,7 @@ How to use XCHANGE once it is installed (README section 3), step by step, by rol
 - Every on-screen label is quoted in Thai, exactly as the screen shows it, in backticks, so you can match the screen. Every screen also has an `EN` switch; this manual uses the Thai labels because Thai is the default.
 - Every screenshot comes from a local run of commit `693f20d` (README section 3) with made-up data only: the people are "Local Owner", "Manager Demo", "Teller Demo", "Finance Demo", "Rates Demo" and the customer "Pat Sample"; the passport is a blank specimen image; the rates are invented.
 - A task marked **(not run locally)** is described from the code on `main` only; it was not exercised for this manual. The reason is given at the task.
-- The in-app staff guide (`/staff-guide`, title `คู่มือพนักงาน XC Desk v2`) is an older, shorter guide. Where it and this manual differ, section 11 says how.
+- The in-app staff guide (`/staff-guide`, title `คู่มือพนักงาน XC Desk v2`) is an older, shorter guide. Where it and this manual differ, section 15 says how.
 
 ## Contents
 
@@ -84,7 +84,7 @@ Errors: `รหัสผ่านใหม่และยืนยันรห�
 ### 2.3 Language and light/dark
 
 - **Language:** the `ไทย` / `EN` switch is at the top of the sign-in card and in the header of every staff page. The customer app has `TH` / `EN` / `中文`. The browser remembers the choice.
-- **Light/dark:** the round ☾ / ☀ button (`สลับโหมดสว่าง / มืด`) is on the sign-in card and in the staff header. With no choice saved, the page follows the computer's setting. Customer pages, the rate board and printouts always stay light.
+- **Light/dark:** the round ☾ / ☀ button (`สลับโหมดสว่าง / มืด`) is on the sign-in card and in the staff header. With no choice saved, the page follows the computer's setting. The customer app and the kiosk have the same button (section 13). The rate board, the queue display and printouts always stay light.
 
 ![Admin in dark mode](manual/39-admin-dark.png)
 
@@ -455,7 +455,7 @@ Admin › `งานหน้าร้าน` › `รายการแลก�
 ### 11.1 Pair a counter Mac (drawer and printer agent) — owner
 
 1. Open `/_xc/device-agents` (`จัดการเครื่องคุมลิ้นชัก (Device Agents)`) signed in as the owner.
-2. Type the branch code (`รหัสสาขา (เช่น MAIN, B9)`) and a machine name (`ชื่อเครื่อง (เช่น Mac เคาน์เตอร์ 1)`), and press `สร้างรหัสเชื่อมต่อ`.
+2. Choose the branch from the list (it reads `กำลังโหลดรายชื่อสาขา…` while it loads; one branch is chosen for you when there is only one), type a machine name (`ชื่อเครื่อง (เช่น Mac เคาน์เตอร์ 1)`), and press `สร้างรหัสเชื่อมต่อ`.
 3. A box `รหัสสำหรับเชื่อมต่อเครื่อง (Pairing Code)` shows the code and an install command, **once**, valid for 10 minutes (`รหัสนี้จะแสดงเพียงครั้งเดียว และหมดอายุภายใน 10 นาที`).
 4. On the shop Mac, run the command shown (`xc-device-agent install --server … --code … --cups-queue <printer queue>`; use `--tcp <host:port>` instead of `--cups-queue` for a network printer). Then press `รับทราบและปิด`.
 5. The row's `สถานะ` becomes `ONLINE` once the agent checks in (`PENDING` until then; `OFFLINE` after 60 seconds of silence). `ขอรหัสใหม่` issues a new code; `ยกเลิก` revokes the machine.
@@ -494,7 +494,7 @@ Neither needs a sign-in, and neither has a language or theme switch.
 
 ## 13. The customer app (`/app`)
 
-For customers, on a phone. Languages `TH` / `EN` / `中文`; always light. The bottom menu is `หน้าแรก`, `สาขา`, `การจอง`, `ประวัติ`, `ผู้ช่วย`.
+For customers, on a phone. Languages `TH` / `EN` / `中文`; light or dark with the ☾ / ☀ button beside the language switch (it follows the phone's setting until one is chosen). The bottom menu is `หน้าแรก`, `สาขา`, `การจอง`, `ประวัติ`, `ผู้ช่วย`.
 
 **Sign up** (`/app/sign-up`, `สมัครสมาชิก`): fill `ชื่อที่แสดง`, `เบอร์โทรศัพท์หรืออีเมล` (a new account needs a phone number) and `รหัสผ่าน`; optionally tick `รับข่าวสารและโปรโมชันทาง SMS`; press `สมัครสมาชิก`. The button works only once the terms have loaded; if the owner has not published `TERMS` in that language, the page says `ยังไม่มีข้อกำหนดการใช้บริการในภาษานี้ กรุณาเลือกภาษาอื่น` (4.7). An existing account gets `บัญชีนี้สมัครสมาชิกแล้ว กรุณาเข้าสู่ระบบ`.
 
@@ -519,7 +519,7 @@ What a customer can do:
 | `/app/verification` | Upload an identity document for review | yes | no |
 | `/app/assistant` `ผู้ช่วย` | Rule-based help on rates, branches and queues (not a chatbot) | no | no |
 
-The app has no dark mode.
+The app has a dark mode (section 2.3).
 
 ---
 
