@@ -179,13 +179,15 @@
         <h1>จัดการเครื่องคุมลิ้นชัก (Device Agents)</h1>
         <p class="text-muted" style="font-size: 0.875rem; margin-top: 4px;">เพิ่ม เชื่อมต่อใหม่ และยกเลิกเครื่องคุมลิ้นชักเก็บเงินแต่ละสาขา</p>
       </div>
-      <button class="btn btn-secondary" onclick="loadAgents()">รีเฟรชข้อมูล</button>
+      <button class="btn btn-secondary" onclick="loadBranches(); loadAgents()">รีเฟรชข้อมูล</button>
     </header>
 
     <div class="card">
       <div class="card-title">เพิ่มเครื่องใหม่ (Add Agent)</div>
       <form class="form-inline" onsubmit="handleAddAgent(event)">
-        <input type="text" id="addBranchId" class="form-control" placeholder="รหัสสาขา (เช่น MAIN, B9)" required />
+        <select id="addBranchId" class="form-control" required aria-label="สาขา">
+          <option value="" disabled selected>กำลังโหลดรายชื่อสาขา…</option>
+        </select>
         <input type="text" id="addName" class="form-control" placeholder="ชื่อเครื่อง (เช่น Mac เคาน์เตอร์ 1)" required />
         <button type="submit" class="btn btn-primary">สร้างรหัสเชื่อมต่อ</button>
       </form>
@@ -378,7 +380,39 @@
         .replace(/'/g, '&#039;');
     }
 
-    window.addEventListener('DOMContentLoaded', loadAgents);
+    // The branches the signed-in user may act for: the same list the admin's branch switcher shows
+    // (GET /api/v3/views/me → branches[{id, code, name}]). The value sent to /api/device-setup is the branch id,
+    // which is not always the code (a branch made in the admin gets a generated id).
+    async function loadBranches() {
+      const select = document.getElementById('addBranchId');
+      try {
+        const res = await fetch('/api/v3/views/me', { headers: { 'X-Xchange-Request': '1' } });
+        if (!res.ok) throw new Error(String(res.status));
+        const json = await res.json();
+        const me = json && json.data ? json.data : json;
+        const branches = (me && Array.isArray(me.branches)) ? me.branches : [];
+        select.innerHTML = '';
+        if (branches.length === 0) {
+          select.innerHTML = '<option value="" disabled selected>ไม่มีสาขาที่บัญชีนี้จัดการได้</option>';
+          return;
+        }
+        const prompt = document.createElement('option');
+        prompt.value = ''; prompt.disabled = true; prompt.selected = true;
+        prompt.textContent = 'เลือกสาขา';
+        select.appendChild(prompt);
+        for (const b of branches) {
+          const opt = document.createElement('option');
+          opt.value = b.id;
+          opt.textContent = b.code && b.code !== b.name ? `${b.name} (${b.code})` : (b.name || b.id);
+          select.appendChild(opt);
+        }
+        if (branches.length === 1) { select.value = branches[0].id; }
+      } catch (e) {
+        select.innerHTML = '<option value="" disabled selected>โหลดรายชื่อสาขาไม่ได้ — กดรีเฟรชข้อมูล</option>';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => { loadBranches(); loadAgents(); });
   </script>
 </body>
 </html>

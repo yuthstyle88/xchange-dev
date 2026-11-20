@@ -112,7 +112,7 @@ const INVALID_REQUEST: &str = "คำขอไม่ถูกต้อง";
 const PERIOD_ORDER: &str = "วันที่เริ่มต้นต้องไม่เกินวันที่สิ้นสุด";
 
 /// `TransactionRow`'s fields (design §12.2), and nothing else.
-const ROW_FIELDS: [&str; 27] = [
+const ROW_FIELDS: [&str; 29] = [
     "id",
     "date",
     "created",
@@ -141,6 +141,10 @@ const ROW_FIELDS: [&str; 27] = [
     "slipUrl",
     // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
     "backdated",
+    // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): who served by name, and when a
+    // POSTED reversal undid the exchange.
+    "staffName",
+    "reversedAt",
 ];
 
 const JPEG: &[u8] = &[
@@ -883,6 +887,9 @@ async fn a_row_is_the_saved_exchange_as_recorded() {
         "slipUrl": null,
         // Backdated keying (backdated-keying.md §9, BK-12 #6148): a desk sale is not backdated.
         "backdated": false,
+        // Admin dialog fix (2026-11-20): `EMP-464` is no `users` row, so no name; nothing reversed it.
+        "staffName": null,
+        "reversedAt": null,
     });
     assert_eq!(row, want, "the cash purchase");
 

@@ -34,13 +34,17 @@ pub const ROW_COLUMNS: &str = "\
     t.notes, \
     t.shift_id, \
     p.slip_file_key AS slip_key, \
-    t.backdated";
+    t.backdated, \
+    NULLIF(btrim(su.name), '') AS staff_name, \
+    (SELECT max(rv.posted_at) FROM reversals rv \
+      WHERE rv.original_transaction_id = t.id AND rv.status = 'POSTED') AS reversed_at";
 
 /// From clause with joins for transaction list views (§7, §8).
 pub const ROW_FROM: &str = "\
     transactions t \
     JOIN transaction_lines l ON l.transaction_id = t.id AND l.line_no = 1 \
-    JOIN transaction_payments p ON p.transaction_id = t.id AND p.payment_no = 1";
+    JOIN transaction_payments p ON p.transaction_id = t.id AND p.payment_no = 1 \
+    LEFT JOIN users su ON su.id::text = t.staff_id AND su.organization_id = t.organization_id";
 
 /// An exchange record as stored in the database / domain.
 #[derive(Debug, Clone)]
@@ -96,6 +100,11 @@ pub struct TxSqlRow {
     pub shift_id: Option<String>,
     pub slip_key: Option<String>,
     pub backdated: bool,
+    /// The staff member's display name; `None` when the user row is gone or has no name.
+    pub staff_name: Option<String>,
+    /// When a POSTED reversal undid this transaction (reversal design V-2: the original row stays
+    /// `COMPLETED`, "reversed" is read from its reversal).
+    pub reversed_at: Option<DateTime<Utc>>,
 }
 
 pub type TransactionSqlRow = TxSqlRow;
@@ -224,6 +233,10 @@ pub struct TransactionRow {
     pub payment_ref: Option<String>,
     pub slip_url: Option<String>,
     pub backdated: bool,
+    // Display name of `staff` (a user id). `None` when unknown so screens fall back to `staff`.
+    pub staff_name: Option<String>,
+    // RFC 3339 time of the POSTED reversal. `None` when the transaction was not reversed.
+    pub reversed_at: Option<String>,
 }
 
 impl TransactionRow {
@@ -337,6 +350,8 @@ impl TransactionRow {
             payment_ref,
             slip_url,
             backdated: false,
+            staff_name: None,
+            reversed_at: None,
         })
     }
 
@@ -345,11 +360,17 @@ impl TransactionRow {
         let status = r.status.clone();
         let cancel_reason = r.cancel_reason.clone();
         let backdated = r.backdated;
+        let staff_name = r.staff_name.clone();
+        let reversed_at = r
+            .reversed_at
+            .map(|at| at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
         let record = TransactionRecord::try_from(r)?;
         let mut row = Self::try_from_record(&record)?;
         row.status = status;
         row.cancel_reason = cancel_reason;
         row.backdated = backdated;
+        row.staff_name = staff_name;
+        row.reversed_at = reversed_at;
         Ok(row)
     }
 }
@@ -385,6 +406,8 @@ mod tests {
             shift_id: None,
             slip_key: None,
             backdated: false,
+            staff_name: None,
+            reversed_at: None,
         }
     }
 

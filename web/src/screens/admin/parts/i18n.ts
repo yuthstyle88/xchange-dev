@@ -17,6 +17,7 @@ export const th = {
   statusCompleted: 'สำเร็จ',
   statusCancelled: 'ยกเลิก',
   statusPending: 'รอบันทึกเอกสาร',
+  statusReversed: 'กลับรายการแล้ว',
 
   // TransactionTable, admin-html:63 with LIVE header of :100
   headerTxTime: 'รายการ / เวลา',
@@ -108,6 +109,7 @@ export const en: Record<Key, string> = {
   statusCompleted: 'Completed',
   statusCancelled: 'Cancelled',
   statusPending: 'Pending',
+  statusReversed: 'Reversed',
 
   headerTxTime: 'Transaction / Time',
   headerCustomer: 'Customer',

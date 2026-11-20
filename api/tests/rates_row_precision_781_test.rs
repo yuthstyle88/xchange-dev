@@ -80,7 +80,7 @@ const JPEG: &[u8] = &[
 ];
 
 /// The keys of a row as merged at `27db80f5`, plus `unitSize`.
-const ROW_KEYS: [&str; 27] = [
+const ROW_KEYS: [&str; 29] = [
     "id",
     "date",
     "created",
@@ -109,6 +109,10 @@ const ROW_KEYS: [&str; 27] = [
     "slipUrl",
     // Backdated keying (backdated-keying.md §9, BK-12 #6148): every report row carries `backdated`.
     "backdated",
+    // Admin dialog fix (2026-11-20, docs/design/blueprint/reversal.md V-2): who served by name, and when a
+    // POSTED reversal undid the exchange.
+    "staffName",
+    "reversedAt",
 ];
 
 // ── helpers ──────────────────────────────────────────────────────────────────

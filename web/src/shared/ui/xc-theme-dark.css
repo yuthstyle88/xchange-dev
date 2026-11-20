@@ -1,4 +1,4 @@
-/* xc-theme-dark.css — light / dark mode for staff pages (design §2.6).
+/* xc-theme-dark.css — light / dark mode for staff and customer pages (design §2.6).
    Kept apart from xc-theme.css, whose rules stay on plain .xc-theme (A1-a, issue 6517). */
 
 /* Light / dark switch (design §2.6). */
@@ -42,11 +42,12 @@
   box-shadow: 0 0 0 3px var(--xc-focus-ring);
 }
 
-/* Dark mode for staff pages, after the shop manual's screens (design §2.6).
+/* Dark mode for staff and customer pages, after the shop manual's screens (design §2.6).
    Only the value scale changes: the light ramps are mirrored, so every rule that names a token follows.
-   Customer pages and print keep the light values. */
+   Customer pages follow since the owner's 2026-11-20 order; their own aliases are in
+   screens/customer/_shell/xc-customer-tokens.css. Print keeps the light values. */
 @media screen {
-  :root[data-theme="dark"] .xc-theme:not(.xc-customer):not(.xc-customer *) {
+  :root[data-theme="dark"] .xc-theme {
     color-scheme: dark;
 
     --xc-gray-1000: var(--xc-dk-gray-1000);
@@ -112,8 +113,8 @@
     --xc-shadow-brand: 0 8px 22px var(--xc-dk-shadow-brand);
   }
 
-  /* The page behind a staff surface follows the mode too. */
-  :root[data-theme="dark"] body:has(.xc-theme:not(.xc-customer):not(.xc-customer *)) {
+  /* The page behind a staff or customer surface follows the mode too. */
+  :root[data-theme="dark"] body:has(.xc-theme) {
     background: Canvas;
     color-scheme: dark;
   }

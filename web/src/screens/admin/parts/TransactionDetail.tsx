@@ -15,7 +15,7 @@ import { wordedError } from '../../../shared/i18n/worded-error';
 import { formatRate } from '../../../shared/ui/rate';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { en, th } from './i18n';
-import { methodName, statusName, typeName } from './transaction';
+import { methodName, rowStatusName, staffLabel, typeName } from './transaction';
 import { formatBangkokTime } from './TransactionTable';
 import './parts.css';
 
@@ -100,7 +100,7 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
 
         <div>
           <dt>{t('headerStatus')}</dt>
-          <dd>{statusName(props.row.status)}</dd>
+          <dd>{rowStatusName(props.row)}</dd>
         </div>
 
         <Show when={props.row.backdated}>
@@ -173,7 +173,7 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
 
         <div>
           <dt>{t('detailStaff')}</dt>
-          <dd>{props.row.staff}</dd>
+          <dd>{staffLabel(props.row)}</dd>
         </div>
 
         <div>
@@ -211,7 +211,7 @@ export function TransactionDetail(props: TransactionDetailProps): JSX.Element {
 
       {/* 3. Actions */}
       <div class="dialog-actions">
-        <Show when={props.row.status === 'COMPLETED'}>
+        <Show when={props.row.status === 'COMPLETED' && !props.row.reversedAt}>
           <button type="button" disabled class="danger">
             {t('realTransactionVerifyRefund')}
           </button>

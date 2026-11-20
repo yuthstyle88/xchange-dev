@@ -102,7 +102,7 @@
 
 .xc-status-checked_in {
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-status-completed {
@@ -271,7 +271,7 @@
 .xc-btn-danger,
 .xc-confirm-cancel-btn {
   background-color: var(--xc-danger);
-  color: var(--xc-on-brand);
+  color: var(--xc-on-danger);
 }
 
 .xc-btn-danger:hover:not(:disabled) {
@@ -294,7 +294,7 @@
 .xc-booking-reschedule-btn {
   background: transparent;
   border-color: var(--xc-brand-line);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-btn-outline-primary:hover:not(:disabled),
@@ -305,7 +305,7 @@
 .xc-retry-btn {
   min-height: 44px;
   background-color: var(--xc-surface);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   padding: 0.5rem 1.25rem;
   border-radius: var(--xc-radius-lg);
   border: 2px solid var(--xc-border);

@@ -109,7 +109,7 @@ The file is `docs/design/one-look-mock/index.html`. It uses only the kiosk token
 If OL-1 cannot ship a woff2 through the web build, the font is the one place the product may differ from the mock-up, and the PR says so.
 **This mock-up is the visual reference for every OL ticket.** Where the mock-up and a table cell above disagree, the mock-up wins, and the ticket says so.
 
-### 2.6 Light and dark mode (staff pages)
+### 2.6 Light and dark mode (staff, customer and kiosk pages)
 
 **Decision.** Staff pages have two modes, light and dark, switched by one button. Light is §2.3 unchanged. Dark follows the
 screens of the shop's own XCHANGE manual (Nov 2026 edition, the system at rate.xc888.cc): a near-black page, dark grey cards,
@@ -134,8 +134,9 @@ to dark, so the §2.3 look approved on 2026-11-06 stays as the light mode, and n
   *text* now reads `--xc-brand-text`, which equals `--xc-brand` in light mode. In dark mode, `--xc-brand` is the wine fill
   `#a8324c` (white text on it is 6.5:1) and `--xc-brand-text` is the pink `#e2637d` (5.9:1 on the page). The staff CSS
   `color: var(--xc-brand)` declarations moved to `--xc-brand-text`. `xc-theme-dark.test.ts` pins the contrast pairs.
-- **Not in dark mode:** customer pages (their own look, §2.3 customer rows), print (`@media screen` only), the staff guide
-  (`print.test.tsx` pins its v2 rules, so its headings keep `--xc-brand`), and `api/static/kiosk/**`.
+- **Not in dark mode:** print (`@media screen` only), the staff guide (`print.test.tsx` pins its v2 rules, so its headings
+  keep `--xc-brand`), and the TV boards (`/rates`, `/queue-display`), which load no theme mode. Customer pages and the
+  kiosk were excluded at first and are in dark mode since 2026-11-20 (below).
 
 **Tests restated for the text role** (each expected `color: var(--xc-brand)` or `var(--brand)`, and now expects
 `var(--xc-brand-text)`; the light value is the same): `FileField.test.tsx`, `QueueCard.place.test.tsx`,
@@ -143,6 +144,39 @@ to dark, so the §2.3 look approved on 2026-11-06 stays as the light mode, and n
 staff-cards, alert-settings, link-button, rate-alert-settings, users, desk-bookings, DeskShiftGate and staff-floor.
 
 The mock-up of both modes is `docs/design/dark-look-mock/index.html`.
+
+**Second decision: customer pages and the kiosk follow (2026-11-20).**
+
+**Owner's words** (2026-11-20, in a Claude session, with a screenshot of the kiosk): *"ธีม ไม่สมบูรณ์"*, then *"ไม่มี dark mode"*.
+
+**Reason.** The first decision kept customer pages and the kiosk light on the assumption that customers only see the light
+look. The owner's screenshot showed the kiosk next to dark staff screens with no way to switch it, and read that as an
+unfinished theme. One saved choice now covers every page a shop device opens, so a counter set to dark stays dark when it
+shows the kiosk or the customer app.
+
+**How it is built** (checked against the code on branch `feat/customer-kiosk-dark-mode`, stacked on the `--xc-inverse` fix):
+- **Customer app.** `xc-theme-dark.css` mirrors the ramps on every `.xc-theme` (the `:not(.xc-customer)` exclusion is gone).
+  `screens/customer/_shell/xc-customer-tokens.css` re-points the customer aliases that held a literal or want another step,
+  inside `@media screen` on `:root[data-theme="dark"] .xc-customer`: a near-black page (`--xc-gray-75`) under dark grey
+  cards, the header paper, the card shadow and the info tints, all from the staff `--xc-dk-*` values. Customer brand
+  text moved from `color: var(--xc-brand)` / `var(--xc-primary)` to `--xc-brand-text`, as staff text did. The danger
+  fill (a light coral in dark) carries `--xc-on-danger` text, which is dark in dark mode. The switch is the staff
+  `ThemeSwitch` on the same `theme-mode.ts` store, in the customer header just before the language pill (`AppShell`
+  prop `themeSwitch`, set by `CustomerShell`).
+- **Kiosk.** `api/static/kiosk/xc-tokens.css` carries the same `--xc-dk-*` values and mirrors the ramps on
+  `:root[data-theme="dark"]` (screen only); kiosk brand text reads `--xc-brand-text`. A script at the top of `kiosk.html`'s
+  head sets `data-theme` before the first stylesheet: the saved choice (`localStorage` `xc-theme-mode`, the web app's key)
+  wins, else `prefers-color-scheme`. A 48px round button (`#theme-switch`) at the header's end flips it. The literal
+  colours of the shop's `kiosk.css` became tokens with the same light value (`--xc-surface`, `--pass-*`), and
+  `kiosk-xchange.css` ends with the dark re-pointing of those and of the attract loop. No new served file, so `pages.rs`
+  is unchanged.
+- **Light-mode fixes found on the way:** the kiosk's disabled "Review total" was grey text on the wine fill at every width
+  above 600px (1.35:1); the `#review:disabled` rule now applies at every width. Muted text on the customer page and the
+  kiosk subtitle read 4.34:1 (`#7a7178` on `--xc-gray-50`); both now use `--xc-gray-600` (5.4:1).
+- `web/src/kiosk/kiosk-dark.look.test.ts` and `web/src/screens/customer/_shell/customer-dark.look.test.ts` pin the
+  contrast pairs in both modes and the traps above; screenshots are `docs/design/dark-look-mock/kiosk-{light,dark}.png`
+  and `app-{light,dark}.png`.
+
 **Layout is not part of this decision.** The manual's keypad-and-flag-grid buy screen differs from the 5-step desk (§1), and
 a change there is a separate proposal for the owner.
 

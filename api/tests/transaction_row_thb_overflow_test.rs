@@ -64,6 +64,8 @@ fn row(side: &str, amount: &str, rate: &str, reference_rate: Option<&str>, unit:
         shift_id: None,
         slip_key: None,
         backdated: false,
+        staff_name: None,
+        reversed_at: None,
     }
 }
 

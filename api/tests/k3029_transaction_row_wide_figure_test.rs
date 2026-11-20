@@ -41,6 +41,8 @@ fn row(amount: &str, rate: &str, unit_size: &str) -> TxSqlRow {
         shift_id: None,
         slip_key: None,
         backdated: false,
+        staff_name: None,
+        reversed_at: None,
     }
 }
 

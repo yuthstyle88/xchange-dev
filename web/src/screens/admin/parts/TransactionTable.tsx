@@ -7,7 +7,7 @@ import { formatRate } from '../../../shared/ui/rate';
 import { formatMoney } from '../../../shared/ui/MoneyText';
 import { DataTable, type DataTableHeader } from './DataTable';
 import { en, th } from './i18n';
-import { methodName, statusName, typeName } from './transaction';
+import { methodName, rowStatusName, typeName } from './transaction';
 import './parts.css';
 
 export interface TransactionTableProps {
@@ -87,10 +87,10 @@ export function TransactionTable(props: TransactionTableProps): JSX.Element {
               <span
                 class="pill"
                 classList={{
-                  cancel: row.status === 'CANCELLED',
+                  cancel: row.status === 'CANCELLED' || !!row.reversedAt,
                 }}
               >
-                {statusName(row.status)}
+                {rowStatusName(row)}
               </span>
               <Show when={row.backdated}>
                 <span class="pill" data-backdated="true">

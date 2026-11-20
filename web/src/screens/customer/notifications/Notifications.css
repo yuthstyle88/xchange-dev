@@ -181,7 +181,7 @@
 
 .xc-notifications-badge-unread {
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-notifications-badge-read {
@@ -218,7 +218,7 @@
   font-size: 0.75rem;
   font-weight: 500;
   text-decoration: none;
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   background: var(--xc-surface);
   border: 2px solid var(--xc-border);
   border-radius: var(--xc-radius-lg);
@@ -238,7 +238,7 @@
   border: 2px solid var(--xc-border);
   border-radius: var(--xc-radius-lg);
   background: var(--xc-surface);
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   cursor: pointer;
   transition: all 0.15s ease-in-out;
   min-height: 44px;

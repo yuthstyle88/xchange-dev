@@ -210,7 +210,7 @@
 }
 
 .xc-alert-side {
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   white-space: nowrap;
 }
 
@@ -226,7 +226,7 @@
   padding: 0.2rem 0.5rem;
   border-radius: var(--xc-radius-sm);
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 700;
 }
 
@@ -346,7 +346,7 @@
 .xc-btn-resume {
   background-color: var(--xc-brand-soft);
   border-color: var(--xc-brand-line);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-btn-resume:hover {

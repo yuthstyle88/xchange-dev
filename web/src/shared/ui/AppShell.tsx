@@ -23,6 +23,8 @@ export function AppShell(props: {
   look?: AppShellLook;
   banner?: JSX.Element;
   staffSession?: boolean;
+  /** The customer shell's light / dark button, beside the language switch (design §2.6). */
+  themeSwitch?: boolean;
   staffNav?: boolean;
   queueCard?: QueueCardMode;
 }): JSX.Element {
@@ -153,6 +155,7 @@ export function AppShell(props: {
         {/* No staff session (the customer shell) has no menu button, so its nav stays in the header. */}
         {!session && nav ? <div class="xc-shell-nav">{nav}</div> : null}
         {!session ? <h1 class="xc-shell-title">{props.title}</h1> : null}
+        {!session && props.themeSwitch ? <ThemeSwitch /> : null}
         <LangSwitch />
         {session ? <AccountBar session={session} queueCard={props.queueCard} /> : null}
       </header>

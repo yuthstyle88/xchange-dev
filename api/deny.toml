@@ -23,6 +23,12 @@ ignore = [
     # See https://github.com/108-Plaza/108-platform-services/issues/447.
     # Remove this line in the PR that moves the 108-platform-services rev to a version without it.
     "RUSTSEC-2026-0387",
+    # chrono is UNMAINTAINED (informational, no vuln, no patched version); moving to
+    # jiff/time is a large migration and out of scope (#6942).
+    "RUSTSEC-2026-0543",
+    # chrono-tz is UNMAINTAINED (informational, no vuln, no patched version); same
+    # chrono migration as RUSTSEC-2026-0543 (#6942).
+    "RUSTSEC-2026-0555",
 ]
 
 [licenses]

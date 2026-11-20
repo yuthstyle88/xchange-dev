@@ -43,6 +43,8 @@ fn sample_sql_row() -> TxSqlRow {
         shift_id: None,
         slip_key: None,
         backdated: false,
+        staff_name: None,
+        reversed_at: None,
     }
 }
 

@@ -173,7 +173,7 @@
 .xc-queue-status-signin {
   display: inline-block;
   margin: 0.5rem 0 0;
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   font-weight: 600;
 }
 

@@ -61,6 +61,7 @@
   --xc-brand:var(--xc-brand-700);
   --xc-brand-strong:var(--xc-brand-900);
   --xc-brand-soft:var(--xc-brand-50);
+  --xc-brand-text:var(--xc-brand); /* brand-coloured text; splits from the fill in dark mode */
   --xc-on-brand:var(--xc-gray-0);
   --xc-ink:var(--xc-gray-900);
   --xc-muted:var(--xc-gray-600);
@@ -128,6 +129,59 @@
   --xc-duration-base:200ms;
   --xc-ease:cubic-bezier(.2,.7,.2,1);
 
+  /* Dark mode values (the staff dark palette of web/src/shared/ui/xc-theme.css --xc-dk-*, docs/design/xchange-one-look.md §2.6). */
+  --xc-dk-gray-1000:#ffffff;
+  --xc-dk-gray-950:#faf7f8;
+  --xc-dk-gray-900:#f2eef0;
+  --xc-dk-gray-800:#d9d2d6;
+  --xc-dk-gray-700:#c2b9be;
+  --xc-dk-gray-600:#a49aa0;
+  --xc-dk-gray-500:#8a8186;
+  --xc-dk-gray-400:#6e676b;
+  --xc-dk-gray-300:#4a4548;
+  --xc-dk-gray-200:#3a3638;
+  --xc-dk-gray-150:#2e2b2d;
+  --xc-dk-gray-100:#242224;
+  --xc-dk-gray-75:#0b0b0c;
+  --xc-dk-gray-50:#201e20;
+  --xc-dk-gray-25:#151415;
+  --xc-dk-gray-0:#1a1919;
+  --xc-dk-brand-950:#f07a92;
+  --xc-dk-brand-900:#c23a5a;
+  --xc-dk-brand-800:#b83355;
+  --xc-dk-brand-700:#a8324c;
+  --xc-dk-brand-500:#c45a82;
+  --xc-dk-brand-300:#7a2f45;
+  --xc-dk-brand-200:#4d1c2a;
+  --xc-dk-brand-100:#3a1520;
+  --xc-dk-brand-50:#2a1219;
+  --xc-dk-green-900:#7fd6a8;
+  --xc-dk-green-800:#5cc790;
+  --xc-dk-green-700:#3fb47a;
+  --xc-dk-green-500:#4f8f70;
+  --xc-dk-green-200:#1f4a33;
+  --xc-dk-green-100:#183323;
+  --xc-dk-green-50:#13281c;
+  --xc-dk-amber-900:#f0c878;
+  --xc-dk-amber-800:#e8b85a;
+  --xc-dk-amber-700:#e0a83a;
+  --xc-dk-amber-500:#d29a26;
+  --xc-dk-amber-300:#6b5320;
+  --xc-dk-amber-200:#3a2a0c;
+  --xc-dk-amber-50:#2e2209;
+  --xc-dk-red-700:#ef6b5a;
+  --xc-dk-red-50:#3a1712;
+  --xc-dk-teal-900:#8fc3d6;
+  --xc-dk-scrim:#000000b3;
+  --xc-dk-brand-text:#e2637d;
+  --xc-dk-on-brand:#ffffff;
+  --xc-dk-brand-ink:#ffffff;
+  --xc-dk-focus:#e2637d;
+  --xc-dk-shadow-a:#00000066;
+  --xc-dk-shadow-b:#00000080;
+  --xc-dk-shadow-c:#000000a6;
+  --xc-dk-shadow-brand:#a8324c55;
+
   /* Legacy names kept as aliases while surfaces migrate. Do not use in new rules. */
   --brand:var(--xc-brand);
   --xc:var(--xc-brand);
@@ -160,3 +214,8 @@
   .xc-badge--brand{background:var(--xc-brand-soft);color:var(--xc-brand)}
 }
 @media (prefers-reduced-motion:reduce){:root{--xc-duration-fast:0ms;--xc-duration-base:0ms}}
+
+/* Dark mode (docs/design/xchange-one-look.md §2.6, owner 2026-11-20 "ไม่มี dark mode"). The saved choice or the device
+   setting puts data-theme on <html> before first paint (kiosk.html). Only the value ramps change, so every rule that
+   names a token follows; brand-coloured text reads --xc-brand-text (pink), fills keep --xc-brand (wine, white text 6.5:1). */
+@media screen{:root[data-theme="dark"]{color-scheme:dark;--xc-gray-1000:var(--xc-dk-gray-1000);--xc-gray-950:var(--xc-dk-gray-950);--xc-gray-900:var(--xc-dk-gray-900);--xc-gray-800:var(--xc-dk-gray-800);--xc-gray-700:var(--xc-dk-gray-700);--xc-gray-600:var(--xc-dk-gray-600);--xc-gray-500:var(--xc-dk-gray-500);--xc-gray-400:var(--xc-dk-gray-400);--xc-gray-300:var(--xc-dk-gray-300);--xc-gray-200:var(--xc-dk-gray-200);--xc-gray-150:var(--xc-dk-gray-150);--xc-gray-100:var(--xc-dk-gray-100);--xc-gray-75:var(--xc-dk-gray-75);--xc-gray-50:var(--xc-dk-gray-50);--xc-gray-25:var(--xc-dk-gray-25);--xc-gray-0:var(--xc-dk-gray-0);--xc-brand-950:var(--xc-dk-brand-950);--xc-brand-900:var(--xc-dk-brand-900);--xc-brand-800:var(--xc-dk-brand-800);--xc-brand-700:var(--xc-dk-brand-700);--xc-brand-500:var(--xc-dk-brand-500);--xc-brand-300:var(--xc-dk-brand-300);--xc-brand-200:var(--xc-dk-brand-200);--xc-brand-100:var(--xc-dk-brand-100);--xc-brand-50:var(--xc-dk-brand-50);--xc-green-900:var(--xc-dk-green-900);--xc-green-800:var(--xc-dk-green-800);--xc-green-700:var(--xc-dk-green-700);--xc-green-500:var(--xc-dk-green-500);--xc-green-200:var(--xc-dk-green-200);--xc-green-100:var(--xc-dk-green-100);--xc-green-50:var(--xc-dk-green-50);--xc-amber-900:var(--xc-dk-amber-900);--xc-amber-800:var(--xc-dk-amber-800);--xc-amber-700:var(--xc-dk-amber-700);--xc-amber-500:var(--xc-dk-amber-500);--xc-amber-300:var(--xc-dk-amber-300);--xc-amber-200:var(--xc-dk-amber-200);--xc-amber-50:var(--xc-dk-amber-50);--xc-red-700:var(--xc-dk-red-700);--xc-red-50:var(--xc-dk-red-50);--xc-teal-900:var(--xc-dk-teal-900);--xc-scrim:var(--xc-dk-scrim);--xc-brand-text:var(--xc-dk-brand-text);--xc-on-brand:var(--xc-dk-on-brand);--xc-focus:var(--xc-dk-focus);--xc-shadow-sm:0 1px 4px var(--xc-dk-shadow-a);--xc-shadow-md:0 8px 24px var(--xc-dk-shadow-b);--xc-shadow-lg:0 24px 80px var(--xc-dk-shadow-c);--xc-shadow-brand:0 6px 18px var(--xc-dk-shadow-brand)}}

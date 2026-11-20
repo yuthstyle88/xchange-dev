@@ -33,6 +33,8 @@ fn sql_row(side: &str, amount: &str, rate: &str, principal: &str, settlement: &s
         shift_id: None,
         slip_key: None,
         backdated: false,
+        staff_name: None,
+        reversed_at: None,
     }
 }
 

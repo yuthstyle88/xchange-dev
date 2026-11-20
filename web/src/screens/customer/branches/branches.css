@@ -150,7 +150,7 @@
 
 .xc-badge-info {
   background-color: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-badge-muted {
@@ -288,7 +288,7 @@
 .xc-take-number-link {
   font-size: 0.875rem;
   font-weight: 500;
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   text-decoration: underline;
 }
 

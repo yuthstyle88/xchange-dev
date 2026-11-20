@@ -42,8 +42,10 @@ function ratio(a: string, b: string): number {
 }
 
 describe('xc-theme-dark.css (design §2.6)', () => {
-  it('scopes the dark values to staff surfaces, on screen only', () => {
-    const at = dark.indexOf(':root[data-theme="dark"] .xc-theme:not(.xc-customer):not(.xc-customer *)');
+  // Restated 2026-11-20 (owner "ไม่มี dark mode" on the kiosk/customer screens): the scope was staff-only
+  // (`.xc-theme:not(.xc-customer):not(.xc-customer *)`); customer surfaces now follow too. Still screen-only.
+  it('scopes the dark values to every .xc-theme surface (staff and customer), on screen only', () => {
+    const at = dark.indexOf(':root[data-theme="dark"] .xc-theme {');
     expect(at).toBeGreaterThan(0);
     expect(dark.slice(0, at)).toMatch(/@media screen \{\s*$/);
   });

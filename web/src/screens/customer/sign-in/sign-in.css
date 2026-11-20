@@ -51,7 +51,7 @@
 .xc-sign-in-tab.active,
 .xc-sign-in-tab[aria-selected="true"] {
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   border-color: var(--xc-brand);
   font-weight: 700;
 }

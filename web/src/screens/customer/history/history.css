@@ -135,6 +135,6 @@
 }
 
 .xc-history-receipt-link {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   text-decoration: none;
 }
