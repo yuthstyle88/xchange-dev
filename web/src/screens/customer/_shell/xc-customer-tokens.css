@@ -20,7 +20,7 @@
   --xc-primary: var(--xc-brand);
   --xc-primary-hover: var(--xc-brand-strong);
   --xc-text: var(--xc-ink);
-  --xc-text-muted: #7a7178;
+  --xc-text-muted: var(--xc-gray-600);
   --xc-border: var(--xc-line);
   --xc-border-light: var(--xc-gray-100);
   --xc-surface-hover: var(--xc-brand-soft);
@@ -49,6 +49,31 @@
   --xc-disabled-bg: var(--xc-gray-100);
   --xc-disabled-text: var(--xc-gray-600);
   --xc-disabled-border: var(--xc-border);
+  /* Text on a danger fill: white in light; dark in dark mode, where the danger hue is a light coral (§2.6). */
+  --xc-on-danger: var(--xc-on-brand);
+}
+
+/* Dark mode for customer pages (design §2.6, owner 2026-11-20 "ไม่มี dark mode"). xc-theme-dark.css mirrors the
+   ramps on every .xc-theme; this re-points the customer aliases that hold a literal or want a different step.
+   Values are the staff --xc-dk-* tokens from xc-theme.css; no new palette. */
+@media screen {
+  :root[data-theme="dark"] .xc-customer.xc-theme,
+  :root[data-theme="dark"] .xc-customer .xc-theme {
+    /* A near-black page under dark grey cards, as the staff dark mode. */
+    --xc-bg: var(--xc-gray-75);
+    --xc-canvas: var(--xc-gray-75);
+    --xc-header: var(--xc-gray-0);
+    --xc-shadow-card: 0 12px 32px var(--xc-dk-shadow-b);
+    --xc-teal-200: var(--xc-gray-200);
+    --xc-teal-50: var(--xc-gray-100);
+    --xc-danger-border: var(--xc-red-700);
+    --xc-error-border: var(--xc-red-700);
+    --xc-on-danger: var(--xc-gray-25);
+  }
+
+  :root[data-theme="dark"] .xc-customer .xc-rate-freshness {
+    color: var(--xc-text-muted);
+  }
 }
 
 .xc-customer button:disabled {
@@ -73,7 +98,7 @@ body:has(.xc-customer) {
   }
 
   .xc-customer :where(a) {
-    color: var(--xc-brand);
+    color: var(--xc-brand-text);
   }
 
   .xc-customer :where(h1, h2, h3) {
@@ -153,7 +178,7 @@ body:has(.xc-customer) {
   .xc-customer :where(button[aria-pressed='true']) {
     border-color: var(--xc-brand);
     background: var(--xc-brand-soft);
-    color: var(--xc-brand);
+    color: var(--xc-brand-text);
   }
 
   .xc-customer :where([role='alert']) {

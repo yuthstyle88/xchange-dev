@@ -57,7 +57,9 @@ describe('xc-customer-tokens.css exact values (A1-b #6518)', () => {
 
   it.each(selectors)('%s pins exact header and muted text colours', (sel) => {
     expect(value(rules, sel, '--xc-header')).toBe('#fffdf8');
-    expect(value(rules, sel, '--xc-text-muted')).toBe('#7a7178');
+    // Restated 2026-11-20 (design §2.6, dark mode): #7a7178 read 4.34:1 on the customer page (gray-50); the warm grey
+    // gray-600 (#6c6268) is the same role at 5.3:1 and follows dark mode.
+    expect(value(rules, sel, '--xc-text-muted')).toBe('var(--xc-gray-600)');
   });
 
   it.each(selectors)('%s pins info background and teal steps', (sel) => {

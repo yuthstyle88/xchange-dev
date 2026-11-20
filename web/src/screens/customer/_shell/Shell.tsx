@@ -123,6 +123,7 @@ export function CustomerShell(props: {
         title={tr('title')}
         ownsMain
         staffSession={false}
+        themeSwitch
         nav={
           <span class="xc-customer-logo">
             <img src={logoUrl} alt="XCHANGE Currency Exchange" width="96" height="67" />

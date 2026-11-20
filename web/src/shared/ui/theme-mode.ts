@@ -1,6 +1,6 @@
-// Light / dark mode for staff pages (docs/design/xchange-one-look.md §2.6).
-// The choice lives on <html data-theme>, so every .xc-theme surface on the page follows it;
-// customer pages and print stay light (xc-theme.css scopes the dark values).
+// Light / dark mode for staff and customer pages (docs/design/xchange-one-look.md §2.6).
+// The choice lives on <html data-theme>, so every .xc-theme surface on the page follows it; print stays light
+// (xc-theme-dark.css is screen-only). The kiosk (api/static/kiosk/kiosk.html) reads the same storage key.
 import { createSignal } from 'solid-js';
 
 export type ThemeMode = 'light' | 'dark';

@@ -82,7 +82,7 @@
 .xc-journey-ticket-number {
   font-size: 2rem;
   font-weight: 800;
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
   letter-spacing: 0.05em;
 }
 
@@ -103,7 +103,7 @@
 
 .xc-journey-badge-called {
   background-color: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-journey-badge-serving {
@@ -237,7 +237,7 @@
 .xc-journey-draft-side {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--xc-primary);
+  color: var(--xc-brand-text);
 }
 
 .xc-journey-draft-currency {

@@ -19,10 +19,10 @@ body.customer-kiosk .amount-code{position:absolute;left:18px;top:50%;transform:t
 /* the quick amounts, one row: the keys' look (.xa-key), the selected one bordered in red (.xa-tile.sel) */
 body.customer-kiosk .quick-amounts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 0}
 body.customer-kiosk .quick-amounts button{min-width:0;min-height:0;height:48px;padding:0 4px;border:2px solid transparent;border-radius:var(--xc-radius-lg);background:var(--xc-gray-100);color:var(--xc-ink);font:800 17px/1 var(--xc-font-sans);box-shadow:none;touch-action:manipulation}
-body.customer-kiosk .quick-amounts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+body.customer-kiosk .quick-amounts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand-text)}
 body.customer-kiosk #amount-in{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px;padding:0;border:0}
 body.customer-kiosk #amount-in button{min-width:0;min-height:44px;padding:6px 10px;border:2px solid var(--xc-line);border-radius:var(--xc-radius-lg);background:var(--xc-surface);color:var(--xc-ink);font:700 15px/1.2 var(--xc-font-sans);text-align:center;box-shadow:none;touch-action:manipulation}
-body.customer-kiosk #amount-in button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+body.customer-kiosk #amount-in button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand-text)}
 body.customer-kiosk #amount-in button.selected:after{display:none}
 
 @media(max-width:600px){
@@ -33,7 +33,7 @@ body.customer-kiosk #amount-in button.selected:after{display:none}
  body.customer-kiosk #select>.directions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 4px;padding:0;border:0}
  body.customer-kiosk #select>.directions button{min-height:58px;padding:8px 10px;border:2px solid var(--xc-line);border-radius:12px;background:var(--xc-surface);color:var(--xc-ink);font-size:14px;font-weight:700;text-align:start;box-shadow:none;line-height:1.25}
  body.customer-kiosk #select>.directions button small{display:block;font-weight:400;font-size:11px;color:var(--xc-muted);margin-top:2px}
- body.customer-kiosk #select>.directions button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+ body.customer-kiosk #select>.directions button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand-text)}
  body.customer-kiosk #select>.directions button.selected:after,body.customer-kiosk #select>.directions button bdi:after{display:none}
  /* 2. currency label + 3-column tiles: .xa-lbl / .xa-tiles / .xa-tile / .xa-sym */
  body.customer-kiosk .currency-pane>label,body.customer-kiosk #amount-label,body.customer-kiosk #payment-choice>label{margin:12px 0 6px;font-size:13px;font-weight:600;color:var(--xc-muted);letter-spacing:0;text-transform:none}
@@ -42,7 +42,7 @@ body.customer-kiosk #amount-in button.selected:after{display:none}
  body.customer-kiosk .currency-shortcuts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:142px;overflow-y:auto;margin:8px 0 0;padding:2px}
  body.customer-kiosk .currency-shortcuts button{min-width:0;min-height:40px;height:40px;padding:0 8px;display:flex;flex-wrap:nowrap;align-items:center;justify-content:flex-start;gap:6px;border:2px solid var(--xc-line);border-radius:10px;background:var(--xc-surface);color:var(--xc-ink);box-shadow:none}
  body.customer-kiosk .currency-shortcuts button .currency-flag,body.customer-kiosk .currency-shortcuts button small,body.customer-kiosk .currency-shortcuts button.featured::after{display:none}
- body.customer-kiosk .currency-shortcuts button .currency-sym{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--xc-gray-100);color:var(--xc-brand);font-size:13px;font-weight:800;line-height:1;overflow:hidden}
+ body.customer-kiosk .currency-shortcuts button .currency-sym{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--xc-gray-100);color:var(--xc-brand-text);font-size:13px;font-weight:800;line-height:1;overflow:hidden}
  body.customer-kiosk .currency-shortcuts button bdi{font-size:15px;font-weight:800}
  body.customer-kiosk .currency-shortcuts button.selected{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-ink)}
  body.customer-kiosk .currency-shortcuts button.selected .currency-sym{background:var(--xc-brand);color:var(--xc-on-brand)}
@@ -58,12 +58,14 @@ body.customer-kiosk #amount-in button.selected:after{display:none}
  body.customer-kiosk #amount-keypad button{min-height:0;height:44px;padding:0;border:0;border-radius:10px;background:var(--xc-gray-100);color:var(--xc-ink);font:800 20px/1 var(--xc-font-sans);touch-action:manipulation}
  /* 4. the estimate in red (.xa-est); the receive field it repeats is not drawn */
  body.customer-kiosk #receive-label,body.customer-kiosk #receive{display:none}
- body.customer-kiosk #estimate{min-height:0;margin:12px 0 0;padding:0;background:transparent;border-radius:0;color:var(--xc-brand);font-size:15px;font-weight:600;overflow-wrap:anywhere}
+ body.customer-kiosk #estimate{min-height:0;margin:12px 0 0;padding:0;background:transparent;border-radius:0;color:var(--xc-brand-text);font-size:15px;font-weight:600;overflow-wrap:anywhere}
  body.customer-kiosk #payment-choice select{min-height:44px;padding:6px 10px;font-size:15px}
  /* 5. a full-width red Review (.xa-btn) */
  body.customer-kiosk #review{width:100%;min-height:52px;margin:14px 0 0;border:0;border-radius:12px;background:var(--xc-brand);color:var(--xc-on-brand);font-size:17px;font-weight:800;letter-spacing:0;box-shadow:none}
- body.customer-kiosk #review:disabled{background:var(--xc-gray-100);color:var(--xc-gray-600);border:1px solid var(--xc-gray-300);opacity:1;cursor:not-allowed}
 }
+/* The disabled Review at every width, not only on phones: the wide-screen #review rule in kiosk.css keeps the wine
+   fill, so without this the grey disabled text sat on wine (1.35:1, owner's screenshot 2026-11-20). */
+body.customer-kiosk #review:disabled{background:var(--xc-gray-100);color:var(--xc-gray-600);border:1px solid var(--xc-gray-300);opacity:1;cursor:not-allowed}
 
 /* xchange: the attract loop's step-1 card (kiosk-attract.js #xa-s1) shows the screen above: the field with the
    code on the left and the number on the right, one row of quick amounts, the complete keypad (owner 2026-11-05:
@@ -78,8 +80,33 @@ body.customer-kiosk #amount-in button.selected:after{display:none}
 #xa-s1 .xa-caret{height:48px}
 #xa-s1 .xa-chips{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px}
 #xa-s1 .xa-chip{height:54px;border:3px solid transparent;border-radius:14px;background:var(--xc-gray-100);display:grid;place-items:center;font-size:26px;font-weight:800}
-#xa-s1 .xa-chip.sel{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand)}
+#xa-s1 .xa-chip.sel{border-color:var(--xc-brand);background:var(--xc-brand-soft);color:var(--xc-brand-text)}
 #xa-s1 .xa-keys{grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 #xa-s1 .xa-key{height:46px;font-size:26px}
 #xa-s1 .xa-est{height:48px;line-height:48px;margin-top:10px;font-size:28px}
 #xa-s1 .xa-btn{height:72px;margin-top:6px;font-size:34px}
+
+/* xchange: the light / dark switch in the header (docs/design/xchange-one-look.md §2.6, owner 2026-11-20 "ไม่มี dark mode").
+   A 48px round button at the header's end, sized for a shop touch screen. */
+body.customer-kiosk header .kiosk-theme{flex:none;width:48px;min-width:48px;height:48px;min-height:48px;margin:0;padding:0;border:1px solid var(--xc-line);border-radius:var(--xc-radius-pill);background:var(--xc-surface);color:var(--xc-ink);font:400 22px/1 var(--xc-font-sans);box-shadow:none;cursor:pointer;touch-action:manipulation}
+body.customer-kiosk header .kiosk-theme:focus-visible{outline:2px solid var(--xc-focus);outline-offset:2px}
+/* Phones: the header wraps, so the switch sits in the top corner beside the branch line instead of on a row of its own. */
+@media(max-width:760px){body.customer-kiosk header .kiosk-theme{position:absolute;top:8px;inset-inline-end:10px}body.customer-kiosk header #branch{margin-inline-end:56px}}
+
+/* xchange: dark mode. xc-tokens.css mirrors the value ramps under :root[data-theme="dark"], so every rule that names a
+   token follows. These rules re-point what the shop's kiosk.css and kiosk-attract.css paint with literal colours, so the
+   ticket stays a dark card instead of turning into a white panel under light text. */
+@media screen{
+:root[data-theme="dark"]{--pass-paper:var(--xc-gray-0);--perf:var(--xc-gray-200);--night:var(--xc-gray-75);--pass-red:var(--xc-brand);--pass-red-dark:var(--xc-dk-brand-300);--pass-line:var(--xc-line);--pass-tile:var(--xc-gray-50);--pass-tile-line:var(--xc-gray-200);--pass-dash:var(--xc-gray-200)}
+:root[data-theme="dark"] body.customer-kiosk{background:var(--xc-canvas);color:var(--xc-ink)}
+:root[data-theme="dark"] button.selected small{color:var(--xc-on-brand)}
+:root[data-theme="dark"] select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c2b9be' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+:root[data-theme="dark"] .queue-ahead,:root[data-theme="dark"] #error:not(:empty){color:var(--xc-brand-text)}
+:root[data-theme="dark"] #xc-version{color:var(--xc-muted)!important}
+:root[data-theme="dark"] #xa{background:var(--xc-canvas)}
+:root[data-theme="dark"] .xa-bg{background:radial-gradient(1200px 900px at 50% -10%,var(--xc-gray-100) 0,transparent 60%),var(--xc-canvas)}
+:root[data-theme="dark"] .xa-bring div{border-color:var(--xc-amber-300)}
+:root[data-theme="dark"] .xa-receipt{border-color:var(--xc-green-200)}
+/* White on the success green fails in dark, where the green is a light hue (2.6:1); dark text reads 7:1 on it. */
+:root[data-theme="dark"] :is(.xa-ok,body.customer-kiosk .queue-ahead.turn){color:var(--xc-gray-25)}
+}

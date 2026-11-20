@@ -143,7 +143,7 @@
 .xc-member-points-value {
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-member-expiry {

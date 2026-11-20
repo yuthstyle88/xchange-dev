@@ -82,7 +82,8 @@ describe('cust-verification', () => {
 
   it('VE-2 the active step is marked in colour as well as weight', () => {
     expect(value('.xc-verification-step--active', 'border-top-color')).toBe('var(--xc-brand)');
-    expect(value('.xc-verification-step--active', 'color')).toBe('var(--xc-brand)');
+    // Restated for dark mode (design §2.6, 2026-11-20): brand text reads --xc-brand-text, which equals --xc-brand in light.
+    expect(value('.xc-verification-step--active', 'color')).toBe('var(--xc-brand-text)');
     expect(value('.xc-verification-step--active', 'font-weight')).toBe('700');
   });
 

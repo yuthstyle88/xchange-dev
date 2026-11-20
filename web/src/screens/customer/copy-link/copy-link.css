@@ -40,7 +40,7 @@
   display: inline-block;
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   background: var(--xc-brand-soft);
   padding: 0.25rem 0.75rem;
   border-radius: var(--xc-radius-lg);

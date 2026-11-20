@@ -29,7 +29,7 @@
   margin: 0;
   font-size: 1.5rem;
   font-weight: 700;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-home-tagline {
@@ -345,7 +345,7 @@
 .xc-home-estimate-value {
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-home-estimate-meta {

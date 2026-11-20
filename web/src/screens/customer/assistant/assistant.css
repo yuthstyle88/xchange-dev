@@ -110,7 +110,7 @@
 
 .assistant-retry-button {
   background-color: var(--xc-danger);
-  color: var(--xc-on-brand);
+  color: var(--xc-on-danger);
   border: none;
   border-radius: var(--xc-radius-lg);
   padding: 6px 14px;
@@ -354,7 +354,7 @@
 .assistant-preview-link {
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   text-decoration: underline;
 }
 

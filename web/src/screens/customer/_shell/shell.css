@@ -104,6 +104,32 @@
   color: var(--xc-on-brand);
 }
 
+/* Light / dark switch (design §2.6, owner 2026-11-20): a round 44px button just before the language pill, apart
+   from it. The rules above style every header button as part of the pill, so this one restates its own look. */
+.xc-customer .xc-shell-header > button.xc-theme-switch {
+  order: 2;
+  flex: none;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0 8px 0 auto;
+  padding: 0;
+  border: 2px solid var(--xc-border);
+  border-width: 2px;
+  border-radius: var(--xc-radius-pill);
+  background: var(--xc-surface-subtle);
+  color: var(--xc-text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.xc-customer .xc-shell-header > button.xc-theme-switch + button {
+  margin-left: 0;
+  border-left-width: 2px;
+  border-radius: var(--xc-radius-pill) 0 0 var(--xc-radius-pill);
+}
+
 /* The account links: kiosk chips in one scrolling row under the header. */
 .xc-customer-bar {
   display: flex;
@@ -140,13 +166,13 @@
 .xc-customer-bar > a[aria-current='page'] {
   border-color: var(--xc-brand);
   background: var(--xc-brand-soft);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 /* Signed in: the greeting chip leads in wine; signed out: "Sign in" is the wine button. */
 .xc-customer-name {
   font-weight: 700;
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
 }
 
 .xc-customer-bar > .xc-customer-signin {
@@ -228,7 +254,7 @@
 }
 
 .xc-customer-nav a[aria-current='page'] {
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 700;
 }
 
@@ -305,6 +331,11 @@
     order: 0;
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .xc-customer .xc-shell-header > button.xc-theme-switch {
+    order: 0;
+    margin: 0 6px 0 auto;
   }
 
   .xc-customer-bar:has(.xc-customer-name) {

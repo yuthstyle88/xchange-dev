@@ -51,7 +51,7 @@
 
 .xc-verification-step--active {
   border-top-color: var(--xc-brand);
-  color: var(--xc-brand);
+  color: var(--xc-brand-text);
   font-weight: 700;
 }
 
