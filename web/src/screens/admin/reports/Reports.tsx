@@ -655,14 +655,14 @@ export function Reports(props: AdminMenuProps): JSX.Element {
             {(g: ReportEmployeeGroup) => (
               <details
                 open={Boolean(selectedStaff())}
-                style="border-top: 1px solid #e5dfe4; padding: 18px 0;"
+                style="border-top: 1px solid var(--xc-line); padding: 18px 0;"
                 onToggle={(e) => {
                   if (e.currentTarget.open) {
                     loadEmployeeTx(g.staff);
                   }
                 }}
               >
-                <summary style="cursor: pointer; color: #a5003c; font-weight: bold;">
+                <summary style="cursor: pointer; color: var(--xc-brand-text); font-weight: bold;">
                   {t('employeeSectionSummary', { staff: g.staff, count: g.count })}
                 </summary>
 

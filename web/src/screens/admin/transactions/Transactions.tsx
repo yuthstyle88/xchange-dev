@@ -368,7 +368,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
         <div style="display: flex; gap: 8px; padding: 0 24px 12px; align-items: center; flex-wrap: wrap;">
           <Show when={currency()}>
             {(c) => (
-              <span data-filter="currency" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--bg-subtle, #f3f4f6); font-size: 13px;">
+              <span data-filter="currency" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--xc-gray-75); font-size: 13px;">
                 <span>{t('filterCurrency')}: {c()}</span>
                 <button
                   type="button"
@@ -384,7 +384,7 @@ export function Transactions(props: AdminMenuProps): JSX.Element {
           </Show>
           <Show when={channel()}>
             {(ch) => (
-              <span data-filter="channel" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--bg-subtle, #f3f4f6); font-size: 13px;">
+              <span data-filter="channel" style="display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 4px; background: var(--xc-gray-75); font-size: 13px;">
                 <span>{t('filterChannel')}: {ch()}</span>
                 <button
                   type="button"

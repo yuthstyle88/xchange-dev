@@ -177,7 +177,7 @@
   right: 25px;
   z-index: 50;
   max-width: calc(100vw - 40px);
-  background: var(--xc-ink);
+  background: var(--xc-inverse);
   color: var(--xc-on-brand);
   padding: 15px 22px;
   border-radius: 8px;
