@@ -6,18 +6,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Merge-turn gate (ci:go): owner 2026-11-21 "ปรับการรัน ci เฉพาะ merge เข้า main พอ" ("เพราะมันรันมากไป").
-# A PR in 108-Plaza/xchange WITHOUT the `ci:go` label gets its own `pr-wait-<number>` concurrency group
-# (cancel-in-progress) and every heavy job FAILS at its first step "Wait for merge turn (ci:go)"
-# in seconds -- it fails rather than skips, because a skipped required check counts as passing.
-# A PR WITH `ci:go` runs the full CI in the shared `pr` group, never cancelled. Push to main,
-# workflow_dispatch and schedules are unchanged. The repository check keeps mirrors/forks (whose
-# authors cannot add labels) on full CI. Merge turn: (1) add `ci:go` to ONE PR; (2) `gh pr
-# update-branch` or close+reopen (a re-run does not see a label added later); (3) merge;
-# (4) on FAIL remove `ci:go`.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && (github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') && format('web-pr-wait-{0}', github.event.pull_request.number) || 'web-pr') || (github.ref == 'refs/heads/main' && 'web-main') || format('web-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ (github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go')) || github.ref == 'refs/heads/main' }}
+  group: ${{ github.event_name == 'pull_request' && format('web-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'web-main') || format('web-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.ref == 'refs/heads/main' }}
 
 permissions:
   actions: read
@@ -108,12 +99,6 @@ jobs:
     # stopgap: the full suite runs ~8 min on the shared macOS pool; root cause #3237. Back to 10 when #3237 lands.
     timeout-minutes: 20
     steps:
-      - name: Wait for merge turn (ci:go)
-        if: ${{ github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') }}
-        run: |
-          echo "::error::Not this PR's merge turn yet - add the ci:go label, then update-branch (or close+reopen) to run CI"
-          exit 1
-
       - name: Refuse to report green when the run was cancelled
         if: cancelled()
         run: exit 1
