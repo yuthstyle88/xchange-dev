@@ -20,9 +20,18 @@ on:
     - cron: "0 20 * * *"
 
 
+# Merge-turn gate (ci:go): owner 2026-11-21 "ปรับการรัน ci เฉพาะ merge เข้า main พอ" ("เพราะมันรันมากไป").
+# A PR in 108-Plaza/xchange WITHOUT the `ci:go` label gets its own `pr-wait-<number>` concurrency group
+# (cancel-in-progress) and every heavy job FAILS at its first step "Wait for merge turn (ci:go)"
+# in seconds -- it fails rather than skips, because a skipped required check counts as passing.
+# A PR WITH `ci:go` runs the full CI in the shared `pr` group, never cancelled. Push to main,
+# workflow_dispatch and schedules are unchanged. The repository check keeps mirrors/forks (whose
+# authors cannot add labels) on full CI. Merge turn: (1) add `ci:go` to ONE PR; (2) `gh pr
+# update-branch` or close+reopen (a re-run does not see a label added later); (3) merge;
+# (4) on FAIL remove `ci:go`.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('api-pr-{0}', github.event.pull_request.number) || (github.ref == 'refs/heads/main' && 'api-main') || format('api-{0}-{1}', github.ref, github.sha) }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && (github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') && format('api-pr-wait-{0}', github.event.pull_request.number) || 'api-pr') || (github.ref == 'refs/heads/main' && 'api-main') || format('api-{0}-{1}', github.ref, github.sha) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') }}
 
 permissions:
   actions: read
@@ -226,7 +235,8 @@ jobs:
           fi
 
           job_ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$prev/jobs?per_page=100" \
-            --jq '[.jobs[] | select(.name | startswith("test ("))] | if length > 0 and all(.conclusion == "success" or .conclusion == "failure") then .[].id else empty end' 2>/dev/null) || job_ids=""
+            --jq '[.jobs[] | select(.name | startswith("test ("))] | if length > 0 and all(.conclusion == "success" or .conclusion == "failure") and all((.steps // []) | all(.name != "Wait for merge turn (ci:go)" or .conclusion == "skipped")) then .[].id else empty end' 2>/dev/null) || job_ids=""
+          # A run whose partitions stopped at the ci:go merge-turn gate tested nothing => full plan.
           [ -n "$job_ids" ] || plan "fallback: run $prev has no completed test partition jobs"
 
           FAILED_LIST=$(mktemp)
@@ -287,6 +297,12 @@ jobs:
       GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
       GIT_CONFIG_VALUE_0: https://github.com/
     steps:
+      - name: Wait for merge turn (ci:go)
+        if: ${{ github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') }}
+        run: |
+          echo "::error::Not this PR's merge turn yet - add the ci:go label, then update-branch (or close+reopen) to run CI"
+          exit 1
+
       - name: Refuse to report green when changes did not succeed
         if: ${{ needs.changes.result != 'success' }}
         run: |
@@ -663,6 +679,12 @@ jobs:
       GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.SHARED_CRATES_TOKEN }}@github.com/.insteadOf
       GIT_CONFIG_VALUE_0: https://github.com/
     steps:
+      - name: Wait for merge turn (ci:go)
+        if: ${{ github.event_name == 'pull_request' && github.repository == '108-Plaza/xchange' && !contains(github.event.pull_request.labels.*.name, 'ci:go') }}
+        run: |
+          echo "::error::Not this PR's merge turn yet - add the ci:go label, then update-branch (or close+reopen) to run CI"
+          exit 1
+
       - name: Refuse to report green when changes did not succeed
         if: ${{ needs.changes.result != 'success' }}
         run: |
